@@ -1,6 +1,6 @@
 """Chat endpoint — main conversational interface to the agent pipeline."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 
 from backend.agents.context import SessionStore
 from backend.agents.orchestrator import Orchestrator
@@ -17,9 +17,6 @@ async def chat(
     client: TallyClient = Depends(get_client),
     session_store: SessionStore = Depends(get_session_store),
 ) -> ChatResponse:
-    if not request.message.strip():
-        raise HTTPException(status_code=422, detail="Message cannot be empty")
-
     session = session_store.get_or_create(
         session_id=request.session_id,
         company=request.company,

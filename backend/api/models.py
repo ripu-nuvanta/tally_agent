@@ -4,11 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class ChatRequest(BaseModel):
     message: str
+
+    @field_validator("message")
+    @classmethod
+    def message_not_empty(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Message cannot be empty")
+        return v
     session_id: str | None = None
     company: str | None = None
 

@@ -1,8 +1,11 @@
 """FastAPI application — main entry point for the TallyPrime AI Agent."""
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
+
+logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -66,6 +69,7 @@ async def tally_response_error_handler(
 async def generic_error_handler(
     request: Request, exc: Exception
 ) -> JSONResponse:
+    logger.exception("Unhandled exception: %s", exc)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse(error="Internal server error").model_dump(),
