@@ -40,14 +40,20 @@ export default function DataTable({ data }: DataTableProps) {
     });
   }
 
+  function escapeCsvField(val: string): string {
+    if (val.includes(",") || val.includes('"') || val.includes("\n")) {
+      return `"${val.replace(/"/g, '""')}"`;
+    }
+    return val;
+  }
+
   function exportCSV() {
     const csvRows = [
-      headers.join(","),
+      headers.map((h) => escapeCsvField(h)).join(","),
       ...sortedRows.map((row) =>
-        row.map((cell) => {
-          const val = cell == null ? "" : String(cell);
-          return val.includes(",") ? `"${val}"` : val;
-        }).join(",")
+        row
+          .map((cell) => escapeCsvField(cell == null ? "" : String(cell)))
+          .join(",")
       ),
     ];
     const blob = new Blob([csvRows.join("\n")], { type: "text/csv" });

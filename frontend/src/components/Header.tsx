@@ -23,7 +23,7 @@ export default function Header() {
     <header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between">
       <h1 className="text-lg font-semibold text-gray-900">TallyPrime AI</h1>
       <div className="flex items-center gap-3">
-        <div className="flex items-center gap-1.5" title={connected ? "Tally connected" : "Tally disconnected"}>
+        <div className="flex items-center gap-1.5" title={connected === null ? "Checking Tally connection..." : connected ? "Tally connected" : "Tally disconnected"}>
           <div
             className={`w-2 h-2 rounded-full ${
               connected === null

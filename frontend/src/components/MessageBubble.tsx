@@ -43,7 +43,9 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           </div>
         )}
 
-        {message.data && <DataTable data={message.data} />}
+        {message.data && "headers" in message.data && "rows" in message.data && (
+          <DataTable data={message.data} />
+        )}
         {message.chart && <ChartRenderer chart={message.chart} />}
       </div>
     </div>
