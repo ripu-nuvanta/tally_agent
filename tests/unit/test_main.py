@@ -5,6 +5,7 @@ import importlib
 import pytest
 from unittest.mock import AsyncMock, patch
 from fastapi.testclient import TestClient
+from backend.api.dependencies import get_client
 from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseError
 
 
@@ -33,11 +34,13 @@ def patched_app(mock_tally_client):
 
 
 def test_app_starts_and_health_works(patched_app, mock_tally_client):
+    patched_app.dependency_overrides[get_client] = lambda: mock_tally_client
     with TestClient(patched_app) as tc:
         resp = tc.get("/api/health")
         assert resp.status_code == 200
         body = resp.json()
         assert body["tally_connected"] is True
+    patched_app.dependency_overrides.clear()
 
 
 def test_tally_connection_error_returns_503(patched_app):
