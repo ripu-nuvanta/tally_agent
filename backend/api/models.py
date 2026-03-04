@@ -1,0 +1,51 @@
+"""Request and response models for the FastAPI endpoints."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from pydantic import BaseModel
+
+
+class ChatRequest(BaseModel):
+    message: str
+    session_id: str | None = None
+    company: str | None = None
+
+
+class ChartSpec(BaseModel):
+    chart_type: str
+    title: str
+    data: list[dict[str, Any]]
+    config: dict[str, Any] | None = None
+
+
+class ChatResponse(BaseModel):
+    message: str
+    data: dict[str, Any] | None = None
+    chart: ChartSpec | None = None
+    session_id: str
+
+
+class HealthResponse(BaseModel):
+    status: str
+    tally_connected: bool
+    tally_url: str
+
+
+class CompanyItem(BaseModel):
+    name: str
+
+
+class CompaniesResponse(BaseModel):
+    companies: list[CompanyItem]
+
+
+class ReportResponse(BaseModel):
+    headers: list[str]
+    rows: list[list[Any]]
+
+
+class ErrorResponse(BaseModel):
+    error: str
+    detail: str | None = None
