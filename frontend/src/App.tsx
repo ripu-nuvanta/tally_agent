@@ -1,5 +1,11 @@
+import { SessionProvider } from "./context/SessionContext";
+
 function App() {
-  return <div className="min-h-screen bg-white">TallyPrime AI</div>;
+  return (
+    <SessionProvider>
+      <div className="min-h-screen bg-white">TallyPrime AI</div>
+    </SessionProvider>
+  );
 }
 
 export default App;
