@@ -60,3 +60,13 @@ async def tally_response_error_handler(
         status_code=502,
         content=ErrorResponse(error=str(exc)).model_dump(),
     )
+
+
+@app.exception_handler(Exception)
+async def generic_error_handler(
+    request: Request, exc: Exception
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=500,
+        content=ErrorResponse(error="Internal server error").model_dump(),
+    )
