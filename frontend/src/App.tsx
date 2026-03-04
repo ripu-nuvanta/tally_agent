@@ -1,13 +1,14 @@
 import { SessionProvider } from "./context/SessionContext";
 import Header from "./components/Header";
+import ChatWindow from "./components/ChatWindow";
 
 function App() {
   return (
     <SessionProvider>
-      <div className="min-h-screen bg-white flex flex-col">
+      <div className="h-screen flex flex-col bg-white">
         <Header />
-        <main className="flex-1">
-          {/* ChatWindow will go here */}
+        <main className="flex-1 overflow-hidden">
+          <ChatWindow />
         </main>
       </div>
     </SessionProvider>
