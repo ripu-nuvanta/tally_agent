@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TallyPrime AI Eval Report</title>
+    <style>
+        /* Reset and base styles */
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f8fafc; color: #1e293b; line-height: 1.5; }
+
+        .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+        /* Header */
+        .header { background: linear-gradient(135deg, #4f46e5, #7c3aed); color: white; padding: 2rem; border-radius: 12px; margin-bottom: 2rem; }
+        .header h1 { font-size: 1.5rem; font-weight: 700; }
+        .header .meta { font-size: 0.875rem; opacity: 0.8; margin-top: 0.5rem; }
+
+        /* Score cards */
+        .score-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem; }
+        .score-card { background: white; border-radius: 8px; padding: 1.25rem; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+        .score-card .label { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; color: #64748b; }
+        .score-card .value { font-size: 2rem; font-weight: 700; margin-top: 0.25rem; }
+        .score-bar { height: 6px; background: #e2e8f0; border-radius: 3px; margin-top: 0.5rem; overflow: hidden; }
+        .score-fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+
+        /* Color coding for scores */
+        .score-excellent { color: #059669; }
+        .score-good { color: #2563eb; }
+        .score-average { color: #d97706; }
+        .score-poor { color: #dc2626; }
+        .fill-excellent { background: #059669; }
+        .fill-good { background: #2563eb; }
+        .fill-average { background: #d97706; }
+        .fill-poor { background: #dc2626; }
+
+        /* Scenario sections */
+        .scenario { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); margin-bottom: 1.5rem; overflow: hidden; }
+        .scenario-header { padding: 1rem 1.5rem; cursor: pointer; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #e2e8f0; }
+        .scenario-header:hover { background: #f8fafc; }
+        .scenario-header h2 { font-size: 1.125rem; font-weight: 600; }
+        .scenario-header .arrow { transition: transform 0.2s; font-size: 1.25rem; color: #94a3b8; }
+        .scenario-header.open .arrow { transform: rotate(180deg); }
+        .scenario-body { display: none; padding: 1.5rem; }
+        .scenario-body.open { display: block; }
+
+        /* Turn details */
+        .turn { border: 1px solid #e2e8f0; border-radius: 8px; padding: 1rem; margin-bottom: 1rem; }
+        .turn-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem; }
+        .turn-query { font-weight: 600; color: #1e293b; }
+        .turn-latency { font-size: 0.75rem; color: #94a3b8; }
+        .turn-scores { display: flex; gap: 1rem; flex-wrap: wrap; margin-bottom: 0.75rem; }
+        .turn-score { font-size: 0.875rem; }
+        .turn-score .dim { color: #64748b; }
+
+        /* Checks */
+        .checks { margin-top: 0.75rem; }
+        .check { font-size: 0.875rem; padding: 0.25rem 0; }
+        .check-pass { color: #059669; }
+        .check-fail { color: #dc2626; }
+        .check-pass::before { content: "\2713 "; }
+        .check-fail::before { content: "\2717 "; }
+
+        /* Screenshots */
+        .screenshots { display: flex; gap: 1rem; margin-top: 1rem; flex-wrap: wrap; }
+        .screenshot { max-width: 400px; border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; }
+        .screenshot img { width: 100%; height: auto; display: block; }
+        .screenshot .caption { font-size: 0.75rem; color: #64748b; padding: 0.5rem; text-align: center; background: #f8fafc; }
+
+        /* Issues */
+        .issues { background: white; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); padding: 1.5rem; margin-bottom: 1.5rem; }
+        .issues h2 { font-size: 1.125rem; font-weight: 600; margin-bottom: 1rem; }
+        .issue { padding: 0.5rem 0; border-bottom: 1px solid #f1f5f9; font-size: 0.875rem; }
+        .issue:last-child { border-bottom: none; }
+        .issue-count { display: inline-block; background: #fee2e2; color: #dc2626; font-size: 0.75rem; padding: 0.125rem 0.5rem; border-radius: 999px; margin-right: 0.5rem; }
+
+        /* Reasoning tooltip/detail */
+        .reasoning { font-size: 0.8rem; color: #64748b; margin-top: 0.25rem; font-style: italic; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>TallyPrime AI Eval Report</h1>
+            <div class="meta">
+                Generated: {{ timestamp }} | Judge Model: {{ judge_model }} | Scenarios: {{ scenario_count }}
+            </div>
+        </div>
+
+        <!-- Overall Scores -->
+        <div class="score-grid">
+            {% for dim in dimensions %}
+            <div class="score-card">
+                <div class="label">{{ dim.label }}</div>
+                <div class="value {{ dim.color_class }}">{{ "%.1f"|format(dim.avg) }}</div>
+                <div class="score-bar">
+                    <div class="score-fill {{ dim.fill_class }}" style="width: {{ (dim.avg / 5 * 100)|round }}%"></div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <!-- Issues Summary -->
+        {% if issues %}
+        <div class="issues">
+            <h2>Issues Found ({{ issues|length }})</h2>
+            {% for issue in issues %}
+            <div class="issue">
+                <span class="issue-count">{{ issue.count }}x</span>
+                {{ issue.text }}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- Per-Scenario Results -->
+        {% for scenario in scenarios %}
+        <div class="scenario">
+            <div class="scenario-header" onclick="toggleScenario(this)">
+                <h2>{{ scenario.name }} <span style="font-size: 0.875rem; color: #64748b; font-weight: 400;">({{ scenario.turns|length }} turns, avg {{ "%.1f"|format(scenario.avg_score) }})</span></h2>
+                <span class="arrow">&#9660;</span>
+            </div>
+            <div class="scenario-body">
+                {% for turn in scenario.turns %}
+                <div class="turn">
+                    <div class="turn-header">
+                        <span class="turn-query">Turn {{ turn.turn_index }}: {{ turn.query }}</span>
+                        <span class="turn-latency">{{ "%.1f"|format(turn.latency_seconds) }}s</span>
+                    </div>
+                    <div class="turn-scores">
+                        {% if turn.factual_correctness %}
+                        <span class="turn-score"><span class="dim">Factual:</span> {{ turn.factual_correctness.score }}/5</span>
+                        {% endif %}
+                        {% if turn.response_quality %}
+                        <span class="turn-score"><span class="dim">Quality:</span> {{ turn.response_quality.score }}/5</span>
+                        {% endif %}
+                        {% if turn.conversation_coherence %}
+                        <span class="turn-score"><span class="dim">Coherence:</span> {{ turn.conversation_coherence.score }}/5</span>
+                        {% endif %}
+                        {% if turn.error_handling %}
+                        <span class="turn-score"><span class="dim">Error Handling:</span> {{ turn.error_handling.score }}/5</span>
+                        {% endif %}
+                        {% if turn.chart_quality %}
+                        <span class="turn-score"><span class="dim">Chart:</span> {{ turn.chart_quality.score }}/5</span>
+                        {% endif %}
+                    </div>
+
+                    {% if turn.factual_correctness and turn.factual_correctness.reasoning %}
+                    <div class="reasoning">{{ turn.factual_correctness.reasoning }}</div>
+                    {% endif %}
+
+                    <!-- Checks -->
+                    {% if turn.checks_passed or turn.checks_failed %}
+                    <div class="checks">
+                        {% for check in turn.checks_passed or [] %}
+                        <div class="check check-pass">{{ check }}</div>
+                        {% endfor %}
+                        {% for check in turn.checks_failed or [] %}
+                        <div class="check check-fail">{{ check }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+
+                    <!-- Screenshots -->
+                    {% if turn.screenshot_chart_b64 or turn.screenshot_table_b64 %}
+                    <div class="screenshots">
+                        {% if turn.screenshot_chart_b64 %}
+                        <div class="screenshot">
+                            <img src="data:image/png;base64,{{ turn.screenshot_chart_b64 }}" alt="Chart screenshot">
+                            <div class="caption">Chart</div>
+                        </div>
+                        {% endif %}
+                        {% if turn.screenshot_table_b64 %}
+                        <div class="screenshot">
+                            <img src="data:image/png;base64,{{ turn.screenshot_table_b64 }}" alt="Table screenshot">
+                            <div class="caption">Data Table</div>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+
+    <script>
+        function toggleScenario(header) {
+            header.classList.toggle('open');
+            var body = header.nextElementSibling;
+            body.classList.toggle('open');
+        }
+    </script>
+</body>
+</html>
