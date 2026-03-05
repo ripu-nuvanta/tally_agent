@@ -95,7 +95,7 @@ async def test_trial_balance_report(async_client):
     body = resp.json()
     assert "headers" in body
     assert "rows" in body
-    assert len(body["rows"]) == 3
+    assert len(body["rows"]) == 7
     # First row should be Capital Account
     flat_values = [str(v) for row in body["rows"] for v in row]
     assert any("Capital Account" in v for v in flat_values)
@@ -111,10 +111,10 @@ async def test_balance_sheet_report(async_client):
     body = resp.json()
     assert "headers" in body
     assert "rows" in body
-    assert len(body["rows"]) >= 2
+    assert len(body["rows"]) == 7
     flat_values = [str(v) for row in body["rows"] for v in row]
     assert any("Capital Account" in v for v in flat_values)
-    assert any("Bank Accounts" in v for v in flat_values)
+    assert any("Fixed Assets" in v for v in flat_values)
 
 
 async def test_day_book_report(async_client):

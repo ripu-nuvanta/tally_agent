@@ -9,10 +9,14 @@ Requires: ANTHROPIC_API_KEY set in .env or environment.
 
 import asyncio
 import argparse
+import sys
+
+import anthropic
 
 from backend.tally_bridge.client import TallyClient
 from backend.agents.orchestrator import Orchestrator
 from backend.agents.context import SessionStore
+from backend.config import settings
 
 
 LIVE_TEST_QUERIES = [
@@ -39,7 +43,30 @@ async def run_live_tests(host: str, port: int):
         print(f"FAIL: Cannot reach Tally at {host}:{port}")
         return
 
-    print(f"OK: Tally reachable at {host}:{port}\n")
+    print(f"OK: Tally reachable at {host}:{port}")
+
+    # Verify API key is set
+    if not settings.ANTHROPIC_API_KEY:
+        print("FAIL: ANTHROPIC_API_KEY not set. Add it to .env or environment.")
+        return
+
+    # Quick API key validation
+    try:
+        test_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+        await test_client.messages.create(
+            model=settings.CLAUDE_MODEL, max_tokens=10,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+        print("OK: Anthropic API key valid\n")
+    except anthropic.AuthenticationError:
+        print("FAIL: ANTHROPIC_API_KEY is invalid.")
+        return
+    except anthropic.BadRequestError as e:
+        print("FAIL:"+str(e))
+        if "credit balance" in str(e):
+            print("FAIL: Anthropic API credit balance too low. Top up at https://console.anthropic.com/settings/billing")
+            return
+        raise
 
     orchestrator = Orchestrator()
     store = SessionStore()
@@ -66,6 +93,18 @@ async def run_live_tests(host: str, port: int):
                     print(f"         → {len(data)} items returned")
                 elif isinstance(data, dict) and "rows" in data:
                     print(f"         → {len(data['rows'])} rows returned")
+        except anthropic.BadRequestError as e:
+            if "credit balance" in str(e):
+                print(f"  FAIL: API credits exhausted — aborting remaining tests.")
+                failed += len(LIVE_TEST_QUERIES) - passed - failed
+                break
+            failed += 1
+            print(f"  FAIL: {query}")
+            print(f"         → API error: {e}")
+        except anthropic.APIError as e:
+            failed += 1
+            print(f"  FAIL: {query}")
+            print(f"         → API error: {e.message}")
         except Exception as e:
             failed += 1
             print(f"  FAIL: {query}")
@@ -79,7 +118,7 @@ async def run_live_tests(host: str, port: int):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Live agent pipeline test")
-    parser.add_argument("--host", default="172.26.104.48")
+    parser.add_argument("--host", default=settings.TALLY_HOST)
     parser.add_argument("--port", type=int, default=9000)
     args = parser.parse_args()
     asyncio.run(run_live_tests(args.host, args.port))

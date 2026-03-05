@@ -159,3 +159,77 @@ class TestToolExecution:
             "connection" in result["error"].lower()
             or "connect" in result["error"].lower()
         )
+
+
+class TestTransportErrors:
+    """Issue #9: TransportError variants must be caught gracefully."""
+
+    @pytest.mark.asyncio
+    async def test_server_drops_connection_mid_response(self, aiohttp_server):
+        """Server that closes connection mid-response triggers TransportError."""
+        from aiohttp import web
+        from backend.tally_bridge.exceptions import TallyConnectionError
+
+        async def drop_connection(request: web.Request) -> web.Response:
+            # Start writing a response then raise to simulate connection drop
+            raise ConnectionResetError("simulated drop")
+
+        app = web.Application()
+        app.router.add_post("/", drop_connection)
+        server = await aiohttp_server(app)
+
+        client = TallyClient(host="localhost", port=server.port)
+        result = await execute_tool(client, "list_companies", {})
+
+        assert "error" in result
+        # Should be caught as TallyConnectionError or returned as error dict
+        assert isinstance(result["error"], str)
+
+    @pytest.mark.asyncio
+    async def test_xml_escaping_through_tool_execution(self, mock_tally):
+        """Issue #6: Special chars in tool input go through full pipeline safely."""
+        result = await execute_tool(
+            mock_tally,
+            "get_ledger_transactions",
+            {
+                "ledger_name": "M/s Sharma & Sons",
+                "from_date": "01-04-2025",
+                "to_date": "31-03-2026",
+            },
+        )
+        # Should succeed (mock server returns day_book fixture for LedgerVchs)
+        assert result["success"] is True
+        assert isinstance(result["data"], list)
+
+
+class TestConnectionPooling:
+    """Issue #19: Reused httpx.AsyncClient works across multiple requests."""
+
+    @pytest.mark.asyncio
+    async def test_multiple_requests_reuse_same_client(self, mock_tally):
+        """Multiple sequential tool calls through same TallyClient should all succeed."""
+        r1 = await execute_tool(mock_tally, "list_companies", {})
+        r2 = await execute_tool(mock_tally, "get_trial_balance", {"from_date": "01-04-2025", "to_date": "31-03-2026"})
+        r3 = await execute_tool(mock_tally, "search_ledger", {"search_term": "Cash"})
+
+        assert r1["success"] is True
+        assert r2["success"] is True
+        assert r3["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_client_close_then_reopen(self, aiohttp_server):
+        """After close(), creating a new client should work."""
+        app = create_mock_tally_app()
+        server = await aiohttp_server(app)
+
+        client = TallyClient(host="localhost", port=server.port)
+        r1 = await execute_tool(client, "list_companies", {})
+        assert r1["success"] is True
+
+        await client.close()
+
+        # New client should work fine
+        client2 = TallyClient(host="localhost", port=server.port)
+        r2 = await execute_tool(client2, "list_companies", {})
+        assert r2["success"] is True
+        await client2.close()

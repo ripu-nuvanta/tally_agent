@@ -4,6 +4,7 @@ Gated by RUN_LIVE_TESTS=1 environment variable.
 Requires ANTHROPIC_API_KEY and a reachable Tally instance.
 """
 
+import logging
 import os
 
 import pytest
@@ -11,6 +12,17 @@ import pytest
 from backend.tally_bridge.client import TallyClient
 from backend.agents.orchestrator import Orchestrator
 from backend.agents.context import SessionStore
+
+
+def pytest_configure(config):
+    """Enable DEBUG-level logging for agent modules during live tests."""
+    for name in ("backend.agents.orchestrator", "backend.agents.query_agent", "backend.agents.analysis_agent"):
+        log = logging.getLogger(name)
+        log.setLevel(logging.DEBUG)
+        if not log.handlers:
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter("%(name)s | %(levelname)s | %(message)s"))
+            log.addHandler(handler)
 
 
 def pytest_addoption(parser):

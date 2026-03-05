@@ -316,3 +316,181 @@ class TestQueryAgentToolCalling:
         tr_content = tool_result_msgs[0]["content"][0]
         assert tr_content["tool_use_id"] == "tu_co_1"
         assert json.loads(tr_content["content"]) == tool_data
+
+
+# ---------------------------------------------------------------------------
+# Tests: Parallel tool calls (Fix #1)
+# ---------------------------------------------------------------------------
+
+
+def _make_parallel_tool_call_response(tools: list[tuple[str, dict, str]]):
+    """Mock Claude response with multiple tool_use blocks (parallel calls)."""
+    msg = MagicMock()
+    msg.stop_reason = "tool_use"
+    blocks = []
+    for tool_name, tool_input, tool_id in tools:
+        block = MagicMock()
+        block.type = "tool_use"
+        block.name = tool_name
+        block.input = tool_input
+        block.id = tool_id
+        blocks.append(block)
+    msg.content = blocks
+    return msg
+
+
+class TestQueryAgentParallelToolCalls:
+    @pytest.mark.asyncio
+    async def test_parallel_tool_calls_all_processed(self):
+        """When Claude returns 2 tool_use blocks, both are executed."""
+        from backend.agents.query_agent import QueryAgent
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        parallel_response = _make_parallel_tool_call_response([
+            ("search_ledger", {"search_term": "hdfc"}, "tu_1"),
+            ("get_trial_balance", {"from_date": "01-04-2025", "to_date": "31-03-2026"}, "tu_2"),
+        ])
+        final = _make_text_response("Found HDFC and trial balance.")
+
+        with (
+            patch("backend.agents.query_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.query_agent.execute_tool", new_callable=AsyncMock) as mock_exec,
+        ):
+            mock_claude.messages.create = AsyncMock(
+                side_effect=[parallel_response, final]
+            )
+            mock_exec.side_effect = [
+                {"success": True, "data": [{"name": "HDFC Bank"}]},
+                {"success": True, "data": {"entries": []}},
+            ]
+
+            agent = QueryAgent()
+            result = await agent.execute("Show HDFC and trial balance", mock_client, session)
+
+        assert len(result["tool_results"]) == 2
+        assert result["tool_results"][0]["tool_name"] == "search_ledger"
+        assert result["tool_results"][1]["tool_name"] == "get_trial_balance"
+        assert mock_exec.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_parallel_calls_count_toward_max(self):
+        """2 parallel tool calls in one iteration count as 2 toward max_tool_calls."""
+        from backend.agents.query_agent import QueryAgent
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        parallel_response = _make_parallel_tool_call_response([
+            ("search_ledger", {"search_term": "a"}, "tu_1"),
+            ("search_ledger", {"search_term": "b"}, "tu_2"),
+        ])
+
+        with (
+            patch("backend.agents.query_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.query_agent.execute_tool", new_callable=AsyncMock) as mock_exec,
+        ):
+            mock_claude.messages.create = AsyncMock(return_value=parallel_response)
+            mock_exec.return_value = {"success": True, "data": []}
+
+            agent = QueryAgent(max_tool_calls=2)
+            result = await agent.execute("Search", mock_client, session)
+
+        # 2 parallel calls = 2 toward limit, should trigger safety valve
+        assert len(result["tool_results"]) == 2
+        assert "maximum" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_parallel_tool_results_sent_back_to_claude(self):
+        """All tool_result entries are sent in a single user message."""
+        from backend.agents.query_agent import QueryAgent
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        parallel_response = _make_parallel_tool_call_response([
+            ("list_companies", {}, "tu_a"),
+            ("search_ledger", {"search_term": "x"}, "tu_b"),
+        ])
+        final = _make_text_response("Done.")
+
+        with (
+            patch("backend.agents.query_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.query_agent.execute_tool", new_callable=AsyncMock) as mock_exec,
+        ):
+            mock_claude.messages.create = AsyncMock(side_effect=[parallel_response, final])
+            mock_exec.return_value = {"success": True, "data": []}
+
+            agent = QueryAgent()
+            await agent.execute("Test", mock_client, session)
+
+        # Check second API call's messages contain both tool_results
+        second_call = mock_claude.messages.create.call_args_list[1]
+        messages = second_call.kwargs.get("messages") or second_call[1].get("messages")
+        tool_result_msgs = [
+            m for m in messages
+            if m["role"] == "user" and isinstance(m.get("content"), list)
+            and any(isinstance(c, dict) and c.get("type") == "tool_result" for c in m["content"])
+        ]
+        assert len(tool_result_msgs) == 1
+        assert len(tool_result_msgs[0]["content"]) == 2
+        ids = {c["tool_use_id"] for c in tool_result_msgs[0]["content"]}
+        assert ids == {"tu_a", "tu_b"}
+
+
+# ---------------------------------------------------------------------------
+# Tests: Claude API error handling (Fix #3)
+# ---------------------------------------------------------------------------
+
+
+class TestQueryAgentAPIError:
+    @pytest.mark.asyncio
+    async def test_api_error_returns_error_message(self):
+        """When Claude API raises APIError, agent returns structured error."""
+        from backend.agents.query_agent import QueryAgent
+        import anthropic
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        with patch("backend.agents.query_agent.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                side_effect=anthropic.APIConnectionError(request=MagicMock())
+            )
+
+            agent = QueryAgent()
+            result = await agent.execute("Show sales", mock_client, session)
+
+        assert "Claude API error" in result["message"]
+        assert result["tool_results"] == []
+        # Session should be updated
+        msgs = session.get_messages()
+        assert len(msgs) == 2
+        assert msgs[1]["role"] == "assistant"
+
+    @pytest.mark.asyncio
+    async def test_api_error_mid_loop_preserves_partial_results(self):
+        """If API error happens after first tool call, partial results preserved."""
+        from backend.agents.query_agent import QueryAgent
+        import anthropic
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        tool_call = _make_tool_call_response("search_ledger", {"search_term": "x"}, "tu_1")
+
+        with (
+            patch("backend.agents.query_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.query_agent.execute_tool", new_callable=AsyncMock) as mock_exec,
+        ):
+            mock_claude.messages.create = AsyncMock(
+                side_effect=[tool_call, anthropic.APIConnectionError(request=MagicMock())]
+            )
+            mock_exec.return_value = {"success": True, "data": []}
+
+            agent = QueryAgent()
+            result = await agent.execute("Search", mock_client, session)
+
+        assert "Claude API error" in result["message"]
+        assert len(result["tool_results"]) == 1

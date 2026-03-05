@@ -13,7 +13,7 @@ class TestMasterBuilders:
 
     def test_list_companies_has_export_request(self):
         xml = build_list_companies()
-        assert "<TALLYREQUEST>Export</TALLYREQUEST>" in xml
+        assert "<TALLYREQUEST>EXPORT</TALLYREQUEST>" in xml
 
     def test_list_companies_has_company_collection(self):
         xml = build_list_companies()
@@ -96,17 +96,19 @@ class TestVoucherBuilders:
         assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
         assert "<SVTODATE>30-04-2025</SVTODATE>" in xml
 
-    def test_day_book_report_id(self):
+    def test_day_book_collection_type(self):
         xml = build_day_book("01-04-2025", "30-04-2025")
-        assert "Day Book" in xml
+        assert "<TYPE>Collection</TYPE>" in xml
+        assert "<TYPE>Voucher</TYPE>" in xml
 
     def test_day_book_with_voucher_type(self):
         xml = build_day_book("01-04-2025", "30-04-2025", voucher_type="Sales")
         assert "Sales" in xml
+        assert "VchTypeFilter" in xml
 
     def test_day_book_without_voucher_type(self):
         xml = build_day_book("01-04-2025", "30-04-2025")
-        assert "VOUCHERTYPENAME" not in xml
+        assert "VchTypeFilter" not in xml
 
     def test_ledger_vouchers_includes_ledger_name(self):
         xml = build_ledger_vouchers("HDFC Bank", "01-04-2025", "31-03-2026")
@@ -124,3 +126,47 @@ class TestVoucherBuilders:
     def test_purchase_register(self):
         xml = build_purchase_register("01-04-2025", "31-03-2026")
         assert "Purchase" in xml
+
+
+class TestXmlEscaping:
+    """Issue #6: XML injection — special chars in names must be escaped."""
+
+    def test_ledger_vouchers_escapes_ampersand(self):
+        xml = build_ledger_vouchers("M/s Sharma & Sons", "01-04-2025", "31-03-2026")
+        assert "&amp;" in xml
+        assert "& Sons" not in xml  # raw & should not appear
+
+    def test_ledger_vouchers_escapes_quotes(self):
+        xml = build_ledger_vouchers('He said "hello"', "01-04-2025", "31-03-2026")
+        assert "&quot;" in xml
+
+    def test_ledger_vouchers_escapes_angle_brackets(self):
+        xml = build_ledger_vouchers("A <B> C", "01-04-2025", "31-03-2026")
+        assert "&lt;" in xml
+        assert "&gt;" in xml
+
+    def test_day_book_voucher_type_escapes_ampersand(self):
+        xml = build_day_book("01-04-2025", "30-04-2025", voucher_type="Sales & Returns")
+        assert "&amp;" in xml
+
+    def test_stock_summary_group_escapes_ampersand(self):
+        xml = build_stock_summary("31-03-2026", stock_group="Oil & Gas")
+        assert "&amp;" in xml
+
+
+class TestVoucherTypeTitleCase:
+    """Issue #16: voucher_type_filter must be title-cased for Tally matching."""
+
+    def test_day_book_voucher_type_title_cased(self):
+        xml = build_day_book("01-04-2025", "30-04-2025", voucher_type="sales")
+        assert '"Sales"' in xml
+        assert '"sales"' not in xml
+
+    def test_day_book_voucher_type_uppercase_normalized(self):
+        xml = build_day_book("01-04-2025", "30-04-2025", voucher_type="PURCHASE")
+        assert '"Purchase"' in xml
+        assert '"PURCHASE"' not in xml
+
+    def test_day_book_voucher_type_already_correct(self):
+        xml = build_day_book("01-04-2025", "30-04-2025", voucher_type="Sales")
+        assert '"Sales"' in xml

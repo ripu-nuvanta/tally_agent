@@ -13,17 +13,25 @@ Exports:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import date
 from typing import Any
 
 import anthropic
 
+logger = logging.getLogger(__name__)
+
 from backend.config import settings
 from backend.agents.prompts import build_orchestrator_prompt
 from backend.agents.query_agent import QueryAgent
+from backend.agents.analysis_agent import AnalysisAgent
+from backend.agents.chart_agent import ChartAgent
 from backend.agents.context import SessionContext
 from backend.tally_bridge.client import TallyClient
 from backend.utils.date_utils import format_for_tally
+
+# Query types that require analysis post-processing
+_ANALYSIS_TYPES = {"comparison", "trend", "top_n", "aggregation"}
 
 # Module-level client — tests patch this object.
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -47,6 +55,8 @@ class Orchestrator:
 
     def __init__(self) -> None:
         self.query_agent = QueryAgent()
+        self.analysis_agent = AnalysisAgent()
+        self.chart_agent = ChartAgent()
 
     async def process_query(
         self,
@@ -67,6 +77,11 @@ class Orchestrator:
         """
         classification = await self._classify(user_message)
         query_type = classification.get("query_type", "simple_lookup")
+        requires_chart = classification.get("requires_chart", False)
+        logger.info(
+            "Orchestrator — classified %r as query_type=%s, requires_chart=%s",
+            user_message[:80], query_type, requires_chart,
+        )
 
         # --- Greeting ---
         if query_type == "greeting":
@@ -97,14 +112,53 @@ class Orchestrator:
             }
 
         # --- All other types: route to QueryAgent ---
+        logger.info("Orchestrator — routing to QueryAgent")
         agent_result = await self.query_agent.execute(user_message, client, session)
-        data = _extract_last_data(agent_result.get("tool_results", []))
+        tool_results = agent_result.get("tool_results", [])
+        all_data = _extract_all_data(tool_results)
+        raw_data = all_data[-1] if all_data else None
+
+        logger.info(
+            "Orchestrator — QueryAgent returned %d tool call(s), %d data set(s)",
+            len(tool_results), len(all_data),
+        )
+
+        # --- Analysis Agent (for comparison/trend/top_n/aggregation) ---
+        message = agent_result["message"]
+        data = raw_data
+
+        if query_type in _ANALYSIS_TYPES and raw_data is not None:
+            logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
+            analysis_input = all_data if len(all_data) > 1 else raw_data
+            analysis_result = await self.analysis_agent.execute(
+                analysis_input, user_message, query_type,
+            )
+            message = analysis_result["message"]
+            data = analysis_result.get("data", raw_data)
+            logger.info(
+                "Orchestrator — AnalysisAgent returned %d tool call(s), chart_suggestion=%s",
+                len(analysis_result.get("tool_results", [])),
+                analysis_result.get("chart_suggestion"),
+            )
+
+            # Replace the query agent's assistant message with the analysis result
+            # so session history reflects what the user actually sees.
+            if session.messages and session.messages[-1]["role"] == "assistant":
+                session.messages[-1]["content"] = message
+        else:
+            analysis_result = None
+
+        # --- Chart Agent (when chart is needed) ---
+        chart = None
+        if requires_chart:
+            chart_input = analysis_result if analysis_result is not None else {"data": raw_data}
+            chart = self.chart_agent.execute(chart_input, query_type, requires_chart)
 
         return {
             "query_type": query_type,
-            "message": agent_result["message"],
+            "message": message,
             "data": data,
-            "chart": None,
+            "chart": chart,
             "session_id": session.session_id,
         }
 
@@ -118,12 +172,15 @@ class Orchestrator:
         current_date = format_for_tally(date.today())
         system_prompt = build_orchestrator_prompt(current_date)
 
-        response = await anthropic_client.messages.create(
-            model=settings.CLAUDE_MODEL,
-            max_tokens=512,
-            system=system_prompt,
-            messages=[{"role": "user", "content": user_message}],
-        )
+        try:
+            response = await anthropic_client.messages.create(
+                model=settings.CLAUDE_MODEL,
+                max_tokens=512,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_message}],
+            )
+        except anthropic.APIError:
+            return {"query_type": "simple_lookup", "requires_chart": False}
 
         # Extract text from response
         text = ""
@@ -135,17 +192,20 @@ class Orchestrator:
         try:
             return json.loads(text)
         except (json.JSONDecodeError, TypeError):
+            logger.warning("Classification fallback: could not parse Claude response as JSON. Raw text: %s", text)
             return {"query_type": "simple_lookup", "requires_chart": False}
 
 
-def _extract_last_data(tool_results: list[dict]) -> dict | None:
-    """Find the last successful tool result that contains data.
+def _extract_all_data(tool_results: list[dict]) -> list[dict]:
+    """Extract all successful tool result data entries.
 
-    Iterates tool_results in reverse, returning the ``data`` from the first
-    result where ``result.success == True`` and ``result.data`` is present.
+    Returns a list of data dicts from tool results where ``success=True``
+    and ``data`` is present.  This enables comparison queries that need
+    multiple datasets (e.g. Q1 vs Q2 fetched via separate tool calls).
     """
-    for tr in reversed(tool_results):
+    data_list = []
+    for tr in tool_results:
         result = tr.get("result", {})
         if result.get("success") is True and result.get("data") is not None:
-            return result["data"]
-    return None
+            data_list.append(result["data"])
+    return data_list

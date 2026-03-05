@@ -2,7 +2,7 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    TALLY_HOST: str = "192.168.18.219"
+    TALLY_HOST: str = "localhost"
     TALLY_PORT: int = 9000
     ANTHROPIC_API_KEY: str = ""
     CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     def TALLY_URL(self) -> str:
         return f"http://{self.TALLY_HOST}:{self.TALLY_PORT}"
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
 
 settings = Settings()

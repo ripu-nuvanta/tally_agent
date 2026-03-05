@@ -3,6 +3,8 @@
 import time
 import uuid
 
+from backend.config import settings
+
 
 class SessionContext:
     """Tracks conversation state for a single user session."""
@@ -17,11 +19,13 @@ class SessionContext:
         self.company: str | None = company
         self.messages: list[dict] = []
         self.created_at: float = time.time()
+        self.last_activity: float = time.time()
         self._max_messages: int = max_messages
 
     def add_message(self, role: str, content: str) -> None:
         """Append a message and trim to max_messages (keeping the most recent)."""
         self.messages.append({"role": role, "content": content})
+        self.last_activity = time.time()
         if len(self.messages) > self._max_messages:
             self.messages = self.messages[-self._max_messages :]
 
@@ -33,9 +37,20 @@ class SessionContext:
 class SessionStore:
     """In-memory store of session contexts with TTL-based expiry."""
 
-    def __init__(self, ttl_minutes: int = 60) -> None:
+    def __init__(self, ttl_minutes: int = settings.SESSION_TTL_MINUTES) -> None:
         self._sessions: dict[str, SessionContext] = {}
         self._ttl_seconds: float = ttl_minutes * 60
+
+    def cleanup_expired(self) -> None:
+        """Remove all sessions whose last_activity exceeds the TTL."""
+        now = time.time()
+        expired = [
+            sid
+            for sid, ctx in self._sessions.items()
+            if now - ctx.last_activity > self._ttl_seconds
+        ]
+        for sid in expired:
+            del self._sessions[sid]
 
     def get_or_create(
         self,
@@ -48,9 +63,12 @@ class SessionStore:
         - If session_id exists but is expired, delete it and create a new one.
         - If no session_id is given, create a new session.
         """
+        if len(self._sessions) > 100:
+            self.cleanup_expired()
+
         if session_id and session_id in self._sessions:
             ctx = self._sessions[session_id]
-            if time.time() - ctx.created_at > self._ttl_seconds:
+            if time.time() - ctx.last_activity > self._ttl_seconds:
                 del self._sessions[session_id]
             else:
                 if company is not None:

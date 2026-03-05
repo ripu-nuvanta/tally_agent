@@ -223,3 +223,21 @@ class TestExecuteTool:
         ):
             result = await execute_tool(mock_client, "list_companies", {})
         assert result == {"success": True, "data": [{"name": "Acme"}]}
+
+    @pytest.mark.asyncio
+    async def test_unexpected_error_logs_exception(self):
+        """Issue #7: Unexpected exceptions must be logged before returning error."""
+        from unittest.mock import AsyncMock, patch
+
+        mock_client = AsyncMock()
+        with patch.dict(
+            TOOL_HANDLERS,
+            {"list_companies": AsyncMock(side_effect=RuntimeError("boom"))},
+        ):
+            with patch("backend.agents.tools.logger") as mock_logger:
+                result = await execute_tool(mock_client, "list_companies", {})
+
+                mock_logger.exception.assert_called_once()
+
+        assert "error" in result
+        assert "boom" in result["error"]

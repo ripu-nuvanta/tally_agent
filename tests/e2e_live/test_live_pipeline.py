@@ -46,12 +46,7 @@ def log_result(test_name: str, query: str, result: dict) -> None:
     print(f"  session_id: {result.get('session_id')}")
 
     msg = result.get("message", "")
-    # Truncate long messages for readability
-    if len(msg) > 500:
-        print(f"  message: {msg[:500]}...")
-        print(f"  (message truncated, full length: {len(msg)} chars)")
-    else:
-        print(f"  message: {msg}")
+    print(f"  message: {msg}")
 
     data = result.get("data")
     if data:

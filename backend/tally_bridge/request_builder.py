@@ -4,6 +4,8 @@ All functions are pure — no I/O, no side effects. Each returns an XML string.
 Tally date format: DD-MM-YYYY
 """
 
+from xml.sax.saxutils import escape as xml_escape
+
 
 def _wrap_envelope(header_id: str, body_desc: str) -> str:
     return f"""<ENVELOPE>
@@ -51,6 +53,54 @@ def _wrap_collection_envelope(collection_name: str, object_type: str, native_met
 </ENVELOPE>"""
 
 
+def _voucher_native_methods() -> str:
+    """Return NATIVEMETHOD elements for the specific voucher fields we need.
+    Using * fetches ALL fields and can overload Tally with large datasets.
+    """
+    fields = ["Date", "VoucherTypeName", "VoucherNumber", "PartyLedgerName", "Narration", "AllLedgerEntries"]
+    return "\n".join(f"<NATIVEMETHOD>{f}</NATIVEMETHOD>" for f in fields)
+
+
+def _wrap_voucher_collection(collection_name: str, from_date: str, to_date: str, voucher_type_filter: str | None = None, company: str | None = None) -> str:
+    """Build a TDL Collection query for vouchers. Returns voucher objects with specific fields only."""
+    company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
+    filter_xml = ""
+    system_xml = ""
+    if voucher_type_filter:
+        voucher_type_filter = voucher_type_filter.title()
+        safe_type = xml_escape(voucher_type_filter, {'"': "&quot;"})
+        filter_xml = f"<FILTER>VchTypeFilter</FILTER>"
+        system_xml = f'<SYSTEM TYPE="Formulae" NAME="VchTypeFilter">$VoucherTypeName = "{safe_type}"</SYSTEM>'
+    return f"""<ENVELOPE>
+<HEADER>
+<VERSION>1</VERSION>
+<TALLYREQUEST>Export</TALLYREQUEST>
+<TYPE>Collection</TYPE>
+<ID>{collection_name}</ID>
+</HEADER>
+<BODY>
+<DESC>
+<STATICVARIABLES>
+<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+<SVFROMDATE>{from_date}</SVFROMDATE>
+<SVTODATE>{to_date}</SVTODATE>
+{company_var}
+</STATICVARIABLES>
+<TDL>
+<TDLMESSAGE>
+<COLLECTION NAME="{collection_name}" ISMODIFY="No">
+<TYPE>Voucher</TYPE>
+{filter_xml}
+{_voucher_native_methods()}
+</COLLECTION>
+{system_xml}
+</TDLMESSAGE>
+</TDL>
+</DESC>
+</BODY>
+</ENVELOPE>"""
+
+
 def _wrap_report_envelope(report_id: str, from_date: str, to_date: str, company: str | None = None, extra_vars: str = "") -> str:
     company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
     return f"""<ENVELOPE>
@@ -77,7 +127,21 @@ def _wrap_report_envelope(report_id: str, from_date: str, to_date: str, company:
 # --- Master Queries ---
 
 def build_list_companies() -> str:
-    return _wrap_envelope("List of Companies", "")
+    return """<ENVELOPE>
+<HEADER>
+<VERSION>1</VERSION>
+<TALLYREQUEST>EXPORT</TALLYREQUEST>
+<TYPE>COLLECTION</TYPE>
+<ID>List of Companies</ID>
+</HEADER>
+<BODY>
+<DESC>
+<STATICVARIABLES>
+<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+</STATICVARIABLES>
+</DESC>
+</BODY>
+</ENVELOPE>"""
 
 def build_list_ledgers() -> str:
     return _wrap_collection_envelope("CustomLedgerList", "Ledger", ["Name", "Parent", "ClosingBalance", "OpeningBalance"])
@@ -107,23 +171,28 @@ def build_bills_payable(as_on_date: str, company: str | None = None) -> str:
     return _wrap_report_envelope("Bills Payable", as_on_date, as_on_date, company)
 
 def build_stock_summary(as_on_date: str, stock_group: str | None = None, company: str | None = None) -> str:
-    extra = f"<SVSTOCKGROUP>{stock_group}</SVSTOCKGROUP>" if stock_group else ""
+    extra = f"<SVSTOCKGROUP>{xml_escape(stock_group)}</SVSTOCKGROUP>" if stock_group else ""
     return _wrap_report_envelope("Stock Summary", as_on_date, as_on_date, company, extra)
 
 
 # --- Voucher Queries ---
 
 def build_day_book(from_date: str, to_date: str, voucher_type: str | None = None, company: str | None = None) -> str:
-    extra = f"<VOUCHERTYPENAME>{voucher_type}</VOUCHERTYPENAME>" if voucher_type else ""
-    return _wrap_report_envelope("Day Book", from_date, to_date, company, extra)
+    return _wrap_voucher_collection("DayBookVchs", from_date, to_date, voucher_type, company)
 
 def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, company: str | None = None) -> str:
+    """Fetch vouchers for a specific ledger using TDL Collection with filter.
+    Uses $PartyLedgerName comparison instead of $$IsLedgerInVoucher because
+    the latter cannot handle ledger names containing commas.
+    """
+    company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
+    safe_name = xml_escape(ledger_name, {'"': "&quot;"})
     return f"""<ENVELOPE>
 <HEADER>
 <VERSION>1</VERSION>
 <TALLYREQUEST>Export</TALLYREQUEST>
-<TYPE>Data</TYPE>
-<ID>Ledger Vouchers</ID>
+<TYPE>Collection</TYPE>
+<ID>LedgerVchs</ID>
 </HEADER>
 <BODY>
 <DESC>
@@ -131,15 +200,24 @@ def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, compan
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
 <SVFROMDATE>{from_date}</SVFROMDATE>
 <SVTODATE>{to_date}</SVTODATE>
-<LEDGERNAME>{ledger_name}</LEDGERNAME>
-{f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""}
+{company_var}
 </STATICVARIABLES>
+<TDL>
+<TDLMESSAGE>
+<COLLECTION NAME="LedgerVchs" ISMODIFY="No">
+<TYPE>Voucher</TYPE>
+<FILTER>LedgerFilter</FILTER>
+{_voucher_native_methods()}
+</COLLECTION>
+<SYSTEM TYPE="Formulae" NAME="LedgerFilter">$PartyLedgerName = "{safe_name}"</SYSTEM>
+</TDLMESSAGE>
+</TDL>
 </DESC>
 </BODY>
 </ENVELOPE>"""
 
 def build_sales_register(from_date: str, to_date: str, company: str | None = None) -> str:
-    return _wrap_report_envelope("Sales Register", from_date, to_date, company, "<VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>")
+    return _wrap_voucher_collection("SalesVchs", from_date, to_date, "Sales", company)
 
 def build_purchase_register(from_date: str, to_date: str, company: str | None = None) -> str:
-    return _wrap_report_envelope("Purchase Register", from_date, to_date, company, "<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>")
+    return _wrap_voucher_collection("PurchaseVchs", from_date, to_date, "Purchase", company)

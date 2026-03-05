@@ -9,9 +9,12 @@ Exports:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from backend.tally_bridge.client import TallyClient
+
+logger = logging.getLogger(__name__)
 from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseError
 from backend.tally_bridge.models import ReportResponse, OutstandingBill, Ledger, Company
 from backend.tally_bridge.queries import masters, reports, vouchers
@@ -391,3 +394,6 @@ async def execute_tool(
         return {"error": str(exc)}
     except TallyResponseError as exc:
         return {"error": str(exc)}
+    except Exception as exc:
+        logger.exception("Unexpected error in tool %r", tool_name)
+        return {"error": f"Unexpected error in {tool_name!r}: {exc}"}

@@ -2488,3 +2488,45 @@ Expected: `All Phase 1 imports OK`
 git add -A
 git commit -m "chore: Phase 1 complete — Tally Bridge Layer with full test suite"
 ```
+
+---
+
+## Phase 1 Completion Report
+
+### Live Tally Fixes Applied
+
+The following issues were discovered and fixed during live testing against TallyPrime at `192.168.18.219:9000`:
+
+1. **`build_list_companies()` in `request_builder.py`** — Changed from `TYPE=Data` / `TALLYREQUEST=Export` to `TYPE=COLLECTION` / `TALLYREQUEST=EXPORT`. Tally rejected the original payload with `LINEERROR: Could not find Report 'List of Companies'!`.
+
+2. **`_sanitize_xml()` added to `response_parser.py`** — Tally emits invalid XML character references like `&#4;` (ASCII EOT control character) as field separators in some responses (e.g. `&#4; Primary` in parent group fields). Python's `xml.etree.ElementTree` raises `ParseError` on these. The sanitizer strips control character references (`&#0;` through `&#31;` excluding valid ones like `&#9;`, `&#10;`, `&#13;`) before parsing.
+
+3. **`parse_ledger_list()` in `response_parser.py`** — Added `NAME` attribute fallback. Tally returns ledger names as XML attributes (`<LEDGER NAME="Cash">`) with the `<NAME>` element nested deep inside `<LANGUAGENAME.LIST>/<NAME.LIST>/<NAME>`, not as a direct child. Parser now tries `_get_text(ledger, "NAME")` first, then falls back to `ledger.get("NAME", "")`.
+
+4. **`list_companies()` in `queries/masters.py`** — Scoped company search to `DATA/COLLECTION` subtree only. Tally responses include a `CMPINFO` section with `<COMPANY>0</COMPANY>` (a count field), which was incorrectly parsed as a company named "0".
+
+5. **`pyproject.toml`** — Added `pytest-aiohttp>=1.0` to dev dependencies for mock Tally server integration tests.
+
+### Live Tally Test Results (192.168.18.219:9000)
+
+Tested: 2026-03-03 | Company: NUVANTA AI TECHNOLOGIES PRIVATE LIMITED | FY: 2025-26
+
+| Query Function | Result | Status |
+|---|---|---|
+| `list_companies` | 1 company found | OK |
+| `list_ledgers` | 82 ledgers found | OK |
+| `search_ledger("Cash")` | 1 match | OK |
+| `trial_balance` | 7 rows | OK |
+| `profit_and_loss` | 6 rows | OK |
+| `balance_sheet` | 7 rows | OK |
+| `bills_receivable` | 0 (none outstanding) | OK |
+| `bills_payable` | 0 (none outstanding) | OK |
+| `day_book` | 1 entry | OK |
+| `sales_register` | 0 entries | OK |
+| `purchase_register` | 0 entries | OK |
+
+### Final Test Suite Stats
+
+- **89 tests** (75 unit + 14 integration), all passing
+- **86% code coverage** across `backend/`
+- All 11 query functions verified against live TallyPrime instance
