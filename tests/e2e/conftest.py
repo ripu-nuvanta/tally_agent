@@ -44,11 +44,11 @@ async def e2e_client(aiohttp_server, make_mock_claude):
         analysis_agent_responses=None,
     ):
         """Configure mock Claude responses for each agent."""
-        if orchestrator_responses:
+        if orchestrator_responses is not None:
             mock_clients["orchestrator"] = MockAnthropicClient(orchestrator_responses)
-        if query_agent_responses:
+        if query_agent_responses is not None:
             mock_clients["query_agent"] = MockAnthropicClient(query_agent_responses)
-        if analysis_agent_responses:
+        if analysis_agent_responses is not None:
             mock_clients["analysis_agent"] = MockAnthropicClient(analysis_agent_responses)
 
     yield async_client, set_responses, mock_clients

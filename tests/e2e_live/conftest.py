@@ -34,7 +34,7 @@ def tally_port(request):
     return request.config.getoption("--port")
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture
 async def tally_client(tally_host, tally_port):
     """Real TallyClient connected to a live Tally instance."""
     client = TallyClient(host=tally_host, port=tally_port)

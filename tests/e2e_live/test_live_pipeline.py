@@ -4,15 +4,7 @@ Run with:
     RUN_LIVE_TESTS=1 PYTHONPATH=. pytest tests/e2e_live/ -v --host 192.168.18.219 --port 9000
 """
 
-import os
-
 import pytest
-
-
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("RUN_LIVE_TESTS"),
-    reason="RUN_LIVE_TESTS not set",
-)
 
 
 # ---------------------------------------------------------------------------

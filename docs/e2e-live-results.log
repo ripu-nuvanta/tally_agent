@@ -1,0 +1,88 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.13.5, pytest-9.0.2, pluggy-1.6.0 -- /Users/ripu/work/nuvanta_repos/tally_agent/.venv/bin/python3
+cachedir: .pytest_cache
+rootdir: /Users/ripu/work/nuvanta_repos/tally_agent
+configfile: pyproject.toml
+plugins: anyio-4.12.1, asyncio-1.3.0, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 10 items
+
+tests/e2e_live/test_live_pipeline.py::test_live_greeting PASSED          [ 10%]
+tests/e2e_live/test_live_pipeline.py::test_live_list_companies PASSED    [ 20%]
+tests/e2e_live/test_live_pipeline.py::test_live_trial_balance PASSED     [ 30%]
+tests/e2e_live/test_live_pipeline.py::test_live_profit_and_loss PASSED   [ 40%]
+tests/e2e_live/test_live_pipeline.py::test_live_balance_sheet PASSED     [ 50%]
+tests/e2e_live/test_live_pipeline.py::test_live_receivables PASSED       [ 60%]
+tests/e2e_live/test_live_pipeline.py::test_live_sales_register PASSED    [ 70%]
+tests/e2e_live/test_live_pipeline.py::test_live_top_customers PASSED     [ 80%]
+tests/e2e_live/test_live_pipeline.py::test_live_comparison PASSED        [ 90%]
+tests/e2e_live/test_live_pipeline.py::test_live_clarification PASSED     [100%]
+tests/e2e_live/test_live_pipeline.py::test_live_clarification ERROR      [100%]
+
+==================================== ERRORS ====================================
+_________________ ERROR at teardown of test_live_clarification _________________
+
+    def finalizer() -> None:
+        """Yield again, to finalize."""
+    
+        async def async_finalizer() -> None:
+            try:
+                await gen_obj.__anext__()
+            except StopAsyncIteration:
+                pass
+            else:
+                msg = "Async generator fixture didn't stop."
+                msg += "Yield only once."
+                raise ValueError(msg)
+    
+>       runner.run(async_finalizer(), context=context)
+
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:330: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/base_events.py:725: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+.venv/lib/python3.13/site-packages/pytest_asyncio/plugin.py:322: in async_finalizer
+    await gen_obj.__anext__()
+tests/e2e_live/conftest.py:45: in tally_client
+    await client.close()
+backend/tally_bridge/client.py:44: in close
+    await self._client.aclose()
+.venv/lib/python3.13/site-packages/httpx/_client.py:1985: in aclose
+    await self._transport.aclose()
+.venv/lib/python3.13/site-packages/httpx/_transports/default.py:406: in aclose
+    await self._pool.aclose()
+.venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py:353: in aclose
+    await self._close_connections(closing_connections)
+.venv/lib/python3.13/site-packages/httpcore/_async/connection_pool.py:345: in _close_connections
+    await connection.aclose()
+.venv/lib/python3.13/site-packages/httpcore/_async/connection.py:173: in aclose
+    await self._connection.aclose()
+.venv/lib/python3.13/site-packages/httpcore/_async/http11.py:258: in aclose
+    await self._network_stream.aclose()
+.venv/lib/python3.13/site-packages/httpcore/_backends/anyio.py:53: in aclose
+    await self._stream.aclose()
+.venv/lib/python3.13/site-packages/anyio/_backends/_asyncio.py:1329: in aclose
+    self._transport.close()
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/selector_events.py:1205: in close
+    super().close()
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/selector_events.py:865: in close
+    self._loop.call_soon(self._call_connection_lost, None)
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/base_events.py:833: in call_soon
+    self._check_closed()
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ 
+
+self = <_UnixSelectorEventLoop running=False closed=True debug=False>
+
+    def _check_closed(self):
+        if self._closed:
+>           raise RuntimeError('Event loop is closed')
+E           RuntimeError: Event loop is closed
+
+/opt/homebrew/Cellar/python@3.13/3.13.5/Frameworks/Python.framework/Versions/3.13/lib/python3.13/asyncio/base_events.py:556: RuntimeError
+=========================== short test summary info ============================
+ERROR tests/e2e_live/test_live_pipeline.py::test_live_clarification - Runtime...
+=================== 10 passed, 1 error in 157.39s (0:02:37) ====================
