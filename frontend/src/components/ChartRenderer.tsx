@@ -35,7 +35,7 @@ export default function ChartRenderer({ chart }: ChartRendererProps) {
   const valueKeys = allKeys.slice(1);
 
   return (
-    <div className="mt-3 border border-gray-200 rounded-lg p-4 bg-white">
+    <div className="mt-3 border border-gray-200 rounded-lg p-4 bg-white" data-testid="chart-container" data-chart-spec={JSON.stringify(chart)}>
       <h3 className="text-sm font-medium text-gray-700 mb-3">{title}</h3>
       <ResponsiveContainer width="100%" height={300}>
         {chart_type === "pie" ? (

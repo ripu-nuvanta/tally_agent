@@ -58,4 +58,14 @@ describe("ChartRenderer", () => {
     const { container } = render(<ChartRenderer chart={empty} />);
     expect(container.firstChild).toBeNull();
   });
+
+  it("exposes chart spec as data attribute", () => {
+    const { container } = render(<ChartRenderer chart={barChart} />);
+    const el = container.querySelector("[data-chart-spec]");
+    expect(el).not.toBeNull();
+    const spec = JSON.parse(el!.getAttribute("data-chart-spec")!);
+    expect(spec.chart_type).toBe("bar");
+    expect(spec.title).toBe("Sales by Customer");
+    expect(spec.data).toHaveLength(2);
+  });
 });

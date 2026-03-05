@@ -1,0 +1,385 @@
+"""Collection phase — drive Playwright against the frontend and capture responses.
+
+Usage:
+    PYTHONPATH=. python tests/eval/collect.py --scenario all --host <IP> --port 9000
+    PYTHONPATH=. python tests/eval/collect.py --scenario financial_deep_dive
+"""
+
+import argparse
+import asyncio
+import json
+import time
+from datetime import datetime
+from pathlib import Path
+
+import yaml
+from playwright.async_api import async_playwright, Page
+
+SCENARIOS_DIR = Path(__file__).parent / "scenarios"
+GOLDEN_DIR = Path(__file__).parent / "golden"
+RESULTS_DIR = Path(__file__).parent / "results"
+
+FRONTEND_URL = "http://localhost:5173"
+
+# Follow-up map for clarification responses (reuse pattern from e2e_live)
+FOLLOWUP_MAP = {
+    "trial balance": "Show trial balance for the current financial year",
+    "balance": "Show the trial balance",
+    "which": "The current financial year",
+    "specify": "For the current financial year April 2025 to March 2026",
+    "date": "From April 2025 to March 2026",
+    "period": "Current financial year",
+    "company": "The currently loaded company",
+}
+
+
+def load_scenario(name: str) -> dict:
+    """Load a scenario YAML file by name."""
+    path = SCENARIOS_DIR / f"{name}.yaml"
+    if not path.exists():
+        raise FileNotFoundError(f"Scenario not found: {path}")
+    return yaml.safe_load(path.read_text())
+
+
+def load_golden(scenario_name: str) -> dict | None:
+    """Load golden fixture data if available."""
+    path = GOLDEN_DIR / f"{scenario_name}.json"
+    if path.exists():
+        return json.loads(path.read_text())
+    return None
+
+
+def generate_followup(clarification_msg: str, original_query: str) -> str:
+    """Generate follow-up for clarification responses."""
+    lower = clarification_msg.lower()
+    for keyword, response in FOLLOWUP_MAP.items():
+        if keyword in lower:
+            return response
+    return f"{original_query} for the current financial year April 2025 to March 2026"
+
+
+async def wait_for_response(page: Page, message_count_before: int, timeout: float = 120) -> None:
+    """Wait for a new non-loading assistant message to appear.
+
+    Waits until:
+    1. A new message bubble appears (count increases)
+    2. The loading indicator (bounce dots) disappears
+    """
+    start = time.time()
+    while time.time() - start < timeout:
+        # Count current message bubbles (both user and assistant)
+        count = await page.locator("[class*='justify-start'], [class*='justify-end']").count()
+        if count > message_count_before:
+            # Check that loading dots are gone
+            loading = await page.locator(".animate-bounce").count()
+            if loading == 0:
+                # Give a small buffer for DOM to settle
+                await page.wait_for_timeout(500)
+                return
+        await page.wait_for_timeout(500)
+    raise TimeoutError(f"No response after {timeout}s")
+
+
+async def extract_last_response(page: Page) -> dict:
+    """Extract the last assistant message content from the page.
+
+    Returns dict with: message, has_table, table_data, has_chart, chart_spec
+    """
+    result = {
+        "response_message": "",
+        "has_table": False,
+        "table_data": None,
+        "has_chart": False,
+        "chart_spec": None,
+    }
+
+    # Get all assistant message bubbles (left-aligned)
+    assistant_msgs = page.locator("[class*='justify-start']")
+    count = await assistant_msgs.count()
+    if count == 0:
+        return result
+
+    last_msg = assistant_msgs.nth(count - 1)
+
+    # Extract text content
+    prose_el = last_msg.locator(".prose")
+    if await prose_el.count() > 0:
+        result["response_message"] = (await prose_el.first.inner_text()).strip()
+
+    # Check for data table
+    table_el = last_msg.locator("table")
+    if await table_el.count() > 0:
+        result["has_table"] = True
+        # Extract table headers
+        headers = []
+        th_els = table_el.first.locator("th")
+        for i in range(await th_els.count()):
+            headers.append(await th_els.nth(i).inner_text())
+        # Extract table rows
+        rows = []
+        tr_els = table_el.first.locator("tbody tr")
+        for i in range(await tr_els.count()):
+            row = []
+            td_els = tr_els.nth(i).locator("td")
+            for j in range(await td_els.count()):
+                row.append(await td_els.nth(j).inner_text())
+            rows.append(row)
+        result["table_data"] = {"headers": headers, "rows": rows}
+
+    # Check for chart (via data-chart-spec attribute)
+    chart_el = last_msg.locator("[data-chart-spec]")
+    if await chart_el.count() > 0:
+        result["has_chart"] = True
+        spec_str = await chart_el.first.get_attribute("data-chart-spec")
+        if spec_str:
+            try:
+                result["chart_spec"] = json.loads(spec_str)
+            except json.JSONDecodeError:
+                result["chart_spec"] = None
+
+    return result
+
+
+async def screenshot_element(page: Page, selector: str, path: Path) -> bool:
+    """Take a screenshot of a specific element. Returns True if successful."""
+    el = page.locator(selector)
+    if await el.count() > 0:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        await el.first.screenshot(path=str(path))
+        return True
+    return False
+
+
+async def collect_scenario(
+    scenario: dict,
+    frontend_url: str = FRONTEND_URL,
+    golden_data: dict | None = None,
+) -> dict:
+    """Run a full scenario through the frontend and collect responses.
+
+    Args:
+        scenario: Parsed YAML scenario dict
+        frontend_url: URL of the running frontend
+        golden_data: Optional golden fixture data for ground truth
+
+    Returns:
+        Transcript dict with metadata and per-turn results
+    """
+    scenario_name = scenario["name"].lower().replace(" ", "_").replace("-", "_")
+    screenshots_dir = RESULTS_DIR / "screenshots"
+    screenshots_dir.mkdir(parents=True, exist_ok=True)
+
+    transcript = {
+        "scenario_name": scenario["name"],
+        "scenario_file": scenario_name,
+        "timestamp": datetime.now().isoformat(),
+        "frontend_url": frontend_url,
+        "turns": [],
+    }
+
+    async with async_playwright() as p:
+        browser = await p.chromium.launch(headless=True)
+        context = await browser.new_context(viewport={"width": 1280, "height": 900})
+        page = await context.new_page()
+
+        # Navigate to frontend
+        await page.goto(frontend_url)
+
+        # Wait for app to load — look for the chat input
+        await page.wait_for_selector("textarea", timeout=30000)
+        # Give extra time for CompanySelector to populate
+        await page.wait_for_timeout(2000)
+
+        for turn_idx, turn_def in enumerate(scenario["turns"]):
+            query = turn_def["query"]
+            expect = turn_def.get("expect", {})
+
+            print(f"  Turn {turn_idx + 1}/{len(scenario['turns'])}: {query[:60]}...")
+
+            # Count messages before sending
+            msg_count_before = await page.locator("[class*='justify-start'], [class*='justify-end']").count()
+
+            # Type and submit query
+            textarea = page.locator("textarea")
+            await textarea.fill(query)
+
+            # Press Enter to submit
+            await textarea.press("Enter")
+
+            # Wait for response
+            start_time = time.time()
+            try:
+                await wait_for_response(page, msg_count_before + 1)  # +1 for user msg
+                latency = time.time() - start_time
+            except TimeoutError:
+                latency = time.time() - start_time
+                print(f"    TIMEOUT after {latency:.1f}s")
+
+            # Extract response
+            response = await extract_last_response(page)
+
+            # Check if it's a clarification — if so, handle follow-up
+            is_clarification = False
+            msg_lower = response["response_message"].lower()
+            if any(kw in msg_lower for kw in ["which", "specify", "clarif", "could you", "what type", "more specific"]):
+                is_clarification = True
+                followup = generate_followup(response["response_message"], query)
+                print(f"    Clarification detected, following up: {followup[:60]}...")
+
+                msg_count_before = await page.locator("[class*='justify-start'], [class*='justify-end']").count()
+                await textarea.fill(followup)
+                await textarea.press("Enter")
+
+                try:
+                    await wait_for_response(page, msg_count_before + 1)
+                    latency += time.time() - start_time
+                except TimeoutError:
+                    pass
+
+                response = await extract_last_response(page)
+
+            # Screenshots
+            chart_screenshot = None
+            table_screenshot = None
+
+            # Screenshot chart if present (in last assistant message)
+            assistant_msgs = page.locator("[class*='justify-start']")
+            last_msg_count = await assistant_msgs.count()
+            if last_msg_count > 0:
+                last_msg = assistant_msgs.nth(last_msg_count - 1)
+
+                if response["has_chart"]:
+                    chart_path = screenshots_dir / f"{scenario_name}_turn{turn_idx + 1}_chart.png"
+                    chart_el = last_msg.locator("[data-testid='chart-container']")
+                    if await chart_el.count() > 0:
+                        await chart_el.first.screenshot(path=str(chart_path))
+                        chart_screenshot = str(chart_path)
+
+                if response["has_table"]:
+                    table_path = screenshots_dir / f"{scenario_name}_turn{turn_idx + 1}_table.png"
+                    table_el = last_msg.locator("table")
+                    if await table_el.count() > 0:
+                        await table_el.first.screenshot(path=str(table_path))
+                        table_screenshot = str(table_path)
+
+            # Build turn result
+            ground_truth_key = expect.get("ground_truth_key")
+            ground_truth = None
+            if ground_truth_key and golden_data:
+                ground_truth = golden_data.get(ground_truth_key)
+
+            turn_result = {
+                "turn_index": turn_idx + 1,
+                "query": query,
+                "is_clarification": is_clarification,
+                "response_message": response["response_message"],
+                "response_data": response["table_data"],
+                "has_table": response["has_table"],
+                "has_chart": response["has_chart"],
+                "chart_spec": response["chart_spec"],
+                "screenshot_chart": chart_screenshot,
+                "screenshot_table": table_screenshot,
+                "latency_seconds": round(latency, 2),
+                "expected": expect,
+                "ground_truth": ground_truth,
+            }
+
+            transcript["turns"].append(turn_result)
+            print(f"    Done ({latency:.1f}s) — table={response['has_table']}, chart={response['has_chart']}")
+
+        # Full page screenshot at end
+        final_path = screenshots_dir / f"{scenario_name}_final.png"
+        await page.screenshot(path=str(final_path), full_page=True)
+        transcript["final_screenshot"] = str(final_path)
+
+        await browser.close()
+
+    return transcript
+
+
+def save_transcript(scenario_name: str, transcript: dict) -> Path:
+    """Save transcript to results/transcripts/ directory."""
+    transcripts_dir = RESULTS_DIR / "transcripts"
+    transcripts_dir.mkdir(parents=True, exist_ok=True)
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"{scenario_name}_{timestamp}.json"
+    path = transcripts_dir / filename
+    path.write_text(json.dumps(transcript, indent=2, default=str))
+    print(f"Transcript saved: {path}")
+    return path
+
+
+def list_scenarios() -> list[str]:
+    """List all available scenario names."""
+    return [p.stem for p in sorted(SCENARIOS_DIR.glob("*.yaml"))]
+
+
+async def main():
+    parser = argparse.ArgumentParser(description="Eval collection phase")
+    parser.add_argument(
+        "--scenario",
+        default="all",
+        help="Scenario name or 'all' (default: all)",
+    )
+    parser.add_argument("--frontend-url", default=FRONTEND_URL)
+    parser.add_argument("--host", default=None, help="Tally host for live ground truth")
+    parser.add_argument("--port", type=int, default=9000, help="Tally port")
+    args = parser.parse_args()
+
+    # Determine which scenarios to run
+    if args.scenario == "all":
+        scenario_names = list_scenarios()
+    else:
+        scenario_names = [args.scenario]
+
+    print(f"Running {len(scenario_names)} scenario(s): {', '.join(scenario_names)}")
+
+    # Optionally collect live ground truth
+    live_golden = {}
+    if args.host:
+        print(f"Collecting live ground truth from Tally at {args.host}:{args.port}...")
+        from backend.tally_bridge.client import TallyClient
+        from backend.tally_bridge.queries import reports
+
+        client = TallyClient(host=args.host, port=args.port)
+        try:
+            live_golden["trial_balance"] = (
+                await reports.trial_balance(client, "01-04-2025", "31-03-2026")
+            ).model_dump(mode="json")
+            live_golden["profit_and_loss"] = (
+                await reports.profit_and_loss(client, "01-04-2025", "31-03-2026")
+            ).model_dump(mode="json")
+            live_golden["balance_sheet"] = (
+                await reports.balance_sheet(client, "31-03-2026")
+            ).model_dump(mode="json")
+            live_golden["bills_receivable"] = [
+                b.model_dump(mode="json")
+                for b in await reports.bills_receivable(client, "31-03-2026")
+            ]
+            live_golden["stock_summary"] = await reports.stock_summary(client, "31-03-2026")
+            print(f"  Collected {len(live_golden)} ground truth datasets")
+        finally:
+            await client.close()
+
+    for name in scenario_names:
+        print(f"\n{'='*60}")
+        print(f"Scenario: {name}")
+        print(f"{'='*60}")
+
+        scenario = load_scenario(name)
+        golden = live_golden if live_golden else load_golden(name)
+
+        transcript = await collect_scenario(
+            scenario,
+            frontend_url=args.frontend_url,
+            golden_data=golden,
+        )
+
+        save_transcript(name, transcript)
+
+    print(f"\nCollection complete. Results in {RESULTS_DIR}")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
