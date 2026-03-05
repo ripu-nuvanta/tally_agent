@@ -1,0 +1,63 @@
+name: "Cross-Report Analysis"
+description: "P&L → balance sheet → cross-report comparison → receivables → sales → synthesis"
+tags: [cross_report, comparison, synthesis]
+
+turns:
+  - query: "Show me the profit and loss statement"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      has_chart: true
+      ground_truth_key: profit_and_loss
+      checks:
+        - "Shows income and expense categories"
+        - "Net profit/loss is clearly stated"
+
+  - query: "Now show the balance sheet"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      has_chart: true
+      ground_truth_key: balance_sheet
+      checks:
+        - "Shows assets and liabilities"
+        - "Balance sheet balances (assets = liabilities + equity)"
+
+  - query: "How do total liabilities compare to total assets?"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      checks:
+        - "Uses data from balance sheet (turn 2)"
+        - "Comparison is factually accurate"
+        - "Explains the relationship between assets and liabilities"
+
+  - query: "Show receivables aging — who owes us the most?"
+    expect:
+      query_type: top_n
+      has_data: true
+      has_chart: true
+      chart_type: [pie, bar]
+      ground_truth_key: bills_receivable
+      checks:
+        - "Lists parties with outstanding amounts"
+        - "Sorted by amount descending"
+
+  - query: "What are our top 5 sales by customer?"
+    expect:
+      query_type: top_n
+      has_data: true
+      has_chart: true
+      chart_type: bar
+      checks:
+        - "Shows exactly 5 customers"
+        - "Amounts are in Indian formatting"
+
+  - query: "Summarize the company's financial health"
+    expect:
+      query_type: aggregation
+      checks:
+        - "References data from multiple prior turns (P&L, BS, receivables)"
+        - "Provides a coherent summary, not just numbers"
+        - "Mentions key metrics like profit margin or current ratio"

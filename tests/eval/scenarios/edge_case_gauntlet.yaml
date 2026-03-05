@@ -1,0 +1,67 @@
+name: "Edge Case Gauntlet"
+description: "Ambiguous queries, special chars, zeros, large numbers, vague requests"
+tags: [edge_cases, error_handling, ambiguity]
+
+turns:
+  - query: "Show me the balance"
+    expect:
+      query_type: clarification_needed
+      checks:
+        - "Asks for clarification about which balance"
+        - "Suggests options like trial balance, balance sheet, or specific ledger"
+
+  - query: "Trial balance for March 2025 to March 2026"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Handles non-standard date format gracefully"
+        - "Either converts to FY dates or asks for clarification"
+
+  - query: "What's the balance of Cash & Bank (Combined)?"
+    expect:
+      has_data: true
+      checks:
+        - "Handles special characters in ledger name"
+        - "Does not error on ampersand or parentheses"
+
+  - query: "Show ledgers with zero balance"
+    expect:
+      has_data: true
+      checks:
+        - "Correctly identifies zero-balance ledgers"
+        - "Does not confuse zero with negative or missing"
+
+  - query: "Compare sales of Q1 vs Q2 vs Q3 vs Q4"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      checks:
+        - "Correctly maps quarters to Indian FY months"
+        - "Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar"
+        - "Chart shows all 4 quarters"
+
+  - query: "Show me stock summary"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      ground_truth_key: stock_summary
+      checks:
+        - "Shows quantities with units, not just currency"
+        - "Does not apply currency formatting to quantity values"
+
+  - query: "What was the sales amount for HCODE last month?"
+    expect:
+      has_data: true
+      checks:
+        - "Correctly identifies HCODE as a party/ledger"
+        - "Applies appropriate date range for 'last month'"
+
+  - query: "Show everything"
+    expect:
+      query_type: clarification_needed
+      checks:
+        - "Does not attempt to fetch all data"
+        - "Asks user to be more specific"
+        - "Suggests possible reports or queries"

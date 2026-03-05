@@ -1,0 +1,60 @@
+name: "Financial Report Deep-Dive"
+description: "Trial balance → drill into ledgers → negative balances → comparisons → trends"
+tags: [negative_balances, drill_down, formatting, coherence]
+
+turns:
+  - query: "Show me the trial balance for FY 2025-26"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      has_chart: true
+      chart_type: bar
+      ground_truth_key: trial_balance
+      checks:
+        - "Response mentions debit and credit totals"
+        - "Negative balances shown with minus sign, not parentheses"
+        - "Indian rupee formatting used with ₹ symbol"
+
+  - query: "Which ledgers have negative closing balance?"
+    expect:
+      query_type: top_n
+      has_data: true
+      checks:
+        - "Lists ledgers with negative balances correctly"
+        - "Explains what negative balance means in accounting context"
+
+  - query: "What's the total of all expense ledgers?"
+    expect:
+      query_type: aggregation
+      has_data: true
+      checks:
+        - "Total is computed correctly from expense ledgers"
+        - "Amount is formatted in Indian notation"
+
+  - query: "Compare the top 3 expense ledgers"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      chart_type: [grouped_bar, bar]
+      checks:
+        - "Comparison uses data consistent with prior turns"
+        - "All 3 ledgers are actual expense ledgers"
+
+  - query: "Show me monthly trend for the largest expense"
+    expect:
+      query_type: trend
+      has_chart: true
+      chart_type: line
+      checks:
+        - "References the correct ledger from previous comparison"
+        - "Trend data has at least 3 data points"
+        - "Chart shows time on X-axis"
+
+  - query: "What percentage of total expenses does it represent?"
+    expect:
+      query_type: aggregation
+      checks:
+        - "Uses the same ledger from the previous turn"
+        - "Percentage calculation is mathematically correct"
+        - "References the total from turn 3"
