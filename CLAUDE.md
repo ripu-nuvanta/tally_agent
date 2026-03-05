@@ -35,11 +35,20 @@ pytest tests/integration/ -v
 # E2E scenario tests
 ANTHROPIC_API_KEY=test-key pytest tests/e2e/ -v
 
+# All backend tests (unit + integration + E2E mock)
+ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/
+
 # All tests with coverage
 pytest --cov=backend --cov-report=html
 
+# Live E2E tests (needs real Tally + Claude API key)
+RUN_LIVE_TESTS=1 PYTHONPATH=. pytest tests/e2e_live/ -v --host <TALLY_IP> --port 9000
+
 # Verify Tally connectivity
 python scripts/test_tally_connection.py
+
+# Live test: agent pipeline against real Tally (needs ANTHROPIC_API_KEY)
+PYTHONPATH=. uv run python scripts/test_agent_live.py --host <TALLY_IP> --port 9000
 
 # Seed test data into Tally
 python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000
@@ -51,6 +60,9 @@ cd frontend
 npm install
 npm run dev                          # Vite dev server
 npm run build                        # Production build
+npm test                             # Vitest unit tests (68 tests)
+npm run test:watch                   # Vitest in watch mode
+npm run test:responsive              # Playwright responsive screenshot tests (15 tests)
 ```
 
 ## Architecture
@@ -114,11 +126,22 @@ VITE_API_URL (default: http://localhost:8000)
 
 ## Testing
 
-- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting.
-- **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle.
-- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs.
+- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting. 274 tests.
+- **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle. 43 tests.
+- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. 8 tests.
+- **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var. Uses conversation loop to handle Claude follow-ups automatically. 10 tests.
+- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 68 tests.
+- **Frontend responsive tests** (`frontend/tests/responsive/`): Playwright screenshot tests at 3 viewports (mobile/tablet/desktop). 15 tests.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
+
+## Workflow Preferences
+
+- **Always use skills** for all tasks — debugging, feature development, TDD, planning, code review, etc. Never skip skill invocation even for seemingly simple tasks. If there's even a 1% chance a skill applies, invoke it.
+- **Prefer superpowers skills over feature-dev**: When both `superpowers:*` and `feature-dev:*` skills could apply, always use the superpowers variant first (e.g., `superpowers:brainstorming` over `feature-dev:feature-dev`, `superpowers:systematic-debugging` over ad-hoc debugging, `superpowers:test-driven-development` over writing tests directly).
+- **Code review after every implementation**: After completing any implementation task (feature, bugfix, refactor), always run a code review using `superpowers:requesting-code-review` or the `code-review` agent. Never skip this step. Store review results in `docs/`.
+- **Main agent = orchestrator only**: The main conversation agent should NEVER write implementation code directly. Always spawn subagents (via the Agent tool) for code changes, writing tests, and debugging. The main agent's role is to plan, dispatch subagents, review their output, and integrate results. This preserves context window for planning and coordination.
+- **Persist artifacts in docs/**: Store code review results, implementation plans, and status tracking in `docs/` so they survive across sessions. Reference `docs/code-review-phase1-2.md` for current review status.
 
 ## Implementation Phases (Build Order)
 
