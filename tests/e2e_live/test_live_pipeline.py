@@ -191,3 +191,62 @@ async def test_live_clarification(orchestrator, tally_client, session):
     log_result("test_live_clarification", query, result)
     assert result["message"]
     assert result["query_type"] in ("clarification_needed", "simple_lookup", "aggregation")
+
+
+# ---------------------------------------------------------------------------
+# Issue #2/#5: Date resolution tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_quarterly_comparison_q2_vs_q3(orchestrator, tally_client, session):
+    """Q2 vs Q3 comparison should use correct quarter date ranges."""
+    query = "Compare sales in Q2 vs Q3 for FY 2025-26"
+    result = await run_until_final(orchestrator, tally_client, session, query)
+    log_result("test_live_quarterly_comparison_q2_vs_q3", query, result)
+    assert result["message"]
+    msg_lower = result["message"].lower()
+    assert any(term in msg_lower for term in ["q2", "jul", "jul-sep", "july"])
+    assert any(term in msg_lower for term in ["q3", "oct", "oct-dec", "october"])
+
+
+@pytest.mark.asyncio
+async def test_live_this_month_resolution(orchestrator, tally_client, session):
+    """'This month' should resolve to current calendar month."""
+    query = "Show P&L for this month"
+    result = await run_until_final(orchestrator, tally_client, session, query)
+    log_result("test_live_this_month_resolution", query, result)
+    assert result["message"]
+    assert result["query_type"] != "clarification_needed"
+
+
+# ---------------------------------------------------------------------------
+# Issue #4: Quick action button queries
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_quick_action_cash_balance(orchestrator, tally_client, session):
+    """Quick action 'Cash balance' should return a meaningful response."""
+    query = "Cash balance"
+    result = await run_until_final(orchestrator, tally_client, session, query)
+    log_result("test_live_quick_action_cash_balance", query, result)
+    assert result["message"]
+
+
+@pytest.mark.asyncio
+async def test_live_quick_action_top_10_customers(orchestrator, tally_client, session):
+    """Quick action 'Top 10 customers' should return ranked list."""
+    query = "Top 10 customers"
+    result = await run_until_final(orchestrator, tally_client, session, query)
+    log_result("test_live_quick_action_top_10_customers", query, result)
+    assert result["message"]
+
+
+@pytest.mark.asyncio
+async def test_live_quick_action_stock_summary(orchestrator, tally_client, session):
+    """Quick action 'Stock summary' should return inventory data."""
+    query = "Stock summary"
+    result = await run_until_final(orchestrator, tally_client, session, query)
+    log_result("test_live_quick_action_stock_summary", query, result)
+    assert result["message"]
