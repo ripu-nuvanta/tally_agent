@@ -101,7 +101,7 @@ async def test_eval_pipeline(
         from pathlib import Path
 
         client = AsyncAnthropic()
-        model = os.environ.get("EVAL_JUDGE_MODEL", "claude-sonnet-4-20250514")
+        model = os.environ.get("EVAL_JUDGE_MODEL", "claude-opus-4-6")
         all_scores = []
 
         scenarios_dir = Path(__file__).parent / "scenarios"

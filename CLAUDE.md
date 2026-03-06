@@ -120,7 +120,7 @@ Chat-based UI at `frontend/src/`. Key components: `ChatWindow`, `MessageBubble` 
 - **Dates**: Tally expects DD-MM-YYYY format. Indian Financial Year = April 1 to March 31. Quarters: Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar.
 - **Currency**: Use Indian comma formatting (₹12,34,567.00). Negative = outflow/debit, Positive = inflow/credit (Tally convention).
 - **XML requests**: Preferred over JSON for Tally communication — more stable and documented across versions. Use `xml.etree.ElementTree` for parsing.
-- **Claude model**: `claude-sonnet-4-20250514` for all agents.
+- **Claude models**: `claude-sonnet-4-6` for query/analysis agents, `claude-haiku-4-5-20251001` for orchestrator classification, `claude-opus-4-6` for eval judge.
 - **Session management**: In-memory dict for MVP (session_id → conversation history + company + cached data). TTL = 60 min. Limit to 20 messages for token control.
 - **Tally Bridge is READ-ONLY** — no import/write operations except the seed data script.
 - **Configuration**: All settings via `.env` file loaded by `pydantic_settings.BaseSettings` in `backend/config.py`.
@@ -130,7 +130,9 @@ Chat-based UI at `frontend/src/`. Key components: `ChatWindow`, `MessageBubble` 
 ```
 TALLY_HOST, TALLY_PORT (default: localhost:9000)
 ANTHROPIC_API_KEY
-CLAUDE_MODEL (default: claude-sonnet-4-20250514)
+CLAUDE_MODEL (default: claude-sonnet-4-6)
+CLAUDE_CLASSIFIER_MODEL (default: claude-haiku-4-5-20251001)
+EVAL_JUDGE_MODEL (default: claude-opus-4-6)
 APP_HOST, APP_PORT (default: 0.0.0.0:8000)
 VITE_API_URL (default: http://localhost:8000)
 ```

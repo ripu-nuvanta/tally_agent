@@ -5,7 +5,8 @@ class Settings(BaseSettings):
     TALLY_HOST: str = "localhost"
     TALLY_PORT: int = 9000
     ANTHROPIC_API_KEY: str = ""
-    CLAUDE_MODEL: str = "claude-sonnet-4-20250514"
+    CLAUDE_MODEL: str = "claude-sonnet-4-6"
+    CLAUDE_CLASSIFIER_MODEL: str = "claude-haiku-4-5-20251001"
     APP_HOST: str = "0.0.0.0"
     APP_PORT: int = 8000
     LOG_LEVEL: str = "INFO"

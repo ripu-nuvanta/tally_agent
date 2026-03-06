@@ -174,7 +174,7 @@ class Orchestrator:
 
         try:
             response = await anthropic_client.messages.create(
-                model=settings.CLAUDE_MODEL,
+                model=settings.CLAUDE_CLASSIFIER_MODEL,
                 max_tokens=512,
                 system=system_prompt,
                 messages=[{"role": "user", "content": user_message}],

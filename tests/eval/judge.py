@@ -25,7 +25,7 @@ from tests.eval.rubrics import (
 RESULTS_DIR = Path(__file__).parent / "results"
 SCENARIOS_DIR = Path(__file__).parent / "scenarios"
 
-DEFAULT_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_MODEL = "claude-opus-4-6"
 
 
 def get_judge_model() -> str:
