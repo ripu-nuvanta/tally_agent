@@ -139,12 +139,12 @@ VITE_API_URL (default: http://localhost:8000)
 
 ## Testing
 
-- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting. 312 tests.
+- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting. 355 tests.
 - **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle. 43 tests.
-- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. 11 tests.
-- **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var. Uses conversation loop to handle Claude follow-ups automatically. 10 tests.
-- **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 4 scenarios, 27 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`.
-- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 69 tests.
+- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. 12 tests.
+- **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var. Uses conversation loop to handle Claude follow-ups automatically. 15 tests.
+- **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 6 scenarios, 39 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`.
+- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 71 tests.
 - **Frontend responsive tests** (`frontend/tests/responsive/`): Playwright screenshot tests at 3 viewports (mobile/tablet/desktop). 15 tests.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
@@ -164,4 +164,4 @@ VITE_API_URL (default: http://localhost:8000)
 3. **FastAPI Backend** ✅ — main app, chat/health/companies/reports endpoints
 4. **React Frontend** ✅ — chat UI with inline charts and tables
 5. **Eval Framework** ✅ — two-phase eval (collect via Playwright → judge via LLM → HTML report), 4 scenarios, 27 turns
-6. **Advanced Features** — conversation memory, cached ledger list, GST reports, date-relative parsing, export, WhatsApp
+6. **Advanced Features** — conversation memory, cached ledger list, GST reports, ~~date-relative parsing~~ ✅, export, WhatsApp
