@@ -1,7 +1,19 @@
 import ReactMarkdown from "react-markdown";
-import type { ChatMessage } from "../types";
+import type { ChatMessage, TableData } from "../types";
 import DataTable from "./DataTable";
 import ChartRenderer from "./ChartRenderer";
+
+function stripMarkdownTables(text: string): string {
+  // Remove markdown tables (lines starting with | and separator lines like |---|)
+  return text
+    .replace(/^\|.*\|$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function isTableData(d: unknown): d is TableData {
+  return typeof d === "object" && d !== null && "headers" in d && "rows" in d;
+}
 
 interface MessageBubbleProps {
   message: ChatMessage;
@@ -24,6 +36,21 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     );
   }
 
+  // Determine tables to render
+  const tables: TableData[] = [];
+  if (Array.isArray(message.data)) {
+    for (const d of message.data) {
+      if (isTableData(d)) tables.push(d);
+    }
+  } else if (isTableData(message.data)) {
+    tables.push(message.data);
+  }
+
+  // Strip markdown tables from text if we have structured data
+  const displayContent = tables.length > 0
+    ? stripMarkdownTables(message.content)
+    : message.content;
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
       <div
@@ -39,13 +66,13 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         ) : (
           <div className="text-sm prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0">
-            <ReactMarkdown>{message.content}</ReactMarkdown>
+            <ReactMarkdown>{displayContent}</ReactMarkdown>
           </div>
         )}
 
-        {message.data && "headers" in message.data && "rows" in message.data && (
-          <DataTable data={message.data} />
-        )}
+        {tables.map((tableData, idx) => (
+          <DataTable key={idx} data={tableData} />
+        ))}
         {message.chart && <ChartRenderer chart={message.chart} />}
       </div>
     </div>

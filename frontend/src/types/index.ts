@@ -2,7 +2,7 @@ export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   content: string;
-  data?: TableData;
+  data?: TableData | TableData[];
   chart?: ChartSpec;
   isError?: boolean;
   isLoading?: boolean;
@@ -28,7 +28,7 @@ export interface ChatRequest {
 
 export interface ChatResponse {
   message: string;
-  data?: TableData;
+  data?: TableData | TableData[];
   chart?: ChartSpec;
   session_id: string;
 }

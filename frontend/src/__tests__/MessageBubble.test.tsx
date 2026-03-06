@@ -57,4 +57,30 @@ describe("MessageBubble", () => {
     expect(screen.getByText("No table")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
   });
+
+  it("renders multiple DataTables when data is an array", () => {
+    const msg: ChatMessage = {
+      id: "8", role: "assistant", content: "Comparison data",
+      data: [
+        { headers: ["Name"], rows: [["Q1 Sales"]] },
+        { headers: ["Name"], rows: [["Q2 Sales"]] },
+      ] as any,
+    };
+    render(<MessageBubble message={msg} />);
+    expect(screen.getByText("Q1 Sales")).toBeInTheDocument();
+    expect(screen.getByText("Q2 Sales")).toBeInTheDocument();
+  });
+
+  it("strips markdown tables from message text when structured data exists", () => {
+    const msg: ChatMessage = {
+      id: "9", role: "assistant",
+      content: "Here is the data:\n\n| Name | Amount |\n|------|--------|\n| Sales | 100 |\n\nSummary: sales are 100.",
+      data: { headers: ["Name", "Amount"], rows: [["Sales", 100]] },
+    };
+    render(<MessageBubble message={msg} />);
+    expect(screen.getByText(/Summary: sales are 100/)).toBeInTheDocument();
+    // Only 1 table from DataTable, not 2 (one from markdown + one from DataTable)
+    const tables = screen.getAllByRole("table");
+    expect(tables.length).toBe(1);
+  });
 });
