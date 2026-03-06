@@ -118,6 +118,7 @@ class Orchestrator:
         tool_results = agent_result.get("tool_results", [])
         all_data = _extract_all_data(tool_results)
         raw_data = all_data[-1] if all_data else None
+        all_datasets = all_data if len(all_data) > 1 else None
 
         logger.info(
             "Orchestrator — QueryAgent returned %d tool call(s), %d data set(s)",
@@ -155,10 +156,15 @@ class Orchestrator:
             chart_input = analysis_result if analysis_result is not None else {"data": raw_data}
             chart = self.chart_agent.execute(chart_input, query_type, requires_chart)
 
+        # For multi-dataset responses where analysis didn't merge them, pass all datasets
+        final_data = data
+        if all_datasets is not None and analysis_result is None:
+            final_data = all_datasets
+
         return {
             "query_type": query_type,
             "message": message,
-            "data": data,
+            "data": final_data,
             "chart": chart,
             "session_id": session.session_id,
         }

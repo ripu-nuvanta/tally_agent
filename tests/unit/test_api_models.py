@@ -64,3 +64,33 @@ def test_report_response():
 def test_error_response():
     resp = ErrorResponse(error="Tally unreachable")
     assert resp.detail is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: ChatResponse.data type widening
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+class TestChatResponseDataType:
+    def test_accepts_dict_data(self):
+        resp = ChatResponse(
+            message="ok",
+            data={"headers": ["A"], "rows": [[1]]},
+            session_id="s1",
+        )
+        assert resp.data == {"headers": ["A"], "rows": [[1]]}
+
+    def test_accepts_none_data(self):
+        resp = ChatResponse(message="ok", session_id="s1")
+        assert resp.data is None
+
+    def test_accepts_list_of_dicts_data(self):
+        data = [{"headers": ["A"], "rows": [[1]]}, {"headers": ["B"], "rows": [[2]]}]
+        resp = ChatResponse(message="ok", data=data, session_id="s1")
+        assert resp.data == data
+
+    def test_rejects_string_data(self):
+        with pytest.raises(Exception):
+            ChatResponse(message="ok", data="bad", session_id="s1")

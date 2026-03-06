@@ -619,6 +619,90 @@ class TestOrchestratorMultipleData:
 # ---------------------------------------------------------------------------
 
 
+class TestOrchestratorMultiDataset:
+    @pytest.mark.asyncio
+    async def test_multiple_datasets_passed_when_no_analysis(self):
+        """When query_type is simple_lookup but multiple tool results exist, pass all."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "simple_lookup",
+            "requires_chart": False,
+            "reasoning": "lookup",
+            "clarification_question": None,
+        }
+
+        agent_result = {
+            "message": "Here are both reports",
+            "tool_results": [
+                {"tool_name": "get_trial_balance", "tool_input": {}, "result": {"success": True, "data": {"headers": ["Name"], "rows": [["Q1"]]}}},
+                {"tool_name": "get_trial_balance", "tool_input": {}, "result": {"success": True, "data": {"headers": ["Name"], "rows": [["Q2"]]}}},
+            ],
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+            orch = Orchestrator()
+            with patch.object(orch.query_agent, "execute", new_callable=AsyncMock, return_value=agent_result):
+                result = await orch.process_query("Show both reports", mock_client, session)
+
+        # Both datasets should be passed
+        assert isinstance(result["data"], list)
+        assert len(result["data"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_analysis_result_data_used_over_raw(self):
+        """When analysis agent returns data, use that instead of raw datasets."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "comparison",
+            "requires_chart": False,
+            "reasoning": "comparing",
+            "clarification_question": None,
+        }
+
+        agent_result = {
+            "message": "Here is the data",
+            "tool_results": [
+                {"tool_name": "get_trial_balance", "tool_input": {}, "result": {"success": True, "data": {"headers": ["Name"], "rows": [["Q1"]]}}},
+                {"tool_name": "get_trial_balance", "tool_input": {}, "result": {"success": True, "data": {"headers": ["Name"], "rows": [["Q2"]]}}},
+            ],
+        }
+
+        analysis_result = {
+            "message": "Q1 vs Q2",
+            "data": {"headers": ["Period", "Total"], "rows": [["Q1", 100], ["Q2", 200]]},
+            "tool_results": [],
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+            orch = Orchestrator()
+            with patch.object(orch.query_agent, "execute", new_callable=AsyncMock, return_value=agent_result), \
+                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock, return_value=analysis_result):
+                result = await orch.process_query("Compare Q1 vs Q2", mock_client, session)
+
+        # Analysis result's data should be used (it's a merged table)
+        assert isinstance(result["data"], dict)
+        assert result["data"]["headers"] == ["Period", "Total"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: Classification fallback logs warning (Fix #8)
+# ---------------------------------------------------------------------------
+
+
 class TestClassificationFallbackLogging:
     @pytest.mark.asyncio
     async def test_non_json_response_logs_warning(self):

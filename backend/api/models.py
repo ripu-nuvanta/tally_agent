@@ -29,7 +29,7 @@ class ChartSpec(BaseModel):
 
 class ChatResponse(BaseModel):
     message: str
-    data: dict[str, Any] | None = None
+    data: dict[str, Any] | list[dict[str, Any]] | None = None
     chart: ChartSpec | None = None
     session_id: str
 
