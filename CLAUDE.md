@@ -41,8 +41,8 @@ ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/
 # All tests with coverage
 pytest --cov=backend --cov-report=html
 
-# Live E2E tests (needs real Tally + Claude API key)
-RUN_LIVE_TESTS=1 PYTHONPATH=. pytest tests/e2e_live/ -v --host <TALLY_IP> --port 9000
+# Live E2E tests (needs real Tally + Claude API key, -s for stdout logging)
+RUN_LIVE_TESTS=1 PYTHONPATH=. pytest tests/e2e_live/ -v -s --host <TALLY_IP> --port 9000 2>&1 | tee docs/e2e-live-results.log
 
 # Verify Tally connectivity
 python scripts/test_tally_connection.py
@@ -54,9 +54,13 @@ PYTHONPATH=. uv run python scripts/test_agent_live.py --host <TALLY_IP> --port 9
 python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000
 
 # Eval framework (needs backend + frontend running)
+# Results auto-saved to tests/eval/results/ (transcripts, screenshots, scores, report)
 PYTHONPATH=. python tests/eval/collect.py --scenario all --frontend-url http://localhost:5173
 PYTHONPATH=. ANTHROPIC_API_KEY=<key> python tests/eval/judge.py
-PYTHONPATH=. python tests/eval/report.py               # → results/report.html
+PYTHONPATH=. python tests/eval/report.py               # → tests/eval/results/report.html
+
+# Run single eval scenario
+PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173
 
 # Eval via pytest (all-in-one)
 RUN_EVAL_TESTS=1 PYTHONPATH=. pytest tests/eval/test_eval.py -v -s
