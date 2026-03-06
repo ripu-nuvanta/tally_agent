@@ -13,6 +13,7 @@ import logging
 from typing import Any
 
 from backend.tally_bridge.client import TallyClient
+from backend.utils.date_utils import resolve_date_range as _resolve_date_range
 
 logger = logging.getLogger(__name__)
 from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseError
@@ -265,6 +266,31 @@ TALLY_TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+DATE_TOOLS: list[dict[str, Any]] = [
+    {
+        "name": "resolve_date_range",
+        "description": "Convert a natural-language date expression to exact DD-MM-YYYY from/to dates using the Indian Financial Year calendar. ALWAYS call this BEFORE calling any Tally tool when the user uses relative dates like 'this month', 'Q2', 'last quarter', 'YTD', 'last 3 months', etc.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "description": "Natural-language date expression (e.g. 'Q2', 'this month', 'last quarter', 'current FY', 'last 3 months', 'YTD', 'Q2 2025-26')",
+                },
+            },
+            "required": ["description"],
+        },
+    },
+]
+
+
+def execute_date_tool(tool_name: str, tool_input: dict[str, Any]) -> dict[str, Any]:
+    """Execute a date resolution tool synchronously."""
+    if tool_name == "resolve_date_range":
+        return {"success": True, "data": _resolve_date_range(tool_input["description"])}
+    return {"error": f"Unknown date tool: {tool_name!r}"}
 
 
 # ---------------------------------------------------------------------------

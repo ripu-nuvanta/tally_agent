@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 from backend.config import settings
 from backend.agents.prompts import build_query_agent_prompt
-from backend.agents.tools import TALLY_TOOLS, execute_tool
+from backend.agents.tools import TALLY_TOOLS, execute_tool, DATE_TOOLS, execute_date_tool
 from backend.agents.analysis_agent import ANALYSIS_TOOLS, execute_analysis_tool
 from backend.agents.utils import extract_text, find_all_tool_use_blocks
 from backend.agents.context import SessionContext
@@ -31,8 +31,11 @@ from backend.tally_bridge.client import TallyClient
 # Names of analysis tools so we can dispatch sync vs async
 _ANALYSIS_TOOL_NAMES = {t["name"] for t in ANALYSIS_TOOLS}
 
-# Combined tool list: Tally (data fetching) + Analysis (computation)
-_ALL_QUERY_TOOLS = TALLY_TOOLS + ANALYSIS_TOOLS
+# Names of date tools (also sync)
+_DATE_TOOL_NAMES = {t["name"] for t in DATE_TOOLS}
+
+# Combined tool list: Tally (data fetching) + Analysis (computation) + Date (resolution)
+_ALL_QUERY_TOOLS = TALLY_TOOLS + ANALYSIS_TOOLS + DATE_TOOLS
 
 # Module-level client — tests patch this object.
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -131,6 +134,8 @@ class QueryAgent:
 
                 if tool_block.name in _ANALYSIS_TOOL_NAMES:
                     result = execute_analysis_tool(tool_block.name, tool_block.input)
+                elif tool_block.name in _DATE_TOOL_NAMES:
+                    result = execute_date_tool(tool_block.name, tool_block.input)
                 else:
                     result = await execute_tool(client, tool_block.name, tool_block.input)
 

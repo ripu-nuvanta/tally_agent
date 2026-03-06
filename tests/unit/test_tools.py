@@ -5,7 +5,7 @@ import inspect
 
 import pytest
 
-from backend.agents.tools import TALLY_TOOLS, TOOL_HANDLERS, execute_tool
+from backend.agents.tools import TALLY_TOOLS, TOOL_HANDLERS, execute_tool, DATE_TOOLS, execute_date_tool
 
 
 # ---------------------------------------------------------------------------
@@ -241,3 +241,21 @@ class TestExecuteTool:
 
         assert "error" in result
         assert "boom" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# TestDateToolExecution
+# ---------------------------------------------------------------------------
+
+
+class TestDateToolExecution:
+    """Test the execute_date_tool entry point."""
+
+    def test_resolve_date_range_q2(self):
+        result = execute_date_tool("resolve_date_range", {"description": "Q2"})
+        assert result["success"] is True
+        assert "from_date" in result["data"]
+
+    def test_unknown_date_tool(self):
+        result = execute_date_tool("unknown_tool", {})
+        assert "error" in result
