@@ -13,6 +13,7 @@ Exports:
 from __future__ import annotations
 
 import json
+import re
 import logging
 from datetime import date
 from typing import Any
@@ -190,10 +191,19 @@ class Orchestrator:
                 break
 
         try:
-            return json.loads(text)
+            return json.loads(_strip_markdown_fences(text))
         except (json.JSONDecodeError, TypeError):
             logger.warning("Classification fallback: could not parse Claude response as JSON. Raw text: %s", text)
             return {"query_type": "simple_lookup", "requires_chart": False}
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove markdown code fences (```json ... ```) from text."""
+    stripped = text.strip()
+    match = re.match(r'^```(?:json)?\s*\n?(.*?)\n?\s*```$', stripped, re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return stripped
 
 
 def _extract_all_data(tool_results: list[dict]) -> list[dict]:

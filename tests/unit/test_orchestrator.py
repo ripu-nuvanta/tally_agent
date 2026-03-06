@@ -9,6 +9,7 @@ import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from backend.agents.context import SessionContext
+from backend.agents.orchestrator import _strip_markdown_fences
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +210,53 @@ class TestOrchestratorClassification:
 
         assert result["query_type"] == "simple_lookup"
         assert result["message"] == "Here is the data you requested."
+
+    @pytest.mark.asyncio
+    async def test_classification_with_markdown_fences(self):
+        """Claude response wrapped in ```json fences should still parse."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        fenced_json = '```json\n{"query_type": "greeting", "requires_chart": false, "reasoning": "hi", "clarification_question": null}\n```'
+        msg = MagicMock()
+        msg.stop_reason = "end_turn"
+        block = MagicMock()
+        block.type = "text"
+        block.text = fenced_json
+        msg.content = [block]
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(return_value=msg)
+            orch = Orchestrator()
+            result = await orch.process_query("Hello!", mock_client, session)
+
+        assert result["query_type"] == "greeting"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _strip_markdown_fences
+# ---------------------------------------------------------------------------
+
+
+class TestStripMarkdownFences:
+    def test_strips_json_fences(self):
+        text = '```json\n{"query_type": "simple_lookup"}\n```'
+        assert _strip_markdown_fences(text) == '{"query_type": "simple_lookup"}'
+
+    def test_strips_plain_fences(self):
+        text = '```\n{"query_type": "greeting"}\n```'
+        assert _strip_markdown_fences(text) == '{"query_type": "greeting"}'
+
+    def test_no_fences_passthrough(self):
+        text = '{"query_type": "trend"}'
+        assert _strip_markdown_fences(text) == '{"query_type": "trend"}'
+
+    def test_strips_fences_with_extra_whitespace(self):
+        text = '  ```json\n  {"query_type": "comparison"}  \n```  '
+        result = _strip_markdown_fences(text)
+        assert json.loads(result)["query_type"] == "comparison"
 
 
 # ---------------------------------------------------------------------------
