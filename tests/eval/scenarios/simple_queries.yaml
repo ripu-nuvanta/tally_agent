@@ -1,0 +1,53 @@
+name: "Simple Single Queries"
+description: "Basic single-turn queries matching e2e_live test coverage. Each turn is independent."
+tags: [simple, single_query, smoke_test]
+
+turns:
+  - query: "Show me the trial balance for FY 2025-26"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Returns trial balance data with account names and balances"
+        - "Indian rupee formatting used"
+        - "Debit and credit columns present"
+
+  - query: "Show profit and loss for April 2025 to March 2026"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Returns income and expense groups with amounts"
+        - "Net profit or loss is mentioned"
+
+  - query: "Show the balance sheet as on March 2026"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Assets and liabilities are listed"
+        - "Balance sheet totals match (assets = liabilities + capital)"
+
+  - query: "Show outstanding receivables"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Lists party names with outstanding amounts"
+        - "Bill numbers and dates shown where available"
+
+  - query: "Show stock summary"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Shows item names with quantities"
+        - "Quantities include units (not just currency)"
+
+  - query: "Show sales register for April 2025 to March 2026"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Lists sales vouchers with party names"
+        - "Shows amounts for each sale"
