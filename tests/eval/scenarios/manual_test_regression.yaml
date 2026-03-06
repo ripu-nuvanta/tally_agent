@@ -1,0 +1,51 @@
+name: "Manual Test Regression"
+description: "Queries from manual testing that previously failed. Tests date resolution, quarterly comparison, trends, and ledger-specific analysis."
+tags: [regression, date_resolution, trends, comparison]
+
+turns:
+  - query: "P&L this month"
+    expect:
+      has_data: true
+      checks:
+        - "Returns profit and loss data for the current calendar month"
+        - "Date range is correct for the current month (not full year)"
+        - "Income and expense categories shown"
+
+  - query: "show me sales trend over 25-26 FY"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      checks:
+        - "Shows monthly or periodic sales data for FY 2025-26"
+        - "Trend direction (growing/declining/stable) is mentioned"
+        - "Chart shows time-series data"
+
+  - query: "compare Q2 and Q3 results"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      checks:
+        - "Q2 maps to Jul-Sep 2025, not full year"
+        - "Q3 maps to Oct-Dec 2025"
+        - "Shows absolute and/or percentage difference"
+        - "Both quarters have distinct data"
+
+  - query: "Top 10 customers"
+    expect:
+      query_type: top_n
+      has_data: true
+      checks:
+        - "Lists up to 10 customers ranked by sales"
+        - "Amounts sorted in descending order"
+        - "Indian rupee formatting used"
+
+  - query: "month-wise trend for hcode"
+    expect:
+      has_data: true
+      has_chart: true
+      checks:
+        - "Identifies HCODE as a party/ledger"
+        - "Shows monthly breakdown of transactions or sales for HCODE"
+        - "Chart shows time on X-axis with monthly data points"
