@@ -135,6 +135,52 @@ async def test_comparison_with_analysis_and_chart(e2e_client):
 
 
 @pytest.mark.asyncio
+async def test_multi_dataset_response_does_not_500(e2e_client):
+    """Multiple tool calls producing multiple datasets should return 200, not 500.
+
+    Regression test: ChatResponse.data typed as dict|None caused a 500 when
+    the orchestrator passed a list[dict] from multiple tool results.
+    """
+    client, set_responses, mock_clients = e2e_client
+
+    # simple_lookup with two sequential tool calls -> two datasets in tool_results.
+    # With no analysis agent, orchestrator sets final_data = all_datasets (list[dict]).
+    set_responses(
+        orchestrator_responses=[make_classification_response("simple_lookup")],
+        query_agent_responses=[
+            make_tool_call_response(
+                "get_profit_and_loss",
+                {"from_date": "01-04-2025", "to_date": "30-09-2025"},
+                extra_text="Let me fetch H1 P&L first.",
+            ),
+            make_tool_call_response(
+                "get_profit_and_loss",
+                {"from_date": "01-10-2025", "to_date": "31-03-2026"},
+                extra_text="Now fetching H2 P&L.",
+            ),
+            make_text_response("Here is the P&L for both halves of the financial year."),
+        ],
+    )
+
+    with (
+        patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
+        patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+    ):
+        response = await client.post(
+            "/api/chat",
+            json={"message": "Show P&L for H1 and H2 of this FY"},
+        )
+
+    assert response.status_code == 200, f"Expected 200 but got {response.status_code}: {response.text}"
+    data = response.json()
+    assert data["message"]
+    assert data["session_id"]
+    # data should be a list of dicts (multiple datasets), not a single dict
+    assert isinstance(data["data"], list), f"Expected list but got {type(data['data'])}"
+    assert len(data["data"]) == 2
+
+
+@pytest.mark.asyncio
 async def test_top_n_query(e2e_client):
     """Top-N query -> query agent -> analysis agent -> ranked response."""
     client, set_responses, mock_clients = e2e_client
