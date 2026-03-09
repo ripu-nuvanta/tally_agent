@@ -28,6 +28,15 @@ def get_last_fy_range(ref: date) -> tuple[date, date]:
 # Indian FY quarters: Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar
 _QUARTERS = [(4, 6), (7, 9), (10, 12), (1, 3)]
 
+_MONTH_NAMES = {
+    "january": 1, "jan": 1, "february": 2, "feb": 2,
+    "march": 3, "mar": 3, "april": 4, "apr": 4,
+    "may": 5, "june": 6, "jun": 6, "july": 7, "jul": 7,
+    "august": 8, "aug": 8, "september": 9, "sep": 9, "sept": 9,
+    "october": 10, "oct": 10, "november": 11, "nov": 11,
+    "december": 12, "dec": 12,
+}
+
 
 def _get_quarter_index(month: int) -> int:
     if 4 <= month <= 6: return 0
@@ -194,5 +203,48 @@ def resolve_date_range(description: str, ref: date | None = None) -> dict:
             "to_date": format_for_tally(ref),
             "description": f"Last {n} months",
         }
+
+    # --- Month + Year ("April 2025", "jan 2026") ---
+    month_year = re.match(r'^(\w+)\s+(\d{4})$', desc)
+    if month_year:
+        month_name = month_year.group(1)
+        year = int(month_year.group(2))
+        month_num = _MONTH_NAMES.get(month_name)
+        if month_num:
+            last_day = calendar.monthrange(year, month_num)[1]
+            return {
+                "from_date": format_for_tally(date(year, month_num, 1)),
+                "to_date": format_for_tally(date(year, month_num, last_day)),
+                "description": f"{calendar.month_name[month_num]} {year}",
+            }
+
+    # --- FY reference ("FY 2025-26", "fy 25-26") ---
+    fy_match = re.match(r'^fy\s+(\d{2,4})[-–](\d{2,4})$', desc)
+    if fy_match:
+        start_year = int(fy_match.group(1))
+        if start_year < 100:
+            start_year += 2000
+        end_year = int(fy_match.group(2))
+        if end_year < 100:
+            end_year += 2000
+        return {
+            "from_date": format_for_tally(date(start_year, 4, 1)),
+            "to_date": format_for_tally(date(end_year, 3, 31)),
+            "description": f"FY {start_year}-{end_year % 100:02d}",
+        }
+
+    # --- Month range ("April to June 2025") ---
+    month_range = re.match(r'^(\w+)\s+to\s+(\w+)\s+(\d{4})$', desc)
+    if month_range:
+        start_month = _MONTH_NAMES.get(month_range.group(1))
+        end_month = _MONTH_NAMES.get(month_range.group(2))
+        year = int(month_range.group(3))
+        if start_month and end_month:
+            last_day = calendar.monthrange(year, end_month)[1]
+            return {
+                "from_date": format_for_tally(date(year, start_month, 1)),
+                "to_date": format_for_tally(date(year, end_month, last_day)),
+                "description": f"{calendar.month_name[start_month]}-{calendar.month_name[end_month]} {year}",
+            }
 
     return {"error": f"Could not resolve date range: '{description}'"}

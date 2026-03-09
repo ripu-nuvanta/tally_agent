@@ -159,7 +159,7 @@ class Orchestrator:
         # For multi-dataset responses where analysis didn't merge them, pass all datasets
         final_data = data
         if all_datasets is not None and analysis_result is None:
-            final_data = all_datasets
+            final_data = _flatten_datasets(all_datasets)
 
         return {
             "query_type": query_type,
@@ -210,6 +210,21 @@ def _strip_markdown_fences(text: str) -> str:
     if match:
         return match.group(1).strip()
     return stripped
+
+
+def _flatten_datasets(datasets: list) -> list[dict]:
+    """Flatten list[list[dict]] into list[dict] with _dataset_index marker."""
+    flat: list[dict] = []
+    for idx, dataset in enumerate(datasets):
+        if isinstance(dataset, list):
+            for record in dataset:
+                if isinstance(record, dict):
+                    record["_dataset_index"] = idx
+                    flat.append(record)
+        elif isinstance(dataset, dict):
+            dataset["_dataset_index"] = idx
+            flat.append(dataset)
+    return flat
 
 
 def _extract_all_data(tool_results: list[dict]) -> list[dict]:

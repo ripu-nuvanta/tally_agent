@@ -139,3 +139,51 @@ class TestResolveDateRange:
     def test_unknown_returns_error(self):
         result = resolve_date_range("banana", date(2026, 3, 6))
         assert "error" in result
+
+
+class TestResolveDateRangeNewPatterns:
+    """Test new date resolution patterns: month+year, FY, month ranges."""
+
+    def test_resolve_april_2025(self):
+        result = resolve_date_range("April 2025")
+        assert result["from_date"] == "01-04-2025"
+        assert result["to_date"] == "30-04-2025"
+
+    def test_resolve_march_2026(self):
+        result = resolve_date_range("March 2026")
+        assert result["from_date"] == "01-03-2026"
+        assert result["to_date"] == "31-03-2026"
+
+    def test_resolve_jan_2026_abbreviated(self):
+        result = resolve_date_range("jan 2026")
+        assert result["from_date"] == "01-01-2026"
+        assert result["to_date"] == "31-01-2026"
+
+    def test_resolve_september_2025_sept_abbrev(self):
+        result = resolve_date_range("sept 2025")
+        assert result["from_date"] == "01-09-2025"
+        assert result["to_date"] == "30-09-2025"
+
+    def test_resolve_case_insensitive(self):
+        result = resolve_date_range("APRIL 2025")
+        assert result["from_date"] == "01-04-2025"
+
+    def test_resolve_fy_2025_26(self):
+        result = resolve_date_range("FY 2025-26")
+        assert result["from_date"] == "01-04-2025"
+        assert result["to_date"] == "31-03-2026"
+
+    def test_resolve_fy_short_years(self):
+        result = resolve_date_range("fy 25-26")
+        assert result["from_date"] == "01-04-2025"
+        assert result["to_date"] == "31-03-2026"
+
+    def test_resolve_fy_full_years(self):
+        result = resolve_date_range("FY 2025-2026")
+        assert result["from_date"] == "01-04-2025"
+        assert result["to_date"] == "31-03-2026"
+
+    def test_resolve_april_to_june_2025(self):
+        result = resolve_date_range("April to June 2025")
+        assert result["from_date"] == "01-04-2025"
+        assert result["to_date"] == "30-06-2025"

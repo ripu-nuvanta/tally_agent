@@ -154,6 +154,7 @@ async def collect_scenario(
     scenario: dict,
     frontend_url: str = FRONTEND_URL,
     golden_data: dict | None = None,
+    scenario_file: str | None = None,
 ) -> dict:
     """Run a full scenario through the frontend and collect responses.
 
@@ -161,11 +162,12 @@ async def collect_scenario(
         scenario: Parsed YAML scenario dict
         frontend_url: URL of the running frontend
         golden_data: Optional golden fixture data for ground truth
+        scenario_file: YAML filename stem (used for matching in judge)
 
     Returns:
         Transcript dict with metadata and per-turn results
     """
-    scenario_name = scenario["name"].lower().replace(" ", "_").replace("-", "_")
+    scenario_name = scenario_file or scenario["name"].lower().replace(" ", "_").replace("-", "_")
     screenshots_dir = RESULTS_DIR / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
 
@@ -327,6 +329,17 @@ async def main():
     parser.add_argument("--port", type=int, default=9000, help="Tally port")
     args = parser.parse_args()
 
+    # Auto-detect Tally from config if --host not provided
+    if not args.host:
+        try:
+            from backend.config import settings
+            if settings.TALLY_HOST and settings.TALLY_HOST != "localhost":
+                args.host = settings.TALLY_HOST
+                args.port = settings.TALLY_PORT
+                print(f"Auto-detected Tally at {args.host}:{args.port} from .env")
+        except Exception:
+            pass
+
     # Determine which scenarios to run
     if args.scenario == "all":
         scenario_names = list_scenarios()
@@ -374,6 +387,7 @@ async def main():
             scenario,
             frontend_url=args.frontend_url,
             golden_data=golden,
+            scenario_file=name,
         )
 
         save_transcript(name, transcript)
