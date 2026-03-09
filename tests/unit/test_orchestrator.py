@@ -729,3 +729,143 @@ class TestClassificationFallbackLogging:
                 assert "fallback" in warning_msg.lower() or "Classification" in warning_msg
 
         assert result["query_type"] == "simple_lookup"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _flatten_datasets helper
+# ---------------------------------------------------------------------------
+
+
+class TestFlattenDatasets:
+    """Test _flatten_datasets helper."""
+
+    def test_flattens_two_lists(self):
+        from backend.agents.orchestrator import _flatten_datasets
+        result = _flatten_datasets([[{"a": 1}], [{"b": 2}]])
+        assert len(result) == 2
+        assert result[0] == {"a": 1, "_dataset_index": 0}
+        assert result[1] == {"b": 2, "_dataset_index": 1}
+
+    def test_handles_dict_dataset(self):
+        from backend.agents.orchestrator import _flatten_datasets
+        result = _flatten_datasets([{"x": 1}])
+        assert result == [{"x": 1, "_dataset_index": 0}]
+
+    def test_does_not_mutate_input(self):
+        from backend.agents.orchestrator import _flatten_datasets
+        original = {"key": "val"}
+        _flatten_datasets([[original]])
+        assert "_dataset_index" not in original
+
+    def test_empty_input(self):
+        from backend.agents.orchestrator import _flatten_datasets
+        assert _flatten_datasets([]) == []
+
+    def test_skips_non_dict_items(self):
+        from backend.agents.orchestrator import _flatten_datasets
+        result = _flatten_datasets([[{"a": 1}, "string_item", 42]])
+        assert len(result) == 1
+        assert result[0]["a"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: Auto-enable chart for aggregation
+# ---------------------------------------------------------------------------
+
+
+class TestAutoEnableChart:
+    @pytest.mark.asyncio
+    async def test_aggregation_auto_enables_chart(self):
+        """aggregation query type with requires_chart=False should auto-enable chart."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "aggregation",
+            "requires_chart": False,
+            "reasoning": "User wants totals",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
+            ):
+                mock_query.return_value = {
+                    "message": "Total sales: ₹10,00,000",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_sales_register",
+                            "tool_input": {},
+                            "result": {"success": True, "data": [{"party": "A", "amount": 100}]},
+                        }
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": "Total: ₹10,00,000",
+                    "data": [{"party": "A", "amount": 100}],
+                    "tool_results": [],
+                    "chart_suggestion": "bar",
+                }
+                mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
+
+                result = await orch.process_query("Total sales this year", mock_client, session)
+
+                # Chart agent should have been called because aggregation auto-enables chart
+                mock_chart.assert_called_once()
+
+        assert result["chart"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Tests: Classifier receives session context
+# ---------------------------------------------------------------------------
+
+
+class TestClassifierSessionContext:
+    @pytest.mark.asyncio
+    async def test_classify_includes_session_history(self):
+        """Classifier messages should include recent session history."""
+        from backend.agents.orchestrator import Orchestrator
+
+        session = SessionContext()
+        session.add_message("user", "Show trial balance")
+        session.add_message("assistant", "Here is the trial balance.")
+
+        classification = {
+            "query_type": "simple_lookup",
+            "requires_chart": False,
+            "reasoning": "Follow-up",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+            await orch._classify("Show me the details", session)
+
+            # Inspect the messages passed to the classifier
+            call_kwargs = mock_claude.messages.create.call_args[1]
+            messages = call_kwargs["messages"]
+
+            # Should have session history (2 messages) + current query (1) = 3
+            assert len(messages) == 3
+            assert messages[0]["role"] == "user"
+            assert messages[0]["content"] == "Show trial balance"
+            assert messages[1]["role"] == "assistant"
+            assert messages[1]["content"] == "Here is the trial balance."
+            assert messages[2]["role"] == "user"
+            assert messages[2]["content"] == "Show me the details"

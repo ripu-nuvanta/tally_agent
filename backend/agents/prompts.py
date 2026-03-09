@@ -68,7 +68,7 @@ The JSON object must contain:
   "clarification_question": "<question to ask the user, only if query_type is clarification_needed, otherwise null>"
 }}
 
-Note: Always set requires_chart=true for trend, comparison, and top_n queries.
+Note: Always set requires_chart=true for trend, comparison, top_n, and aggregation queries.
 These query types inherently benefit from visual representation.
 """
 

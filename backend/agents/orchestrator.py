@@ -81,7 +81,7 @@ class Orchestrator:
         requires_chart = classification.get("requires_chart", False)
 
         # Auto-enable chart for chart-worthy query types
-        if not requires_chart and query_type in ("trend", "comparison", "top_n"):
+        if not requires_chart and query_type in ("trend", "comparison", "top_n", "aggregation"):
             requires_chart = True
             logger.info("Orchestrator — auto-enabling chart for query_type=%s", query_type)
 
@@ -234,11 +234,9 @@ def _flatten_datasets(datasets: list) -> list[dict]:
         if isinstance(dataset, list):
             for record in dataset:
                 if isinstance(record, dict):
-                    record["_dataset_index"] = idx
-                    flat.append(record)
+                    flat.append({**record, "_dataset_index": idx})
         elif isinstance(dataset, dict):
-            dataset["_dataset_index"] = idx
-            flat.append(dataset)
+            flat.append({**dataset, "_dataset_index": idx})
     return flat
 
 
@@ -262,6 +260,7 @@ def _extract_all_data(tool_results: list[dict]) -> list[dict]:
             if isinstance(data, dict) and "headers" in data and "rows" in data:
                 rows_as_dicts = []
                 for row in data["rows"]:
+                    # zip truncates to shortest; safe because headers define the schema
                     rows_as_dicts.append(dict(zip(data["headers"], row)))
                 data = rows_as_dicts
 
