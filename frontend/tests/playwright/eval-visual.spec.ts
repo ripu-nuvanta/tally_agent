@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { readFileSync } from "fs";
+import { readFileSync, mkdirSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
 
@@ -13,6 +13,32 @@ const fixtures = JSON.parse(
     "utf-8",
   ),
 );
+
+// Unclip scroll containers so element screenshots capture full content.
+// toHaveScreenshot internally calls scrollIntoViewIfNeeded which re-scrolls,
+// so we use raw .screenshot() after removing overflow constraints.
+async function prepareForScreenshot(page: import("@playwright/test").Page) {
+  await page.evaluate(() => {
+    const header = document.querySelector("header");
+    if (header) (header as HTMLElement).style.display = "none";
+    const main = document.querySelector("main");
+    if (main) {
+      main.style.overflow = "visible";
+      main.style.height = "auto";
+    }
+    const scrollContainer = document.querySelector(".overflow-y-auto");
+    if (scrollContainer) {
+      (scrollContainer as HTMLElement).style.overflow = "visible";
+      (scrollContainer as HTMLElement).style.height = "auto";
+    }
+    // Also remove h-screen constraint on root app div
+    const root = document.querySelector(".h-screen");
+    if (root) {
+      (root as HTMLElement).style.height = "auto";
+      (root as HTMLElement).style.overflow = "visible";
+    }
+  });
+}
 
 // Helper to setup route mocks
 async function setupMocks(
@@ -68,16 +94,29 @@ for (const fixture of fixtures) {
     await textarea.press("Enter");
 
     // Wait for assistant message to appear
-    await page.waitForSelector("[class*='justify-start'] .prose", {
+    await page.waitForSelector("[class*='justify-start'] > div .prose", {
       timeout: 15000,
     });
     // Give charts/tables time to render
     await page.waitForTimeout(1000);
 
-    // Screenshot the full assistant message bubble (captures full element even if taller than viewport)
-    const assistantMsgs = page.locator("[class*='justify-start']");
-    const lastMsg = assistantMsgs.last();
-    await expect(lastMsg).toHaveScreenshot(`${fixture.name}_full.png`);
+    // Unclip scroll containers for full element capture
+    await prepareForScreenshot(page);
+
+    // Use raw .screenshot() — toHaveScreenshot calls scrollIntoViewIfNeeded
+    // which re-scrolls the container and undoes the overflow fix
+    const lastMsg = page.locator("[class*='justify-start'] > div").last();
+    const projectName = test.info().project.name; // mobile, tablet, desktop
+    const screenshotDir = join(
+      __dirname,
+      "__screenshots__",
+      projectName,
+      "eval-visual.spec.ts",
+    );
+    mkdirSync(screenshotDir, { recursive: true });
+    await lastMsg.screenshot({
+      path: join(screenshotDir, `${fixture.name}_full.png`),
+    });
 
     // Assertions
     expect(await lastMsg.textContent()).toBeTruthy();

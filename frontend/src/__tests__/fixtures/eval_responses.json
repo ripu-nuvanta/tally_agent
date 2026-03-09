@@ -1,8 +1,18 @@
 [
   {
     "name": "profit_and_loss_response",
-    "message": "Here is the Profit & Loss Statement for March 2026:\n\nProfit & Loss -- March 2026 (01-03-2026 to 31-03-2026)\n\n| Account | Amount |\n|---|---|\n| Sales Accounts | 0.00 |\n| Cost of Sales | |\n| Opening Stock | 0.00 |\n| Add: Purchase Accounts | 0.00 |\n| Less: Closing Stock | 0.00 |\n| Indirect Expenses | 0.00 |\n\nAll values are showing as 0.00. This could mean no transactions have been recorded so far in March 2026, or the active company in TallyPrime may not have data for this period.\n\nWould you like me to check a different period?",
-    "data": null,
+    "message": "Here is the Profit & Loss Statement for March 2026:\n\nProfit & Loss -- March 2026 (01-03-2026 to 31-03-2026)\n\nAll values are showing as 0.00. This could mean no transactions have been recorded so far in March 2026, or the active company in TallyPrime may not have data for this period.\n\nWould you like me to check a different period?",
+    "data": {
+      "headers": ["Account", "Amount"],
+      "rows": [
+        ["Sales Accounts", "0.00"],
+        ["Cost of Sales", ""],
+        ["Opening Stock", "0.00"],
+        ["Add: Purchase Accounts", "0.00"],
+        ["Less: Closing Stock", "0.00"],
+        ["Indirect Expenses", "0.00"]
+      ]
+    },
     "chart": null
   },
   {
