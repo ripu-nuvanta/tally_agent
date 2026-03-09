@@ -271,7 +271,7 @@ TALLY_TOOLS: list[dict[str, Any]] = [
 DATE_TOOLS: list[dict[str, Any]] = [
     {
         "name": "resolve_date_range",
-        "description": "Convert a natural-language date expression to exact DD-MM-YYYY from/to dates using the Indian Financial Year calendar. ALWAYS call this BEFORE calling any Tally tool when the user uses relative dates like 'this month', 'Q2', 'last quarter', 'YTD', 'last 3 months', etc.",
+        "description": "Convert a relative date expression to exact DD-MM-YYYY dates using the Indian Financial Year calendar. Use ONLY for relative expressions like 'this month', 'last quarter', 'YTD'. For specific months ('April 2025') or FY ('FY 2025-26'), compute dates yourself to save tool calls.",
         "input_schema": {
             "type": "object",
             "properties": {

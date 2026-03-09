@@ -215,6 +215,22 @@ def _tool_compute_totals(
     numeric_fields: list[str],
     group_by: str | None = None,
 ) -> dict:
+    # Coerce non-dict records to dicts
+    coerced = []
+    for r in records:
+        if isinstance(r, dict):
+            coerced.append(r)
+        elif isinstance(r, (int, float)):
+            coerced.append({"value": r})
+        elif isinstance(r, str):
+            try:
+                coerced.append({"value": float(r.replace(",", "").replace("₹", ""))})
+            except ValueError:
+                coerced.append({"label": r})
+        else:
+            coerced.append({"value": str(r)})
+    records = coerced
+
     if group_by:
         groups: dict[str, dict[str, float]] = {}
         for rec in records:

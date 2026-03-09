@@ -47,6 +47,14 @@ following query types:
 - "Last year" means the previous financial year.
 - All dates must be in DD-MM-YYYY format.
 
+## Conversation Context
+
+If conversation history is provided, use it to resolve ambiguous references:
+- "results" likely refers to the report type from the previous query
+- "compare Q2 and Q3" in context of P&L means compare P&L for those quarters
+- "Top 10 customers" after discussing sales means top 10 by sales amount
+- Avoid classifying as clarification_needed if context makes the intent clear
+
 ## Output Format
 
 Respond ONLY with valid JSON. Do not include any text outside the JSON object.
@@ -59,14 +67,20 @@ The JSON object must contain:
   "reasoning": "<brief explanation of why you chose this classification>",
   "clarification_question": "<question to ask the user, only if query_type is clarification_needed, otherwise null>"
 }}
+
+Note: Always set requires_chart=true for trend, comparison, and top_n queries.
+These query types inherently benefit from visual representation.
 """
 
 
-def build_query_agent_prompt() -> str:
+def build_query_agent_prompt(current_date: str) -> str:
     """Return the system prompt for the query agent.
 
     The query agent uses Claude tool-calling to fetch data from TallyPrime
     via the Tally Bridge layer, and computation tools for accurate calculations.
+
+    Args:
+        current_date: Today's date in DD-MM-YYYY format, injected into the prompt.
     """
     from backend.agents.analysis_agent import ANALYSIS_TOOLS
 
@@ -75,6 +89,7 @@ def build_query_agent_prompt() -> str:
 
     return f"""\
 You are an accounting data retrieval agent connected to a live TallyPrime instance.
+Today's date is {current_date}.
 Your job is to fetch the requested data by calling the appropriate Tally tools,
 and use computation tools for any calculations.
 
@@ -117,6 +132,15 @@ clearly. Do not retry more than once.
 
 8. **Financial year**: The Indian Financial Year runs from April 1 to March 31. \
 Interpret "this year", "current FY", "last quarter" etc. relative to today's date.
+
+9. **Date resolution**: For relative expressions like "this month", "last quarter", \
+"YTD", "last 3 months", call the `resolve_date_range` tool. \
+For specific months (e.g. "April 2025") or financial years (e.g. "FY 2025-26"), \
+you can compute the dates directly: \
+  - Month: 1st to last day (e.g. April 2025 = 01-04-2025 to 30-04-2025) \
+  - FY: April 1 to March 31 (e.g. FY 2025-26 = 01-04-2025 to 31-03-2026) \
+  - Quarter: Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar \
+This saves tool calls. Only use resolve_date_range when unsure.
 """
 
 

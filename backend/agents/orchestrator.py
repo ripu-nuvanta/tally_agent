@@ -76,9 +76,15 @@ class Orchestrator:
                 "session_id": str,
             }
         """
-        classification = await self._classify(user_message)
+        classification = await self._classify(user_message, session)
         query_type = classification.get("query_type", "simple_lookup")
         requires_chart = classification.get("requires_chart", False)
+
+        # Auto-enable chart for chart-worthy query types
+        if not requires_chart and query_type in ("trend", "comparison", "top_n"):
+            requires_chart = True
+            logger.info("Orchestrator — auto-enabling chart for query_type=%s", query_type)
+
         logger.info(
             "Orchestrator — classified %r as query_type=%s, requires_chart=%s",
             user_message[:80], query_type, requires_chart,
@@ -169,7 +175,7 @@ class Orchestrator:
             "session_id": session.session_id,
         }
 
-    async def _classify(self, user_message: str) -> dict:
+    async def _classify(self, user_message: str, session: SessionContext | None = None) -> dict:
         """Use Claude to classify the user's query into a structured type.
 
         Returns a dict with at least ``query_type``.  Falls back to
@@ -179,12 +185,21 @@ class Orchestrator:
         current_date = format_for_tally(date.today())
         system_prompt = build_orchestrator_prompt(current_date)
 
+        # Build messages with conversation context for better classification
+        messages: list[dict[str, Any]] = []
+        if session and session.messages:
+            # Last 4 messages for context
+            recent = session.messages[-4:]
+            for msg in recent:
+                messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": "user", "content": user_message})
+
         try:
             response = await anthropic_client.messages.create(
                 model=settings.CLAUDE_CLASSIFIER_MODEL,
                 max_tokens=512,
                 system=system_prompt,
-                messages=[{"role": "user", "content": user_message}],
+                messages=messages,
             )
         except anthropic.APIError:
             return {"query_type": "simple_lookup", "requires_chart": False}
@@ -233,10 +248,22 @@ def _extract_all_data(tool_results: list[dict]) -> list[dict]:
     Returns a list of data dicts from tool results where ``success=True``
     and ``data`` is present.  This enables comparison queries that need
     multiple datasets (e.g. Q1 vs Q2 fetched via separate tool calls).
+
+    ReportResponse-style dicts (with ``headers`` and ``rows`` keys) are
+    automatically converted to ``list[dict]`` for uniform downstream handling.
     """
     data_list = []
     for tr in tool_results:
         result = tr.get("result", {})
         if result.get("success") is True and result.get("data") is not None:
-            data_list.append(result["data"])
+            data = result["data"]
+
+            # Handle ReportResponse-style dicts (headers/rows)
+            if isinstance(data, dict) and "headers" in data and "rows" in data:
+                rows_as_dicts = []
+                for row in data["rows"]:
+                    rows_as_dicts.append(dict(zip(data["headers"], row)))
+                data = rows_as_dicts
+
+            data_list.append(data)
     return data_list

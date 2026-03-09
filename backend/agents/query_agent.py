@@ -48,9 +48,8 @@ class QueryAgent:
         max_tool_calls: Safety limit on the number of tool calls per execution.
     """
 
-    def __init__(self, max_tool_calls: int = 10) -> None:
+    def __init__(self, max_tool_calls: int = 25) -> None:
         self.max_tool_calls = max_tool_calls
-        self.system_prompt = build_query_agent_prompt()
 
     async def execute(
         self,
@@ -73,6 +72,12 @@ class QueryAgent:
                 ],
             }
         """
+        # Build system prompt with current date
+        from datetime import date as date_cls
+        from backend.utils.date_utils import format_for_tally
+        current_date = format_for_tally(date_cls.today())
+        system_prompt = build_query_agent_prompt(current_date)
+
         # Build messages from session history + new user query
         messages = session.get_messages()
         messages.append({"role": "user", "content": user_query})
@@ -91,7 +96,7 @@ class QueryAgent:
                 response = await anthropic_client.messages.create(
                     model=settings.CLAUDE_MODEL,
                     max_tokens=4096,
-                    system=self.system_prompt,
+                    system=system_prompt,
                     tools=_ALL_QUERY_TOOLS,
                     messages=messages,
                 )
