@@ -10,9 +10,8 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:responsive": "npx playwright test --config tests/responsive/playwright.config.ts",
-    "test:eval-visual": "npx playwright test --config tests/eval-visual/playwright.config.ts",
-    "test:all": "vitest run && npx playwright test --config tests/responsive/playwright.config.ts && npx playwright test --config tests/eval-visual/playwright.config.ts"
+    "test:playwright": "npx playwright test --config tests/playwright/playwright.config.ts",
+    "test:all": "vitest run && npm run test:playwright"
   },
   "dependencies": {
     "axios": "^1.13.6",

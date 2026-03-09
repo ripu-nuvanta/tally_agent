@@ -77,7 +77,7 @@ npm run dev                          # Vite dev server
 npm run build                        # Production build
 npm test                             # Vitest unit tests (69 tests)
 npm run test:watch                   # Vitest in watch mode
-npm run test:responsive              # Playwright responsive screenshot tests (15 tests)
+npm run test:playwright              # Playwright visual tests (30 tests: responsive + eval-visual × 3 viewports)
 ```
 
 ## Architecture
@@ -149,7 +149,7 @@ VITE_API_URL (default: http://localhost:8000)
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var. Uses conversation loop to handle Claude follow-ups automatically. 15 tests.
 - **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 6 scenarios, 39 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`.
 - **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 71 tests.
-- **Frontend responsive tests** (`frontend/tests/responsive/`): Playwright screenshot tests at 3 viewports (mobile/tablet/desktop). 15 tests.
+- **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (5 fixtures × 3 viewports) = 30 tests.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
 
