@@ -308,6 +308,85 @@ async def test_tally_response_error_surfaced_in_response(e2e_client):
 
 
 @pytest.mark.asyncio
+async def test_date_resolution_month_name(e2e_client):
+    """Query agent calls resolve_date_range('April 2025') then fetches P&L."""
+    client, set_responses, mock_clients = e2e_client
+
+    set_responses(
+        orchestrator_responses=[make_classification_response("simple_lookup")],
+        query_agent_responses=[
+            make_tool_call_response(
+                "resolve_date_range",
+                {"description": "April 2025"},
+            ),
+            make_tool_call_response(
+                "get_profit_and_loss",
+                {"from_date": "01-04-2025", "to_date": "30-04-2025"},
+            ),
+            make_text_response("Here is the P&L for April 2025."),
+        ],
+    )
+
+    with (
+        patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
+        patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+    ):
+        response = await client.post(
+            "/api/chat",
+            json={"message": "Show P&L for April 2025"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"]
+    assert data["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_graceful_tool_limit_exceeded(e2e_client):
+    """Exceeding the tool call limit returns 200 with partial results, not a crash."""
+    client, set_responses, mock_clients = e2e_client
+
+    # Build 26 tool call responses to exceed the default limit of 25
+    tool_calls = [
+        make_tool_call_response(
+            "get_trial_balance",
+            {"from_date": "01-04-2025", "to_date": "31-03-2026"},
+        )
+        for _ in range(26)
+    ]
+
+    set_responses(
+        orchestrator_responses=[make_classification_response("simple_lookup")],
+        query_agent_responses=tool_calls,
+    )
+
+    with (
+        patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
+        patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+    ):
+        response = await client.post(
+            "/api/chat",
+            json={"message": "Show trial balance"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"]
+    assert data["session_id"]
+
+
+def test_compute_totals_string_input_no_crash():
+    """compute_totals handles string inputs without crashing."""
+    from backend.agents.analysis_agent import _tool_compute_totals
+
+    result = _tool_compute_totals(["100", "200", "300"], ["value"])
+    assert "error" not in result or result.get("error") is None
+    # Should produce a total of 600
+    assert result["records"][0]["value"] == 600.0
+
+
+@pytest.mark.asyncio
 async def test_trend_query_with_chart(e2e_client):
     """Trend query -> query agent -> analysis agent -> chart agent -> line chart."""
     client, set_responses, mock_clients = e2e_client

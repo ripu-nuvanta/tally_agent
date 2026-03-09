@@ -1,0 +1,111 @@
+[
+  {
+    "name": "profit_and_loss_response",
+    "message": "Here is the Profit & Loss Statement for March 2026:\n\nProfit & Loss -- March 2026 (01-03-2026 to 31-03-2026)\n\n| Account | Amount |\n|---|---|\n| Sales Accounts | 0.00 |\n| Cost of Sales | |\n| Opening Stock | 0.00 |\n| Add: Purchase Accounts | 0.00 |\n| Less: Closing Stock | 0.00 |\n| Indirect Expenses | 0.00 |\n\nAll values are showing as 0.00. This could mean no transactions have been recorded so far in March 2026, or the active company in TallyPrime may not have data for this period.\n\nWould you like me to check a different period?",
+    "data": null,
+    "chart": null
+  },
+  {
+    "name": "quarterly_comparison_response",
+    "message": "Q2 vs Q3 FY26 -- Profit & Loss Comparison\n\nQ3 was significantly weaker across every metric. Revenue nearly halved quarter-on-quarter, and Net Profit fell by 6,66,412.76 (-48.3%), though the proportional drop in expenses closely mirrored the revenue decline, keeping the profit margin relatively stable.\n\nKey Insights:\n- Revenue halved in Q3: Sales dropped from 37,64,350 to 19,57,500 (-48.0%)\n- Expenses contracted in near-perfect proportion\n- Net Profit margin was virtually unchanged (~36.5-36.7%)",
+    "data": {
+      "headers": ["sales", "purchases", "indirect_expenses"],
+      "rows": [
+        ["57,21,850.00", "49,295.92", "35,77,224.46"]
+      ]
+    },
+    "chart": null
+  },
+  {
+    "name": "top_customers_response",
+    "message": "HCODE TECHNOLOGIES PRIVATE LIMITED is the undisputed #1 customer for FY 2025-26, contributing 15,70,000.00 -- nearly 42% of total sales. Only 5 customers exist in this period.\n\nTop 10 Customers -- FY 2025-26 (01-Apr-2025 to 31-Mar-2026)\n\nTotal Sales: 37,64,350.00\n\nKey Insights:\n- HCODE TECHNOLOGIES dominates with 15,70,000 across 10 invoices\n- SMARTBIKE group combined contributes 15,00,000 (39.8%)\n- The business is highly concentrated -- top 2 customers account for 65.6% of total revenue",
+    "data": {
+      "headers": ["amount"],
+      "rows": [
+        ["37,64,350.00"]
+      ]
+    },
+    "chart": {
+      "chart_type": "bar",
+      "title": "Top Customers by Sales",
+      "data": [
+        { "label": "HCODE TECHNOLOGIES", "amount": 1570000 },
+        { "label": "SMARTBIKE TECH", "amount": 850000 },
+        { "label": "SMARTBIKE MOBILITY", "amount": 650000 },
+        { "label": "Amit Jain", "amount": 494350 },
+        { "label": "Inahan Sons", "amount": 200000 }
+      ],
+      "config": {
+        "x_key": "label",
+        "y_keys": ["amount"],
+        "colors": ["#4F46E5"],
+        "currency_format": true,
+        "show_legend": false
+      }
+    }
+  },
+  {
+    "name": "purchase_breakdown_response",
+    "message": "Purchase Breakdown by Vendor -- Top 10 | FY 2025-26 (01-Apr-2025 to 31-Mar-2026)\n\nOnly 2 vendors are present in the purchase data. Anthropic, PBC dominates with 77.5% of total spend. Total purchases stand at 32,181.61 across 10 vouchers.\n\nKey Insights:\n- Anthropic, PBC is the dominant vendor at 24,955.61 (77.5%)\n- Cursor accounts for 7,226.00 (22.5%)\n- Both vendors are USD-denominated AI/developer tools",
+    "data": {
+      "headers": ["party_name", "amount"],
+      "rows": [
+        ["Anthropic, PBC", "24,955.61"],
+        ["Cursor", "7,226.00"]
+      ]
+    },
+    "chart": {
+      "chart_type": "bar",
+      "title": "Ranking: amount by party_name",
+      "data": [
+        { "label": "Anthropic, PBC", "amount": 24955.61 },
+        { "label": "Cursor", "amount": 7226 }
+      ],
+      "config": {
+        "x_key": "label",
+        "y_keys": ["amount"],
+        "colors": ["#4F46E5"],
+        "currency_format": true,
+        "show_legend": false
+      }
+    }
+  },
+  {
+    "name": "multi_dataset_response",
+    "message": "Here are the results from multiple periods for comparison.\n\nQ2 (Jul-Sep 2025) and Q3 (Oct-Dec 2025) show distinct patterns across revenue and expense categories.",
+    "data": [
+      {
+        "headers": ["category", "amount"],
+        "rows": [
+          ["Sales", "37,64,350.00"],
+          ["Purchases", "17,114.31"],
+          ["Indirect Expenses", "23,51,297.23"]
+        ]
+      },
+      {
+        "headers": ["category", "amount"],
+        "rows": [
+          ["Sales", "19,57,500.00"],
+          ["Purchases", "32,181.61"],
+          ["Indirect Expenses", "12,25,927.23"]
+        ]
+      }
+    ],
+    "chart": {
+      "chart_type": "grouped_bar",
+      "title": "Q2 vs Q3 Comparison",
+      "data": [
+        { "category": "Sales", "Q2": 3764350, "Q3": 1957500 },
+        { "category": "Purchases", "Q2": 17114.31, "Q3": 32181.61 },
+        { "category": "Indirect Expenses", "Q2": 2351297.23, "Q3": 1225927.23 }
+      ],
+      "config": {
+        "x_key": "category",
+        "y_keys": ["Q2", "Q3"],
+        "colors": ["#4F46E5", "#10B981"],
+        "currency_format": true,
+        "show_legend": true
+      }
+    }
+  }
+]

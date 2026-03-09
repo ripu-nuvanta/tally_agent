@@ -68,29 +68,46 @@ class TestQueryAgentPrompt:
     """Tests for build_query_agent_prompt()."""
 
     def test_contains_tool_names(self):
-        prompt = build_query_agent_prompt()
+        prompt = build_query_agent_prompt("06-03-2026")
         for tool in TALLY_TOOLS:
             assert tool["name"] in prompt, f"Missing tool name: {tool['name']}"
 
     def test_contains_date_format_instruction(self):
-        prompt = build_query_agent_prompt()
+        prompt = build_query_agent_prompt("06-03-2026")
         assert "DD-MM-YYYY" in prompt
 
     def test_contains_search_ledger_first_instruction(self):
-        prompt = build_query_agent_prompt()
+        prompt = build_query_agent_prompt("06-03-2026")
         assert "search_ledger" in prompt
 
     def test_contains_rupee_formatting_instruction(self):
-        prompt = build_query_agent_prompt()
+        prompt = build_query_agent_prompt("06-03-2026")
         # Should mention Indian Rupee or ₹ formatting
         assert "₹" in prompt or "Indian" in prompt or "Rupee" in prompt
 
     def test_contains_sign_convention(self):
-        prompt = build_query_agent_prompt()
+        prompt = build_query_agent_prompt("06-03-2026")
         assert "negative" in prompt.lower() or "debit" in prompt.lower()
         assert "positive" in prompt.lower() or "credit" in prompt.lower()
 
     def test_returns_string(self):
-        prompt = build_query_agent_prompt()
+        prompt = build_query_agent_prompt("06-03-2026")
         assert isinstance(prompt, str)
         assert len(prompt) > 100  # Should be a substantial prompt
+
+    def test_includes_current_date(self):
+        prompt = build_query_agent_prompt("06-03-2026")
+        assert "06-03-2026" in prompt
+
+    def test_includes_resolve_date_range_instruction(self):
+        prompt = build_query_agent_prompt("06-03-2026")
+        assert "resolve_date_range" in prompt
+
+    def test_includes_date_resolution_rule(self):
+        prompt = build_query_agent_prompt("06-03-2026")
+        assert "Date resolution" in prompt
+
+    def test_different_date_injected(self):
+        prompt = build_query_agent_prompt("15-06-2025")
+        assert "15-06-2025" in prompt
+        assert "06-03-2026" not in prompt
