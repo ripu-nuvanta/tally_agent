@@ -214,9 +214,10 @@ async def judge_transcript(
     return scores
 
 
-def find_transcripts(transcript_name: str | None = None) -> list[Path]:
+def find_transcripts(transcript_name: str | None = None, run_dir: Path | None = None) -> list[Path]:
     """Find transcript files to judge."""
-    transcripts_dir = RESULTS_DIR / "transcripts"
+    base_dir = run_dir if run_dir else RESULTS_DIR
+    transcripts_dir = base_dir / "transcripts"
     if not transcripts_dir.exists():
         return []
 
@@ -252,10 +253,11 @@ def load_scenario_for_transcript(transcript: dict) -> dict | None:
     return None
 
 
-def save_scores(all_scores: list[dict]) -> Path:
-    """Save all scores to results/scores.json."""
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    path = RESULTS_DIR / "scores.json"
+def save_scores(all_scores: list[dict], run_dir: Path | None = None) -> Path:
+    """Save all scores to run_dir/scores.json."""
+    base_dir = run_dir if run_dir else RESULTS_DIR
+    base_dir.mkdir(parents=True, exist_ok=True)
+    path = base_dir / "scores.json"
     path.write_text(json.dumps(all_scores, indent=2, default=str))
     print(f"Scores saved: {path}")
     return path
@@ -273,12 +275,29 @@ async def main():
         default=None,
         help=f"Judge model (default: {DEFAULT_MODEL}, or EVAL_JUDGE_MODEL env)",
     )
+    parser.add_argument(
+        "--run-dir",
+        default=None,
+        help="Run directory (default: latest)",
+    )
     args = parser.parse_args()
 
     model = args.model or get_judge_model()
     print(f"Judge model: {model}")
 
-    transcript_paths = find_transcripts(args.transcript)
+    # Determine run directory
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
+    else:
+        latest = RESULTS_DIR / "latest"
+        if latest.is_symlink() or latest.exists():
+            run_dir = latest.resolve()
+        else:
+            run_dir = RESULTS_DIR
+
+    print(f"Run directory: {run_dir}")
+
+    transcript_paths = find_transcripts(args.transcript, run_dir=run_dir)
     if not transcript_paths:
         print("No transcripts found. Run collect.py first.")
         return
@@ -303,7 +322,7 @@ async def main():
         scores = await judge_transcript(client, model, transcript, scenario)
         all_scores.append(scores)
 
-    save_scores(all_scores)
+    save_scores(all_scores, run_dir=run_dir)
     print(f"\nJudging complete. {len(all_scores)} scenario(s) scored.")
 
 

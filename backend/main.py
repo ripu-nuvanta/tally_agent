@@ -21,6 +21,10 @@ from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseE
 async def lifespan(app: FastAPI):
     app.state.tally_client = TallyClient(settings.TALLY_HOST, settings.TALLY_PORT)
     app.state.session_store = SessionStore(ttl_minutes=settings.SESSION_TTL_MINUTES)
+    if settings.LANGFUSE_PUBLIC_KEY:
+        from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+        AnthropicInstrumentor().instrument()
+        logger.info("Langfuse instrumentation enabled")
     yield
     await app.state.tally_client.close()
 

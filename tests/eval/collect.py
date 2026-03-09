@@ -155,6 +155,7 @@ async def collect_scenario(
     frontend_url: str = FRONTEND_URL,
     golden_data: dict | None = None,
     scenario_file: str | None = None,
+    run_dir: Path | None = None,
 ) -> dict:
     """Run a full scenario through the frontend and collect responses.
 
@@ -163,12 +164,14 @@ async def collect_scenario(
         frontend_url: URL of the running frontend
         golden_data: Optional golden fixture data for ground truth
         scenario_file: YAML filename stem (used for matching in judge)
+        run_dir: Directory for this run's outputs (screenshots, transcripts)
 
     Returns:
         Transcript dict with metadata and per-turn results
     """
     scenario_name = scenario_file or scenario["name"].lower().replace(" ", "_").replace("-", "_")
-    screenshots_dir = RESULTS_DIR / "screenshots"
+    base_dir = run_dir if run_dir else RESULTS_DIR
+    screenshots_dir = base_dir / "screenshots"
     screenshots_dir.mkdir(parents=True, exist_ok=True)
 
     transcript = {
@@ -243,6 +246,7 @@ async def collect_scenario(
             # Screenshots
             chart_screenshot = None
             table_screenshot = None
+            full_screenshot = None
 
             # Screenshot chart if present (in last assistant message)
             assistant_msgs = page.locator("[class*='justify-start']")
@@ -264,6 +268,11 @@ async def collect_scenario(
                         await table_el.first.screenshot(path=str(table_path))
                         table_screenshot = str(table_path)
 
+                # Full message screenshot (text + table + chart together)
+                full_path = screenshots_dir / f"{scenario_name}_turn{turn_idx + 1}_full.png"
+                await last_msg.screenshot(path=str(full_path))
+                full_screenshot = str(full_path)
+
             # Build turn result
             ground_truth_key = expect.get("ground_truth_key")
             ground_truth = None
@@ -281,6 +290,7 @@ async def collect_scenario(
                 "chart_spec": response["chart_spec"],
                 "screenshot_chart": chart_screenshot,
                 "screenshot_table": table_screenshot,
+                "screenshot_full": full_screenshot,
                 "latency_seconds": round(latency, 2),
                 "expected": expect,
                 "ground_truth": ground_truth,
@@ -299,9 +309,10 @@ async def collect_scenario(
     return transcript
 
 
-def save_transcript(scenario_name: str, transcript: dict) -> Path:
-    """Save transcript to results/transcripts/ directory."""
-    transcripts_dir = RESULTS_DIR / "transcripts"
+def save_transcript(scenario_name: str, transcript: dict, run_dir: Path | None = None) -> Path:
+    """Save transcript to run_dir/transcripts/ directory."""
+    base_dir = run_dir if run_dir else RESULTS_DIR
+    transcripts_dir = base_dir / "transcripts"
     transcripts_dir.mkdir(parents=True, exist_ok=True)
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -348,6 +359,19 @@ async def main():
 
     print(f"Running {len(scenario_names)} scenario(s): {', '.join(scenario_names)}")
 
+    # Create timestamped run directory
+    run_timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_dir = RESULTS_DIR / f"run_{run_timestamp}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+
+    # Create/update latest symlink
+    latest_link = RESULTS_DIR / "latest"
+    if latest_link.is_symlink() or latest_link.exists():
+        latest_link.unlink()
+    latest_link.symlink_to(run_dir.name)
+
+    print(f"Run directory: {run_dir}")
+
     # Optionally collect live ground truth
     live_golden = {}
     if args.host:
@@ -388,11 +412,12 @@ async def main():
             frontend_url=args.frontend_url,
             golden_data=golden,
             scenario_file=name,
+            run_dir=run_dir,
         )
 
-        save_transcript(name, transcript)
+        save_transcript(name, transcript, run_dir=run_dir)
 
-    print(f"\nCollection complete. Results in {RESULTS_DIR}")
+    print(f"\nCollection complete. Results in {run_dir}")
 
 
 if __name__ == "__main__":

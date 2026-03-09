@@ -5,6 +5,7 @@ Usage:
     -> generates tests/eval/results/report.html
 """
 
+import argparse
 import base64
 import json
 from collections import Counter
@@ -36,9 +37,10 @@ def score_color_class(avg: float) -> tuple[str, str]:
     return "score-poor", "fill-poor"
 
 
-def load_scores() -> list[dict]:
-    """Load scores from results/scores.json."""
-    path = RESULTS_DIR / "scores.json"
+def load_scores(run_dir: Path | None = None) -> list[dict]:
+    """Load scores from run_dir/scores.json."""
+    base_dir = run_dir if run_dir else RESULTS_DIR
+    path = base_dir / "scores.json"
     if not path.exists():
         raise FileNotFoundError(f"No scores found at {path}. Run judge.py first.")
     return json.loads(path.read_text())
@@ -126,7 +128,7 @@ def prepare_scenarios(all_scores: list[dict]) -> list[dict]:
     return scenarios
 
 
-def generate_report(all_scores: list[dict]) -> Path:
+def generate_report(all_scores: list[dict], run_dir: Path | None = None) -> Path:
     """Generate the HTML report from scores data."""
     # Embed screenshots
     all_scores = embed_screenshots(all_scores)
@@ -161,17 +163,39 @@ def generate_report(all_scores: list[dict]) -> Path:
     )
 
     # Write report
-    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
-    output_path = RESULTS_DIR / "report.html"
+    base_dir = run_dir if run_dir else RESULTS_DIR
+    base_dir.mkdir(parents=True, exist_ok=True)
+    output_path = base_dir / "report.html"
     output_path.write_text(html)
     print(f"Report generated: {output_path}")
     return output_path
 
 
 def main():
-    all_scores = load_scores()
+    parser = argparse.ArgumentParser(description="Eval report generator")
+    parser.add_argument(
+        "--run-dir",
+        default=None,
+        help="Run directory (default: latest)",
+    )
+    args = parser.parse_args()
+
+    # Determine run directory
+    if args.run_dir:
+        run_dir = Path(args.run_dir)
+    else:
+        latest = RESULTS_DIR / "latest"
+        if latest.is_symlink() or latest.exists():
+            run_dir = latest.resolve()
+        else:
+            run_dir = None
+
+    if run_dir:
+        print(f"Run directory: {run_dir}")
+
+    all_scores = load_scores(run_dir=run_dir)
     print(f"Loaded scores for {len(all_scores)} scenario(s)")
-    generate_report(all_scores)
+    generate_report(all_scores, run_dir=run_dir)
 
 
 if __name__ == "__main__":
