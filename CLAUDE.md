@@ -149,7 +149,7 @@ VITE_API_URL (default: http://localhost:8000)
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var. Uses conversation loop to handle Claude follow-ups automatically. 15 tests.
 - **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 6 scenarios, 39 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`.
 - **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 71 tests.
-- **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (5 fixtures × 3 viewports) = 30 tests.
+- **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (5 fixtures × 3 viewports) = 30 tests. **IMPORTANT: After running Playwright tests, always visually inspect the eval-visual screenshots** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/eval-visual.spec.ts/` before reporting pass/fail. Check for: blank space, content cutoff, header leaking into screenshots, missing text/tables/charts. A test suite reporting "30 passed" is NOT sufficient — screenshots must be visually verified.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
 
