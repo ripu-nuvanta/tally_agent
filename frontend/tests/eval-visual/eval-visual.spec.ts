@@ -87,12 +87,15 @@ for (const fixture of fixtures) {
       path: join(screenshotDir, `${fixture.name}_full.png`),
     });
 
-    // Screenshot table if present
-    const table = lastMsg.locator("table");
-    if ((await table.count()) > 0) {
-      await table.first().screenshot({
-        path: join(screenshotDir, `${fixture.name}_table.png`),
-      });
+    // Screenshot tables if present
+    const tables = lastMsg.locator("table");
+    const tableCount = await tables.count();
+    if (tableCount > 0) {
+      for (let i = 0; i < tableCount; i++) {
+        await tables.nth(i).screenshot({
+          path: join(screenshotDir, `${fixture.name}_table_${i + 1}.png`),
+        });
+      }
     }
 
     // Screenshot chart if present
@@ -107,7 +110,10 @@ for (const fixture of fixtures) {
     expect(await lastMsg.textContent()).toBeTruthy();
 
     if (fixture.data) {
-      expect(await table.count()).toBeGreaterThan(0);
+      // Array of tables = multiple DataTables
+      const expectedCount = Array.isArray(fixture.data) && fixture.data.length > 0 &&
+        typeof fixture.data[0] === 'object' && 'headers' in fixture.data[0] ? fixture.data.length : 1;
+      expect(await tables.count()).toBe(expectedCount);
     }
 
     if (fixture.chart) {

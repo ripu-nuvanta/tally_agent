@@ -10,3 +10,4 @@ htmlcov/
 node_modules/
 .worktrees/
 tests/eval/results/
+frontend/test-results/
