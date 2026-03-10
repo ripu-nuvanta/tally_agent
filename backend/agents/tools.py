@@ -306,7 +306,7 @@ async def _handle_trial_balance(client: TallyClient, **kwargs: Any) -> Any:
 
 
 async def _handle_profit_and_loss(client: TallyClient, **kwargs: Any) -> Any:
-    result = await reports.profit_and_loss(
+    result = await reports.profit_and_loss_period(
         client, kwargs["from_date"], kwargs["to_date"], kwargs.get("company")
     )
     return result.model_dump(mode="json")

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { formatIndianNumber, formatINR, isNumericValue, generateId } from "../utils/format";
+import { formatIndianNumber, formatINR, formatAxisAmount, isNumericValue, generateId } from "../utils/format";
 
 describe("formatIndianNumber", () => {
   it("formats small numbers", () => { expect(formatIndianNumber(100)).toBe("100.00"); });
@@ -14,6 +14,16 @@ describe("formatIndianNumber", () => {
 describe("formatINR", () => {
   it("adds rupee symbol", () => { expect(formatINR(1234567)).toBe("₹12,34,567.00"); });
   it("handles negative with sign before symbol", () => { expect(formatINR(-5000)).toBe("-₹5,000.00"); });
+});
+
+describe("formatAxisAmount", () => {
+  it("formats crores", () => { expect(formatAxisAmount(15000000)).toBe("₹1.5Cr"); });
+  it("formats lakhs", () => { expect(formatAxisAmount(500000)).toBe("₹5.0L"); });
+  it("formats thousands", () => { expect(formatAxisAmount(45000)).toBe("₹45K"); });
+  it("formats small amounts", () => { expect(formatAxisAmount(800)).toBe("₹800"); });
+  it("handles negative crores", () => { expect(formatAxisAmount(-20000000)).toBe("-₹2.0Cr"); });
+  it("handles negative lakhs", () => { expect(formatAxisAmount(-350000)).toBe("-₹3.5L"); });
+  it("handles zero", () => { expect(formatAxisAmount(0)).toBe("₹0"); });
 });
 
 describe("isNumericValue", () => {

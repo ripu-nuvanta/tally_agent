@@ -68,4 +68,77 @@ describe("ChartRenderer", () => {
     expect(spec.title).toBe("Sales by Customer");
     expect(spec.data).toHaveLength(2);
   });
+
+  it("renders composed chart", () => {
+    const composed: ChartSpec = {
+      chart_type: "composed",
+      title: "Revenue vs Growth",
+      data: [
+        { month: "Apr", revenue: 100000, growth: 10 },
+        { month: "May", revenue: 150000, growth: 15 },
+      ],
+      config: {
+        x_key: "month",
+        y_keys: ["revenue"],
+        secondary_y_keys: ["growth"],
+        secondary_colors: ["#FF0000"],
+      },
+    };
+    render(<ChartRenderer chart={composed} />);
+    expect(screen.getByText("Revenue vs Growth")).toBeInTheDocument();
+    expect(screen.getByTestId("responsive-container")).toBeInTheDocument();
+  });
+
+  it("renders composed chart without secondary keys", () => {
+    const composed: ChartSpec = {
+      chart_type: "composed",
+      title: "Just Bars",
+      data: [
+        { month: "Apr", revenue: 100000 },
+        { month: "May", revenue: 150000 },
+      ],
+      config: {
+        x_key: "month",
+        y_keys: ["revenue"],
+      },
+    };
+    render(<ChartRenderer chart={composed} />);
+    expect(screen.getByText("Just Bars")).toBeInTheDocument();
+  });
+
+  it("hides legend when show_legend is false", () => {
+    const chartNoLegend: ChartSpec = {
+      chart_type: "bar",
+      title: "No Legend Chart",
+      data: [{ customer: "A", amount: 100 }],
+      config: { show_legend: false },
+    };
+    const { container } = render(<ChartRenderer chart={chartNoLegend} />);
+    const spec = JSON.parse(
+      container.querySelector("[data-chart-spec]")!.getAttribute("data-chart-spec")!
+    );
+    expect(spec.config.show_legend).toBe(false);
+    expect(screen.getByText("No Legend Chart")).toBeInTheDocument();
+  });
+
+  it("uses config.y_keys when provided", () => {
+    const chartWithKeys: ChartSpec = {
+      chart_type: "bar",
+      title: "With Y Keys",
+      data: [
+        { month: "Apr", revenue: 100000, expenses: 80000, notes: "good" },
+      ],
+      config: {
+        x_key: "month",
+        y_keys: ["revenue", "expenses"],
+      },
+    };
+    const { container } = render(<ChartRenderer chart={chartWithKeys} />);
+    const spec = JSON.parse(
+      container.querySelector("[data-chart-spec]")!.getAttribute("data-chart-spec")!
+    );
+    // Verify config is passed through correctly
+    expect(spec.config.y_keys).toEqual(["revenue", "expenses"]);
+    expect(spec.config.x_key).toBe("month");
+  });
 });

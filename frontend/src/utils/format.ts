@@ -22,6 +22,18 @@ export function formatINR(num: number): string {
 }
 
 /**
+ * Smart axis formatter: ₹1.2Cr, ₹5.3L, ₹45K, ₹800
+ */
+export function formatAxisAmount(value: number): string {
+  const abs = Math.abs(value);
+  const sign = value < 0 ? "-" : "";
+  if (abs >= 1_00_00_000) return `${sign}₹${(abs / 1_00_00_000).toFixed(1)}Cr`;
+  if (abs >= 1_00_000) return `${sign}₹${(abs / 1_00_000).toFixed(1)}L`;
+  if (abs >= 1_000) return `${sign}₹${(abs / 1_000).toFixed(0)}K`;
+  return `${sign}₹${abs.toFixed(0)}`;
+}
+
+/**
  * Check if a value looks numeric.
  */
 export function isNumericValue(val: unknown): val is number {

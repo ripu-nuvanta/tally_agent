@@ -14,7 +14,7 @@ export interface TableData {
 }
 
 export interface ChartSpec {
-  chart_type: "bar" | "line" | "pie" | "grouped_bar";
+  chart_type: "bar" | "line" | "pie" | "grouped_bar" | "composed";
   title: string;
   data: Record<string, unknown>[];
   config?: Record<string, unknown>;

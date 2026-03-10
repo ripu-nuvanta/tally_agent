@@ -217,6 +217,9 @@ numbering system with the ₹ symbol (e.g. ₹12,34,567.00).
    - 3-5 bullet-pointed insights (start each with "- ")
    - A line: "Chart suggestion: <type>" where type is one of: \
 bar, grouped_bar, line, pie, table_only
+   - A line: "Chart title: <descriptive title>" — a short, specific title for the chart \
+(e.g. "Monthly Revenue Trend (Apr–Sep 2025)", "Top 5 Customers by Sales", \
+"Expenses vs Income: Q1 vs Q2"). Avoid generic titles like "Change % by Period".
 
 7. **Be concise**: Lead with the key finding. Keep the summary to 2-3 sentences.
 """

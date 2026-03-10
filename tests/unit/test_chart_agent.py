@@ -5,7 +5,15 @@ Pure Python, no mocking needed — all tests are deterministic.
 
 import pytest
 
-from backend.agents.chart_agent import ChartAgent, _to_numeric, _select_chart_type
+from backend.agents.chart_agent import (
+    ChartAgent,
+    _to_numeric,
+    _select_chart_type,
+    _generate_title,
+    _format_xy_data,
+    _build_config,
+    _EXCLUDED_CHART_COLUMNS,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +113,7 @@ class TestChartAgentExecute:
         assert result["data"][0]["label"] == "Alpha"
         assert result["data"][0]["Sales"] == 5000.0
 
-    def test_grouped_bar_for_comparison(self):
+    def test_composed_chart_for_comparison_with_change_pct(self):
         data = {
             "data": {
                 "headers": ["Item", "Q1", "Q2", "Change", "Change %"],
@@ -118,11 +126,16 @@ class TestChartAgentExecute:
         }
         result = self.agent.execute(data, "comparison", requires_chart=True)
         assert result is not None
-        assert result["chart_type"] == "grouped_bar"
+        assert result["chart_type"] == "composed"
         assert result["data"][0]["Q1"] == 10000.0
         assert result["data"][0]["Q2"] == 12000.0
+        # "Change" excluded, "Change %" kept for secondary axis
+        assert "Change" not in result["data"][0]
+        assert "Change %" in result["data"][0]
+        assert result["config"]["secondary_y_keys"] == ["Change %"]
+        assert result["config"]["secondary_colors"] == ["#9CA3AF"]
 
-    def test_line_chart_for_trend(self):
+    def test_composed_chart_for_trend_with_change_pct(self):
         data = {
             "data": {
                 "headers": ["Period", "Revenue", "Change", "Change %"],
@@ -136,8 +149,21 @@ class TestChartAgentExecute:
         }
         result = self.agent.execute(data, "trend", requires_chart=True)
         assert result is not None
-        assert result["chart_type"] == "line"
+        assert result["chart_type"] == "composed"
         assert len(result["data"]) == 4
+
+    def test_no_composed_override_without_change_pct(self):
+        """Without Change % header, chart_type stays as original."""
+        data = {
+            "data": {
+                "headers": ["Customer", "Sales"],
+                "rows": [["A", 5000], ["B", 3000], ["C", 2000]],
+            },
+        }
+        result = self.agent.execute(data, "top_n", requires_chart=True)
+        assert result is not None
+        assert result["chart_type"] == "bar"
+        assert "secondary_y_keys" not in result["config"]
 
     def test_pie_chart_for_aggregation(self):
         data = {
@@ -223,3 +249,86 @@ class TestToNumeric:
 
     def test_none(self):
         assert _to_numeric(None) == 0.0
+
+
+# ---------------------------------------------------------------------------
+# Tests: _format_xy_data — excluded columns
+# ---------------------------------------------------------------------------
+
+
+class TestFormatXyDataExclusions:
+    def test_change_column_excluded_from_data_points(self):
+        headers = ["Period", "Revenue", "Change", "Change %"]
+        rows = [["Jan", 1000, 200, "+20%"], ["Feb", 1200, -100, "-8%"]]
+        result = _format_xy_data(headers, rows)
+        assert "Change" not in result[0]
+        assert "Revenue" in result[0]
+        assert "Change %" in result[0]
+
+    def test_no_excluded_columns_all_present(self):
+        headers = ["Name", "Sales", "Profit"]
+        rows = [["A", 100, 50], ["B", 200, 80]]
+        result = _format_xy_data(headers, rows)
+        assert result[0] == {"label": "A", "Sales": 100.0, "Profit": 50.0}
+
+
+# ---------------------------------------------------------------------------
+# Tests: _generate_title — better titles
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateTitle:
+    def test_title_uses_first_value_header_not_last(self):
+        headers = ["Period", "Revenue", "Change", "Change %"]
+        title = _generate_title("trend", headers)
+        assert title == "Trend Analysis: Revenue by Period"
+
+    def test_title_with_only_value_columns(self):
+        headers = ["Customer", "Sales"]
+        title = _generate_title("top_n", headers)
+        assert title == "Ranking: Sales by Customer"
+
+    def test_title_fallback_when_all_excluded(self):
+        """Edge case: only excluded headers after first."""
+        headers = ["Period", "Change"]
+        title = _generate_title("trend", headers)
+        # Falls back to headers[1] since no non-excluded headers
+        assert title == "Trend Analysis: Change by Period"
+
+    def test_title_single_header(self):
+        headers = ["Name"]
+        title = _generate_title("simple_lookup", headers)
+        assert title == "Data Overview"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _build_config — secondary axis
+# ---------------------------------------------------------------------------
+
+
+class TestBuildConfigSecondaryAxis:
+    def test_secondary_keys_present_when_change_pct(self):
+        config = _build_config("grouped_bar", ["Item", "Q1", "Q2", "Change", "Change %"])
+        assert config["y_keys"] == ["Q1", "Q2"]
+        assert config["secondary_y_keys"] == ["Change %"]
+        assert config["secondary_colors"] == ["#9CA3AF"]
+        assert config["show_legend"] is True
+
+    def test_no_secondary_keys_without_change_pct(self):
+        config = _build_config("bar", ["Name", "Amount"])
+        assert config["y_keys"] == ["Amount"]
+        assert "secondary_y_keys" not in config
+        assert config["show_legend"] is False
+
+    def test_pie_chart_clears_secondary_keys(self):
+        config = _build_config("pie", ["Category", "Amount", "Change %"])
+        assert config["y_keys"] == ["value"]
+        assert "secondary_y_keys" not in config
+
+    def test_show_legend_true_with_multiple_y_keys(self):
+        config = _build_config("grouped_bar", ["Item", "Q1", "Q2"])
+        assert config["show_legend"] is True
+
+    def test_composed_suggestion_accepted(self):
+        rows = [[1], [2], [3]]
+        assert _select_chart_type("composed", "comparison", rows) == "composed"

@@ -117,5 +117,73 @@
         "show_legend": true
       }
     }
+  },
+  {
+    "name": "sales_trend_composed",
+    "message": "Here is the monthly sales trend for Jul–Dec 2025. Sales grew from ₹2,95,000 in July to ₹8,82,500 in December, with the strongest growth in December (+76.5%).",
+    "data": {
+      "headers": ["Month", "Sales", "Change %"],
+      "rows": [
+        ["Jul 2025", "2,95,000.00", "-"],
+        ["Aug 2025", "3,00,000.00", "1.7"],
+        ["Sep 2025", "6,00,000.00", "100.0"],
+        ["Oct 2025", "5,75,000.00", "-4.2"],
+        ["Nov 2025", "5,00,000.00", "-13.0"],
+        ["Dec 2025", "8,82,500.00", "76.5"]
+      ]
+    },
+    "chart": {
+      "chart_type": "composed",
+      "title": "Monthly Sales Trend (Jul–Dec 2025)",
+      "data": [
+        {"label": "Jul", "Sales": 295000, "Change %": 0},
+        {"label": "Aug", "Sales": 300000, "Change %": 1.7},
+        {"label": "Sep", "Sales": 600000, "Change %": 100.0},
+        {"label": "Oct", "Sales": 575000, "Change %": -4.2},
+        {"label": "Nov", "Sales": 500000, "Change %": -13.0},
+        {"label": "Dec", "Sales": 882500, "Change %": 76.5}
+      ],
+      "config": {
+        "x_key": "label",
+        "y_keys": ["Sales"],
+        "secondary_y_keys": ["Change %"],
+        "colors": ["#4F46E5"],
+        "secondary_colors": ["#9CA3AF"],
+        "currency_format": true,
+        "show_legend": true
+      }
+    }
+  },
+  {
+    "name": "top_customers_ranked",
+    "message": "Here are the top 5 customers by sales for FY 2025-26. HCODE TECHNOLOGIES leads with ₹15,70,000, followed by SMARTBIKE TECH at ₹8,50,000.",
+    "data": {
+      "headers": ["Customer", "Sales Amount"],
+      "rows": [
+        ["HCODE TECHNOLOGIES PRIVATE LIMITED", "15,70,000.00"],
+        ["SMARTBIKE TECH PRIVATE LIMITED", "8,50,000.00"],
+        ["GLOBAL ENTERPRISES", "4,25,000.00"],
+        ["METRO SOLUTIONS PVT LTD", "3,19,350.00"],
+        ["DELTA INDUSTRIES", "2,00,000.00"]
+      ]
+    },
+    "chart": {
+      "chart_type": "bar",
+      "title": "Top 5 Customers by Sales (FY 2025-26)",
+      "data": [
+        {"label": "HCODE TECHNOLOGIES", "Sales Amount": 1570000},
+        {"label": "SMARTBIKE TECH", "Sales Amount": 850000},
+        {"label": "GLOBAL ENTERPRISES", "Sales Amount": 425000},
+        {"label": "METRO SOLUTIONS", "Sales Amount": 319350},
+        {"label": "DELTA INDUSTRIES", "Sales Amount": 200000}
+      ],
+      "config": {
+        "x_key": "label",
+        "y_keys": ["Sales Amount"],
+        "colors": ["#4F46E5"],
+        "currency_format": true,
+        "show_legend": false
+      }
+    }
   }
 ]

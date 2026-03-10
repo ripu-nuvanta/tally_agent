@@ -413,6 +413,7 @@ class AnalysisAgent:
         tool_results_log: list[dict] = []
         tool_call_count = 0
         last_table_data: dict = {"headers": [], "rows": []}
+        ranked_table_data: dict | None = None  # Prefer sort_by_field for top_n
         turn = 0
 
         logger.info("AnalysisAgent start — query_type=%s, query=%r", query_type, user_query[:80])
@@ -429,9 +430,10 @@ class AnalysisAgent:
                 )
             except anthropic.APIError as exc:
                 logger.error("AnalysisAgent turn %d — API error: %s", turn, exc)
+                preferred_data = ranked_table_data if (query_type == "top_n" and ranked_table_data) else last_table_data
                 return _build_result(
                     f"Analysis could not be completed: {exc}",
-                    last_table_data,
+                    preferred_data,
                     tool_results_log,
                 )
 
@@ -449,7 +451,9 @@ class AnalysisAgent:
                 final_text = extract_text(response)
                 logger.info("AnalysisAgent turn %d — final answer (%d chars)", turn, len(final_text))
                 logger.debug("AnalysisAgent turn %d — FINAL ANSWER:\n%s", turn, final_text)
-                return _build_result(final_text, last_table_data, tool_results_log)
+                # For top_n, prefer the ranked (sort_by_field) data over aggregate totals
+                preferred_data = ranked_table_data if (query_type == "top_n" and ranked_table_data) else last_table_data
+                return _build_result(final_text, preferred_data, tool_results_log)
 
             # ---- Tool use: execute all requested analysis tools ----
             tool_blocks = find_all_tool_use_blocks(response)
@@ -473,6 +477,10 @@ class AnalysisAgent:
                     d = result["data"]
                     if "headers" in d and "rows" in d:
                         last_table_data = {"headers": d["headers"], "rows": d["rows"]}
+                        # For top_n, prefer sort_by_field (individual records) over
+                        # compute_totals (aggregate). Track it separately.
+                        if tool_block.name == "sort_by_field":
+                            ranked_table_data = {"headers": d["headers"], "rows": d["rows"]}
 
                 tool_results_log.append({
                     "tool_name": tool_block.name,
@@ -495,10 +503,11 @@ class AnalysisAgent:
             })
 
             if tool_call_count >= self.max_tool_calls:
+                preferred_data = ranked_table_data if (query_type == "top_n" and ranked_table_data) else last_table_data
                 return _build_result(
                     f"Reached analysis tool limit ({self.max_tool_calls}). "
                     "Here is the analysis based on what was computed.",
-                    last_table_data,
+                    preferred_data,
                     tool_results_log,
                 )
 
@@ -516,13 +525,17 @@ def _build_result(
     """Build the standard AnalysisAgent result dict."""
     insights = _extract_insights(message)
     chart_suggestion = _extract_chart_suggestion(message)
-    return {
+    chart_title = _extract_chart_title(message)
+    result: dict[str, Any] = {
         "message": message,
         "data": table_data,
         "insights": insights,
         "chart_suggestion": chart_suggestion,
         "tool_results": tool_results,
     }
+    if chart_title:
+        result["chart_title"] = chart_title
+    return result
 
 
 def _extract_insights(text: str) -> list[str]:
@@ -537,7 +550,7 @@ def _extract_insights(text: str) -> list[str]:
 
 def _extract_chart_suggestion(text: str) -> str:
     """Look for a chart_suggestion in Claude's text response."""
-    valid = {"bar", "grouped_bar", "line", "pie", "table_only", "stacked_bar"}
+    valid = {"bar", "grouped_bar", "line", "pie", "table_only", "stacked_bar", "composed"}
     # Strip markdown bold/italic markers before searching
     text_clean = re.sub(r'\*{1,2}', '', text)
     text_lower = text_clean.lower()
@@ -557,3 +570,19 @@ def _extract_chart_suggestion(text: str) -> str:
                 if word in valid:
                     return word
     return "table_only"
+
+
+def _extract_chart_title(text: str) -> str | None:
+    """Extract a chart title suggestion from Claude's text response."""
+    # Strip markdown bold/italic markers before searching
+    text_clean = re.sub(r'\*{1,2}', '', text)
+    text_lower = text_clean.lower()
+    for keyword in ("chart title:", "chart_title:"):
+        if keyword in text_lower:
+            idx = text_lower.index(keyword) + len(keyword)
+            # Extract the rest of the line
+            rest = text_clean[idx:].split("\n")[0].strip()
+            if rest:
+                title = rest.strip('"\'')
+                return title
+    return None

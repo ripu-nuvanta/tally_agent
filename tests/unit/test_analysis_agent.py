@@ -455,7 +455,37 @@ class TestAnalysisToolLogging:
 # Tests: _extract_chart_suggestion (Fix #15)
 # ---------------------------------------------------------------------------
 
-from backend.agents.analysis_agent import _extract_chart_suggestion
+from backend.agents.analysis_agent import _extract_chart_suggestion, _extract_chart_title
+
+
+class TestExtractChartTitle:
+    def test_basic_extraction(self):
+        text = "Chart title: Monthly Revenue Trend"
+        assert _extract_chart_title(text) == "Monthly Revenue Trend"
+
+    def test_with_bold_markdown(self):
+        text = "**Chart title:** Revenue by Region"
+        assert _extract_chart_title(text) == "Revenue by Region"
+
+    def test_underscore_variant(self):
+        text = "Chart_title: Top 5"
+        assert _extract_chart_title(text) == "Top 5"
+
+    def test_no_title_present(self):
+        text = "Here is the analysis.\nChart suggestion: bar"
+        assert _extract_chart_title(text) is None
+
+    def test_title_on_non_first_line(self):
+        text = "Line one.\nLine two.\nChart title: Sales Breakdown\nLine four."
+        assert _extract_chart_title(text) == "Sales Breakdown"
+
+    def test_strips_enclosing_quotes(self):
+        text = 'Chart title: "Quarterly Revenue"'
+        assert _extract_chart_title(text) == "Quarterly Revenue"
+
+    def test_strips_single_quotes(self):
+        text = "Chart title: 'Top 5 Ledgers'"
+        assert _extract_chart_title(text) == "Top 5 Ledgers"
 
 
 class TestExtractChartSuggestion:

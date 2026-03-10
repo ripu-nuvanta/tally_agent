@@ -15,6 +15,9 @@ from typing import Any
 # Default color palette for Recharts
 DEFAULT_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4"]
 
+# Columns excluded from chart data points (absolute change is noise; Change % goes to secondary axis)
+_EXCLUDED_CHART_COLUMNS = {"Change"}
+
 
 class ChartAgent:
     """Selects chart type and formats data for Recharts rendering."""
@@ -53,9 +56,14 @@ class ChartAgent:
         if chart_type == "table_only":
             return None
 
-        title = _generate_title(query_type, headers)
+        # Prefer analysis agent's suggested title over auto-generated one
+        title = data.get("chart_title") or _generate_title(query_type, headers)
         chart_data = _format_chart_data(chart_type, headers, rows)
         config = _build_config(chart_type, headers)
+
+        # Override to composed chart when secondary axis data is present
+        if config.get("secondary_y_keys"):
+            chart_type = "composed"
 
         return {
             "chart_type": chart_type,
@@ -95,7 +103,7 @@ def _select_chart_type(suggestion: str, query_type: str, rows: list) -> str:
 
     # If analysis agent gave a valid suggestion, prefer it
     # (pie charts handle >7 slices by grouping into "Others" in _format_pie_data)
-    valid_types = {"bar", "grouped_bar", "line", "pie", "stacked_bar", "table_only"}
+    valid_types = {"bar", "grouped_bar", "line", "pie", "stacked_bar", "composed", "table_only"}
     if suggestion in valid_types and suggestion != "table_only":
         return suggestion
 
@@ -132,7 +140,13 @@ def _generate_title(query_type: str, headers: list[str]) -> str:
     }
     base = type_titles.get(query_type, "Chart")
     if len(headers) >= 2:
-        return f"{base}: {headers[-1]} by {headers[0]}"
+        # Use first non-excluded numeric header for meaningful titles
+        value_headers = [
+            h for h in headers[1:]
+            if h not in _EXCLUDED_CHART_COLUMNS and h != "Change %"
+        ]
+        value_label = value_headers[0] if value_headers else headers[1]
+        return f"{base}: {value_label} by {headers[0]}"
     return base
 
 
@@ -143,7 +157,7 @@ def _format_chart_data(
     if chart_type == "pie":
         return _format_pie_data(headers, rows)
 
-    # bar, grouped_bar, line, stacked_bar — all use standard x/y format
+    # bar, grouped_bar, line, stacked_bar, composed — all use standard x/y format
     return _format_xy_data(headers, rows)
 
 
@@ -153,6 +167,8 @@ def _format_xy_data(headers: list[str], rows: list[list]) -> list[dict[str, Any]
     for row in rows:
         point: dict[str, Any] = {"label": str(row[0]) if row else ""}
         for i, header in enumerate(headers[1:], start=1):
+            if header in _EXCLUDED_CHART_COLUMNS:
+                continue
             if i < len(row):
                 point[header] = _to_numeric(row[i])
         data.append(point)
@@ -182,19 +198,29 @@ def _format_pie_data(headers: list[str], rows: list[list]) -> list[dict[str, Any
 def _build_config(chart_type: str, headers: list[str]) -> dict[str, Any]:
     """Build Recharts config with axis labels and colors."""
     x_key = "label"
-    y_keys = [h for h in headers[1:] if h not in ("Change", "Change %")]
+    y_keys = [h for h in headers[1:] if h not in _EXCLUDED_CHART_COLUMNS and h != "Change %"]
+
+    # Detect secondary axis data (Change % column)
+    secondary_y_keys = [h for h in headers[1:] if h == "Change %"]
 
     # For numeric-only data, limit to actual value columns
     if chart_type == "pie":
         y_keys = ["value"]
+        secondary_y_keys = []
 
-    return {
+    config: dict[str, Any] = {
         "x_key": x_key,
         "y_keys": y_keys,
         "colors": DEFAULT_COLORS[: max(len(y_keys), 1)],
         "currency_format": True,
-        "show_legend": len(y_keys) > 1,
+        "show_legend": len(y_keys) > 1 or bool(secondary_y_keys),
     }
+
+    if secondary_y_keys:
+        config["secondary_y_keys"] = secondary_y_keys
+        config["secondary_colors"] = ["#9CA3AF"]  # gray for Change % line
+
+    return config
 
 
 def _to_numeric(val: Any) -> float:
