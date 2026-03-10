@@ -27,10 +27,10 @@ Use this exact format:
 # --- Scoring Rubrics (1-5 scale) ---
 
 FACTUAL_RUBRIC = {
-    5: "All numbers, ledger names, and calculations are exactly correct. Matches ground truth perfectly.",
-    4: "Minor rounding differences or formatting variations, but all key facts are correct.",
-    3: "Most facts correct, but 1-2 significant errors in amounts or ledger names.",
-    2: "Multiple factual errors. Key totals wrong or ledgers misidentified.",
+    5: "All numbers, ledger names, and calculations are exactly correct. Matches ground truth perfectly. Totals row present and arithmetically correct.",
+    4: "Minor rounding differences or formatting variations, but all key facts are correct. Totals row present.",
+    3: "Most facts correct, but 1-2 significant errors in amounts or ledger names. Totals row may be missing.",
+    2: "Multiple factual errors. Key totals wrong or ledgers misidentified. Missing totals row.",
     1: "Mostly incorrect. Made-up numbers or fundamentally wrong data.",
 }
 
@@ -58,6 +58,17 @@ ERROR_HANDLING_RUBRIC = {
     1: "No error handling. Crashes on any unexpected input.",
 }
 
+TOTALS_VERIFICATION_INSTRUCTIONS = """\
+## Data Table Completeness — Totals Verification
+For comparison, ranking (top-N), and aggregation responses that include a data table:
+- Verify a "Total" or "Grand Total" row exists in the data table (in response_data or response text).
+- Verify the total is arithmetically correct (sum of individual numeric rows for each column).
+- Compare the total against ground truth if available (e.g., trial balance totals, P&L totals).
+- Penalize factual_accuracy score by 1 point if a totals row is missing from a table with 2+ data rows.
+- Penalize factual_accuracy score by 1 point if a totals row is present but arithmetically wrong.
+- If the response is a single aggregated number (not a multi-row table), totals verification does not apply.
+"""
+
 CHART_RUBRIC = {
     5: "Perfect chart: correct type, readable labels, proper axes, accurate data representation, appropriate colors.",
     4: "Good chart with minor issues: slight label overlap or suboptimal color choice.",
@@ -65,6 +76,24 @@ CHART_RUBRIC = {
     2: "Poor chart: misleading visualization, missing labels, or wrong data plotted.",
     1: "Broken or missing chart when one was expected.",
 }
+
+
+def _should_verify_totals(turn: dict[str, Any], checks: list[str]) -> bool:
+    """Return True if totals verification should be applied to this turn."""
+    data = turn.get("response_data")
+    if not data:
+        return False
+    # Need headers + 2+ data rows to verify totals
+    rows = data.get("rows", [])
+    if len(rows) < 2:
+        return False
+    # Check keywords in checks or query
+    totals_keywords = {"total", "ranked", "top", "comparison", "compare", "trend",
+                       "aggregate", "breakdown", "category", "customer"}
+    check_text = " ".join(checks).lower()
+    query_text = turn.get("query", "").lower()
+    combined = check_text + " " + query_text
+    return any(kw in combined for kw in totals_keywords)
 
 
 def _format_rubric(rubric: dict[int, str]) -> str:
@@ -123,6 +152,10 @@ def build_judge_prompt(
     parts.append("\n## Checks to Evaluate")
     for check in checks:
         parts.append(f"- {check}")
+
+    # Totals verification for comparison/top_n/aggregation turns
+    if _should_verify_totals(turn, checks):
+        parts.append(TOTALS_VERIFICATION_INSTRUCTIONS)
 
     # Rubrics
     parts.append("\n## Scoring Rubrics")

@@ -447,3 +447,85 @@ class TestSanitizeXml:
     def test_preserves_valid_xml(self):
         raw = '<ROOT><NAME>Hello World</NAME></ROOT>'
         assert sanitize_xml(raw) == raw
+
+
+class TestParseVouchersMonthField:
+    """Phase 6: parse_vouchers extracts month field."""
+
+    def test_month_field_extracted(self):
+        from backend.tally_bridge.response_parser import parse_vouchers
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <VOUCHER>
+            <DATE>20250715</DATE>
+            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>001</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Test</PARTYLEDGERNAME>
+            <NARRATION>Test sale</NARRATION>
+        </VOUCHER>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        result = parse_vouchers(xml)
+        assert len(result) == 1
+        assert result[0]["month"] == "Jul 2025"
+
+    def test_month_field_empty_for_missing_date(self):
+        from backend.tally_bridge.response_parser import parse_vouchers
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <VOUCHER>
+            <DATE></DATE>
+            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>002</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Test</PARTYLEDGERNAME>
+            <NARRATION></NARRATION>
+        </VOUCHER>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        result = parse_vouchers(xml)
+        assert len(result) == 1
+        assert result[0]["month"] == ""
+
+
+class TestVoucherDateFiltering:
+    """Phase 6: Python-side date filtering safety net."""
+
+    def test_filters_vouchers_within_range(self):
+        from backend.tally_bridge.response_parser import _filter_vouchers_by_date
+        vouchers = [
+            {"date": "20250715", "party_name": "A", "voucher_type": "Sales"},
+            {"date": "20250801", "party_name": "B", "voucher_type": "Sales"},
+            {"date": "20250630", "party_name": "C", "voucher_type": "Sales"},
+        ]
+        result = _filter_vouchers_by_date(vouchers, "01-07-2025", "31-07-2025")
+        assert len(result) == 1
+        assert result[0]["party_name"] == "A"
+
+    def test_keeps_all_when_dates_unparseable(self):
+        from backend.tally_bridge.response_parser import _filter_vouchers_by_date
+        vouchers = [{"date": "bad", "party_name": "A"}]
+        result = _filter_vouchers_by_date(vouchers, "01-07-2025", "31-07-2025")
+        assert len(result) == 1
+
+    def test_empty_vouchers(self):
+        from backend.tally_bridge.response_parser import _filter_vouchers_by_date
+        result = _filter_vouchers_by_date([], "01-07-2025", "31-07-2025")
+        assert result == []
+
+    def test_parse_vouchers_with_date_filter(self):
+        from backend.tally_bridge.response_parser import parse_vouchers
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <VOUCHER>
+            <DATE>20250715</DATE>
+            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>001</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>InRange</PARTYLEDGERNAME>
+            <NARRATION></NARRATION>
+        </VOUCHER>
+        <VOUCHER>
+            <DATE>20250801</DATE>
+            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>002</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>OutOfRange</PARTYLEDGERNAME>
+            <NARRATION></NARRATION>
+        </VOUCHER>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        result = parse_vouchers(xml, from_date="01-07-2025", to_date="31-07-2025")
+        assert len(result) == 1
+        assert result[0]["party_name"] == "InRange"

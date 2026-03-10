@@ -64,13 +64,18 @@ def _voucher_native_methods() -> str:
 def _wrap_voucher_collection(collection_name: str, from_date: str, to_date: str, voucher_type_filter: str | None = None, company: str | None = None) -> str:
     """Build a TDL Collection query for vouchers. Returns voucher objects with specific fields only."""
     company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
-    filter_xml = ""
-    system_xml = ""
+    filters = []
+    systems = []
+    # Always add TDL date range filter (Tally ignores SVFROMDATE/SVTODATE for TYPE=Collection)
+    filters.append("<FILTER>DateRangeFilter</FILTER>")
+    systems.append(f'<SYSTEM TYPE="Formulae" NAME="DateRangeFilter">$$InDateRange:$Date:{from_date}:{to_date}</SYSTEM>')
     if voucher_type_filter:
         voucher_type_filter = voucher_type_filter.title()
         safe_type = xml_escape(voucher_type_filter, {'"': "&quot;"})
-        filter_xml = f"<FILTER>VchTypeFilter</FILTER>"
-        system_xml = f'<SYSTEM TYPE="Formulae" NAME="VchTypeFilter">$VoucherTypeName = "{safe_type}"</SYSTEM>'
+        filters.append("<FILTER>VchTypeFilter</FILTER>")
+        systems.append(f'<SYSTEM TYPE="Formulae" NAME="VchTypeFilter">$VoucherTypeName = "{safe_type}"</SYSTEM>')
+    filter_xml = "\n".join(filters)
+    system_xml = "\n".join(systems)
     return f"""<ENVELOPE>
 <HEADER>
 <VERSION>1</VERSION>

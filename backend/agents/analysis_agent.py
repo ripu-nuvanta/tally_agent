@@ -417,6 +417,7 @@ class AnalysisAgent:
         tool_call_count = 0
         last_table_data: dict = {"headers": [], "rows": []}
         ranked_table_data: dict | None = None  # Prefer sort_by_field for top_n
+        trend_table_data: dict | None = None   # Prefer compute_trend for trend
         turn = 0
 
         logger.info("AnalysisAgent start — query_type=%s, query=%r", query_type, user_query[:80])
@@ -433,7 +434,13 @@ class AnalysisAgent:
                 )
             except anthropic.APIError as exc:
                 logger.error("AnalysisAgent turn %d — API error: %s", turn, exc)
-                preferred_data = ranked_table_data if (query_type == "top_n" and ranked_table_data) else last_table_data
+                preferred_data = (
+                    trend_table_data if (query_type == "trend" and trend_table_data)
+                    else ranked_table_data if (query_type == "top_n" and ranked_table_data)
+                    else last_table_data
+                )
+                if preferred_data and preferred_data.get("headers") and preferred_data.get("rows"):
+                    preferred_data["rows"] = _ensure_totals_row(preferred_data["headers"], preferred_data["rows"], query_type)
                 return _build_result(
                     f"Analysis could not be completed: {exc}",
                     preferred_data,
@@ -455,7 +462,13 @@ class AnalysisAgent:
                 logger.info("AnalysisAgent turn %d — final answer (%d chars)", turn, len(final_text))
                 logger.debug("AnalysisAgent turn %d — FINAL ANSWER:\n%s", turn, final_text)
                 # For top_n, prefer the ranked (sort_by_field) data over aggregate totals
-                preferred_data = ranked_table_data if (query_type == "top_n" and ranked_table_data) else last_table_data
+                preferred_data = (
+                    trend_table_data if (query_type == "trend" and trend_table_data)
+                    else ranked_table_data if (query_type == "top_n" and ranked_table_data)
+                    else last_table_data
+                )
+                if preferred_data and preferred_data.get("headers") and preferred_data.get("rows"):
+                    preferred_data["rows"] = _ensure_totals_row(preferred_data["headers"], preferred_data["rows"], query_type)
                 return _build_result(final_text, preferred_data, tool_results_log)
 
             # ---- Tool use: execute all requested analysis tools ----
@@ -484,6 +497,8 @@ class AnalysisAgent:
                         # compute_totals (aggregate). Track it separately.
                         if tool_block.name == "sort_by_field":
                             ranked_table_data = {"headers": d["headers"], "rows": d["rows"]}
+                        if tool_block.name == "compute_trend":
+                            trend_table_data = {"headers": d["headers"], "rows": d["rows"]}
 
                 tool_results_log.append({
                     "tool_name": tool_block.name,
@@ -506,7 +521,13 @@ class AnalysisAgent:
             })
 
             if tool_call_count >= self.max_tool_calls:
-                preferred_data = ranked_table_data if (query_type == "top_n" and ranked_table_data) else last_table_data
+                preferred_data = (
+                    trend_table_data if (query_type == "trend" and trend_table_data)
+                    else ranked_table_data if (query_type == "top_n" and ranked_table_data)
+                    else last_table_data
+                )
+                if preferred_data and preferred_data.get("headers") and preferred_data.get("rows"):
+                    preferred_data["rows"] = _ensure_totals_row(preferred_data["headers"], preferred_data["rows"], query_type)
                 return _build_result(
                     f"Reached analysis tool limit ({self.max_tool_calls}). "
                     "Here is the analysis based on what was computed.",
@@ -518,6 +539,35 @@ class AnalysisAgent:
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
+
+
+def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) -> list[list]:
+    """Add a totals row if missing for comparison/top_n/aggregation queries."""
+    if not rows or query_type not in ("comparison", "top_n", "aggregation"):
+        return rows
+    last_label = str(rows[-1][0]).lower() if rows else ""
+    if "total" in last_label or "grand" in last_label:
+        return rows
+    totals: list[Any] = ["Total"]
+    for col_idx in range(1, len(headers)):
+        col_vals: list[float] = []
+        for row in rows:
+            if col_idx < len(row):
+                val = row[col_idx]
+                if isinstance(val, (int, float)):
+                    col_vals.append(float(val))
+                elif isinstance(val, str):
+                    cleaned = val.replace("₹", "").replace(",", "").replace("%", "").strip()
+                    try:
+                        col_vals.append(float(cleaned))
+                    except ValueError:
+                        pass
+        if col_vals:
+            totals.append(sum(col_vals))
+        else:
+            totals.append("")
+    rows.append(totals)
+    return rows
 
 
 def _build_result(

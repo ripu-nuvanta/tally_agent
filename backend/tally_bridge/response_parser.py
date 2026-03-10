@@ -4,6 +4,7 @@ Handles Tally's inconsistent casing, empty tags, comma-formatted amounts.
 """
 import re
 import xml.etree.ElementTree as ET
+from datetime import datetime
 
 
 def sanitize_xml(raw_xml: str) -> str:
@@ -254,7 +255,28 @@ def parse_stock_summary(raw_xml: str) -> list[dict]:
     return items
 
 
-def parse_vouchers(raw_xml: str) -> list[dict]:
+def _filter_vouchers_by_date(vouchers: list[dict], from_date: str, to_date: str) -> list[dict]:
+    """Filter vouchers by date range (DD-MM-YYYY format). Safety net for TDL filter."""
+    try:
+        dt_from = datetime.strptime(from_date, "%d-%m-%Y")
+        dt_to = datetime.strptime(to_date, "%d-%m-%Y")
+    except ValueError:
+        return vouchers
+    filtered = []
+    for v in vouchers:
+        date_str = v.get("date", "")
+        if not date_str:
+            continue
+        try:
+            dt = datetime.strptime(date_str, "%Y%m%d")
+            if dt_from <= dt <= dt_to:
+                filtered.append(v)
+        except ValueError:
+            filtered.append(v)
+    return filtered
+
+
+def parse_vouchers(raw_xml: str, from_date: str | None = None, to_date: str | None = None) -> list[dict]:
     root = ET.fromstring(sanitize_xml(raw_xml))
     vouchers = []
     for v in root.iter("VOUCHER"):
@@ -263,6 +285,14 @@ def parse_vouchers(raw_xml: str) -> list[dict]:
         voucher_number = _get_text(v, "VOUCHERNUMBER")
         party = _get_text(v, "PARTYLEDGERNAME")
         narration = _get_text(v, "NARRATION")
+        # Extract month field for grouping
+        month_str = ""
+        if date_str:
+            try:
+                dt = datetime.strptime(date_str, "%Y%m%d")
+                month_str = dt.strftime("%b %Y")
+            except ValueError:
+                month_str = ""
         ledger_entries = []
         for entry in v.findall("ALLLEDGERENTRIES.LIST"):
             ledger_entries.append({
@@ -274,10 +304,13 @@ def parse_vouchers(raw_xml: str) -> list[dict]:
             continue
         vouchers.append({
             "date": date_str,
+            "month": month_str,
             "voucher_type": voucher_type,
             "voucher_number": voucher_number,
             "party_name": party,
             "narration": narration,
             "ledger_entries": ledger_entries,
         })
+    if from_date and to_date:
+        vouchers = _filter_vouchers_by_date(vouchers, from_date, to_date)
     return vouchers

@@ -170,3 +170,32 @@ class TestVoucherTypeTitleCase:
     def test_day_book_voucher_type_already_correct(self):
         xml = build_day_book("01-04-2025", "30-04-2025", voucher_type="Sales")
         assert '"Sales"' in xml
+
+
+class TestDateRangeFilter:
+    """Phase 6: TDL DateRangeFilter for voucher collections."""
+
+    def test_sales_register_has_date_filter(self):
+        xml = build_sales_register("01-07-2025", "31-07-2025")
+        assert "DateRangeFilter" in xml
+        assert "InDateRange" in xml
+
+    def test_day_book_has_date_filter(self):
+        xml = build_day_book("01-04-2025", "30-04-2025")
+        assert "DateRangeFilter" in xml
+
+    def test_date_filter_combined_with_type_filter(self):
+        xml = build_sales_register("01-07-2025", "31-07-2025")
+        assert "DateRangeFilter" in xml
+        assert "VchTypeFilter" in xml
+
+    def test_date_filter_contains_dates(self):
+        xml = build_sales_register("01-07-2025", "31-07-2025")
+        assert "01-07-2025" in xml
+        assert "31-07-2025" in xml
+        assert "$$InDateRange:$Date:01-07-2025:31-07-2025" in xml
+
+    def test_day_book_no_type_still_has_date_filter(self):
+        xml = build_day_book("01-04-2025", "30-04-2025")
+        assert "DateRangeFilter" in xml
+        assert "VchTypeFilter" not in xml

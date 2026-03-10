@@ -25,7 +25,7 @@ async def day_book(
     error = detect_error(raw)
     if error:
         raise TallyResponseError(error)
-    return parse_vouchers(raw)
+    return parse_vouchers(raw, from_date=from_date, to_date=to_date)
 
 
 async def ledger_vouchers(
@@ -40,7 +40,7 @@ async def ledger_vouchers(
     error = detect_error(raw)
     if error:
         raise TallyResponseError(error)
-    return parse_vouchers(raw)
+    return parse_vouchers(raw, from_date=from_date, to_date=to_date)
 
 
 async def sales_register(
@@ -54,7 +54,7 @@ async def sales_register(
     error = detect_error(raw)
     if error:
         raise TallyResponseError(error)
-    return parse_vouchers(raw)
+    return parse_vouchers(raw, from_date=from_date, to_date=to_date)
 
 
 async def purchase_register(
@@ -68,4 +68,4 @@ async def purchase_register(
     error = detect_error(raw)
     if error:
         raise TallyResponseError(error)
-    return parse_vouchers(raw)
+    return parse_vouchers(raw, from_date=from_date, to_date=to_date)

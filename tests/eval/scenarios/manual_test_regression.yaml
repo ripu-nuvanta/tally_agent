@@ -20,6 +20,7 @@ turns:
         - "Shows monthly or periodic sales data for FY 2025-26"
         - "Trend direction (growing/declining/stable) is mentioned"
         - "Chart shows time-series data"
+        - "Total sales amount should be present as a summary row or in prose"
 
   - query: "compare Q2 and Q3 results"
     expect:
@@ -31,6 +32,7 @@ turns:
         - "Q3 maps to Oct-Dec 2025"
         - "Shows absolute and/or percentage difference"
         - "Both quarters have distinct data"
+        - "Column totals should be present for each quarter"
 
   - query: "Top 10 customers"
     expect:
@@ -40,6 +42,7 @@ turns:
         - "Lists up to 10 customers ranked by sales"
         - "Amounts sorted in descending order"
         - "Indian rupee formatting used"
+        - "Grand total of listed customers' sales should be present"
 
   - query: "month-wise trend for hcode"
     expect:

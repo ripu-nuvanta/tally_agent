@@ -519,3 +519,62 @@ def test_compute_trend_trailing_zero_shows_na():
     assert rows[1][3] == "N/A"
     # Mar: 0 → 0 should also be N/A
     assert rows[2][3] == "N/A"
+
+
+# ---------------------------------------------------------------------------
+# Phase 6: _ensure_totals_row tests
+# ---------------------------------------------------------------------------
+
+class TestEnsureTotalsRow:
+    def test_adds_total_for_top_n(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        headers = ["Customer", "Sales"]
+        rows = [["Alice", 1000], ["Bob", 2000], ["Charlie", 3000]]
+        result = _ensure_totals_row(headers, rows, "top_n")
+        assert len(result) == 4
+        assert result[-1][0] == "Total"
+        assert result[-1][1] == 6000
+
+    def test_skips_if_total_exists(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        headers = ["Customer", "Sales"]
+        rows = [["Alice", 1000], ["Grand Total", 1000]]
+        result = _ensure_totals_row(headers, rows, "top_n")
+        assert len(result) == 2
+
+    def test_skips_trend(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        headers = ["Period", "Sales"]
+        rows = [["Jan", 100], ["Feb", 200]]
+        result = _ensure_totals_row(headers, rows, "trend")
+        assert len(result) == 2
+
+    def test_handles_string_amounts(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        headers = ["Customer", "Sales"]
+        rows = [["Alice", "₹1,000"], ["Bob", "₹2,000"]]
+        result = _ensure_totals_row(headers, rows, "comparison")
+        assert len(result) == 3
+        assert result[-1][1] == 3000.0
+
+    def test_handles_percentage_columns(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        headers = ["Item", "Amount", "Change %"]
+        rows = [["A", 100, "10%"], ["B", 200, "20%"]]
+        result = _ensure_totals_row(headers, rows, "comparison")
+        assert result[-1][1] == 300
+        assert result[-1][2] == 30.0
+
+    def test_adds_total_for_aggregation(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        headers = ["Category", "Amount"]
+        rows = [["Food", 500], ["Transport", 300]]
+        result = _ensure_totals_row(headers, rows, "aggregation")
+        assert len(result) == 3
+        assert result[-1][0] == "Total"
+        assert result[-1][1] == 800
+
+    def test_empty_rows(self):
+        from backend.agents.analysis_agent import _ensure_totals_row
+        result = _ensure_totals_row(["A", "B"], [], "top_n")
+        assert result == []

@@ -147,6 +147,11 @@ in your response text. The system renders data tables automatically from tool \
 results. In your text response, provide a brief summary or analysis of the data \
 instead. Example: "Here is the P&L for March 2026. Revenue was ₹X and expenses \
 were ₹Y." Do NOT repeat the data in table format.
+
+11. **One-call trend queries**: For trend/time-series queries, fetch the FULL date \
+range in ONE call, then use compute_totals with group_by='month' to aggregate by \
+month. Do NOT make separate API calls per month or period — the voucher data \
+includes a 'month' field for grouping. This is critical for performance.
 """
 
 
@@ -228,4 +233,8 @@ bar, grouped_bar, line, pie, table_only
    - If GST treatment changed mid-year, note this and reconcile totals.
    - When a customer total differs between analyses, explain: "₹15.70L base + ₹72K GST = ₹16.42L invoiced".
    - Prefer base values for like-for-like comparisons.
+
+9. **Summary totals**: Always include a "Total" or "Grand Total" row at the bottom of \
+comparison and ranking tables. For trend tables, include a "Total" or "Average" row. \
+Format: same columns, first column = "Total", numeric columns = sum.
 """

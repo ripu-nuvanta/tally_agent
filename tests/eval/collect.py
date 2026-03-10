@@ -226,8 +226,13 @@ async def collect_scenario(
             # Check if it's a clarification — if so, handle follow-up
             is_clarification = False
             msg_lower = response["response_message"].lower()
-            if any(kw in msg_lower for kw in ["which", "specify", "clarif", "could you", "what type", "more specific"]):
-                is_clarification = True
+            # Only treat as clarification if response has NO structured data
+            has_data = response.get("has_table") or response.get("has_chart")
+            if not has_data:
+                clarification_keywords = ["specify", "clarif", "could you provide", "what type", "more specific", "which one"]
+                if any(kw in msg_lower for kw in clarification_keywords):
+                    is_clarification = True
+            if is_clarification:
                 followup = generate_followup(response["response_message"], query)
                 print(f"    Clarification detected, following up: {followup[:60]}...")
 
@@ -265,6 +270,10 @@ async def collect_scenario(
                     table_path = screenshots_dir / f"{scenario_name}_turn{turn_idx + 1}_table.png"
                     table_el = last_msg.locator("table")
                     if await table_el.count() > 0:
+                        # Remove overflow clipping to capture full table width
+                        table_container = last_msg.locator(".overflow-x-auto")
+                        if await table_container.count() > 0:
+                            await table_container.first.evaluate("el => el.style.overflow = 'visible'")
                         await table_el.first.screenshot(path=str(table_path))
                         table_screenshot = str(table_path)
 
