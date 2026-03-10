@@ -1,4 +1,4 @@
-"""Standalone smoke-test for Langfuse OTLP tracing.
+"""Standalone smoke-test for Langfuse OTLP tracing with session grouping.
 
 Run from the project root:
     PYTHONPATH=. uv run python scripts/test_langfuse.py
@@ -7,13 +7,18 @@ The script:
   1. Reads LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY / LANGFUSE_BASE_URL from .env
   2. Configures the OTLPSpanExporter pointing at <LANGFUSE_BASE_URL>/api/public/otel/v1/traces
   3. Creates a TracerProvider with a custom SpanExporter that prints export results
-  4. Makes a real Anthropic API call (needs ANTHROPIC_API_KEY)
+  4. Makes TWO Anthropic API calls under a root span with langfuse.session.id
   5. Force-flushes the provider
   6. Prints whether each span was exported successfully
 
+Verify in Langfuse dashboard:
+  - A trace named "chat" with langfuse.session.id = "test-session-123"
+  - Two child Anthropic spans under the root
+  - Session "test-session-123" groups both calls
+
 Typical usage:
     PYTHONPATH=. uv run python scripts/test_langfuse.py
-    # then check https://cloud.langfuse.com for a trace named "langfuse-test"
+    # then check https://cloud.langfuse.com for a session "test-session-123"
 """
 
 import base64
@@ -22,6 +27,8 @@ import sys
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger("test_langfuse")
+
+TEST_SESSION_ID = "test-session-123"
 
 
 def main() -> None:
@@ -72,6 +79,14 @@ def main() -> None:
 
         def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
             logger.info("Exporting %d span(s) to Langfuse...", len(spans))
+            for s in spans:
+                attrs = dict(s.attributes or {})
+                logger.info(
+                    "  span: name=%s parent=%s attrs=%s",
+                    s.name,
+                    s.parent.span_id if s.parent else "ROOT",
+                    {k: v for k, v in attrs.items() if k.startswith("langfuse.")},
+                )
             result = self._inner.export(spans)
             if result == SpanExportResult.SUCCESS:
                 logger.info("  SUCCESS — spans accepted by Langfuse")
@@ -107,23 +122,54 @@ def main() -> None:
     logger.info("AnthropicInstrumentor active")
 
     # ------------------------------------------------------------------
-    # 4. Make a minimal Anthropic API call to produce a span
+    # 4. Test session grouping: root span with langfuse.session.id
+    #    + two Anthropic calls as children
     # ------------------------------------------------------------------
     import anthropic
 
     client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+    tracer = trace.get_tracer("tally-agent.chat")
 
-    tracer = trace.get_tracer("langfuse-test")
-    with tracer.start_as_current_span("langfuse-test") as root_span:
-        logger.info("Sending test message to Anthropic...")
-        response = client.messages.create(
+    logger.info("=" * 60)
+    logger.info("Test: session grouping with langfuse.session.id")
+    logger.info("  Session ID: %s", TEST_SESSION_ID)
+    logger.info("=" * 60)
+
+    # Create a root span that mimics what the chat endpoint now does.
+    # Langfuse reads langfuse.session.id from the root span's attributes
+    # and groups all child spans (including Anthropic SDK spans) under
+    # that session in the dashboard.
+    with tracer.start_as_current_span(
+        "chat",
+        attributes={
+            "langfuse.session.id": TEST_SESSION_ID,
+            "langfuse.user.id": TEST_SESSION_ID,
+            "langfuse.trace.name": "chat",
+            "user.query": "test query for session grouping",
+        },
+    ) as root_span:
+        # First Anthropic call (simulates query agent)
+        logger.info("Call 1: sending first message to Anthropic...")
+        r1 = client.messages.create(
             model="claude-haiku-4-5-20251001",
             max_tokens=32,
-            messages=[{"role": "user", "content": "Say 'Langfuse tracing works!' and nothing else."}],
+            messages=[{"role": "user", "content": "Say 'Call 1 OK' and nothing else."}],
         )
-        answer = response.content[0].text if response.content else "(empty)"
-        logger.info("Anthropic replied: %s", answer)
-        root_span.set_attribute("test.answer", answer)
+        a1 = r1.content[0].text if r1.content else "(empty)"
+        logger.info("  Reply 1: %s", a1)
+
+        # Second Anthropic call (simulates analysis agent)
+        logger.info("Call 2: sending second message to Anthropic...")
+        r2 = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=32,
+            messages=[{"role": "user", "content": "Say 'Call 2 OK' and nothing else."}],
+        )
+        a2 = r2.content[0].text if r2.content else "(empty)"
+        logger.info("  Reply 2: %s", a2)
+
+        root_span.set_attribute("test.call1", a1)
+        root_span.set_attribute("test.call2", a2)
 
     # ------------------------------------------------------------------
     # 5. Flush — BatchSpanProcessor batches spans and exports periodically.
@@ -133,9 +179,12 @@ def main() -> None:
     provider.force_flush(timeout_millis=10_000)
     provider.shutdown()
     logger.info(
-        "Done. Check https://cloud.langfuse.com (or your self-hosted instance) "
-        "for a trace named 'langfuse-test'."
+        "Done. Check https://cloud.langfuse.com (or your self-hosted instance):"
     )
+    logger.info("  1. Look for a trace named 'chat'")
+    logger.info("  2. It should have session_id = '%s'", TEST_SESSION_ID)
+    logger.info("  3. Two Anthropic child spans should be nested under the root")
+    logger.info("  4. In Sessions view, '%s' should group both calls", TEST_SESSION_ID)
 
 
 if __name__ == "__main__":

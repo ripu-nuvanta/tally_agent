@@ -250,6 +250,25 @@ class TestToNumeric:
     def test_none(self):
         assert _to_numeric(None) == 0.0
 
+    def test_percentage_string(self):
+        assert _to_numeric("+1.7%") == 1.7
+
+    def test_negative_percentage(self):
+        assert _to_numeric("-13.0%") == -13.0
+
+    def test_dash(self):
+        """First row of trend data uses '—' for no-prior-period."""
+        assert _to_numeric("—") == 0.0
+
+    def test_na(self):
+        assert _to_numeric("N/A") == 0.0
+
+    def test_na_base_zero(self):
+        assert _to_numeric("N/A (base is zero)") == 0.0
+
+    def test_positive_with_plus(self):
+        assert _to_numeric("+100.0%") == 100.0
+
 
 # ---------------------------------------------------------------------------
 # Tests: _format_xy_data — excluded columns
@@ -332,3 +351,50 @@ class TestBuildConfigSecondaryAxis:
     def test_composed_suggestion_accepted(self):
         rows = [[1], [2], [3]]
         assert _select_chart_type("composed", "comparison", rows) == "composed"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _trim_trailing_zeros
+# ---------------------------------------------------------------------------
+
+
+def test_trim_trailing_zeros_removes_empty_tail():
+    from backend.agents.chart_agent import _trim_trailing_zeros
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Jan 2026", 611850, "+270650.00", "+30.7%"],
+        ["Feb 2026", 0, "-611850.00", "-100.0%"],
+        ["Mar 2026", 0, "+0.00", "N/A"],
+    ]
+    trimmed = _trim_trailing_zeros(headers, rows)
+    assert len(trimmed) == 1
+    assert trimmed[0][0] == "Jan 2026"
+
+def test_trim_trailing_zeros_keeps_mid_zeros():
+    from backend.agents.chart_agent import _trim_trailing_zeros
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Apr 2025", 0, "—", "—"],
+        ["May 2025", 100, "+100.00", "N/A"],
+        ["Jun 2025", 0, "-100.00", "-100.0%"],
+        ["Jul 2025", 200, "+200.00", "N/A"],
+    ]
+    trimmed = _trim_trailing_zeros(headers, rows)
+    assert len(trimmed) == 3  # leading zero trimmed, mid-sequence zero preserved
+    assert trimmed[0][0] == "May 2025"
+    assert trimmed[1][0] == "Jun 2025"  # mid-zero kept
+    assert trimmed[2][0] == "Jul 2025"
+
+def test_trim_trailing_zeros_also_trims_leading():
+    from backend.agents.chart_agent import _trim_trailing_zeros
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Apr 2025", 0, "—", "—"],
+        ["May 2025", 0, "+0.00", "N/A"],
+        ["Jun 2025", 0, "+0.00", "N/A"],
+        ["Jul 2025", 295000, "+295000.00", "N/A"],
+        ["Aug 2025", 300000, "+5000.00", "+1.7%"],
+    ]
+    trimmed = _trim_trailing_zeros(headers, rows)
+    assert len(trimmed) == 2
+    assert trimmed[0][0] == "Jul 2025"

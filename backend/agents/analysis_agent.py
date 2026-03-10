@@ -326,7 +326,10 @@ def _tool_compute_trend(
         else:
             prev = float(series[i - 1].get(value_key) or 0)
             abs_chg = value - prev
-            pct_chg = ((abs_chg / abs(prev)) * 100) if prev != 0 else None
+            if prev == 0 or value == 0:
+                pct_chg = None
+            else:
+                pct_chg = ((abs_chg / abs(prev)) * 100)
             abs_str = f"{abs_chg:+,.2f}"
             pct_str = f"{pct_chg:+.1f}%" if pct_chg is not None else "N/A"
         rows.append([period, value, abs_str, pct_str])

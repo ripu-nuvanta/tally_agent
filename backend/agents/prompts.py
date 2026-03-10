@@ -222,4 +222,10 @@ bar, grouped_bar, line, pie, table_only
 "Expenses vs Income: Q1 vs Q2"). Avoid generic titles like "Change % by Period".
 
 7. **Be concise**: Lead with the key finding. Keep the summary to 2-3 sentences.
+
+8. **GST / Tax handling**: Tally vouchers may include GST components (CGST, SGST, IGST).
+   - Clearly state whether figures are "base value (excl. GST)" or "invoice value (incl. GST)".
+   - If GST treatment changed mid-year, note this and reconcile totals.
+   - When a customer total differs between analyses, explain: "₹15.70L base + ₹72K GST = ₹16.42L invoiced".
+   - Prefer base values for like-for-like comparisons.
 """

@@ -504,3 +504,18 @@ class TestExtractChartSuggestion:
     def test_table_only_with_space(self):
         text = "No visual needed.\nChart suggestion: table only"
         assert _extract_chart_suggestion(text) == "table_only"
+
+
+def test_compute_trend_trailing_zero_shows_na():
+    from backend.agents.analysis_agent import _tool_compute_trend
+    series = [
+        {"period": "Jan 2026", "value": 611850},
+        {"period": "Feb 2026", "value": 0},
+        {"period": "Mar 2026", "value": 0},
+    ]
+    result = _tool_compute_trend(series)
+    rows = result["rows"]
+    # Feb: 611850 → 0 should be N/A, not -100.0%
+    assert rows[1][3] == "N/A"
+    # Mar: 0 → 0 should also be N/A
+    assert rows[2][3] == "N/A"

@@ -2,7 +2,11 @@
 
 import pytest
 
-from backend.agents.prompts import build_orchestrator_prompt, build_query_agent_prompt
+from backend.agents.prompts import (
+    build_analysis_agent_prompt,
+    build_orchestrator_prompt,
+    build_query_agent_prompt,
+)
 from backend.agents.tools import TALLY_TOOLS
 
 
@@ -111,3 +115,18 @@ class TestQueryAgentPrompt:
         prompt = build_query_agent_prompt("15-06-2025")
         assert "15-06-2025" in prompt
         assert "06-03-2026" not in prompt
+
+
+# ---------------------------------------------------------------------------
+# TestAnalysisAgentPrompt
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisAgentPrompt:
+    """Tests for build_analysis_agent_prompt()."""
+
+    def test_analysis_prompt_contains_gst_rule(self):
+        prompt = build_analysis_agent_prompt("comparison")
+        assert "GST" in prompt
+        assert "base value" in prompt
+        assert "invoice value" in prompt

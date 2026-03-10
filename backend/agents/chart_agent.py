@@ -49,6 +49,12 @@ class ChartAgent:
         headers = table_data["headers"]
         rows = table_data["rows"]
 
+        # Trim leading/trailing zero-value rows from trend data
+        if query_type in ("trend",) and rows:
+            rows = _trim_trailing_zeros(headers, rows)
+            if not rows:
+                return None
+
         # Use analysis agent's suggestion if available, otherwise infer from query_type
         chart_suggestion = data.get("chart_suggestion", "")
         chart_type = _select_chart_type(chart_suggestion, query_type, rows)
@@ -223,12 +229,29 @@ def _build_config(chart_type: str, headers: list[str]) -> dict[str, Any]:
     return config
 
 
+def _trim_trailing_zeros(headers: list[str], rows: list[list]) -> list[list]:
+    """Remove leading and trailing all-zero rows from trend data."""
+    if not rows or len(headers) < 2:
+        return rows
+    first_nonzero = None
+    last_nonzero = None
+    for i, row in enumerate(rows):
+        val = _to_numeric(row[1]) if len(row) > 1 else 0
+        if val != 0:
+            if first_nonzero is None:
+                first_nonzero = i
+            last_nonzero = i
+    if first_nonzero is None:
+        return rows
+    return rows[first_nonzero : last_nonzero + 1]
+
+
 def _to_numeric(val: Any) -> float:
     """Coerce a value to float, stripping currency symbols and commas."""
     if isinstance(val, (int, float)):
         return float(val)
     if isinstance(val, str):
-        cleaned = val.replace("₹", "").replace(",", "").replace(" ", "").strip()
+        cleaned = val.replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
         try:
             return float(cleaned)
         except ValueError:
