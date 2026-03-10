@@ -42,11 +42,11 @@ The `manual_test_regression` eval run (run_20260309_224658) revealed 3 bugs caus
 
 ---
 
-## Phase 2 — Chart & Data Fixes (TODO)
+## Phase 2 — Chart & Data Fixes (DONE — commit 93bf5d2)
 
 ### Phase 2a: Critical Bug Fixes
 
-#### Bug 4: ChartRenderer Plots All Data Keys, Ignores `y_keys` — HIGH
+#### Bug 4: ChartRenderer Plots All Data Keys, Ignores `y_keys` — DONE
 
 **Turns affected**: 2, 3, 5 (chart_quality = 2)
 
@@ -63,23 +63,27 @@ _EXCLUDED_CHART_COLUMNS = {"Change", "Change %"}
 
 **Fix B (Frontend)**: Use `config.y_keys` when available, fall back to Object.keys.
 
-#### Bug 5: `show_legend: false` Not Respected — MEDIUM
+#### Bug 5: `show_legend: false` Not Respected — DONE
 
-**Fix**: `{config?.show_legend !== false && <Legend />}`
+**Fix**: `{config?.show_legend !== false && <Legend />}` in all chart branches.
 
-#### Bug 6: Top-N Data Table Shows Only Aggregate Total — HIGH
+#### Bug 6: Top-N Data Table Shows Only Aggregate Total — DONE
 
 **Turn affected**: 4
-**Fix**: Investigate `_extract_all_data` — prefer per-record results over aggregates for `top_n`.
+**Fix**: Added `ranked_table_data` tracker in analysis_agent.py that captures `sort_by_field` results separately. All three return paths prefer ranked data for `top_n` queries.
 
-#### Bug 7: Q3 Sales = Full-Year Total (Cumulative P&L) — MEDIUM
+#### Bug 7: Q3 Sales = Full-Year Total (Cumulative P&L) — DONE
 
 **Turn affected**: 3
-**Fix**: Verify request_builder date bounds; may need period-only vs cumulative handling.
+**Root cause**: Tally's P&L TYPE=Data ignores SVFROMDATE, returning inconsistent cumulative figures.
+**Fix**: Added `profit_and_loss_period()` in `reports.py` — fetches two cumulative P&L reports (FY-start to period-end, FY-start to day-before-period-start) and subtracts. Queries starting from FY start (Q1, full year) remain single-request. Tool handler updated to use period-specific version.
 
-#### Bug 8: Chart Title Defaults to "Change % by Period" — LOW
+#### Bug 8: Chart Title Defaults to "Change % by Period" — DONE
 
-**Fix**: Update chart agent prompt to derive title from actual y_keys.
+**Fix**: Three-layer fix:
+1. `_generate_title` uses first non-excluded header (not Change/Change %)
+2. Analysis agent prompt requests "Chart title:" line from Claude
+3. `_extract_chart_title` extracts it; chart_agent prefers it over rule-based fallback
 
 ### Phase 2b: Chart UX Improvements
 
@@ -139,11 +143,20 @@ _EXCLUDED_CHART_COLUMNS = {"Change", "Change %"}
 - Wire to `<YAxis tickFormatter={formatAxisAmount} />` in ChartRenderer
 - Wire `<Tooltip formatter={...} />` for full formatted amounts
 
-#### Enhancement 12: Turn 3 Legend/Series Mismatch
-
-**Problem**: Turn 3 comparison chart shows 4 items in legend but only 3 visible bars. The 4th (Change % = 0) renders as invisible flat bars.
+#### Enhancement 12: Turn 3 Legend/Series Mismatch — DONE
 
 **Fix**: Addressed by Enhancement 9 (ComposedChart) — Change % moves to secondary axis line, legend shows only visible series. Combined with Bug 4 fix (exclude Change from data), the grouped bar will show only Q2 and Q3.
+
+### Phase 2 Test Results
+
+| Suite | Count | Delta |
+|-------|-------|-------|
+| Backend unit | 386 | +19 |
+| Frontend Vitest | 101 | +15 |
+| Playwright visual | 36 | +6 |
+| **Total** | **523** | **+40** |
+
+New Playwright fixtures: `sales_trend_composed` (ComposedChart dual Y-axis), `top_customers_ranked` (ranked records + show_legend=false). All screenshots visually inspected across mobile/tablet/desktop.
 
 ---
 
@@ -177,22 +190,30 @@ _EXCLUDED_CHART_COLUMNS = {"Change", "Change %"}
 
 ---
 
-## Files to Modify (Phase 2)
+## Files Modified (Phase 2) — commit 93bf5d2
 
-| # | File | Function/Area | Items |
-|---|------|---------------|-------|
-| 1 | `backend/agents/chart_agent.py` | `_format_xy_data`, `_build_config` | Bug 4, Enh 9 (composed chart config, secondary_y_keys) |
-| 2 | `frontend/src/components/ChartRenderer.tsx` | Full rewrite of chart rendering | Bug 4 (y_keys), Bug 5 (legend), Enh 9 (ComposedChart + dual axis), Enh 10 (colors), Enh 11 (number formatting), Enh 12 (legend fix) |
-| 3 | `frontend/src/utils/format.ts` | New `formatAxisAmount` | Enh 11 (₹ K/L/Cr formatting) |
-| 4 | `backend/agents/orchestrator.py` | `_extract_all_data` | Bug 6 (top-N data) |
-| 5 | `backend/agents/prompts.py` | `build_chart_agent_prompt` | Bug 8 (chart title), Enh 9 (composed chart type in valid types) |
-| 6 | `backend/tally_bridge/request_builder.py` | P&L date handling | Bug 7 (cumulative vs period) |
+| # | File | Changes |
+|---|------|---------|
+| 1 | `backend/agents/chart_agent.py` | Bug 4 (_EXCLUDED_CHART_COLUMNS), Bug 8 (_generate_title), Enh 9 (composed type, secondary_y_keys), Enh 10 (secondary_colors) |
+| 2 | `backend/agents/analysis_agent.py` | Bug 6 (ranked_table_data), Bug 8 (_extract_chart_title), "composed" in valid suggestions |
+| 3 | `backend/agents/prompts.py` | Bug 8 (Chart title: instruction in analysis prompt) |
+| 4 | `backend/agents/tools.py` | Bug 7 (profit_and_loss → profit_and_loss_period) |
+| 5 | `backend/tally_bridge/queries/reports.py` | Bug 7 (profit_and_loss_period subtraction approach) |
+| 6 | `frontend/src/components/ChartRenderer.tsx` | Bug 4 (y_keys), Bug 5 (show_legend), Enh 9 (ComposedChart), Enh 11 (formatAxisAmount) |
+| 7 | `frontend/src/utils/format.ts` | Enh 11 (formatAxisAmount) |
+| 8 | `frontend/src/types/index.ts` | Enh 9 ("composed" in ChartSpec union) |
+| 9 | `tests/unit/test_chart_agent.py` | +13 tests |
+| 10 | `tests/unit/test_analysis_agent.py` | +7 tests (_extract_chart_title) |
+| 11 | `tests/unit/test_pnl_period.py` | +12 tests (new file) |
+| 12 | `frontend/src/__tests__/ChartRenderer.test.tsx` | +4 tests |
+| 13 | `frontend/src/__tests__/format.test.ts` | +7 tests |
+| 14 | `frontend/src/__tests__/fixtures/eval_responses.json` | +2 fixtures (sales_trend_composed, top_customers_ranked) |
+| 15-29 | Playwright screenshots | 6 new + 9 updated PNGs |
 
-## Verification (Phase 2)
+## Next Verification (Phase 2)
 
-1. Run unit tests: `ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/ --ignore=tests/eval/`
-2. Run frontend tests: `cd frontend && npm test`
-3. Restart backend + frontend
-4. Rerun eval: `PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173`
-5. Run judge: `source .env && ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY PYTHONPATH=. python tests/eval/judge.py --run-dir <run_dir>`
-6. Target: All chart scores ≥ 4, factual scores ≥ 4, all turns have structured data
+1. ~~Run unit tests~~ ✅ 386 BE + 101 FE passing
+2. ~~Run Playwright~~ ✅ 36 tests passing, screenshots visually inspected
+3. Rerun eval: `PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173`
+4. Run judge: `source .env && ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY PYTHONPATH=. python tests/eval/judge.py --run-dir <run_dir>`
+5. Target: All chart scores ≥ 4, factual scores ≥ 4, all turns have structured data
