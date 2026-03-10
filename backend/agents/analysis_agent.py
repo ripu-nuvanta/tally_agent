@@ -550,6 +550,10 @@ def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) ->
         return rows
     totals: list[Any] = ["Total"]
     for col_idx in range(1, len(headers)):
+        # Skip percentage columns — summing percentages is meaningless
+        if "%" in headers[col_idx]:
+            totals.append("")
+            continue
         col_vals: list[float] = []
         for row in rows:
             if col_idx < len(row):
@@ -566,8 +570,7 @@ def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) ->
             totals.append(sum(col_vals))
         else:
             totals.append("")
-    rows.append(totals)
-    return rows
+    return rows + [totals]
 
 
 def _build_result(

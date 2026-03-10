@@ -88,7 +88,7 @@ def _should_verify_totals(turn: dict[str, Any], checks: list[str]) -> bool:
     if len(rows) < 2:
         return False
     # Check keywords in checks or query
-    totals_keywords = {"total", "ranked", "top", "comparison", "compare", "trend",
+    totals_keywords = {"ranked", "top", "comparison", "compare",
                        "aggregate", "breakdown", "category", "customer"}
     check_text = " ".join(checks).lower()
     query_text = turn.get("query", "").lower()

@@ -266,6 +266,7 @@ def _filter_vouchers_by_date(vouchers: list[dict], from_date: str, to_date: str)
     for v in vouchers:
         date_str = v.get("date", "")
         if not date_str:
+            filtered.append(v)  # Keep vouchers without dates (can't verify range)
             continue
         try:
             dt = datetime.strptime(date_str, "%Y%m%d")

@@ -557,13 +557,13 @@ class TestEnsureTotalsRow:
         assert len(result) == 3
         assert result[-1][1] == 3000.0
 
-    def test_handles_percentage_columns(self):
+    def test_skips_percentage_columns(self):
         from backend.agents.analysis_agent import _ensure_totals_row
         headers = ["Item", "Amount", "Change %"]
         rows = [["A", 100, "10%"], ["B", 200, "20%"]]
         result = _ensure_totals_row(headers, rows, "comparison")
         assert result[-1][1] == 300
-        assert result[-1][2] == 30.0
+        assert result[-1][2] == ""  # % columns skipped
 
     def test_adds_total_for_aggregation(self):
         from backend.agents.analysis_agent import _ensure_totals_row
