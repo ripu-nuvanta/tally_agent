@@ -50,11 +50,11 @@ def load_golden(scenario_name: str) -> dict | None:
 
 
 def generate_followup(clarification_msg: str, original_query: str) -> str:
-    """Generate follow-up for clarification responses."""
-    lower = clarification_msg.lower()
-    for keyword, response in FOLLOWUP_MAP.items():
-        if keyword in lower:
-            return response
+    """Generate follow-up for clarification responses.
+
+    Always incorporates the original query intent so we don't accidentally
+    redirect (e.g. asking for P&L but following up with trial balance).
+    """
     return f"{original_query} for the current financial year April 2025 to March 2026"
 
 
