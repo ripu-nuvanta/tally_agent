@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 import anthropic
@@ -537,7 +538,9 @@ def _extract_insights(text: str) -> list[str]:
 def _extract_chart_suggestion(text: str) -> str:
     """Look for a chart_suggestion in Claude's text response."""
     valid = {"bar", "grouped_bar", "line", "pie", "table_only", "stacked_bar"}
-    text_lower = text.lower()
+    # Strip markdown bold/italic markers before searching
+    text_clean = re.sub(r'\*{1,2}', '', text)
+    text_lower = text_clean.lower()
     for keyword in ("chart_suggestion:", "chart suggestion:", "suggested chart:"):
         if keyword in text_lower:
             idx = text_lower.index(keyword) + len(keyword)

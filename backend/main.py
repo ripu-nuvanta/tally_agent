@@ -5,6 +5,9 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 
+from backend.config import settings
+
+logging.basicConfig(level=getattr(logging, settings.LOG_LEVEL, logging.INFO))
 logger = logging.getLogger(__name__)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -22,9 +25,30 @@ async def lifespan(app: FastAPI):
     app.state.tally_client = TallyClient(settings.TALLY_HOST, settings.TALLY_PORT)
     app.state.session_store = SessionStore(ttl_minutes=settings.SESSION_TTL_MINUTES)
     if settings.LANGFUSE_PUBLIC_KEY:
+        import base64
+
+        from opentelemetry.exporter.otlp.proto.http.trace_exporter import (
+            OTLPSpanExporter,
+        )
         from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+
+        auth = base64.b64encode(
+            f"{settings.LANGFUSE_PUBLIC_KEY}:{settings.LANGFUSE_SECRET_KEY}".encode()
+        ).decode()
+        exporter = OTLPSpanExporter(
+            endpoint=f"{settings.LANGFUSE_BASE_URL}/api/public/otel/v1/traces",
+            headers={"Authorization": f"Basic {auth}"},
+        )
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+        from opentelemetry import trace
+        trace.set_tracer_provider(provider)
+
         AnthropicInstrumentor().instrument()
-        logger.info("Langfuse instrumentation enabled")
+        logger.info("Langfuse instrumentation enabled (OTLP → %s)", settings.LANGFUSE_BASE_URL)
     yield
     await app.state.tally_client.close()
 

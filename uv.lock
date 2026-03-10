@@ -1435,12 +1435,11 @@ dependencies = [
     { name = "anthropic" },
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "langfuse" },
-    { name = "opentelemetry-instrumentation-anthropic" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "python-dateutil" },
     { name = "python-dotenv" },
+    { name = "pyyaml" },
     { name = "uvicorn" },
 ]
 
@@ -1455,6 +1454,10 @@ dev = [
     { name = "pytest-cov" },
     { name = "pyyaml" },
 ]
+langfuse = [
+    { name = "langfuse" },
+    { name = "opentelemetry-instrumentation-anthropic" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -1463,8 +1466,8 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "httpx", specifier = ">=0.27" },
     { name = "jinja2", marker = "extra == 'dev'" },
-    { name = "langfuse", specifier = ">=2.0" },
-    { name = "opentelemetry-instrumentation-anthropic", specifier = ">=0.1" },
+    { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=2.0" },
+    { name = "opentelemetry-instrumentation-anthropic", marker = "extra == 'langfuse'", specifier = ">=0.1" },
     { name = "playwright", marker = "extra == 'dev'" },
     { name = "pydantic", specifier = ">=2.0" },
     { name = "pydantic-settings", specifier = ">=2.0" },
@@ -1474,10 +1477,11 @@ requires-dist = [
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=5.0" },
     { name = "python-dateutil", specifier = ">=2.9.0.post0" },
     { name = "python-dotenv", specifier = ">=1.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
     { name = "pyyaml", marker = "extra == 'dev'" },
     { name = "uvicorn", specifier = ">=0.34" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["langfuse", "dev"]
 
 [[package]]
 name = "tqdm"

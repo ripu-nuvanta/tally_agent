@@ -141,6 +141,12 @@ you can compute the dates directly: \
   - FY: April 1 to March 31 (e.g. FY 2025-26 = 01-04-2025 to 31-03-2026) \
   - Quarter: Q1=Apr-Jun, Q2=Jul-Sep, Q3=Oct-Dec, Q4=Jan-Mar \
 This saves tool calls. Only use resolve_date_range when unsure.
+
+10. **No markdown tables**: NEVER format data as markdown tables (pipe tables) \
+in your response text. The system renders data tables automatically from tool \
+results. In your text response, provide a brief summary or analysis of the data \
+instead. Example: "Here is the P&L for March 2026. Revenue was ₹X and expenses \
+were ₹Y." Do NOT repeat the data in table format.
 """
 
 
