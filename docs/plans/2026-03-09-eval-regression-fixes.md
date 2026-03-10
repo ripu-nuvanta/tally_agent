@@ -232,4 +232,262 @@ New Playwright fixtures: `sales_trend_composed` (ComposedChart dual Y-axis), `to
 
 **Fix applied**: Simplified `generate_followup()` in collect.py — always re-states original query with date context instead of keyword-based redirect that caused Turn 1→trial balance and Turn 5→clarification loop.
 
-**Remaining**: Turn 1 factual=3 (P&L for "this month" returns limited data), Turn 5 factual=3 (hcode trend data). Both are agent accuracy issues, candidates for Phase 4 model upgrade.
+**Remaining issues from judge feedback** (addressed in Phase 5 below):
+- Change % = 0 in all charts (turns 2, 3, 5) — `_to_numeric` doesn't strip `%`
+- Feb 2026 shows -100% in table — should be N/A (no data, not a real decline)
+- Chart title says "Jul–Jan" but data includes all 12 months Apr–Mar
+- GST base vs invoice confusion: HCODE ₹16.42L (invoice) vs ₹15.70L (base) unexplained
+- Langfuse session grouping not working despite `langfuse.session.id` attribute
+
+---
+
+## Phase 5 — Eval Accuracy & Langfuse Session Fixes (TODO)
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Fix chart Change % rendering, GST consistency, trend data trimming, and Langfuse session grouping.
+
+**Architecture:** Backend-only fixes in chart_agent.py (data parsing), analysis_agent.py (prompt + trend trimming), prompts.py (GST instructions), and Langfuse OTLP setup. No frontend changes needed.
+
+### Task 1: Fix `_to_numeric` to Parse Percentage Strings
+
+**Problem:** `_to_numeric("+1.7%")` returns 0.0 because `%` is not stripped. All Change % chart values render as 0.
+
+**Files:**
+- Modify: `backend/agents/chart_agent.py:226-236` (`_to_numeric`)
+- Test: `tests/unit/test_chart_agent.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# In tests/unit/test_chart_agent.py
+
+def test_to_numeric_percentage_string():
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("+1.7%") == 1.7
+
+def test_to_numeric_negative_percentage():
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("-13.0%") == -13.0
+
+def test_to_numeric_dash():
+    """First row of trend data uses '—' for no-prior-period."""
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("—") == 0.0
+
+def test_to_numeric_na():
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("N/A") == 0.0
+
+def test_to_numeric_na_base_zero():
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("N/A (base is zero)") == 0.0
+
+def test_to_numeric_positive_with_plus():
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("+100.0%") == 100.0
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_chart_agent.py::test_to_numeric_percentage_string -v`
+Expected: FAIL — `assert 0.0 == 1.7`
+
+- [ ] **Step 3: Fix `_to_numeric` to strip `%` before parsing**
+
+```python
+def _to_numeric(val: Any) -> float:
+    """Coerce a value to float, stripping currency symbols, commas, and %."""
+    if isinstance(val, (int, float)):
+        return float(val)
+    if isinstance(val, str):
+        cleaned = val.replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
+        try:
+            return float(cleaned)
+        except ValueError:
+            return 0.0
+    return 0.0
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_chart_agent.py -v -k "to_numeric"`
+
+- [ ] **Step 5: Commit**
+
+### Task 2: Trim Trailing Zero Months from Trend Data
+
+**Problem:** Feb 2026 shows `-100%` change (misleading). Chart data includes all 12 months but title says "Jul–Jan".
+
+**Files:**
+- Modify: `backend/agents/chart_agent.py` (new `_trim_trailing_zeros` + wire into `execute`)
+- Test: `tests/unit/test_chart_agent.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+def test_trim_trailing_zeros_removes_empty_tail():
+    from backend.agents.chart_agent import _trim_trailing_zeros
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Jan 2026", 611850, "+270650.00", "+30.7%"],
+        ["Feb 2026", 0, "-611850.00", "-100.0%"],
+        ["Mar 2026", 0, "+0.00", "N/A"],
+    ]
+    trimmed = _trim_trailing_zeros(headers, rows)
+    assert len(trimmed) == 1
+    assert trimmed[0][0] == "Jan 2026"
+
+def test_trim_trailing_zeros_keeps_mid_zeros():
+    from backend.agents.chart_agent import _trim_trailing_zeros
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Apr 2025", 0, "—", "—"],
+        ["May 2025", 100, "+100.00", "N/A"],
+        ["Jun 2025", 0, "-100.00", "-100.0%"],
+        ["Jul 2025", 200, "+200.00", "N/A"],
+    ]
+    trimmed = _trim_trailing_zeros(headers, rows)
+    assert len(trimmed) == 4  # mid-sequence zero preserved
+
+def test_trim_trailing_zeros_also_trims_leading():
+    from backend.agents.chart_agent import _trim_trailing_zeros
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Apr 2025", 0, "—", "—"],
+        ["May 2025", 0, "+0.00", "N/A"],
+        ["Jun 2025", 0, "+0.00", "N/A"],
+        ["Jul 2025", 295000, "+295000.00", "N/A"],
+        ["Aug 2025", 300000, "+5000.00", "+1.7%"],
+    ]
+    trimmed = _trim_trailing_zeros(headers, rows)
+    assert len(trimmed) == 2
+    assert trimmed[0][0] == "Jul 2025"
+```
+
+- [ ] **Step 2: Implement `_trim_trailing_zeros`**
+
+```python
+def _trim_trailing_zeros(headers: list[str], rows: list[list]) -> list[list]:
+    """Remove leading and trailing all-zero rows from trend data."""
+    if not rows or len(headers) < 2:
+        return rows
+    first_nonzero = None
+    last_nonzero = None
+    for i, row in enumerate(rows):
+        val = _to_numeric(row[1]) if len(row) > 1 else 0
+        if val != 0:
+            if first_nonzero is None:
+                first_nonzero = i
+            last_nonzero = i
+    if first_nonzero is None:
+        return rows
+    return rows[first_nonzero : last_nonzero + 1]
+```
+
+Wire into `execute()` for trend queries only:
+```python
+if query_type in ("trend",) and rows:
+    rows = _trim_trailing_zeros(headers, rows)
+```
+
+- [ ] **Step 3: Run tests, commit**
+
+### Task 3: Add GST Base-vs-Invoice Clarity to Analysis Prompt
+
+**Problem:** HCODE total ₹16,42,000 (invoice incl. GST) vs ₹15,70,000 (base in Turn 4) — discrepancy unexplained. Inconsistent GST treatment across months.
+
+**Files:**
+- Modify: `backend/agents/prompts.py` (`build_analysis_agent_prompt`)
+- Test: `tests/unit/test_prompts.py`
+
+- [ ] **Step 1: Write test, implement rule #8**
+
+Add to analysis prompt rules:
+```
+8. **GST / Tax handling**: Tally vouchers may include GST components (CGST, SGST, IGST).
+   - Clearly state whether figures are "base value (excl. GST)" or "invoice value (incl. GST)".
+   - If GST treatment changed mid-year, note this and reconcile totals.
+   - When a customer total differs between analyses, explain: "₹15.70L base + ₹72K GST = ₹16.42L invoiced".
+   - Prefer base values for like-for-like comparisons.
+```
+
+- [ ] **Step 2: Run test, commit**
+
+### Task 4: Handle N/A for Drop-to-Zero Change %
+
+**Problem:** Feb 2026 shows `-100.0%` in table — misleading for months with no data.
+
+**Files:**
+- Modify: `backend/agents/analysis_agent.py:310-341` (`_tool_compute_trend`)
+- Test: `tests/unit/test_analysis_agent.py`
+
+- [ ] **Step 1: Write failing test**
+
+```python
+def test_compute_trend_trailing_zero_shows_na():
+    from backend.agents.analysis_agent import _tool_compute_trend
+    series = [
+        {"period": "Jan 2026", "value": 611850},
+        {"period": "Feb 2026", "value": 0},
+        {"period": "Mar 2026", "value": 0},
+    ]
+    result = _tool_compute_trend(series)
+    rows = result["rows"]
+    assert rows[1][3] == "N/A"  # not "-100.0%"
+    assert rows[2][3] == "N/A"  # 0→0 also N/A
+```
+
+- [ ] **Step 2: Fix `_tool_compute_trend`** — when value drops to 0, show N/A not -100%
+
+```python
+if value == 0 and prev != 0:
+    pct_chg = None
+    pct_str = "N/A"
+elif prev == 0:
+    pct_chg = None
+    pct_str = "N/A"
+else:
+    pct_chg = ((abs_chg / abs(prev)) * 100)
+    pct_str = f"{pct_chg:+.1f}%"
+```
+
+- [ ] **Step 3: Run tests, commit**
+
+### Task 5: Debug and Fix Langfuse Session Grouping
+
+**Problem:** `langfuse.session.id` span attribute added (commit 02f2f1b) but sessions not grouped in Langfuse dashboard.
+
+**Files:**
+- Modify: `scripts/test_langfuse.py` (add session test with 2 API calls)
+- Modify: `backend/main.py` (possibly add BaggageSpanProcessor)
+- Modify: `backend/api/chat.py` (possibly switch to baggage-based propagation)
+- Modify: `pyproject.toml` (possibly add `opentelemetry-processor-baggage`)
+
+- [ ] **Step 1: Enhance test script** — 2 API calls under same session_id, flush, check dashboard
+- [ ] **Step 2: Debug** — likely need `BaggageSpanProcessor(ALLOW_ALL_BAGGAGE_KEYS)` so child spans inherit session_id
+- [ ] **Step 3: Fix and re-test**
+- [ ] **Step 4: Commit**
+
+### Task 6: Run Full Test Suite + Eval Verification
+
+- [ ] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
+- [ ] **Step 2:** `cd frontend && npm test`
+- [ ] **Step 3:** Rerun eval collect → judge → report
+- [ ] **Step 4:** Target: Chart ≥ 4, Factual ≥ 4 on turns 2-5, no -100% for empty months
+- [ ] **Step 5:** Update plan and memory, final commit
+
+### Phase 5 Summary of Changes
+
+| # | File | Change |
+|---|------|--------|
+| 1 | `backend/agents/chart_agent.py` | `_to_numeric` strips `%`; new `_trim_trailing_zeros`; wire into `execute()` |
+| 2 | `backend/agents/analysis_agent.py` | `_tool_compute_trend` returns N/A for drops-to-zero |
+| 3 | `backend/agents/prompts.py` | GST base-vs-invoice rule #8 in analysis prompt |
+| 4 | `tests/unit/test_chart_agent.py` | +10 tests (_to_numeric, _trim_trailing_zeros) |
+| 5 | `tests/unit/test_analysis_agent.py` | +1 test (trend trailing zero) |
+| 6 | `tests/unit/test_prompts.py` | +1 test (GST rule presence) |
+| 7 | `scripts/test_langfuse.py` | Enhanced: session grouping test with 2 API calls |
+| 8 | `backend/main.py` | Possibly add BaggageSpanProcessor for session propagation |
+| 9 | `backend/api/chat.py` | Possibly switch to baggage-based session_id |
+| 10 | `pyproject.toml` | Possibly add `opentelemetry-processor-baggage` dep |
