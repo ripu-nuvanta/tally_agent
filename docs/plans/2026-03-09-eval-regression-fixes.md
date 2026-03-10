@@ -503,3 +503,219 @@ else:
 **Improvements vs Phase 2 run**: Turn 2 chart 4→5 (Change % line renders correctly, trailing zeros trimmed, N/A for empty months). All coherence 5/5.
 
 **Remaining**: Turn 5 clarification loop + aggregate-only data (model-level issue, Phase 4 candidate). Turn 1 factual=3 (zero balances can't be verified).
+
+---
+
+## Phase 6 — Tool Call Optimization & Data Accuracy Fixes (TODO)
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Fix Tally date filtering, reduce tool calls from 12→1-2 per trend query, fix clarification false positives, preserve trend table data, add totals rows, fix screenshot clipping, add judge totals verification.
+
+**Root causes identified from be_run4.log analysis (run_20260310_174422):**
+
+| # | Issue | Root Cause | Fix |
+|---|-------|-----------|-----|
+| 1 | Turn 2: 12 redundant get_sales_register calls | `_wrap_voucher_collection` has no TDL date filter — Tally ignores SVFROMDATE/SVTODATE for TYPE=Collection | Add TDL `DateRangeFilter` + Python-side fallback |
+| 2 | Turn 2: Model computes wrong Dec totals (682K/782K vs correct 882K) | No month field in voucher data; model does manual arithmetic | Add `month` field to parsed vouchers + prompt: "fetch full range, use compute_totals group_by" |
+| 3 | Turn 5: False clarification detection | Keyword `"which"` matches analytical prose ("which could indicate") | Tighten keywords + structured-data guard |
+| 4 | Turn 5: Followup returns 1-row aggregate instead of 12-row trend | `last_table_data` overwritten by `compute_totals` after `compute_trend` | Add `trend_table_data` tracker (like `ranked_table_data`) |
+| 5 | Turns 3/4: Missing totals row in tables | Agent mentions totals in prose but not in structured headers/rows data | Add prompt rule + `_ensure_totals_row` post-processing fallback |
+| 6 | Turn 3: Change/Change% columns clipped in screenshot | `overflow-x-auto` + `table_el.screenshot()` captures only visible width | Remove overflow clipping before screenshot |
+
+### Task 1: TDL Date Filter for Voucher Collections
+
+**Files**: `backend/tally_bridge/request_builder.py`, `backend/tally_bridge/response_parser.py`, `backend/tally_bridge/queries/vouchers.py`, `tests/unit/test_request_builder.py`
+
+**Approach**: Add `DateRangeFilter` to `_wrap_voucher_collection()` using Tally's `$$InDateRange` TDL function (existing `VchTypeFilter` pattern). Plus Python-side date filtering in `parse_vouchers()` as safety net.
+
+- [ ] **Step 1**: Write failing tests — verify XML output contains DateRangeFilter
+```python
+def test_voucher_collection_has_date_filter():
+    xml = build_sales_register("01-07-2025", "31-07-2025")
+    assert "DateRangeFilter" in xml
+    assert "InDateRange" in xml
+```
+
+- [ ] **Step 2**: Add DateRangeFilter to `_wrap_voucher_collection()`:
+```python
+# Always add date filter
+date_filter = "<FILTER>DateRangeFilter</FILTER>"
+date_system = f'<SYSTEM TYPE="Formulae" NAME="DateRangeFilter">$$InDateRange:$Date:{from_date}:{to_date}</SYSTEM>'
+# Combine with VchTypeFilter if present
+```
+
+- [ ] **Step 3**: Add Python-side date filtering as safety net in `parse_vouchers()`:
+```python
+def parse_vouchers(raw_xml: str, from_date: str | None = None, to_date: str | None = None) -> list[dict]:
+    ...
+    if from_date and to_date:
+        vouchers = _filter_by_date(vouchers, from_date, to_date)
+    return vouchers
+```
+Thread `from_date`/`to_date` from query functions through to `parse_vouchers`.
+
+- [ ] **Step 4**: Run tests — `pytest tests/unit/test_request_builder.py -v`
+
+**Note**: `$$InDateRange` uses DD-MM-YYYY format matching our convention. Fallback: `$Date >= "{from_date}" AND $Date <= "{to_date}"`.
+
+### Task 2: Add `month` Field to Parsed Vouchers + Prompt Optimization
+
+**Files**: `backend/tally_bridge/response_parser.py`, `backend/agents/prompts.py`, `tests/unit/test_response_parser.py`
+
+- [ ] **Step 1**: Add `month` field extraction in `parse_vouchers()`:
+```python
+if date_str and len(date_str) == 8:
+    dt = datetime.strptime(date_str, "%Y%m%d")
+    month_str = dt.strftime("%b %Y")  # "Dec 2025"
+else:
+    month_str = ""
+vouchers.append({..., "month": month_str})
+```
+
+- [ ] **Step 2**: Add prompt rule to QueryAgent (`build_query_agent_prompt`):
+```
+11. For trend/time-series queries, fetch the FULL date range in ONE call, then use
+    compute_totals with group_by to aggregate by month/quarter. Do NOT make separate
+    calls per period — the data includes a 'month' field for grouping.
+```
+
+- [ ] **Step 3**: Write tests, run `pytest tests/unit/test_response_parser.py -v`
+
+### Task 3: Fix Clarification Detection in Eval Collector
+
+**File**: `tests/eval/collect.py`
+
+- [ ] **Step 1**: Tighten keyword matching + add structured-data guard:
+```python
+clarification_keywords = ["specify", "clarif", "could you provide", "what type", "more specific", "which one"]
+
+# Only treat as clarification if response has NO structured data
+if not response.get("has_table") and not response.get("has_chart"):
+    if any(kw in msg_lower for kw in clarification_keywords):
+        is_clarification = True
+```
+
+Key changes:
+- Remove bare `"which"` → replace with `"which one"` (more specific)
+- Remove bare `"could you"` → replace with `"could you provide"`
+- Add guard: if response has table/chart, it's NOT a clarification
+
+- [ ] **Step 2**: Test with Turn 5's original response to confirm no false positive
+
+### Task 4: Add `trend_table_data` Tracker in Analysis Agent
+
+**File**: `backend/agents/analysis_agent.py`, `tests/unit/test_analysis_agent.py`
+
+Follow exact pattern of `ranked_table_data` for top_n:
+
+- [ ] **Step 1**: Add `trend_table_data: dict | None = None` initialization (after line 420)
+
+- [ ] **Step 2**: Capture compute_trend results separately (after line 486):
+```python
+if tool_block.name == "compute_trend":
+    trend_table_data = {"headers": d["headers"], "rows": d["rows"]}
+```
+
+- [ ] **Step 3**: Update all 3 `preferred_data` selection points:
+```python
+preferred_data = (
+    trend_table_data if (query_type == "trend" and trend_table_data)
+    else ranked_table_data if (query_type == "top_n" and ranked_table_data)
+    else last_table_data
+)
+```
+
+- [ ] **Step 4**: Write failing test, verify fix
+
+### Task 5: Add Totals Row to Analysis Tables
+
+**Files**: `backend/agents/prompts.py`, `backend/agents/analysis_agent.py`
+
+- [ ] **Step 1**: Add prompt rule #9 to analysis agent:
+```
+9. **Summary totals**: Always include a "Total" or "Grand Total" row at the bottom of
+   comparison and ranking tables. For trend tables, include a "Total" or "Average" row.
+   Format: same columns, first column = "Total", numeric columns = sum.
+```
+
+- [ ] **Step 2**: Add `_ensure_totals_row()` post-processing fallback:
+```python
+def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) -> list[list]:
+    if not rows or query_type not in ("comparison", "top_n", "aggregation"):
+        return rows
+    last_label = str(rows[-1][0]).lower() if rows else ""
+    if "total" in last_label or "grand" in last_label:
+        return rows
+    totals = ["Total"]
+    for col_idx in range(1, len(headers)):
+        col_vals = [_to_numeric_safe(row[col_idx]) for row in rows if col_idx < len(row)]
+        totals.append(sum(col_vals))
+    rows.append(totals)
+    return rows
+```
+
+- [ ] **Step 3**: Write tests, verify
+
+### Task 6: Fix Table Screenshot Width Clipping
+
+**File**: `tests/eval/collect.py`
+
+- [ ] **Step 1**: Before taking table screenshot, remove overflow clipping:
+```python
+table_container = last_msg.locator(".overflow-x-auto")
+if await table_container.count() > 0:
+    await table_container.first.evaluate("el => el.style.overflow = 'visible'")
+```
+
+- [ ] **Step 2**: Verify Turn 3 screenshot shows all 5 columns
+
+### Task 7: Add Explicit Totals Check to Eval Judge
+
+**Files**: `tests/eval/judge.py`, `tests/eval/prompts.py`
+
+- [ ] **Step 1**: Add to judge prompt checks for comparison/top_n/trend turns:
+```
+- Verify a "Total" or "Grand Total" row exists in the data table
+- Verify the total is arithmetically correct (sum of individual rows)
+- Compare the total against ground truth if available (e.g., trial balance, P&L totals)
+```
+
+- [ ] **Step 2**: Add explicit checks in scenario definition for turns with totals:
+  - Turn 2 (sales trend): Total sales should match FY total from trial balance
+  - Turn 3 (Q2 vs Q3): Column totals should match quarter P&L figures
+  - Turn 4 (top customers): Grand total should match total sales from Turn 2
+
+- [ ] **Step 3**: Update judge scoring rubric — factual score penalized if totals row missing or doesn't match ground truth
+
+### Task 8: Run Full Test Suite + Eval Verification
+
+- [ ] **Step 1**: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
+- [ ] **Step 2**: `cd frontend && npm test -- --run`
+- [ ] **Step 3**: Rerun eval collect → judge → report
+- [ ] **Step 4**: Verify all acceptance criteria below
+
+### Phase 6 Acceptance Criteria
+
+1. **Turn 2**: 1-2 Tally calls (not 12), model uses compute_totals, Dec 2025 total correct, totals row present and matches ground truth
+2. **Turn 3**: Tables include "Total" row, all 5 columns visible in screenshot, totals match quarter P&L
+3. **Turn 4**: "Total" row present, grand total matches FY sales
+4. **Turn 5**: No false clarification, full 7+ row trend table (not 1-row aggregate), chart renders
+5. **Judge**: Explicit totals check passes — total row exists, arithmetic correct, matches ground truth
+6. **All tests pass**: Backend 459+, Frontend 101+
+
+### Phase 6 Files Modified (Expected)
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `backend/tally_bridge/request_builder.py` | TDL DateRangeFilter in `_wrap_voucher_collection` |
+| 2 | `backend/tally_bridge/response_parser.py` | `month` field extraction + Python date filtering in `parse_vouchers` |
+| 3 | `backend/tally_bridge/queries/vouchers.py` | Thread from_date/to_date to parse_vouchers |
+| 4 | `backend/agents/prompts.py` | Rule #11 (one-call trend), Rule #9 (totals row) |
+| 5 | `backend/agents/analysis_agent.py` | `trend_table_data` tracker + `_ensure_totals_row` |
+| 6 | `tests/eval/collect.py` | Clarification detection fix + screenshot overflow fix |
+| 7 | `tests/eval/judge.py` | Explicit totals check in judge prompt |
+| 8 | `tests/eval/prompts.py` | Judge prompt totals verification rules |
+| 9 | `tests/unit/test_request_builder.py` | +3 tests (date filter) |
+| 10 | `tests/unit/test_response_parser.py` | +3 tests (month field, date filtering) |
+| 11 | `tests/unit/test_analysis_agent.py` | +2 tests (trend_table_data, totals row) |
