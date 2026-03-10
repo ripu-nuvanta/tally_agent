@@ -1,6 +1,7 @@
 """Chat endpoint — main conversational interface to the agent pipeline."""
 
 from fastapi import APIRouter, Depends
+from opentelemetry import trace
 
 from backend.agents.context import SessionStore
 from backend.agents.orchestrator import Orchestrator
@@ -21,6 +22,13 @@ async def chat(
         session_id=request.session_id,
         company=request.company,
     )
+
+    # Set Langfuse session/user attributes on the current span
+    span = trace.get_current_span()
+    if span.is_recording():
+        span.set_attribute("langfuse.session.id", request.session_id or session.session_id)
+        if request.company:
+            span.set_attribute("langfuse.trace.metadata.company", request.company)
 
     orchestrator = Orchestrator()
     result = await orchestrator.process_query(request.message, client, session)

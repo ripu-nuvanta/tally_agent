@@ -160,17 +160,19 @@ New Playwright fixtures: `sales_trend_composed` (ComposedChart dual Y-axis), `to
 
 ---
 
-## Phase 3 — Langfuse Observability (TODO)
+## Phase 3 — Langfuse Observability (DONE)
 
 ### Completed:
 - OTLP endpoint corrected to `/api/public/otel/v1/traces`
 - Test script created at `scripts/test_langfuse.py`
-
-### Remaining:
-1. **Run test script** to verify traces appear in Langfuse dashboard
-2. **Switch to BatchSpanProcessor** (SimpleSpanProcessor blocks event loop)
-3. **Pass tracer_provider explicitly** to `AnthropicInstrumentor().instrument(tracer_provider=provider)`
-4. **Install Langfuse skill** for Claude Code: `npx skills add langfuse/skills --skill "langfuse"` (blocked by disk space — retry when space available)
+- **Switched to BatchSpanProcessor** (SimpleSpanProcessor blocks event loop) — `backend/main.py` + `scripts/test_langfuse.py`
+- **Pass tracer_provider explicitly** to `AnthropicInstrumentor().instrument(tracer_provider=provider)`
+- **Added provider.shutdown()** in lifespan teardown for clean exit
+- **Added missing pyproject.toml deps**: `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http` to langfuse extra
+- **Verified**: Test script exports 2 spans successfully (HTTP 200 from cloud.langfuse.com)
+- **Session grouping**: Chat endpoint sets `langfuse.session.id` + `langfuse.trace.metadata.company` on OTLP spans
+- **Langfuse skill**: Installed via `npx skills add langfuse/skills --skill "langfuse" --yes`
+- **CLAUDE.md**: Fixed `uv sync` → `uv sync --extra dev --extra langfuse` to prevent removing pytest/playwright
 
 ---
 

@@ -52,7 +52,7 @@ def main() -> None:
     )
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import (
-        SimpleSpanProcessor,
+        BatchSpanProcessor,
         SpanExportResult,
         SpanExporter,
     )
@@ -93,7 +93,7 @@ def main() -> None:
         headers={"Authorization": f"Basic {auth}"},
     )
     provider = TracerProvider()
-    provider.add_span_processor(SimpleSpanProcessor(LoggingExporter(otlp_exporter)))
+    provider.add_span_processor(BatchSpanProcessor(LoggingExporter(otlp_exporter)))
 
     # Register as global provider so AnthropicInstrumentor picks it up
     from opentelemetry import trace
@@ -103,7 +103,7 @@ def main() -> None:
     # 3. Instrument Anthropic
     # ------------------------------------------------------------------
     from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
-    AnthropicInstrumentor().instrument()
+    AnthropicInstrumentor().instrument(tracer_provider=provider)
     logger.info("AnthropicInstrumentor active")
 
     # ------------------------------------------------------------------
@@ -126,12 +126,12 @@ def main() -> None:
         root_span.set_attribute("test.answer", answer)
 
     # ------------------------------------------------------------------
-    # 5. Flush — SimpleSpanProcessor exports synchronously on span.end(),
-    #    so the export already happened. force_flush is a no-op but
-    #    included for parity with BatchSpanProcessor.
+    # 5. Flush — BatchSpanProcessor batches spans and exports periodically.
+    #    force_flush ensures all pending spans are exported before exit.
     # ------------------------------------------------------------------
     logger.info("Flushing provider...")
     provider.force_flush(timeout_millis=10_000)
+    provider.shutdown()
     logger.info(
         "Done. Check https://cloud.langfuse.com (or your self-hosted instance) "
         "for a trace named 'langfuse-test'."

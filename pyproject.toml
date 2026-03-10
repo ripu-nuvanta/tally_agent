@@ -18,6 +18,8 @@ dependencies = [
 [project.optional-dependencies]
 langfuse = [
     "langfuse>=2.0",
+    "opentelemetry-sdk>=1.20",
+    "opentelemetry-exporter-otlp-proto-http>=1.20",
     "opentelemetry-instrumentation-anthropic>=0.1",
 ]
 dev = [

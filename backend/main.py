@@ -32,7 +32,7 @@ async def lifespan(app: FastAPI):
         )
         from opentelemetry.instrumentation.anthropic import AnthropicInstrumentor
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
         auth = base64.b64encode(
             f"{settings.LANGFUSE_PUBLIC_KEY}:{settings.LANGFUSE_SECRET_KEY}".encode()
@@ -42,14 +42,17 @@ async def lifespan(app: FastAPI):
             headers={"Authorization": f"Basic {auth}"},
         )
         provider = TracerProvider()
-        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        provider.add_span_processor(BatchSpanProcessor(exporter))
 
         from opentelemetry import trace
         trace.set_tracer_provider(provider)
 
-        AnthropicInstrumentor().instrument()
+        AnthropicInstrumentor().instrument(tracer_provider=provider)
+        app.state.tracer_provider = provider
         logger.info("Langfuse instrumentation enabled (OTLP → %s)", settings.LANGFUSE_BASE_URL)
     yield
+    if hasattr(app.state, "tracer_provider"):
+        app.state.tracer_provider.shutdown()
     await app.state.tally_client.close()
 
 
