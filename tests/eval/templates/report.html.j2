@@ -163,8 +163,14 @@
                     {% endif %}
 
                     <!-- Screenshots -->
-                    {% if turn.screenshot_chart_b64 or turn.screenshot_table_b64 %}
+                    {% if turn.screenshot_full_b64 or turn.screenshot_chart_b64 or turn.screenshot_table_b64 %}
                     <div class="screenshots">
+                        {% if turn.screenshot_full_b64 %}
+                        <div style="margin-bottom: 8px;">
+                            <div style="font-size: 11px; color: #666; margin-bottom: 4px;">Full Response</div>
+                            <img src="data:image/png;base64,{{ turn.screenshot_full_b64 }}" alt="Full screenshot" style="max-width: 100%; border: 1px solid #e0e0e0; border-radius: 4px;">
+                        </div>
+                        {% endif %}
                         {% if turn.screenshot_chart_b64 %}
                         <div class="screenshot">
                             <img src="data:image/png;base64,{{ turn.screenshot_chart_b64 }}" alt="Chart screenshot">

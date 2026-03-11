@@ -78,7 +78,7 @@ def embed_screenshots(all_scores: list[dict]) -> list[dict]:
     """Read screenshot PNGs and embed as base64 in turn data."""
     for scenario in all_scores:
         for turn in scenario.get("turns", []):
-            for key in ("screenshot_chart", "screenshot_table"):
+            for key in ("screenshot_full", "screenshot_chart", "screenshot_table"):
                 b64_key = key + "_b64"
                 path_str = turn.get(key)
                 if path_str:
