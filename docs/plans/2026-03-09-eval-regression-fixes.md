@@ -176,7 +176,7 @@ New Playwright fixtures: `sales_trend_composed` (ComposedChart dual Y-axis), `to
 
 ---
 
-## Phase 4 — Accuracy Improvements (FUTURE)
+## Phase 4 — Accuracy Improvements & Agent Architecture (FUTURE)
 
 ### Option A: Model Upgrade (Sonnet → Opus)
 - **Change**: `CLAUDE_MODEL=claude-opus-4-6` in `.env` (1-line config change)
@@ -189,6 +189,54 @@ New Playwright fixtures: `sales_trend_composed` (ComposedChart dual Y-axis), `to
 - **Pros**: Unbounded computation, fewer Claude turns, no API cost increase
 - **Cons**: ~800 LOC, security surface area, needs review
 - **Recommendation**: Prototype and validate security before integrating
+
+### Option C: Agent Architecture Redesign (QueryAgent / AnalysisAgent Overlap)
+
+**Problem identified in Phase 8 eval analysis (run_20260311_134758):**
+
+QueryAgent and AnalysisAgent have overlapping tool sets — `_ALL_QUERY_TOOLS` in `query_agent.py:38` includes `ANALYSIS_TOOLS` (compute_totals, compute_trend, compute_period_comparison, etc.). This causes:
+
+1. **Duplicate computation**: QueryAgent computes (3-4 tool calls), then Orchestrator unconditionally routes to AnalysisAgent which re-computes (2-3 calls) from the same data.
+2. **Conflicting results**: QueryAgent produced Q2 total = ₹11,95,000 (all vouchers), AnalysisAgent produced Q2 SALES HARYANA = ₹8,95,000 (manual ledger extraction) — text/table mismatch in Turn 3.
+3. **High latency**: Turn 3 took 75.8s with ~15 Tally calls due to double data fetching and computation.
+4. **Wasted tokens/cost**: Both agents get the same data and independently reason about it.
+
+**Evidence from be_run6.log:**
+- Turn 2 (trend): QueryAgent calls get_sales_register + compute_totals + compute_trend. Then AnalysisAgent calls compute_totals + compute_trend again.
+- Turn 3 (comparison): QueryAgent calls get_profit_and_loss ×2, get_sales_register ×2, get_purchase_register ×2, compute_totals ×3. Then AnalysisAgent calls compute_period_comparison + compute_totals ×2.
+- Turn 4 (top_n): Similar pattern — QueryAgent fetches and computes, AnalysisAgent re-computes.
+
+**Design options:**
+
+**C1: Remove ANALYSIS_TOOLS from QueryAgent entirely**
+- QueryAgent = data fetching only (TALLY_TOOLS + DATE_TOOLS)
+- AnalysisAgent = sole computation authority
+- Pros: Clean separation, no conflicts, ~50% fewer tool calls
+- Cons: Simple queries (e.g. "what is cash balance?") that don't route to AnalysisAgent lose computation ability. Currently QueryAgent handles `simple_lookup` and `aggregation` types without AnalysisAgent.
+- Risk: Breaking change — needs careful testing of all query types
+
+**C2: Orchestrator passes "data-fetch-only" flag to QueryAgent**
+- When Orchestrator knows query will route to AnalysisAgent (comparison/trend/top_n), it tells QueryAgent to skip computation
+- QueryAgent prompt gets conditional rule: "Fetch raw data only — a specialist will handle computation"
+- Pros: Minimal code change, preserves QueryAgent's computation for simple queries
+- Cons: Prompt-based — model may still compute despite instruction
+
+**C3: Merge QueryAgent and AnalysisAgent into single agent**
+- One agent with all tools (Tally + Analysis + Date)
+- Orchestrator routes directly; no handover overhead
+- Pros: Eliminates duplicate computation entirely, simpler architecture
+- Cons: Larger tool set may confuse model; loses specialization benefit; session context grows faster
+
+**C4: Streaming handover with computed-data flag**
+- QueryAgent returns `tool_results` with metadata: `{source: "tally_api"}` vs `{source: "computed"}`
+- Orchestrator passes only `tally_api` results to AnalysisAgent, skipping already-computed data
+- AnalysisAgent knows what's raw vs computed
+- Pros: Preserves both agents, no lost capability
+- Cons: Most complex to implement; still runs both agents
+
+**Recommendation**: Start with C2 (lowest risk, testable via eval). If insufficient, move to C1 or C3. Evaluate alongside model upgrade (Option A) since a better model may reduce the need for agent specialization.
+
+**Blocked on**: Eval results from Phase 8 prompt fixes — if prompt rules (exact ledger names, tool-only computation) significantly improve Turn 3 accuracy, the architectural change becomes lower priority.
 
 ---
 
@@ -1268,3 +1316,308 @@ All tasks implemented across 8 commits. Code review fixes applied (no-mutation s
 ### Note: Direct API Route
 
 `GET /api/reports/{name}` in `backend/api/reports.py` bypasses `execute_tool()`, but it's unused — the frontend and agent pipeline never call it. It's a standalone REST endpoint from Phase 3 for manual `curl` testing (future: direct FE reports fetch). Not in scope for Phase 7.
+
+### Phase 7 Eval Results (run_20260311_134758)
+
+| Turn | Query | Table | Chart | Factual | Quality | Coherence | Chart Score |
+|------|-------|-------|-------|---------|---------|-----------|-------------|
+| 1 | P&L this month | False | False | 3 | 4 | 5 | - |
+| 2 | Sales trend FY 25-26 | True | True | 3 | 5 | 4 | 5 |
+| 3 | Compare Q2 vs Q3 | True | True | 3 | 4 | 5 | 3 |
+| 4 | Top 10 customers | True | True | 4 | 5 | 5 | 4 |
+| 5 | HCODE trend | True | True | 3 | 5 | 5 | 5 |
+
+**Key win**: Turn 5 fully fixed (was clarification loop → now full trend table + composed chart 5/5).
+**Regressions**: Turn 3 chart 4→3 (chart grouping issues).
+
+---
+
+## Phase 8 — Eval Accuracy Fixes (Structured Data & Prompts)
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Fix 4 issues from eval run_20260311_134758 — restore trend totals stripped by our pipeline, exclude Total from charts, fix analysis agent hallucinations (ledger names, chart titles, manual computation), explain missing months.
+
+**Architecture:** The model output is correct (Langfuse confirms Total rows in markdown), but our structured data pipeline strips them. Changes: analysis_agent.py (restore trend totals), chart_agent.py (filter Total from chart data), prompts.py (analysis agent rules for ledger names, chart titles, tool-only computation, missing months). Agent architecture refactor (QueryAgent vs AnalysisAgent overlap) is **parked for Phase 4** — requires deeper design work.
+
+**Root causes identified from run_20260311_134758 + be_run6.log + Langfuse analysis:**
+
+| # | Issue | Turns | Root Cause | Fix |
+|---|-------|-------|-----------|-----|
+| 1 | Missing totals in trend tables | 2, 5 | Model output has Total row (confirmed in Langfuse markdown), but structured `data.rows` from `compute_trend` tool doesn't include it. `_ensure_totals_row()` skips `trend` (line 546), so it's never added back. Pipeline strips what the model correctly produced. | Add `"trend"` to `_ensure_totals_row` allowed types |
+| 2 | Total bar rendered in chart | 4 | `_ensure_totals_row` adds Total to structured data (correct for tables). `_format_xy_data` then includes it as a chart data point — misleading "Total" bar alongside individual items. | Filter Total/Grand Total rows from chart data only |
+| 3 | Turn 3: hallucinated ledger + wrong chart title + manual computation | 3 | Three analysis agent issues: (a) fabricated "SALES EXPORT (Dubai)" from voucher narration "Amit Jain (Dubai)" — only 3 real ledgers exist; (b) chart title "Gross Profit & Net Profit" doesn't match sales-only data; (c) model manually computed per-ledger breakdowns (8,95,000 vs 11,95,000) instead of using tools — only called compute_totals for the final aggregate | Add 3 prompt rules to analysis agent: exact ledger names, chart title accuracy, tool-only computation |
+| 4 | Missing months not explained | 2 | `_trim_trailing_zeros` removes Apr-Jun 2025 (no data), model doesn't explain their absence to user | Add prompt rule: explain data gaps |
+
+**Parked for Phase 4 (architectural):** QueryAgent and AnalysisAgent have overlapping ANALYSIS_TOOLS — QueryAgent computes (3-4 calls), then AnalysisAgent re-computes (2-3 calls). This causes Turn 3's 75s latency and text/table total mismatch (11,95,000 in QueryAgent vs 8,95,000 in AnalysisAgent). Requires deeper redesign of agent responsibilities and tool routing. May coincide with model change decision.
+
+### Task 1: Restore Trend Totals in Structured Data
+
+**Files:**
+- Modify: `backend/agents/analysis_agent.py:544-546`
+- Test: `tests/unit/test_analysis_agent.py`
+
+**Problem:** Model correctly includes Total row in its markdown output (confirmed via Langfuse screenshot). But `compute_trend` tool returns headers/rows without a Total. `_ensure_totals_row()` at line 546 has a guard: `query_type not in ("comparison", "top_n", "aggregation")` — trend is excluded. So the structured table data sent to the frontend has no Total row, even though the model intended one.
+
+- [ ] **Step 1: Write failing test**
+
+```python
+# In tests/unit/test_analysis_agent.py
+
+def test_ensure_totals_row_adds_total_for_trend():
+    """Trend queries should get a Total row — model output has it, pipeline must preserve it."""
+    from backend.agents.analysis_agent import _ensure_totals_row
+    headers = ["Period", "Sales", "Change", "Change %"]
+    rows = [
+        ["Jul 2025", 295000, "—", "—"],
+        ["Aug 2025", 300000, "+5000", "+1.7%"],
+        ["Sep 2025", 300000, "+0", "0.0%"],
+    ]
+    result = _ensure_totals_row(headers, rows, "trend")
+    assert len(result) == 4
+    assert result[-1][0] == "Total"
+    assert result[-1][1] == 895000  # sum of Sales column
+    assert result[-1][3] == ""  # % column skipped
+```
+
+- [ ] **Step 2: Run test to verify it fails**
+
+Run: `pytest tests/unit/test_analysis_agent.py::test_ensure_totals_row_adds_total_for_trend -v`
+Expected: FAIL — returns 3 rows (trend skipped)
+
+- [ ] **Step 3: Fix `_ensure_totals_row` to include trend**
+
+In `backend/agents/analysis_agent.py:546`, change:
+```python
+# Before:
+if not rows or query_type not in ("comparison", "top_n", "aggregation"):
+    return rows
+
+# After:
+if not rows or query_type not in ("comparison", "top_n", "aggregation", "trend"):
+    return rows
+```
+
+- [ ] **Step 4: Update existing test that validates trend is skipped**
+
+In `tests/unit/test_analysis_agent.py`, find `test_skips_trend` (or similar) and update it to expect totals are now added for trend queries. If the test asserts trend returns unchanged rows, update it to assert a Total row is appended.
+
+- [ ] **Step 5: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_analysis_agent.py -v -k "totals"`
+Expected: PASS
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add backend/agents/analysis_agent.py tests/unit/test_analysis_agent.py
+git commit -m "fix: restore trend totals in structured data — _ensure_totals_row now includes trend"
+```
+
+### Task 2: Filter Total Row from Chart Data
+
+**Files:**
+- Modify: `backend/agents/chart_agent.py:170-181` (`_format_xy_data`)
+- Test: `tests/unit/test_chart_agent.py`
+
+**Problem:** With Task 1, Total rows will be in all table data (correct for table rendering). But `_format_xy_data` sends them to the chart too, creating a misleading "Total" bar alongside individual items (visible in Turn 4 screenshot).
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# In tests/unit/test_chart_agent.py
+
+def test_format_xy_data_excludes_total_row():
+    """Total/Grand Total rows should be excluded from chart data."""
+    from backend.agents.chart_agent import _format_xy_data
+    headers = ["Customer", "Sales"]
+    rows = [
+        ["HCODE", 1642000],
+        ["SMARTBIKE", 1062000],
+        ["Total", 2704000],
+    ]
+    data = _format_xy_data(headers, rows)
+    labels = [d["label"] for d in data]
+    assert "Total" not in labels
+    assert len(data) == 2
+
+def test_format_xy_data_excludes_grand_total():
+    from backend.agents.chart_agent import _format_xy_data
+    headers = ["Ledger", "Q2", "Q3"]
+    rows = [
+        ["SALES HARYANA", 895000, 975000],
+        ["SALES EXPORT", 0, 182500],
+        ["Grand Total", 895000, 1157500],
+    ]
+    data = _format_xy_data(headers, rows)
+    labels = [d["label"] for d in data]
+    assert "Grand Total" not in labels
+    assert len(data) == 2
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_chart_agent.py::test_format_xy_data_excludes_total_row -v`
+Expected: FAIL — Total is included
+
+- [ ] **Step 3: Add Total filter to `_format_xy_data`**
+
+In `backend/agents/chart_agent.py:170-181`:
+
+```python
+def _format_xy_data(headers: list[str], rows: list[list]) -> list[dict[str, Any]]:
+    """Standard label/value format for bar and line charts."""
+    data = []
+    for row in rows:
+        label = str(row[0]).strip() if row else ""
+        # Exclude Total/Grand Total rows from chart — they belong in the table only
+        if label.lower() in ("total", "grand total"):
+            continue
+        point: dict[str, Any] = {"label": label}
+        for i, header in enumerate(headers[1:], start=1):
+            if header in _EXCLUDED_CHART_COLUMNS:
+                continue
+            if i < len(row):
+                point[header] = _to_numeric(row[i])
+        data.append(point)
+    return data
+```
+
+- [ ] **Step 4: Run tests**
+
+Run: `pytest tests/unit/test_chart_agent.py -v`
+Expected: PASS
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/agents/chart_agent.py tests/unit/test_chart_agent.py
+git commit -m "fix: exclude Total/Grand Total rows from chart data — tables only"
+```
+
+### Task 3: Analysis Agent Prompt Fixes (Ledger Names + Chart Title + Tool-Only Computation)
+
+**Files:**
+- Modify: `backend/agents/prompts.py:206-240` (analysis agent rules)
+- Test: `tests/unit/test_prompts.py`
+
+**Problem (3 sub-issues from Turn 3 trace):**
+
+1. **Hallucinated ledger**: AnalysisAgent received sales register vouchers where "Amit Jain (Dubai, UAE)" was the party under ledger "SALES EXPORT". Claude fabricated "SALES EXPORT (Dubai)" as a new ledger name — it doesn't exist in Tally (only SALES HARYANA, SALES EX HARYANA, SALES EXPORT).
+
+2. **Wrong chart title**: Chart title says "Q2 vs Q3 FY25-26: Sales, Gross Profit & Net Profit Comparison" but the structured table data only has sales ledger rows — no gross profit or net profit columns.
+
+3. **Manual computation**: Model computed per-ledger breakdowns manually (extracted SALES HARYANA = 8,95,000 by parsing individual vouchers) instead of using `compute_totals` with `group_by`. This led to the text/table mismatch: QueryAgent's `compute_totals` on all Q2 vouchers = 11,95,000, while AnalysisAgent's manual ledger extraction = 8,95,000 for SALES HARYANA alone.
+
+- [ ] **Step 1: Write tests**
+
+```python
+# In tests/unit/test_prompts.py
+
+def test_analysis_prompt_has_exact_ledger_names_rule():
+    from backend.agents.prompts import build_analysis_agent_prompt
+    prompt = build_analysis_agent_prompt("comparison")
+    assert "exact ledger names" in prompt.lower() or "exact names from the data" in prompt.lower()
+
+def test_analysis_prompt_has_chart_title_accuracy_rule():
+    from backend.agents.prompts import build_analysis_agent_prompt
+    prompt = build_analysis_agent_prompt("comparison")
+    assert "chart title" in prompt.lower() and "match" in prompt.lower()
+
+def test_analysis_prompt_has_tool_computation_rule():
+    from backend.agents.prompts import build_analysis_agent_prompt
+    prompt = build_analysis_agent_prompt("comparison")
+    assert "never compute" in prompt.lower() or "always use tools" in prompt.lower() or "never manually" in prompt.lower()
+```
+
+- [ ] **Step 2: Add rules 10, 11, 12 to analysis agent prompt**
+
+In `backend/agents/prompts.py`, add after rule 9 (line 239):
+
+```python
+10. **Exact ledger names**: Use ONLY the exact ledger/account names present in the Tally data. \
+NEVER create, rename, or infer ledger names from voucher narrations, customer names, or \
+other fields. If customer "Amit Jain (Dubai, UAE)" is booked under ledger "SALES EXPORT", \
+the ledger name is "SALES EXPORT" — do NOT fabricate "SALES EXPORT (Dubai)".
+
+11. **Chart title must match data**: The "Chart title:" line must accurately describe \
+the data being charted. If the data contains only sales figures, do NOT title it \
+"Gross Profit & Net Profit Comparison". Title should reflect the actual columns/metrics \
+in the structured data (e.g. "Q2 vs Q3: Sales by Ledger").
+
+12. **Never manually compute**: NEVER extract or calculate numbers by reading individual \
+vouchers/records yourself. Always use compute_totals (with group_by for breakdowns), \
+compute_period_comparison, or compute_trend. If you need per-ledger totals, call \
+compute_totals with group_by='ledger_name'. Manual extraction leads to mismatched totals.
+```
+
+- [ ] **Step 3: Run tests**
+
+Run: `pytest tests/unit/test_prompts.py -v`
+Expected: PASS
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add backend/agents/prompts.py tests/unit/test_prompts.py
+git commit -m "fix: analysis agent prompt — exact ledger names, chart title accuracy, tool-only computation"
+```
+
+### Task 4: Prompt Rule — Explain Missing Months in Trend Data
+
+**Files:**
+- Modify: `backend/agents/prompts.py` (analysis agent prompt, after rule 12)
+- Test: `tests/unit/test_prompts.py`
+
+- [ ] **Step 1: Write test**
+
+```python
+def test_analysis_prompt_has_missing_months_rule():
+    from backend.agents.prompts import build_analysis_agent_prompt
+    prompt = build_analysis_agent_prompt("trend")
+    assert "no transactions" in prompt.lower() or "data gap" in prompt.lower()
+```
+
+- [ ] **Step 2: Add rule 13 to analysis agent prompt**
+
+```python
+13. **Explain data gaps**: If trend data starts mid-FY (e.g. Jul instead of Apr) or has \
+months with no transactions, explicitly state this. Example: "No sales transactions were \
+recorded for Apr-Jun 2025, so the trend starts from Jul 2025." Do not silently omit months.
+```
+
+- [ ] **Step 3: Run tests, commit**
+
+```bash
+git add backend/agents/prompts.py tests/unit/test_prompts.py
+git commit -m "fix: analysis agent prompt — explain missing months in trend data"
+```
+
+### Task 5: Run Full Test Suite + Eval Verification
+
+- [ ] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
+- [ ] **Step 2:** `cd frontend && npm test -- --run`
+- [ ] **Step 3:** Rerun eval collect → judge → report
+- [ ] **Step 4:** Verify acceptance criteria below
+
+### Phase 8 Acceptance Criteria
+
+1. **Turns 2/5**: Total row present in structured table data (restored from pipeline)
+2. **Turn 3 chart**: No hallucinated "SALES EXPORT (Dubai)" ledger. Title matches actual data columns.
+3. **Turn 3 data**: Model uses tools for all computation (no manual per-ledger extraction)
+4. **Turn 4 chart**: No "Total" bar — only individual customer bars
+5. **Turn 2**: Model explains why Apr-Jun has no data
+6. **All tests pass**: 512+ BE, 101 FE
+
+**Note**: Turn 3 latency (75s) and text/table total mismatch from duplicate QueryAgent/AnalysisAgent computation are **parked for Phase 4** (agent architecture redesign).
+
+### Phase 8 Files Modified (Expected)
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `backend/agents/analysis_agent.py:546` | Add `"trend"` to `_ensure_totals_row` |
+| 2 | `backend/agents/chart_agent.py:170-181` | Filter Total/Grand Total from `_format_xy_data` |
+| 3 | `backend/agents/prompts.py:237-260` | Add rules 10-13 to analysis agent (ledger names, chart title, tool-only computation, missing months) |
+| 4 | `tests/unit/test_analysis_agent.py` | Update trend totals test |
+| 5 | `tests/unit/test_chart_agent.py` | Add Total exclusion tests |
+| 6 | `tests/unit/test_prompts.py` | Add prompt rule tests |
