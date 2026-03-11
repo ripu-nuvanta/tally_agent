@@ -186,9 +186,10 @@ def build_day_book(from_date: str, to_date: str, voucher_type: str | None = None
     return _wrap_voucher_collection("DayBookVchs", from_date, to_date, voucher_type, company)
 
 def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, company: str | None = None) -> str:
-    """Fetch vouchers for a specific ledger using TDL Collection with filter.
+    """Fetch vouchers for a specific ledger using TDL Collection with filters.
     Uses $PartyLedgerName comparison instead of $$IsLedgerInVoucher because
     the latter cannot handle ledger names containing commas.
+    Includes DateRangeFilter because Tally ignores SVFROMDATE/SVTODATE for TYPE=Collection.
     """
     company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
     safe_name = xml_escape(ledger_name, {'"': "&quot;"})
@@ -211,9 +212,11 @@ def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, compan
 <TDLMESSAGE>
 <COLLECTION NAME="LedgerVchs" ISMODIFY="No">
 <TYPE>Voucher</TYPE>
+<FILTER>DateRangeFilter</FILTER>
 <FILTER>LedgerFilter</FILTER>
 {_voucher_native_methods()}
 </COLLECTION>
+<SYSTEM TYPE="Formulae" NAME="DateRangeFilter">$$InDateRange:$Date:{from_date}:{to_date}</SYSTEM>
 <SYSTEM TYPE="Formulae" NAME="LedgerFilter">$PartyLedgerName = "{safe_name}"</SYSTEM>
 </TDLMESSAGE>
 </TDL>

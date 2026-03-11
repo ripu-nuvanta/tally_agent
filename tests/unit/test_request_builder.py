@@ -199,3 +199,23 @@ class TestDateRangeFilter:
         xml = build_day_book("01-04-2025", "30-04-2025")
         assert "DateRangeFilter" in xml
         assert "VchTypeFilter" not in xml
+
+    def test_ledger_vouchers_has_date_filter(self):
+        xml = build_ledger_vouchers("Cash", "01-07-2025", "31-07-2025")
+        assert "DateRangeFilter" in xml
+        assert "$$InDateRange:$Date:01-07-2025:31-07-2025" in xml
+
+    def test_ledger_vouchers_has_both_filters(self):
+        """Ledger vouchers need both DateRangeFilter AND LedgerFilter."""
+        xml = build_ledger_vouchers("HDFC Bank", "01-04-2025", "31-03-2026")
+        assert "DateRangeFilter" in xml
+        assert "LedgerFilter" in xml
+        assert "$$InDateRange" in xml
+        assert "HDFC Bank" in xml
+
+    def test_ledger_vouchers_full_fy_range(self):
+        """Full FY query should work — dates in correct DD-MM-YYYY format."""
+        xml = build_ledger_vouchers("Cash", "01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
