@@ -616,6 +616,93 @@ class TestOrchestratorMultipleData:
 
         assert result["query_type"] == "comparison"
 
+    @pytest.mark.asyncio
+    async def test_handoff_separates_raw_and_computed_data(self):
+        """When QueryAgent returns both raw and computed tools, handoff separates them."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "comparison",
+            "requires_chart": False,
+            "reasoning": "Compare Q2 vs Q3",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+            ):
+                mock_query.return_value = {
+                    "message": "Data fetched and compared.",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_profit_and_loss",
+                            "tool_input": {"from_date": "01-07-2025", "to_date": "30-09-2025"},
+                            "result": {"success": True, "data": [{"account": "Sales", "amount": 1195000}]},
+                        },
+                        {
+                            "tool_name": "get_profit_and_loss",
+                            "tool_input": {"from_date": "01-10-2025", "to_date": "31-12-2025"},
+                            "result": {"success": True, "data": [{"account": "Sales", "amount": 1957500}]},
+                        },
+                        {
+                            "tool_name": "compute_period_comparison",
+                            "tool_input": {},
+                            "result": {
+                                "success": True,
+                                "data": {
+                                    "headers": ["Metric", "Q2", "Q3", "Change"],
+                                    "rows": [["Sales", 1195000, 1957500, 762500]],
+                                },
+                            },
+                        },
+                        {
+                            "tool_name": "compute_totals",
+                            "tool_input": {},
+                            "result": {
+                                "success": True,
+                                "data": {"headers": ["amount"], "rows": [[216000]]},
+                            },
+                        },
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": "Q3 sales grew 64%.",
+                    "data": {"headers": ["Metric", "Q2", "Q3"], "rows": [["Sales", 1195000, 1957500]]},
+                    "insights": [],
+                    "chart_suggestion": "grouped_bar",
+                    "tool_results": [],
+                }
+
+                result = await orch.process_query("Compare Q2 vs Q3 P&L", mock_client, session)
+
+                # Verify handoff separates raw from computed
+                call_args = mock_analysis.call_args
+                raw_tally_data = call_args[0][0]
+                computed_data = call_args[0][1]
+
+                # Raw: 2 P&L fetches (list[dict] each)
+                assert len(raw_tally_data) == 2
+                assert raw_tally_data[0] == [{"account": "Sales", "amount": 1195000}]
+                assert raw_tally_data[1] == [{"account": "Sales", "amount": 1957500}]
+
+                # Computed: period comparison + totals
+                assert len(computed_data) == 2
+                assert computed_data[0]["headers"] == ["Metric", "Q2", "Q3", "Change"]
+                assert computed_data[1]["headers"] == ["amount"]
+
+        assert result["query_type"] == "comparison"
+
 
 # ---------------------------------------------------------------------------
 # Tests: Classification fallback logs warning (Fix #8)
