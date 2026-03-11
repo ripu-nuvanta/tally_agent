@@ -542,12 +542,20 @@ class TestEnsureTotalsRow:
         result = _ensure_totals_row(headers, rows, "top_n")
         assert len(result) == 2
 
-    def test_skips_trend(self):
+    def test_adds_total_for_trend(self):
+        """Trend queries should get a Total row."""
         from backend.agents.analysis_agent import _ensure_totals_row
-        headers = ["Period", "Sales"]
-        rows = [["Jan", 100], ["Feb", 200]]
+        headers = ["Period", "Sales", "Change", "Change %"]
+        rows = [
+            ["Jul 2025", 295000, "—", "—"],
+            ["Aug 2025", 300000, "+5000", "+1.7%"],
+            ["Sep 2025", 300000, "+0", "0.0%"],
+        ]
         result = _ensure_totals_row(headers, rows, "trend")
-        assert len(result) == 2
+        assert len(result) == 4
+        assert result[-1][0] == "Total"
+        assert result[-1][1] == 895000
+        assert result[-1][3] == ""  # % column skipped
 
     def test_handles_string_amounts(self):
         from backend.agents.analysis_agent import _ensure_totals_row
@@ -578,3 +586,31 @@ class TestEnsureTotalsRow:
         from backend.agents.analysis_agent import _ensure_totals_row
         result = _ensure_totals_row(["A", "B"], [], "top_n")
         assert result == []
+
+
+# ---------------------------------------------------------------------------
+# Phase 8: _strip_chart_metadata tests
+# ---------------------------------------------------------------------------
+
+class TestStripChartMetadata:
+    def test_chart_metadata_stripped_from_message(self):
+        """Chart suggestion and Chart title lines should not appear in user-visible message."""
+        from backend.agents.analysis_agent import _strip_chart_metadata
+        text = """Here is the sales trend analysis.
+
+Sales grew steadily from Jul to Dec 2025.
+
+Chart suggestion: bar
+Chart title: Monthly Sales Trend FY 2025-26"""
+        result = _strip_chart_metadata(text)
+        assert "Chart suggestion" not in result
+        assert "Chart title" not in result
+        assert "sales trend analysis" in result
+
+    def test_strip_chart_metadata_with_bold_markdown(self):
+        from backend.agents.analysis_agent import _strip_chart_metadata
+        text = "Analysis complete.\n\n**Chart suggestion:** composed\n**Chart title:** Q2 vs Q3 Sales"
+        result = _strip_chart_metadata(text)
+        assert "Chart suggestion" not in result
+        assert "Chart title" not in result
+        assert "Analysis complete" in result

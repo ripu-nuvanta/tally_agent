@@ -543,7 +543,7 @@ class AnalysisAgent:
 
 def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) -> list[list]:
     """Add a totals row if missing for comparison/top_n/aggregation queries."""
-    if not rows or query_type not in ("comparison", "top_n", "aggregation"):
+    if not rows or query_type not in ("comparison", "top_n", "aggregation", "trend"):
         return rows
     last_label = str(rows[-1][0]).lower() if rows else ""
     if "total" in last_label or "grand" in last_label:
@@ -573,6 +573,13 @@ def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) ->
     return rows + [totals]
 
 
+def _strip_chart_metadata(text: str) -> str:
+    """Remove Chart suggestion/Chart title lines from message text — internal directives only."""
+    text = re.sub(r'\n*\**\s*(?:chart[_\s]suggestion|suggested chart)\s*:\s*.*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\n*\**\s*chart[_\s]title\s*:\s*.*', '', text, flags=re.IGNORECASE)
+    return text.strip()
+
+
 def _build_result(
     message: str,
     table_data: dict,
@@ -582,6 +589,7 @@ def _build_result(
     insights = _extract_insights(message)
     chart_suggestion = _extract_chart_suggestion(message)
     chart_title = _extract_chart_title(message)
+    message = _strip_chart_metadata(message)
     result: dict[str, Any] = {
         "message": message,
         "data": table_data,
