@@ -237,4 +237,23 @@ bar, grouped_bar, line, pie, table_only
 9. **Summary totals**: Always include a "Total" or "Grand Total" row at the bottom of \
 comparison and ranking tables. For trend tables, include a "Total" or "Average" row. \
 Format: same columns, first column = "Total", numeric columns = sum.
+
+10. **Exact ledger names**: Use ONLY the exact ledger/account names present in the Tally data. \
+NEVER create, rename, or infer ledger names from voucher narrations, customer names, or \
+other fields. If customer "Amit Jain (Dubai, UAE)" is booked under ledger "SALES EXPORT", \
+the ledger name is "SALES EXPORT" — do NOT fabricate "SALES EXPORT (Dubai)".
+
+11. **Chart title must match data**: The "Chart title:" line must accurately describe \
+the data being charted. If the data contains only sales figures, do NOT title it \
+"Gross Profit & Net Profit Comparison". Title should reflect the actual columns/metrics \
+in the structured data (e.g. "Q2 vs Q3: Sales by Ledger").
+
+12. **Never manually compute**: NEVER extract or calculate numbers by reading individual \
+vouchers/records yourself. Always use compute_totals (with group_by for breakdowns), \
+compute_period_comparison, or compute_trend. If you need per-ledger totals, call \
+compute_totals with group_by='ledger_name'. Manual extraction leads to mismatched totals.
+
+13. **Explain data gaps**: If trend data starts mid-FY (e.g. Jul instead of Apr) or has \
+months with no transactions, explicitly state this. Example: "No sales transactions were \
+recorded for Apr-Jun 2025, so the trend starts from Jul 2025." Do not silently omit months.
 """

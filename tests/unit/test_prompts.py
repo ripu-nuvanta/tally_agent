@@ -130,3 +130,19 @@ class TestAnalysisAgentPrompt:
         assert "GST" in prompt
         assert "base value" in prompt
         assert "invoice value" in prompt
+
+    def test_analysis_prompt_has_exact_ledger_names_rule(self):
+        prompt = build_analysis_agent_prompt("comparison")
+        assert "exact ledger names" in prompt.lower() or "exact names from the data" in prompt.lower()
+
+    def test_analysis_prompt_has_chart_title_accuracy_rule(self):
+        prompt = build_analysis_agent_prompt("comparison")
+        assert "chart title" in prompt.lower() and "match" in prompt.lower()
+
+    def test_analysis_prompt_has_tool_computation_rule(self):
+        prompt = build_analysis_agent_prompt("comparison")
+        assert "never compute" in prompt.lower() or "always use tools" in prompt.lower() or "never manually" in prompt.lower()
+
+    def test_analysis_prompt_has_missing_months_rule(self):
+        prompt = build_analysis_agent_prompt("trend")
+        assert "no transactions" in prompt.lower() or "data gap" in prompt.lower()
