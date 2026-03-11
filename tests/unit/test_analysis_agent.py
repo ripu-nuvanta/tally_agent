@@ -243,7 +243,7 @@ class TestAnalysisAgentLoop:
                     "Chart suggestion: table_only"
                 )
             )
-            result = await agent.execute(raw_data, "What is the total?", "aggregation")
+            result = await agent.execute(raw_data, None, "What is the total?", "aggregation")
 
         assert "₹100" in result["message"]
         assert result["tool_results"] == []
@@ -279,7 +279,7 @@ class TestAnalysisAgentLoop:
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
             mock_claude.messages.create = AsyncMock(side_effect=[tool_call, final])
-            result = await agent.execute(raw_data, "Top 3 customers", "top_n")
+            result = await agent.execute(raw_data, None, "Top 3 customers", "top_n")
 
         assert len(result["tool_results"]) == 1
         assert result["tool_results"][0]["tool_name"] == "sort_by_field"
@@ -300,7 +300,7 @@ class TestAnalysisAgentLoop:
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
             mock_claude.messages.create = AsyncMock(return_value=infinite_call)
-            result = await agent.execute(raw_data, "Total?", "aggregation")
+            result = await agent.execute(raw_data, None, "Total?", "aggregation")
 
         assert len(result["tool_results"]) == 2
         assert "limit" in result["message"].lower()
@@ -320,7 +320,7 @@ class TestAnalysisAgentLoop:
                     "Chart suggestion: line"
                 )
             )
-            result = await agent.execute([], "Show trend", "trend")
+            result = await agent.execute([], None, "Show trend", "trend")
 
         assert len(result["insights"]) == 3
         assert "Revenue grew 20% QoQ" in result["insights"]
@@ -340,7 +340,7 @@ class TestAnalysisAgentLoop:
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
             mock_claude.messages.create = AsyncMock(side_effect=[bad_call, final])
-            result = await agent.execute([], "Sort data", "top_n")
+            result = await agent.execute([], None, "Sort data", "top_n")
 
         assert len(result["tool_results"]) == 1
         assert "error" in result["tool_results"][0]["result"]
@@ -382,7 +382,7 @@ class TestAnalysisAgentParallelCalls:
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
             mock_claude.messages.create = AsyncMock(side_effect=[parallel, final])
-            result = await agent.execute(raw_data, "Sort and total", "aggregation")
+            result = await agent.execute(raw_data, None, "Sort and total", "aggregation")
 
         assert len(result["tool_results"]) == 2
         assert result["tool_results"][0]["tool_name"] == "sort_by_field"
@@ -401,7 +401,7 @@ class TestAnalysisAgentParallelCalls:
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
             mock_claude.messages.create = AsyncMock(return_value=parallel)
-            result = await agent.execute(raw_data, "Analyze", "aggregation")
+            result = await agent.execute(raw_data, None, "Analyze", "aggregation")
 
         assert len(result["tool_results"]) == 2
         assert "limit" in result["message"].lower()
@@ -424,7 +424,7 @@ class TestAnalysisAgentAPIError:
             mock_claude.messages.create = AsyncMock(
                 side_effect=anthropic.APIConnectionError(request=MagicMock())
             )
-            result = await agent.execute([], "Analyze", "aggregation")
+            result = await agent.execute([], None, "Analyze", "aggregation")
 
         assert "could not be completed" in result["message"].lower()
         assert "data" in result

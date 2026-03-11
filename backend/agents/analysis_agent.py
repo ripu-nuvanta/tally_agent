@@ -390,11 +390,19 @@ class AnalysisAgent:
 
     async def execute(
         self,
-        raw_data: dict | list,
+        raw_data: list | dict,
+        computed_data: list | None,
         user_query: str,
         query_type: str,
     ) -> dict[str, Any]:
         """Run the analysis loop.
+
+        Args:
+            raw_data: Raw Tally API responses (vouchers, reports).
+            computed_data: Pre-computed results from QueryAgent (totals, trends,
+                comparisons). Can be used as-is or enhanced. May be None or empty.
+            user_query: Original user question.
+            query_type: Classification (comparison, trend, top_n, aggregation).
 
         Returns:
             {
@@ -406,12 +414,28 @@ class AnalysisAgent:
             }
         """
         system_prompt = build_analysis_agent_prompt(query_type)
-        user_content = (
+
+        parts = [
             f"User query: {user_query}\n\n"
             f"Query type: {query_type}\n\n"
-            f"Raw data from Tally:\n{json.dumps(raw_data, default=str)}"
+        ]
+
+        if computed_data:
+            parts.append(
+                "## Pre-computed analysis (from data retrieval phase)\n"
+                "The following results were already computed. You may use these directly, "
+                "enhance them with additional analysis, or re-compute from raw data if needed.\n\n"
+                f"{json.dumps(computed_data, default=str)}\n\n"
+            )
+
+        parts.append(
+            "## Raw Tally data\n"
+            "Original data fetched from Tally. Use this for additional analysis "
+            "beyond what was pre-computed above.\n\n"
+            f"{json.dumps(raw_data, default=str)}"
         )
 
+        user_content = "".join(parts)
         messages: list[dict] = [{"role": "user", "content": user_content}]
         tool_results_log: list[dict] = []
         tool_call_count = 0

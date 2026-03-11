@@ -313,7 +313,8 @@ class TestOrchestratorAnalysisRouting:
 
                 mock_query.assert_awaited_once()
                 mock_analysis.assert_awaited_once_with(
-                    [{"party": "A", "amount": 100}],
+                    [[{"party": "A", "amount": 100}]],
+                    [],
                     "Compare Q1 vs Q2 sales",
                     "comparison",
                 )
@@ -603,13 +604,15 @@ class TestOrchestratorMultipleData:
 
                 result = await orch.process_query("Compare Q1 vs Q2", mock_client, session)
 
-                # analysis_agent.execute should receive a list of 2 data dicts
+                # analysis_agent.execute should receive raw_tally_data and computed_data
                 call_args = mock_analysis.call_args
-                analysis_input = call_args[0][0]  # first positional arg
-                assert isinstance(analysis_input, list)
-                assert len(analysis_input) == 2
-                assert analysis_input[0] == [{"q": "Q1", "amount": 100}]
-                assert analysis_input[1] == [{"q": "Q2", "amount": 200}]
+                raw_tally_data = call_args[0][0]  # first positional arg
+                computed_data = call_args[0][1]   # second positional arg
+                assert isinstance(raw_tally_data, list)
+                assert len(raw_tally_data) == 2
+                assert raw_tally_data[0] == [{"q": "Q1", "amount": 100}]
+                assert raw_tally_data[1] == [{"q": "Q2", "amount": 200}]
+                assert computed_data == []  # no computed tools in this test
 
         assert result["query_type"] == "comparison"
 
@@ -869,3 +872,47 @@ class TestClassifierSessionContext:
             assert messages[1]["content"] == "Here is the trial balance."
             assert messages[2]["role"] == "user"
             assert messages[2]["content"] == "Show me the details"
+
+
+# ---------------------------------------------------------------------------
+# Tests: _separate_tool_results
+# ---------------------------------------------------------------------------
+
+
+class TestSeparateToolResults:
+    def test_separate_raw_and_computed_data(self):
+        """Orchestrator should separate raw Tally data from pre-computed results."""
+        from backend.agents.orchestrator import _separate_tool_results
+        tool_results = [
+            {"tool_name": "get_sales_register", "result": {"success": True, "data": [{"amount": 100}]}},
+            {"tool_name": "get_purchase_register", "result": {"success": True, "data": [{"amount": 50}]}},
+            {"tool_name": "compute_totals", "result": {"success": True, "data": {"headers": ["Q", "Total"], "rows": [["Q2", 100]]}}},
+            {"tool_name": "compute_period_comparison", "result": {"success": True, "data": {"headers": ["Metric", "Q2", "Q3"], "rows": [["Sales", 100, 200]]}}},
+        ]
+        raw, computed = _separate_tool_results(tool_results)
+        assert len(raw) == 2
+        assert len(computed) == 2
+        assert raw[0] == [{"amount": 100}]
+        assert computed[0]["headers"] == ["Q", "Total"]
+
+    def test_separate_skips_failed_results(self):
+        """Failed tool results should be excluded from both categories."""
+        from backend.agents.orchestrator import _separate_tool_results
+        tool_results = [
+            {"tool_name": "get_sales_register", "result": {"success": True, "data": [{"amount": 100}]}},
+            {"tool_name": "get_trial_balance", "result": {"error": "Tally unreachable"}},
+            {"tool_name": "compute_totals", "result": {"success": True, "data": {"headers": ["A"], "rows": [[1]]}}},
+        ]
+        raw, computed = _separate_tool_results(tool_results)
+        assert len(raw) == 1
+        assert len(computed) == 1
+
+    def test_separate_handles_report_response_conversion(self):
+        """ReportResponse-style dicts in raw data should be converted to list[dict]."""
+        from backend.agents.orchestrator import _separate_tool_results
+        tool_results = [
+            {"tool_name": "get_profit_and_loss", "result": {"success": True, "data": {"headers": ["Account", "Amount"], "rows": [["Sales", 100]]}}},
+        ]
+        raw, computed = _separate_tool_results(tool_results)
+        assert len(raw) == 1
+        assert raw[0] == [{"Account": "Sales", "Amount": 100}]

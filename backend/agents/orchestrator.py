@@ -126,9 +126,12 @@ class Orchestrator:
         raw_data = all_data[-1] if all_data else None
         all_datasets = all_data if len(all_data) > 1 else None
 
+        raw_tally_data, computed_data = _separate_tool_results(tool_results)
+
         logger.info(
-            "Orchestrator — QueryAgent returned %d tool call(s), %d data set(s)",
-            len(tool_results), len(all_data),
+            "Orchestrator — QueryAgent returned %d tool call(s), %d data set(s) "
+            "(%d raw, %d computed)",
+            len(tool_results), len(all_data), len(raw_tally_data), len(computed_data),
         )
 
         # --- Analysis Agent (for comparison/trend/top_n/aggregation) ---
@@ -137,9 +140,8 @@ class Orchestrator:
 
         if query_type in _ANALYSIS_TYPES and raw_data is not None:
             logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
-            analysis_input = all_data if len(all_data) > 1 else raw_data
             analysis_result = await self.analysis_agent.execute(
-                analysis_input, user_message, query_type,
+                raw_tally_data, computed_data, user_message, query_type,
             )
             message = analysis_result["message"]
             data = analysis_result.get("data", raw_data)
@@ -238,6 +240,45 @@ def _flatten_datasets(datasets: list) -> list[dict]:
         elif isinstance(dataset, dict):
             flat.append({**dataset, "_dataset_index": idx})
     return flat
+
+
+# Tool names from ANALYSIS_TOOLS (pre-computed by QueryAgent)
+_COMPUTED_TOOL_NAMES = {
+    "compute_totals", "compute_trend", "compute_period_comparison",
+    "compute_percentage_change", "sort_by_field",
+}
+
+
+def _separate_tool_results(
+    tool_results: list[dict],
+) -> tuple[list, list]:
+    """Separate tool results into raw Tally data and pre-computed analysis.
+
+    Returns:
+        (raw_data_list, computed_data_list) — each entry is the tool's data payload.
+        ReportResponse-style dicts (headers/rows) in raw data are converted to list[dict].
+        Computed data is kept as-is (may be headers/rows or list[dict]).
+    """
+    raw: list = []
+    computed: list = []
+
+    for tr in tool_results:
+        result = tr.get("result", {})
+        if result.get("success") is not True or result.get("data") is None:
+            continue
+
+        tool_name = tr.get("tool_name", "")
+        data = result["data"]
+
+        if tool_name in _COMPUTED_TOOL_NAMES:
+            computed.append(data)
+        else:
+            # Convert ReportResponse-style dicts to list[dict] for raw data
+            if isinstance(data, dict) and "headers" in data and "rows" in data:
+                data = [dict(zip(data["headers"], row)) for row in data["rows"]]
+            raw.append(data)
+
+    return raw, computed
 
 
 def _extract_all_data(tool_results: list[dict]) -> list[dict]:
