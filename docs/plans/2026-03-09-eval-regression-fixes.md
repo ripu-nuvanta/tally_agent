@@ -1336,7 +1336,7 @@ All tasks implemented across 8 commits. Code review fixes applied (no-mutation s
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix 4 issues from eval run_20260311_134758 — restore trend totals stripped by our pipeline, exclude Total from charts, fix analysis agent hallucinations (ledger names, chart titles, manual computation), explain missing months.
+**Goal:** Fix 4 issues from eval run_20260311_134758 + 3 UX improvements — restore trend totals stripped by our pipeline, exclude Total from charts, fix analysis agent hallucinations (ledger names, chart titles, manual computation), explain missing months, strip chart metadata from messages, render markdown tables inline (Langfuse-style), full message screenshots in eval.
 
 **Architecture:** The model output is correct (Langfuse confirms Total rows in markdown), but our structured data pipeline strips them. Changes: analysis_agent.py (restore trend totals), chart_agent.py (filter Total from chart data), prompts.py (analysis agent rules for ledger names, chart titles, tool-only computation, missing months). Agent architecture refactor (QueryAgent vs AnalysisAgent overlap) is **parked for Phase 4** — requires deeper design work.
 
@@ -1600,6 +1600,139 @@ git commit -m "fix: analysis agent prompt — explain missing months in trend da
 - [ ] **Step 3:** Rerun eval collect → judge → report
 - [ ] **Step 4:** Verify acceptance criteria below
 
+### Task 6: Strip "Chart suggestion" and "Chart title" Lines from Message Text
+
+**Files:**
+- Modify: `backend/agents/analysis_agent.py` (after extraction, before returning result)
+- Test: `tests/unit/test_analysis_agent.py`
+
+**Problem:** The analysis agent prompt instructs Claude to append "Chart suggestion: bar" and "Chart title: ..." lines to its response. `_extract_chart_suggestion()` and `_extract_chart_title()` extract these values into the result dict, but the raw lines remain in the `message` text. These internal directives are visible to the user in the chat UI.
+
+- [ ] **Step 1: Write failing test**
+
+```python
+def test_chart_metadata_stripped_from_message():
+    """Chart suggestion and Chart title lines should not appear in user-visible message."""
+    # Test the stripping function directly
+    from backend.agents.analysis_agent import _strip_chart_metadata
+    text = """Here is the sales trend analysis.
+
+Sales grew steadily from Jul to Dec 2025.
+
+Chart suggestion: bar
+Chart title: Monthly Sales Trend FY 2025-26"""
+    result = _strip_chart_metadata(text)
+    assert "Chart suggestion" not in result
+    assert "Chart title" not in result
+    assert "sales trend analysis" in result
+```
+
+- [ ] **Step 2: Add `_strip_chart_metadata()` function**
+
+In `backend/agents/analysis_agent.py`, add after `_extract_chart_title()`:
+
+```python
+def _strip_chart_metadata(text: str) -> str:
+    """Remove Chart suggestion/Chart title lines from message text — internal directives only."""
+    text = re.sub(r'\n*\**\s*(?:chart[_\s]suggestion|suggested chart)\s*:\s*.*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\n*\**\s*chart[_\s]title\s*:\s*.*', '', text, flags=re.IGNORECASE)
+    return text.strip()
+```
+
+- [ ] **Step 3: Call `_strip_chart_metadata` on message before returning result**
+
+In the `_run_analysis()` method, after extracting chart_suggestion and chart_title, strip them from message:
+
+```python
+message = _strip_chart_metadata(message)
+```
+
+- [ ] **Step 4: Run tests, commit**
+
+```bash
+pytest tests/unit/test_analysis_agent.py -v -k "chart_metadata"
+git add backend/agents/analysis_agent.py tests/unit/test_analysis_agent.py
+git commit -m "fix: strip Chart suggestion/Chart title lines from user-visible message"
+```
+
+### Task 7: Render Tables Inline in Markdown (Like Langfuse)
+
+**Files:**
+- Modify: `frontend/src/components/MessageBubble.tsx`
+- Modify: `frontend/src/components/DataTable.tsx` (may need minor adjustments)
+- Test: `frontend/src/__tests__/MessageBubble.test.tsx`
+
+**Problem:** Currently, MessageBubble strips markdown tables from the message text (`stripMarkdownTables()` removes `|`-lines), then renders structured `data.headers`/`data.rows` via a separate `DataTable` component below the text. This:
+1. Changes headers from what the model produced (e.g. "RANK, CUSTOMER, SALES AMOUNT" → "party_name, amount")
+2. Separates the table from its surrounding prose context
+3. Differs from Langfuse's approach where markdown tables render inline within the message flow, preserving model-authored headers and the natural reading order
+
+**Target:** Render markdown tables inline within the message text (like Langfuse does), preserving the model's original headers and table placement. The separate DataTable component should be used as a fallback only when structured data exists but no markdown table is present in the text.
+
+- [ ] **Step 1: Update MessageBubble to render markdown tables inline**
+
+Instead of stripping markdown tables, render them as HTML tables via the markdown renderer (react-markdown already supports GFM tables with `remark-gfm`). Key changes:
+- Remove or conditionally skip `stripMarkdownTables()` when markdown tables are present
+- Add `remark-gfm` plugin to ReactMarkdown if not already present (for pipe table support)
+- Style the rendered markdown tables to match DataTable's appearance (Tailwind classes)
+- Keep DataTable as fallback for messages with `data.headers`/`data.rows` but no markdown table in text
+
+- [ ] **Step 2: Style inline markdown tables**
+
+Add CSS/Tailwind styling for markdown-rendered tables to match the existing DataTable look:
+- Sortable headers (optional — can be a follow-up)
+- Indian number formatting (optional — markdown tables have pre-formatted text)
+- Horizontal scroll on overflow
+- Consistent borders, padding, alignment
+
+- [ ] **Step 3: Update tests**
+
+Update MessageBubble tests to verify:
+- Markdown tables render inline (not stripped)
+- DataTable still renders as fallback when only structured data exists
+- No duplicate tables (if both markdown and structured data exist, prefer markdown)
+
+- [ ] **Step 4: Run tests, commit**
+
+```bash
+cd frontend && npm test -- --run
+git add frontend/src/components/MessageBubble.tsx frontend/src/__tests__/MessageBubble.test.tsx
+git commit -m "feat: render markdown tables inline in message — Langfuse-style"
+```
+
+### Task 8: Full Message Screenshots in Eval Collector
+
+**Files:**
+- Modify: `tests/eval/collect.py`
+
+**Problem:** The eval collector already captures `_full.png` screenshots of the entire assistant message bubble (text + table + chart). However, the judge currently receives only chart and table screenshots for visual evaluation. The full message screenshot should be the primary screenshot sent to the judge, so it can evaluate the complete user experience (text formatting, table placement, chart context).
+
+- [ ] **Step 1: Verify `_full.png` is captured and sent to judge**
+
+Check that `full_screenshot` path is included in the turn result dict passed to the judge. If not, add it:
+
+```python
+turn_result["full_screenshot"] = full_screenshot
+```
+
+- [ ] **Step 2: Update judge to use full screenshot**
+
+In `tests/eval/judge.py`, ensure the full message screenshot is included in the judge's evaluation input alongside (or instead of) individual chart/table screenshots. The full screenshot gives the judge context about how text, tables, and charts appear together.
+
+- [ ] **Step 3: Run eval to verify**
+
+```bash
+PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173
+# Verify _full.png files are in the run directory
+```
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add tests/eval/collect.py tests/eval/judge.py
+git commit -m "feat: full message screenshots in eval — judge sees complete user experience"
+```
+
 ### Phase 8 Acceptance Criteria
 
 1. **Turns 2/5**: Total row present in structured table data (restored from pipeline)
@@ -1608,6 +1741,9 @@ git commit -m "fix: analysis agent prompt — explain missing months in trend da
 4. **Turn 4 chart**: No "Total" bar — only individual customer bars
 5. **Turn 2**: Model explains why Apr-Jun has no data
 6. **All tests pass**: 512+ BE, 101 FE
+7. **Message text**: No "Chart suggestion:" or "Chart title:" lines visible to user
+8. **Tables**: Markdown tables render inline within message (Langfuse-style), preserving model headers
+9. **Eval screenshots**: Full message screenshots captured and used by judge
 
 **Note**: Turn 3 latency (75s) and text/table total mismatch from duplicate QueryAgent/AnalysisAgent computation are **parked for Phase 4** (agent architecture redesign).
 
@@ -1618,6 +1754,10 @@ git commit -m "fix: analysis agent prompt — explain missing months in trend da
 | 1 | `backend/agents/analysis_agent.py:546` | Add `"trend"` to `_ensure_totals_row` |
 | 2 | `backend/agents/chart_agent.py:170-181` | Filter Total/Grand Total from `_format_xy_data` |
 | 3 | `backend/agents/prompts.py:237-260` | Add rules 10-13 to analysis agent (ledger names, chart title, tool-only computation, missing months) |
-| 4 | `tests/unit/test_analysis_agent.py` | Update trend totals test |
-| 5 | `tests/unit/test_chart_agent.py` | Add Total exclusion tests |
-| 6 | `tests/unit/test_prompts.py` | Add prompt rule tests |
+| 4 | `backend/agents/analysis_agent.py:607+` | Add `_strip_chart_metadata()`, call after extraction |
+| 5 | `frontend/src/components/MessageBubble.tsx` | Render markdown tables inline, keep DataTable as fallback |
+| 6 | `tests/eval/collect.py` + `tests/eval/judge.py` | Full message screenshots sent to judge |
+| 7 | `tests/unit/test_analysis_agent.py` | Trend totals + chart metadata stripping tests |
+| 8 | `tests/unit/test_chart_agent.py` | Total exclusion tests |
+| 9 | `tests/unit/test_prompts.py` | Prompt rule tests |
+| 10 | `frontend/src/__tests__/MessageBubble.test.tsx` | Inline table rendering tests |
