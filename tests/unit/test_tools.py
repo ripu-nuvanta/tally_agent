@@ -464,8 +464,8 @@ class TestCrashScenarioEndToEnd:
         assert "31-03-2026" in xml_sent
         assert "2025-04-01" not in xml_sent  # ISO must NOT appear
         assert "2026-03-31" not in xml_sent
-        # Must have TDL DateRangeFilter
-        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml_sent
+        # Must NOT have broken $$InDateRange (crashes Tally)
+        assert "InDateRange" not in xml_sent
 
     @pytest.mark.asyncio
     async def test_iso_date_produces_correct_xml_for_trial_balance(self):

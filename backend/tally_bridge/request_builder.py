@@ -66,9 +66,8 @@ def _wrap_voucher_collection(collection_name: str, from_date: str, to_date: str,
     company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
     filters = []
     systems = []
-    # Always add TDL date range filter (Tally ignores SVFROMDATE/SVTODATE for TYPE=Collection)
-    filters.append("<FILTER>DateRangeFilter</FILTER>")
-    systems.append(f'<SYSTEM TYPE="Formulae" NAME="DateRangeFilter">$$InDateRange:$Date:{from_date}:{to_date}</SYSTEM>')
+    # NOTE: SVFROMDATE/SVTODATE alone may not filter TYPE=Collection reliably.
+    # Python-side _filter_vouchers_by_date() in response_parser.py is the safety net.
     if voucher_type_filter:
         voucher_type_filter = voucher_type_filter.title()
         safe_type = xml_escape(voucher_type_filter, {'"': "&quot;"})
@@ -189,7 +188,7 @@ def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, compan
     """Fetch vouchers for a specific ledger using TDL Collection with filters.
     Uses $PartyLedgerName comparison instead of $$IsLedgerInVoucher because
     the latter cannot handle ledger names containing commas.
-    Includes DateRangeFilter because Tally ignores SVFROMDATE/SVTODATE for TYPE=Collection.
+    Python-side _filter_vouchers_by_date() in response_parser.py handles date filtering.
     """
     company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
     safe_name = xml_escape(ledger_name, {'"': "&quot;"})
@@ -212,11 +211,9 @@ def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, compan
 <TDLMESSAGE>
 <COLLECTION NAME="LedgerVchs" ISMODIFY="No">
 <TYPE>Voucher</TYPE>
-<FILTER>DateRangeFilter</FILTER>
 <FILTER>LedgerFilter</FILTER>
 {_voucher_native_methods()}
 </COLLECTION>
-<SYSTEM TYPE="Formulae" NAME="DateRangeFilter">$$InDateRange:$Date:{from_date}:{to_date}</SYSTEM>
 <SYSTEM TYPE="Formulae" NAME="LedgerFilter">$PartyLedgerName = "{safe_name}"</SYSTEM>
 </TDLMESSAGE>
 </TDL>

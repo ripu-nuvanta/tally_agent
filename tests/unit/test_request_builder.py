@@ -172,51 +172,39 @@ class TestVoucherTypeTitleCase:
         assert '"Sales"' in xml
 
 
-class TestDateRangeFilter:
-    """Phase 6: TDL DateRangeFilter for voucher collections."""
+class TestNoInDateRange:
+    """$$InDateRange is NOT a valid TDL function — must not appear in XML.
+    Date filtering relies on SVFROMDATE/SVTODATE + Python-side _filter_vouchers_by_date()."""
 
-    def test_sales_register_has_date_filter(self):
+    def test_sales_register_no_indaterange(self):
         xml = build_sales_register("01-07-2025", "31-07-2025")
-        assert "DateRangeFilter" in xml
-        assert "InDateRange" in xml
-
-    def test_day_book_has_date_filter(self):
-        xml = build_day_book("01-04-2025", "30-04-2025")
-        assert "DateRangeFilter" in xml
-
-    def test_date_filter_combined_with_type_filter(self):
-        xml = build_sales_register("01-07-2025", "31-07-2025")
-        assert "DateRangeFilter" in xml
+        assert "InDateRange" not in xml
         assert "VchTypeFilter" in xml
 
-    def test_date_filter_contains_dates(self):
-        xml = build_sales_register("01-07-2025", "31-07-2025")
-        assert "01-07-2025" in xml
-        assert "31-07-2025" in xml
-        assert "$$InDateRange:$Date:01-07-2025:31-07-2025" in xml
-
-    def test_day_book_no_type_still_has_date_filter(self):
+    def test_day_book_no_indaterange(self):
         xml = build_day_book("01-04-2025", "30-04-2025")
-        assert "DateRangeFilter" in xml
+        assert "InDateRange" not in xml
+
+    def test_sales_register_has_svfromdate(self):
+        xml = build_sales_register("01-07-2025", "31-07-2025")
+        assert "<SVFROMDATE>01-07-2025</SVFROMDATE>" in xml
+        assert "<SVTODATE>31-07-2025</SVTODATE>" in xml
+
+    def test_day_book_no_type_no_vchfilter(self):
+        xml = build_day_book("01-04-2025", "30-04-2025")
         assert "VchTypeFilter" not in xml
 
-    def test_ledger_vouchers_has_date_filter(self):
+    def test_ledger_vouchers_no_indaterange(self):
         xml = build_ledger_vouchers("Cash", "01-07-2025", "31-07-2025")
-        assert "DateRangeFilter" in xml
-        assert "$$InDateRange:$Date:01-07-2025:31-07-2025" in xml
+        assert "InDateRange" not in xml
 
-    def test_ledger_vouchers_has_both_filters(self):
-        """Ledger vouchers need both DateRangeFilter AND LedgerFilter."""
+    def test_ledger_vouchers_has_ledger_filter(self):
         xml = build_ledger_vouchers("HDFC Bank", "01-04-2025", "31-03-2026")
-        assert "DateRangeFilter" in xml
         assert "LedgerFilter" in xml
-        assert "$$InDateRange" in xml
         assert "HDFC Bank" in xml
 
-    def test_ledger_vouchers_full_fy_range(self):
-        """Full FY query should work — dates in correct DD-MM-YYYY format."""
+    def test_ledger_vouchers_has_svdates(self):
         xml = build_ledger_vouchers("Cash", "01-04-2025", "31-03-2026")
-        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
         assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
         assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
 
@@ -236,20 +224,23 @@ class TestFullFYDateRange:
 
     def test_sales_register_full_fy(self):
         xml = build_sales_register("01-04-2025", "31-03-2026")
-        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
         assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "InDateRange" not in xml
 
     def test_purchase_register_full_fy(self):
         xml = build_purchase_register("01-04-2025", "31-03-2026")
-        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "InDateRange" not in xml
 
     def test_day_book_full_fy(self):
         xml = build_day_book("01-04-2025", "31-03-2026")
-        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "InDateRange" not in xml
 
     def test_ledger_vouchers_full_fy(self):
         xml = build_ledger_vouchers("Cash", "01-04-2025", "31-03-2026")
-        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "InDateRange" not in xml
 
     def test_balance_sheet_single_date(self):
         xml = build_balance_sheet("31-03-2026")
