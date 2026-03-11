@@ -1,14 +1,12 @@
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import type { ChatMessage, TableData } from "../types";
 import DataTable from "./DataTable";
 import ChartRenderer from "./ChartRenderer";
 
-function stripMarkdownTables(text: string): string {
-  // Remove markdown tables (lines starting with | and separator lines like |---|)
-  return text
-    .replace(/^\|.*\|$/gm, "")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
+function hasMarkdownTable(text: string): boolean {
+  // Check if text contains a markdown pipe table (at least a header + separator row)
+  return /\|.+\|[\r\n]+\|[-:\s|]+\|/m.test(text);
 }
 
 function isTableData(d: unknown): d is TableData {
@@ -46,10 +44,10 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     tables.push(message.data);
   }
 
-  // Strip markdown tables from text if we have structured data
-  const displayContent = tables.length > 0
-    ? stripMarkdownTables(message.content)
-    : message.content;
+  // If message has markdown tables, render them inline (don't strip).
+  // Only use DataTable as fallback when structured data exists but no markdown table in text.
+  const textHasTable = hasMarkdownTable(message.content);
+  const showDataTableFallback = tables.length > 0 && !textHasTable;
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"}`}>
@@ -66,11 +64,38 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           <p className="text-sm whitespace-pre-wrap">{message.content}</p>
         ) : (
           <div className="text-sm prose prose-sm max-w-none prose-p:my-1 prose-ul:my-1 prose-li:my-0">
-            <ReactMarkdown>{displayContent}</ReactMarkdown>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                table: ({ children }) => (
+                  <div className="overflow-x-auto my-2">
+                    <table className="min-w-full text-xs border-collapse border border-gray-200">
+                      {children}
+                    </table>
+                  </div>
+                ),
+                thead: ({ children }) => (
+                  <thead className="bg-gray-50">{children}</thead>
+                ),
+                th: ({ children }) => (
+                  <th className="px-3 py-2 text-left font-semibold text-gray-700 border border-gray-200">
+                    {children}
+                  </th>
+                ),
+                td: ({ children }) => (
+                  <td className="px-3 py-2 text-gray-600 border border-gray-200">
+                    {children}
+                  </td>
+                ),
+              }}
+            >
+              {message.content}
+            </ReactMarkdown>
           </div>
         )}
 
-        {tables.map((tableData, idx) => (
+        {/* Fallback: render DataTable only if structured data exists but no markdown table in text */}
+        {showDataTableFallback && tables.map((tableData, idx) => (
           <DataTable key={idx} data={tableData} />
         ))}
         {message.chart && <ChartRenderer chart={message.chart} />}

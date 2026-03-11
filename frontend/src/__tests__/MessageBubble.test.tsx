@@ -71,15 +71,31 @@ describe("MessageBubble", () => {
     expect(screen.getByText("Q2 Sales")).toBeInTheDocument();
   });
 
-  it("strips markdown tables from message text when structured data exists", () => {
+  it("does not render DataTable when markdown table is present in message text", () => {
     const msg: ChatMessage = {
       id: "9", role: "assistant",
       content: "Here is the data:\n\n| Name | Amount |\n|------|--------|\n| Sales | 100 |\n\nSummary: sales are 100.",
       data: { headers: ["Name", "Amount"], rows: [["Sales", 100]] },
     };
     render(<MessageBubble message={msg} />);
+    // The markdown table content is passed through to ReactMarkdown (not stripped)
     expect(screen.getByText(/Summary: sales are 100/)).toBeInTheDocument();
-    // Only 1 table from DataTable, not 2 (one from markdown + one from DataTable)
+    expect(screen.getByText(/Name/)).toBeInTheDocument();
+    // DataTable should NOT render because markdown table exists in the text
+    // (DataTable adds a sort button and CSV export - verify those are absent)
+    expect(screen.queryByText("Export CSV")).not.toBeInTheDocument();
+  });
+
+  it("renders DataTable as fallback when structured data exists but no markdown table in text", () => {
+    const msg: ChatMessage = {
+      id: "10", role: "assistant",
+      content: "Here is the data summary.",
+      data: { headers: ["Name", "Amount"], rows: [["Sales", 100]] },
+    };
+    render(<MessageBubble message={msg} />);
+    // No markdown table in text, so DataTable renders the structured data
+    expect(screen.getByText("Name")).toBeInTheDocument();
+    expect(screen.getByText("Sales")).toBeInTheDocument();
     const tables = screen.getAllByRole("table");
     expect(tables.length).toBe(1);
   });

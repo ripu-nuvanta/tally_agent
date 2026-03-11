@@ -8,5 +8,10 @@ export default defineConfig({
     setupFiles: ["./src/__tests__/setup.tsx"],
     globals: true,
     exclude: ["tests/**", "node_modules/**"],
+    server: {
+      deps: {
+        inline: [/react-markdown/, /remark-gfm/, /micromark/, /mdast/, /unified/, /remark/, /unist/, /devlop/, /ccount/, /escape-string-regexp/, /markdown-table/],
+      },
+    },
   },
 });
