@@ -420,3 +420,116 @@ async def test_trend_query_with_chart(e2e_client):
     data = response.json()
     assert data["message"]
     assert data["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_chart_metadata_stripped_from_response(e2e_client):
+    """Analysis agent response with Chart suggestion/Chart title lines -> stripped from final message."""
+    client, set_responses, mock_clients = e2e_client
+
+    set_responses(
+        orchestrator_responses=[make_classification_response("comparison", requires_chart=True)],
+        query_agent_responses=[
+            make_tool_call_response("get_profit_and_loss", {"from_date": "01-04-2025", "to_date": "30-09-2025"}),
+            make_text_response("Sales: 20,00,000. Purchases: 15,00,000."),
+        ],
+        analysis_agent_responses=[
+            make_text_response(
+                "Comparison analysis:\n"
+                "- Sales exceeded purchases by 5,00,000\n"
+                "- Profit margin is healthy at 25%\n"
+                "Chart suggestion: grouped_bar\n"
+                "Chart title: Sales vs Purchases H1 FY 2025-26"
+            ),
+        ],
+    )
+
+    with (
+        patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
+        patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
+    ):
+        response = await client.post(
+            "/api/chat", json={"message": "Compare sales and purchases for H1"}
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    msg = data["message"]
+    # The analysis text should be present
+    assert "comparison analysis" in msg.lower() or "sales exceeded" in msg.lower()
+    # But the internal chart directives must be stripped
+    assert "Chart suggestion:" not in msg
+    assert "chart_suggestion:" not in msg
+    assert "Chart title:" not in msg
+    assert "chart_title:" not in msg
+
+
+@pytest.mark.asyncio
+async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
+    """Trend query with compute_trend tool -> Total row in table, excluded from chart data."""
+    client, set_responses, mock_clients = e2e_client
+
+    # The analysis agent will call compute_trend, which produces real table data.
+    # Then return a final text response.
+    set_responses(
+        orchestrator_responses=[make_classification_response("trend", requires_chart=True)],
+        query_agent_responses=[
+            make_tool_call_response("get_sales_register", {"from_date": "01-04-2025", "to_date": "31-03-2026"}),
+            make_text_response("Monthly sales data retrieved."),
+        ],
+        analysis_agent_responses=[
+            # First response: Claude calls compute_trend tool
+            make_tool_call_response(
+                "compute_trend",
+                {
+                    "series": [
+                        {"period": "Apr", "value": 500000},
+                        {"period": "May", "value": 600000},
+                        {"period": "Jun", "value": 400000},
+                        {"period": "Jul", "value": 700000},
+                        {"period": "Aug", "value": 800000},
+                    ],
+                    "period_key": "period",
+                    "value_key": "value",
+                    "value_label": "Sales",
+                },
+            ),
+            # Second response: final text after seeing tool result
+            make_text_response(
+                "Monthly sales trend:\n"
+                "- Sales peaked in August at 8L\n"
+                "- Lowest in June at 4L\n"
+                "chart_suggestion: line"
+            ),
+        ],
+    )
+
+    with (
+        patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
+        patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
+    ):
+        response = await client.post(
+            "/api/chat", json={"message": "Show monthly sales trend this FY"}
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["message"]
+
+    # Table data should include a Total row (added by _ensure_totals_row for trend queries)
+    table_data = data["data"]
+    assert table_data is not None, "Expected table data from compute_trend"
+    assert "headers" in table_data
+    assert "rows" in table_data
+    rows = table_data["rows"]
+    assert len(rows) >= 2, f"Expected multiple rows, got {len(rows)}"
+    last_row = rows[-1]
+    assert str(last_row[0]) == "Total", f"Expected last row label 'Total', got {last_row[0]!r}"
+
+    # Chart data should NOT include a "Total" data point
+    chart = data["chart"]
+    assert chart is not None, "Expected chart for trend query"
+    chart_labels = [point.get("label", "") for point in chart["data"]]
+    assert "Total" not in chart_labels, f"Chart data should exclude Total row, got labels: {chart_labels}"
