@@ -442,6 +442,7 @@ class AnalysisAgent:
         last_table_data: dict = {"headers": [], "rows": []}
         ranked_table_data: dict | None = None  # Prefer sort_by_field for top_n
         trend_table_data: dict | None = None   # Prefer compute_trend for trend
+        comparison_table_data: dict | None = None  # Prefer compute_period_comparison for comparison
         turn = 0
 
         logger.info("AnalysisAgent start — query_type=%s, query=%r", query_type, user_query[:80])
@@ -460,6 +461,7 @@ class AnalysisAgent:
                 logger.error("AnalysisAgent turn %d — API error: %s", turn, exc)
                 preferred_data = (
                     trend_table_data if (query_type == "trend" and trend_table_data)
+                    else comparison_table_data if (query_type == "comparison" and comparison_table_data)
                     else ranked_table_data if (query_type == "top_n" and ranked_table_data)
                     else last_table_data
                 )
@@ -488,6 +490,7 @@ class AnalysisAgent:
                 # For top_n, prefer the ranked (sort_by_field) data over aggregate totals
                 preferred_data = (
                     trend_table_data if (query_type == "trend" and trend_table_data)
+                    else comparison_table_data if (query_type == "comparison" and comparison_table_data)
                     else ranked_table_data if (query_type == "top_n" and ranked_table_data)
                     else last_table_data
                 )
@@ -523,6 +526,8 @@ class AnalysisAgent:
                             ranked_table_data = {"headers": d["headers"], "rows": d["rows"]}
                         if tool_block.name == "compute_trend":
                             trend_table_data = {"headers": d["headers"], "rows": d["rows"]}
+                        if tool_block.name == "compute_period_comparison":
+                            comparison_table_data = {"headers": d["headers"], "rows": d["rows"]}
 
                 tool_results_log.append({
                     "tool_name": tool_block.name,
@@ -547,6 +552,7 @@ class AnalysisAgent:
             if tool_call_count >= self.max_tool_calls:
                 preferred_data = (
                     trend_table_data if (query_type == "trend" and trend_table_data)
+                    else comparison_table_data if (query_type == "comparison" and comparison_table_data)
                     else ranked_table_data if (query_type == "top_n" and ranked_table_data)
                     else last_table_data
                 )

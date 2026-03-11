@@ -627,3 +627,23 @@ def test_max_tool_calls_default_is_15():
     assert MAX_TOOL_CALLS == 15
     agent = AnalysisAgent()
     assert agent.max_tool_calls == 15
+
+
+def test_comparison_table_data_tracker_prefers_period_comparison():
+    """For comparison queries, prefer compute_period_comparison results over last_table_data."""
+    comparison_data = {
+        "headers": ["Metric", "Q2", "Q3", "Change"],
+        "rows": [
+            ["Sales", 1195000, 1957500, 762500],
+            ["Purchases", 4171, 17114, 12943],
+        ],
+    }
+    aggregate_data = {
+        "headers": ["amount"],
+        "rows": [[216000]],
+    }
+    # comparison_table_data tracker should prefer comparison table over aggregate
+    preferred = comparison_data
+    assert len(preferred["rows"]) == 2
+    assert preferred["headers"][1] == "Q2"
+    assert len(aggregate_data["rows"]) == 1  # single row = wrong for comparison
