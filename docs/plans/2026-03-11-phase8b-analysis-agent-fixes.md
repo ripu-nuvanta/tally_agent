@@ -27,7 +27,7 @@
 
 The AnalysisAgent prompt then gets two clearly-labeled sections.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # In tests/unit/test_orchestrator.py
@@ -72,12 +72,12 @@ def test_separate_handles_report_response_conversion():
     assert raw[0] == [{"Account": "Sales", "Amount": 100}]  # converted to list[dict]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/test_orchestrator.py::test_separate_raw_and_computed_data -v`
 Expected: FAIL — `ImportError: cannot import name '_separate_tool_results'`
 
-- [ ] **Step 3: Add `_separate_tool_results()` to orchestrator**
+- [x] **Step 3: Add `_separate_tool_results()` to orchestrator**
 
 In `backend/agents/orchestrator.py`, add after `_extract_all_data()` (line ~268):
 
@@ -121,12 +121,12 @@ def _separate_tool_results(
     return raw, computed
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/test_orchestrator.py -v -k "separate"`
 Expected: PASS (all 3 tests)
 
-- [ ] **Step 5: Update orchestrator to use `_separate_tool_results` and pass tagged data**
+- [x] **Step 5: Update orchestrator to use `_separate_tool_results` and pass tagged data**
 
 In `backend/agents/orchestrator.py`, replace lines 124-142:
 
@@ -156,7 +156,7 @@ In `backend/agents/orchestrator.py`, replace lines 124-142:
             )
 ```
 
-- [ ] **Step 6: Update AnalysisAgent.execute() signature and prompt**
+- [x] **Step 6: Update AnalysisAgent.execute() signature and prompt**
 
 In `backend/agents/analysis_agent.py`, change the `execute` method signature and prompt construction (lines 391-413):
 
@@ -203,7 +203,7 @@ In `backend/agents/analysis_agent.py`, change the `execute` method signature and
         messages: list[dict] = [{"role": "user", "content": user_content}]
 ```
 
-- [ ] **Step 7: Update all callers of `analysis_agent.execute()`**
+- [x] **Step 7: Update all callers of `analysis_agent.execute()`**
 
 In `backend/agents/orchestrator.py`, the call on line 141 was already updated in Step 5.
 
@@ -215,12 +215,12 @@ grep -rn "analysis_agent.execute\|AnalysisAgent.*execute" tests/ --include="*.py
 
 Update any found call sites to pass `computed_data=None` (or `[]`) as the second positional argument.
 
-- [ ] **Step 8: Run full test suite**
+- [x] **Step 8: Run full test suite**
 
 Run: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
 Expected: PASS (all existing tests + new tests)
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/agents/orchestrator.py backend/agents/analysis_agent.py tests/unit/test_orchestrator.py
@@ -235,7 +235,7 @@ git commit -m "feat: tag pre-computed data in orchestrator→analysis agent hand
 - Modify: `backend/agents/analysis_agent.py:32`
 - Test: `tests/unit/test_analysis_agent.py`
 
-- [ ] **Step 1: Write test**
+- [x] **Step 1: Write test**
 
 ```python
 # In tests/unit/test_analysis_agent.py
@@ -248,12 +248,12 @@ def test_max_tool_calls_default_is_15():
     assert agent.max_tool_calls == 15
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/test_analysis_agent.py::test_max_tool_calls_default_is_15 -v`
 Expected: FAIL — `assert 8 == 15`
 
-- [ ] **Step 3: Change constant**
+- [x] **Step 3: Change constant**
 
 In `backend/agents/analysis_agent.py:32`, change:
 ```python
@@ -264,12 +264,12 @@ MAX_TOOL_CALLS = 8
 MAX_TOOL_CALLS = 15
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/test_analysis_agent.py::test_max_tool_calls_default_is_15 -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/agents/analysis_agent.py tests/unit/test_analysis_agent.py
@@ -288,7 +288,7 @@ git commit -m "fix: raise analysis agent MAX_TOOL_CALLS 8→15 for multi-dataset
 
 **Design:** Add `comparison_table_data` tracker that captures results from `compute_period_comparison`. Follow exact pattern of `trend_table_data` (line 500-501).
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # In tests/unit/test_analysis_agent.py
@@ -324,7 +324,7 @@ def test_comparison_table_data_tracker_prefers_period_comparison():
     assert len(aggregate_data["rows"]) == 1  # single row = wrong for comparison
 ```
 
-- [ ] **Step 2: Add tracker variable and capture logic**
+- [x] **Step 2: Add tracker variable and capture logic**
 
 In `backend/agents/analysis_agent.py`, add initialization (after line 420):
 ```python
@@ -337,7 +337,7 @@ Add capture logic (after line 501, inside the tool result capture block):
                             comparison_table_data = {"headers": d["headers"], "rows": d["rows"]}
 ```
 
-- [ ] **Step 3: Update all 3 `preferred_data` selection points**
+- [x] **Step 3: Update all 3 `preferred_data` selection points**
 
 Lines 465-468 (normal completion), 437-440 (API error), and 524-527 (tool limit). Change all three to:
 
@@ -350,12 +350,12 @@ Lines 465-468 (normal completion), 437-440 (API error), and 524-527 (tool limit)
                 )
 ```
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/test_analysis_agent.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/agents/analysis_agent.py tests/unit/test_analysis_agent.py
@@ -374,7 +374,7 @@ git commit -m "fix: add comparison_table_data tracker — prefer compute_period_
 
 **Fix:** Change `type="monotone"` to `type="linear"` for the secondary Y-axis lines. Linear interpolation always passes through data points exactly. Add `dot={{ r: 3 }}` so the exact data points are visible.
 
-- [ ] **Step 1: Write test**
+- [x] **Step 1: Write test**
 
 ```typescript
 // In frontend/src/__tests__/ChartRenderer.test.tsx
@@ -406,7 +406,7 @@ it("renders Change % line with linear interpolation in composed chart", () => {
 });
 ```
 
-- [ ] **Step 2: Update ChartRenderer.tsx**
+- [x] **Step 2: Update ChartRenderer.tsx**
 
 In `frontend/src/components/ChartRenderer.tsx`, change lines 92-101:
 
@@ -429,12 +429,12 @@ Changes:
 - `type="monotone"` → `type="linear"` — eliminates cubic spline overshoot at endpoints
 - `dot={false}` → `dot={{ r: 3, fill: ... }}` — shows exact data points for visual accuracy
 
-- [ ] **Step 3: Run frontend tests**
+- [x] **Step 3: Run frontend tests**
 
 Run: `cd frontend && npm test -- --run`
 Expected: PASS
 
-- [ ] **Step 4: Run Playwright visual tests and inspect screenshots**
+- [x] **Step 4: Run Playwright visual tests and inspect screenshots**
 
 Run: `cd frontend && npm run test:playwright`
 
@@ -442,7 +442,7 @@ After tests pass, visually inspect the composed chart screenshots in `frontend/t
 - `desktop/eval-visual.spec.ts/sales_trend_composed-desktop.png` — verify Change % line dots are visible and endpoints are correct
 - Check mobile and tablet variants too
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cd frontend
@@ -454,17 +454,17 @@ git commit -m "fix: Change % line uses linear interpolation + visible dots for a
 
 ## Task 5: Run Full Test Suite + Eval Verification
 
-- [ ] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
-- [ ] **Step 2:** `cd frontend && npm test -- --run`
-- [ ] **Step 3:** `cd frontend && npm run test:playwright` — visually inspect screenshots
-- [ ] **Step 4:** Restart backend (to pick up code changes)
-- [ ] **Step 5:** Rerun eval collect → judge → report:
+- [x] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
+- [x] **Step 2:** `cd frontend && npm test -- --run`
+- [x] **Step 3:** `cd frontend && npm run test:playwright` — visually inspect screenshots
+- [x] **Step 4:** Restart backend (to pick up code changes)
+- [x] **Step 5:** Rerun eval collect → judge → report:
 ```bash
 PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173
 source .env && PYTHONPATH=. python tests/eval/judge.py
 PYTHONPATH=. python tests/eval/report.py
 ```
-- [ ] **Step 6:** Verify acceptance criteria below
+- [x] **Step 6:** Verify acceptance criteria below
 
 ### Phase 8b Acceptance Criteria
 
