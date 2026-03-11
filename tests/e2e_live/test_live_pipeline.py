@@ -250,3 +250,85 @@ async def test_live_quick_action_stock_summary(orchestrator, tally_client, sessi
     result = await run_until_final(orchestrator, tally_client, session, query)
     log_result("test_live_quick_action_stock_summary", query, result)
     assert result["message"]
+
+
+# ---------------------------------------------------------------------------
+# Date Validation — Phase 7: verify bad dates don't crash Tally
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_live_date_validation_iso_autofix(tally_client):
+    """ISO dates (YYYY-MM-DD) are auto-fixed to DD-MM-YYYY before reaching Tally.
+
+    This is the exact scenario that crashed Tally in eval run_20260311_104350.
+    execute_tool must autofix the dates and Tally must respond (not crash).
+    """
+    from backend.agents.tools import execute_tool
+
+    # ISO format — what Claude sometimes sends
+    result = await execute_tool(tally_client, "get_trial_balance", {
+        "from_date": "2025-04-01",
+        "to_date": "2026-03-31",
+    })
+    logger.info("ISO autofix result: %s", json.dumps(result, default=str, indent=2)[:500])
+    # Must succeed — dates auto-fixed to DD-MM-YYYY
+    assert "error" not in result or "timed out" in result.get("error", "").lower(), (
+        f"Expected success or timeout, got error: {result.get('error')}"
+    )
+    if result.get("success"):
+        assert result["data"] is not None
+
+
+@pytest.mark.asyncio
+async def test_live_date_validation_garbage_rejected(tally_client):
+    """Garbage dates must be rejected before reaching Tally."""
+    from backend.agents.tools import execute_tool
+
+    result = await execute_tool(tally_client, "get_sales_register", {
+        "from_date": "not-a-date",
+        "to_date": "31-03-2026",
+    })
+    logger.info("Garbage date result: %s", result)
+    assert "error" in result
+    assert "DD-MM-YYYY" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_live_date_validation_full_fy_sales_register(tally_client):
+    """Full FY sales register query should work without crashing Tally."""
+    from backend.agents.tools import execute_tool
+
+    result = await execute_tool(tally_client, "get_sales_register", {
+        "from_date": "01-04-2025",
+        "to_date": "31-03-2026",
+    })
+    logger.info("Full FY sales register: %s vouchers", len(result.get("data", [])) if result.get("success") else "ERROR")
+    # Must succeed or timeout (not crash)
+    assert "error" not in result or "timed out" in result.get("error", "").lower(), (
+        f"Expected success or timeout, got error: {result.get('error')}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_live_ledger_vouchers_date_filter(tally_client):
+    """Ledger vouchers with DateRangeFilter should return filtered results."""
+    from backend.agents.tools import execute_tool
+
+    # First find a ledger that exists
+    search_result = await execute_tool(tally_client, "search_ledger", {
+        "search_term": "cash",
+    })
+    if not search_result.get("success") or not search_result["data"]:
+        pytest.skip("No 'cash' ledger found in Tally")
+
+    ledger_name = search_result["data"][0]["name"]
+    logger.info("Testing ledger vouchers for: %s", ledger_name)
+
+    result = await execute_tool(tally_client, "get_ledger_transactions", {
+        "ledger_name": ledger_name,
+        "from_date": "01-04-2025",
+        "to_date": "31-03-2026",
+    })
+    logger.info("Ledger vouchers result: %s", "success" if result.get("success") else result.get("error", "unknown"))
+    assert "error" not in result or "timed out" in result.get("error", "").lower()

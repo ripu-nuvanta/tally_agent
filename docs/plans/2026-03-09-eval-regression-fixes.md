@@ -1243,6 +1243,24 @@ git commit -m "test: add full FY date range tests for all request builders"
 9. All builders produce correct XML for full FY range `01-04-2025` to `31-03-2026`
 10. All tests pass: 477+ BE existing + ~32 new = 509+ total
 
+### Phase 7 Implementation Summary
+
+All tasks implemented across 5 commits. Code review fixes applied (no-mutation shallow copy, end-to-end crash scenario tests).
+
+| Suite | Count | Delta |
+|-------|-------|-------|
+| Backend unit+integration+e2e | 513 | +36 |
+| Frontend Vitest | 101 | +0 |
+| **Total** | **614** | **+36** |
+
+**Live Tally tests added**: 4 new tests in `tests/e2e_live/test_live_pipeline.py`:
+- `test_live_date_validation_iso_autofix` — ISO date through execute_tool → Tally responds (doesn't crash)
+- `test_live_date_validation_garbage_rejected` — garbage date rejected before reaching Tally
+- `test_live_date_validation_full_fy_sales_register` — full FY sales register works
+- `test_live_ledger_vouchers_date_filter` — ledger vouchers with DateRangeFilter
+
+**Pending**: Run live tests against real Tally + eval collect → judge → report (next session).
+
 ### Note: Direct API Route
 
-`GET /api/reports/{name}` in `backend/api/reports.py` bypasses `execute_tool()`, but it's unused — the frontend and agent pipeline never call it. It's a standalone REST endpoint from Phase 3 for manual `curl` testing. Not in scope for Phase 7.
+`GET /api/reports/{name}` in `backend/api/reports.py` bypasses `execute_tool()`, but it's unused — the frontend and agent pipeline never call it. It's a standalone REST endpoint from Phase 3 for manual `curl` testing (future: direct FE reports fetch). Not in scope for Phase 7.
