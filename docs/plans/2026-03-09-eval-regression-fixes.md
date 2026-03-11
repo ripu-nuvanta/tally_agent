@@ -1332,7 +1332,7 @@ All tasks implemented across 8 commits. Code review fixes applied (no-mutation s
 
 ---
 
-## Phase 8 — Eval Accuracy Fixes (Structured Data & Prompts)
+## Phase 8 — Eval Accuracy Fixes (Structured Data & Prompts) — IMPLEMENTED, PENDING EVAL
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -1732,6 +1732,21 @@ PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --fr
 git add tests/eval/collect.py tests/eval/judge.py
 git commit -m "feat: full message screenshots in eval — judge sees complete user experience"
 ```
+
+### Phase 8 Implementation Summary (2026-03-11)
+
+All 8 tasks implemented across 9 commits (8a8c4f3..1c7fbbe). Tests: 522 BE + 103 FE Vitest + 39 Playwright = 664 total, all passing. Playwright screenshots visually verified (inline markdown table renders correctly across mobile/tablet/desktop).
+
+**Commits:**
+- `39d7c8e` fix: restore trend totals + strip chart metadata from message
+- `76d4149` fix: exclude Total/Grand Total rows from chart data — tables only
+- `42e7db9` fix: analysis agent prompt — rules 10-13
+- `59ce50f` feat: pass full message screenshots to eval judge
+- `10bcbc3` feat: render markdown tables inline in message — Langfuse-style
+- `e3d9f75` test: add E2E tests for chart metadata stripping + Total row behavior
+- `1c7fbbe` test: add Playwright inline markdown table fixture
+
+**Last eval run:** `run_20260311_134758` (post Phase 6+7, pre Phase 8). Phase 8 eval pending.
 
 ### Phase 8 Acceptance Criteria
 
