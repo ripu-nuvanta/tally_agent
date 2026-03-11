@@ -219,3 +219,38 @@ class TestDateRangeFilter:
         assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
         assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
         assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+
+
+class TestFullFYDateRange:
+    """Verify all report/voucher builders handle full FY date ranges correctly."""
+
+    def test_trial_balance_full_fy(self):
+        xml = build_trial_balance("01-04-2025", "31-03-2026")
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+
+    def test_profit_and_loss_full_fy(self):
+        xml = build_profit_and_loss("01-04-2025", "31-03-2026")
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+
+    def test_sales_register_full_fy(self):
+        xml = build_sales_register("01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+
+    def test_purchase_register_full_fy(self):
+        xml = build_purchase_register("01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+
+    def test_day_book_full_fy(self):
+        xml = build_day_book("01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+
+    def test_ledger_vouchers_full_fy(self):
+        xml = build_ledger_vouchers("Cash", "01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+
+    def test_balance_sheet_single_date(self):
+        xml = build_balance_sheet("31-03-2026")
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
