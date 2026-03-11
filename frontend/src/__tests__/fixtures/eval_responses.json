@@ -185,5 +185,19 @@
         "show_legend": false
       }
     }
+  },
+  {
+    "name": "inline_markdown_table",
+    "message": "Here is the outstanding balance summary for your top debtors as of March 2026:\n\n| Debtor | Outstanding (₹) | Days Overdue |\n|--------|------------------|--------------|\n| HCODE TECHNOLOGIES | 4,25,000.00 | 45 |\n| SMARTBIKE TECH | 2,10,000.00 | 30 |\n| GLOBAL ENTERPRISES | 1,85,000.00 | 60 |\n| METRO SOLUTIONS | 92,500.00 | 15 |\n\nTotal outstanding: ₹9,12,500.00 across 4 debtors. GLOBAL ENTERPRISES has the longest overdue period at 60 days — consider sending a reminder.",
+    "data": {
+      "headers": ["Debtor", "Outstanding", "Days Overdue"],
+      "rows": [
+        ["HCODE TECHNOLOGIES", "4,25,000.00", "45"],
+        ["SMARTBIKE TECH", "2,10,000.00", "30"],
+        ["GLOBAL ENTERPRISES", "1,85,000.00", "60"],
+        ["METRO SOLUTIONS", "92,500.00", "15"]
+      ]
+    },
+    "chart": null
   }
 ]
