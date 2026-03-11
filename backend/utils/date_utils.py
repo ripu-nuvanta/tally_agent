@@ -1,8 +1,47 @@
 import calendar
 import re
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from dateutil.relativedelta import relativedelta
+
+
+_TALLY_DATE_RE = re.compile(r'^\d{2}-\d{2}-\d{4}$')
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def validate_tally_date(date_str: str, autofix: bool = False) -> str:
+    """Validate a date string is in DD-MM-YYYY format.
+
+    Args:
+        date_str: Date string to validate.
+        autofix: If True, attempt to convert YYYY-MM-DD to DD-MM-YYYY.
+
+    Returns:
+        Validated DD-MM-YYYY string.
+
+    Raises:
+        ValueError: If date_str is not valid DD-MM-YYYY format.
+    """
+    if not date_str or not isinstance(date_str, str):
+        raise ValueError(f"Invalid date '{date_str}': expected DD-MM-YYYY format")
+
+    s = date_str.strip()
+
+    # Auto-fix ISO format (YYYY-MM-DD → DD-MM-YYYY)
+    if autofix and _ISO_DATE_RE.match(s):
+        parts = s.split("-")
+        s = f"{parts[2]}-{parts[1]}-{parts[0]}"
+
+    if not _TALLY_DATE_RE.match(s):
+        raise ValueError(f"Invalid date '{date_str}': expected DD-MM-YYYY format")
+
+    # Validate it's a real calendar date
+    try:
+        datetime.strptime(s, "%d-%m-%Y")
+    except ValueError:
+        raise ValueError(f"Invalid date '{date_str}': expected DD-MM-YYYY format")
+
+    return s
 
 
 def get_fy_start(ref: date) -> date:

@@ -187,3 +187,49 @@ class TestResolveDateRangeNewPatterns:
         result = resolve_date_range("April to June 2025")
         assert result["from_date"] == "01-04-2025"
         assert result["to_date"] == "30-06-2025"
+
+
+import pytest
+from backend.utils.date_utils import validate_tally_date
+
+
+class TestValidateTallyDate:
+    def test_valid_date(self):
+        assert validate_tally_date("01-04-2025") == "01-04-2025"
+
+    def test_valid_date_end_of_month(self):
+        assert validate_tally_date("31-03-2026") == "31-03-2026"
+
+    def test_valid_date_leap_year(self):
+        assert validate_tally_date("29-02-2028") == "29-02-2028"
+
+    def test_iso_format_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("2025-04-01")
+
+    def test_slash_format_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("01/04/2025")
+
+    def test_garbage_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("not-a-date")
+
+    def test_empty_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("")
+
+    def test_invalid_day_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("30-02-2025")
+
+    def test_iso_autofix(self):
+        assert validate_tally_date("2025-04-01", autofix=True) == "01-04-2025"
+
+    def test_iso_autofix_validates_result(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("2025-13-01", autofix=True)
+
+    def test_none_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date(None)
