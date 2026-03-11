@@ -14,6 +14,7 @@ from typing import Any
 
 from backend.tally_bridge.client import TallyClient
 from backend.utils.date_utils import resolve_date_range as _resolve_date_range
+from backend.utils.date_utils import validate_tally_date
 
 logger = logging.getLogger(__name__)
 from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseError
@@ -397,6 +398,8 @@ TOOL_HANDLERS: dict[str, Any] = {
 # execute_tool — single entry point for the agent layer
 # ---------------------------------------------------------------------------
 
+_DATE_PARAMS = {"from_date", "to_date", "as_on_date"}
+
 
 async def execute_tool(
     client: TallyClient,
@@ -412,6 +415,14 @@ async def execute_tool(
     handler = TOOL_HANDLERS.get(tool_name)
     if handler is None:
         return {"error": f"Unknown tool: {tool_name!r}"}
+
+    # Validate and autofix date parameters
+    for param in _DATE_PARAMS:
+        if param in tool_input:
+            try:
+                tool_input[param] = validate_tally_date(tool_input[param], autofix=True)
+            except ValueError as exc:
+                return {"error": str(exc)}
 
     try:
         result = await handler(client, **tool_input)

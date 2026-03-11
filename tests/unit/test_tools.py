@@ -259,3 +259,155 @@ class TestDateToolExecution:
     def test_unknown_date_tool(self):
         result = execute_date_tool("unknown_tool", {})
         assert "error" in result
+
+
+# ---------------------------------------------------------------------------
+# TestExecuteToolDateValidation
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteToolDateValidation:
+    """Test date validation and autofix in execute_tool."""
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_rejects_garbage_from_date(self):
+        """Garbage date string must be rejected before reaching Tally."""
+        from unittest.mock import AsyncMock
+        client = AsyncMock()
+        result = await execute_tool(client, "get_day_book", {
+            "from_date": "garbage", "to_date": "31-03-2026"
+        })
+        assert "error" in result
+        assert "DD-MM-YYYY" in result["error"]
+        client.post_xml.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_rejects_garbage_to_date(self):
+        """Bad to_date also rejected."""
+        from unittest.mock import AsyncMock
+        client = AsyncMock()
+        result = await execute_tool(client, "get_trial_balance", {
+            "from_date": "01-04-2025", "to_date": "not-a-date"
+        })
+        assert "error" in result
+        assert "DD-MM-YYYY" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_rejects_garbage_as_on_date(self):
+        """as_on_date param validated too."""
+        from unittest.mock import AsyncMock
+        client = AsyncMock()
+        result = await execute_tool(client, "get_balance_sheet", {
+            "as_on_date": "31/03/2026"
+        })
+        assert "error" in result
+        assert "DD-MM-YYYY" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_autofixes_iso_from_date(self):
+        """ISO YYYY-MM-DD auto-converted to DD-MM-YYYY before calling handler."""
+        from unittest.mock import AsyncMock, patch
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(return_value={"report_name": "Trial Balance", "rows": []})
+        with patch.dict(TOOL_HANDLERS, {"get_trial_balance": mock_handler}):
+            result = await execute_tool(client, "get_trial_balance", {
+                "from_date": "2025-04-01", "to_date": "2026-03-31"
+            })
+        call_kwargs = mock_handler.call_args
+        assert call_kwargs is not None
+        _, kwargs = call_kwargs
+        assert kwargs["from_date"] == "01-04-2025"
+        assert kwargs["to_date"] == "31-03-2026"
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_autofixes_iso_as_on_date(self):
+        """ISO as_on_date also auto-converted."""
+        from unittest.mock import AsyncMock, patch
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(return_value={"report_name": "Balance Sheet", "rows": []})
+        with patch.dict(TOOL_HANDLERS, {"get_balance_sheet": mock_handler}):
+            result = await execute_tool(client, "get_balance_sheet", {
+                "as_on_date": "2026-03-31"
+            })
+        _, kwargs = mock_handler.call_args
+        assert kwargs["as_on_date"] == "31-03-2026"
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_valid_dates_pass_through(self):
+        """Valid DD-MM-YYYY dates pass through unchanged."""
+        from unittest.mock import AsyncMock, patch
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(return_value=[])
+        with patch.dict(TOOL_HANDLERS, {"get_sales_register": mock_handler}):
+            result = await execute_tool(client, "get_sales_register", {
+                "from_date": "01-04-2025", "to_date": "31-03-2026"
+            })
+        _, kwargs = mock_handler.call_args
+        assert kwargs["from_date"] == "01-04-2025"
+        assert kwargs["to_date"] == "31-03-2026"
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_no_dates_skips_validation(self):
+        """Tools without date params skip validation."""
+        from unittest.mock import AsyncMock, patch
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(return_value=[{"name": "Test Co"}])
+        with patch.dict(TOOL_HANDLERS, {"list_companies": mock_handler}):
+            result = await execute_tool(client, "list_companies", {})
+        assert "error" not in result
+        mock_handler.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_unknown_tool(self):
+        """Unknown tool name returns error."""
+        from unittest.mock import AsyncMock
+        client = AsyncMock()
+        result = await execute_tool(client, "nonexistent_tool", {})
+        assert "error" in result
+        assert "Unknown tool" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_tally_connection_error(self):
+        """TallyConnectionError is caught and returned as error dict."""
+        from unittest.mock import AsyncMock, patch
+        from backend.tally_bridge.exceptions import TallyConnectionError
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(side_effect=TallyConnectionError("Tally unreachable"))
+        with patch.dict(TOOL_HANDLERS, {"get_trial_balance": mock_handler}):
+            result = await execute_tool(client, "get_trial_balance", {
+                "from_date": "01-04-2025", "to_date": "31-03-2026"
+            })
+        assert "error" in result
+        assert "unreachable" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_success_wraps_data(self):
+        """Successful tool call wraps result in {success: True, data: ...}."""
+        from unittest.mock import AsyncMock, patch
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(return_value=[{"name": "Cash", "parent": "Cash-in-Hand"}])
+        with patch.dict(TOOL_HANDLERS, {"search_ledger": mock_handler}):
+            result = await execute_tool(client, "search_ledger", {"search_term": "cash"})
+        assert result["success"] is True
+        assert result["data"] == [{"name": "Cash", "parent": "Cash-in-Hand"}]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_tally_response_error(self):
+        """TallyResponseError is caught and returned as error dict."""
+        from unittest.mock import AsyncMock, patch
+        from backend.tally_bridge.exceptions import TallyResponseError
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(side_effect=TallyResponseError("Invalid XML response"))
+        with patch.dict(TOOL_HANDLERS, {"get_day_book": mock_handler}):
+            result = await execute_tool(client, "get_day_book", {
+                "from_date": "01-04-2025", "to_date": "30-04-2025"
+            })
+        assert "error" in result
+        assert "Invalid XML" in result["error"]
