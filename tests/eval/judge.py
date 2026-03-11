@@ -63,11 +63,30 @@ async def judge_turn_text(
         checks=checks,
     )
 
+    # Build message content — include full screenshot if available so the judge
+    # can see the complete rendered response (text + table + chart together)
+    content: list[dict] = []
+
+    full_screenshot_path = turn.get("screenshot_full")
+    if full_screenshot_path and Path(full_screenshot_path).exists():
+        image_data = Path(full_screenshot_path).read_bytes()
+        b64_image = base64.standard_b64encode(image_data).decode("utf-8")
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": b64_image,
+            },
+        })
+
+    content.append({"type": "text", "text": prompt})
+
     response = await client.messages.create(
         model=model,
         max_tokens=2000,
         system=JUDGE_SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": prompt}],
+        messages=[{"role": "user", "content": content}],
     )
 
     response_text = response.content[0].text
@@ -95,35 +114,43 @@ async def judge_turn_chart(
     if not screenshot_path or not Path(screenshot_path).exists():
         return {"chart_quality": {"score": 0, "reasoning": "No chart screenshot available"}}
 
-    # Read and encode screenshot
+    # Read and encode chart screenshot
     image_data = Path(screenshot_path).read_bytes()
-    b64_image = base64.standard_b64encode(image_data).decode("utf-8")
+    b64_chart = base64.standard_b64encode(image_data).decode("utf-8")
 
     prompt_text = build_chart_judge_prompt(turn)
+
+    # Build content with full screenshot first (complete context), then chart detail
+    content: list[dict] = []
+
+    full_screenshot_path = turn.get("screenshot_full")
+    if full_screenshot_path and Path(full_screenshot_path).exists():
+        full_image_data = Path(full_screenshot_path).read_bytes()
+        b64_full = base64.standard_b64encode(full_image_data).decode("utf-8")
+        content.append({
+            "type": "image",
+            "source": {
+                "type": "base64",
+                "media_type": "image/png",
+                "data": b64_full,
+            },
+        })
+
+    content.append({
+        "type": "image",
+        "source": {
+            "type": "base64",
+            "media_type": "image/png",
+            "data": b64_chart,
+        },
+    })
+    content.append({"type": "text", "text": prompt_text})
 
     response = await client.messages.create(
         model=model,
         max_tokens=1000,
         system="You are an expert chart evaluator. Respond with JSON only.",
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "image",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "image/png",
-                            "data": b64_image,
-                        },
-                    },
-                    {
-                        "type": "text",
-                        "text": prompt_text,
-                    },
-                ],
-            }
-        ],
+        messages=[{"role": "user", "content": content}],
     )
 
     response_text = response.content[0].text
@@ -192,6 +219,7 @@ async def judge_transcript(
             "has_chart": turn.get("has_chart", False),
             "screenshot_chart": turn.get("screenshot_chart"),
             "screenshot_table": turn.get("screenshot_table"),
+            "screenshot_full": turn.get("screenshot_full"),
             **text_scores,
             **chart_scores,
         }
