@@ -358,6 +358,39 @@ class TestBuildConfigSecondaryAxis:
 # ---------------------------------------------------------------------------
 
 
+# ---------------------------------------------------------------------------
+# Tests: _format_xy_data — Total/Grand Total row exclusion
+# ---------------------------------------------------------------------------
+
+
+def test_format_xy_data_excludes_total_row():
+    """Total/Grand Total rows should be excluded from chart data."""
+    from backend.agents.chart_agent import _format_xy_data
+    headers = ["Customer", "Sales"]
+    rows = [
+        ["HCODE", 1642000],
+        ["SMARTBIKE", 1062000],
+        ["Total", 2704000],
+    ]
+    data = _format_xy_data(headers, rows)
+    labels = [d["label"] for d in data]
+    assert "Total" not in labels
+    assert len(data) == 2
+
+def test_format_xy_data_excludes_grand_total():
+    from backend.agents.chart_agent import _format_xy_data
+    headers = ["Ledger", "Q2", "Q3"]
+    rows = [
+        ["SALES HARYANA", 895000, 975000],
+        ["SALES EXPORT", 0, 182500],
+        ["Grand Total", 895000, 1157500],
+    ]
+    data = _format_xy_data(headers, rows)
+    labels = [d["label"] for d in data]
+    assert "Grand Total" not in labels
+    assert len(data) == 2
+
+
 def test_trim_trailing_zeros_removes_empty_tail():
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]

@@ -171,7 +171,10 @@ def _format_xy_data(headers: list[str], rows: list[list]) -> list[dict[str, Any]
     """Standard label/value format for bar and line charts."""
     data = []
     for row in rows:
-        point: dict[str, Any] = {"label": str(row[0]) if row else ""}
+        label = str(row[0]) if row else ""
+        if label.lower() in ("total", "grand total"):
+            continue
+        point: dict[str, Any] = {"label": label}
         for i, header in enumerate(headers[1:], start=1):
             if header in _EXCLUDED_CHART_COLUMNS:
                 continue
