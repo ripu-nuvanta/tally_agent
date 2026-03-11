@@ -29,7 +29,7 @@ from backend.agents.utils import extract_text, find_all_tool_use_blocks
 # Module-level client — tests patch this object.
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
-MAX_TOOL_CALLS = 8
+MAX_TOOL_CALLS = 15
 
 
 # ---------------------------------------------------------------------------

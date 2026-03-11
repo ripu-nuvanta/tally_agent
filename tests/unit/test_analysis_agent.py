@@ -614,3 +614,16 @@ Chart title: Monthly Sales Trend FY 2025-26"""
         assert "Chart suggestion" not in result
         assert "Chart title" not in result
         assert "Analysis complete" in result
+
+
+# ---------------------------------------------------------------------------
+# Phase 8b: MAX_TOOL_CALLS default
+# ---------------------------------------------------------------------------
+
+
+def test_max_tool_calls_default_is_15():
+    """Analysis agent should have a generous tool limit for multi-dataset queries."""
+    from backend.agents.analysis_agent import MAX_TOOL_CALLS, AnalysisAgent
+    assert MAX_TOOL_CALLS == 15
+    agent = AnalysisAgent()
+    assert agent.max_tool_calls == 15
