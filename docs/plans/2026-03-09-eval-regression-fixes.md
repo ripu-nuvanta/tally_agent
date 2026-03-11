@@ -757,7 +757,7 @@ All 8 tasks implemented. 11 files changed, +330/-18 lines.
 - Modify: `backend/utils/date_utils.py`
 - Test: `tests/unit/test_date_utils.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # In tests/unit/test_date_utils.py
@@ -806,12 +806,12 @@ class TestValidateTallyDate:
             validate_tally_date("2025-13-01", autofix=True)
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_date_utils.py::TestValidateTallyDate -v`
 Expected: FAIL — `ImportError: cannot import name 'validate_tally_date'`
 
-- [ ] **Step 3: Implement `validate_tally_date`**
+- [x] **Step 3: Implement `validate_tally_date`**
 
 Add to `backend/utils/date_utils.py`:
 
@@ -858,12 +858,12 @@ def validate_tally_date(date_str: str, autofix: bool = False) -> str:
     return s
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_date_utils.py::TestValidateTallyDate -v`
 Expected: PASS (all 11 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/utils/date_utils.py tests/unit/test_date_utils.py
@@ -878,7 +878,7 @@ git commit -m "feat: add validate_tally_date() with autofix for ISO dates"
 
 **Note on scope:** `execute_tool()` is the SOLE gateway for all Claude→Tally tool calls (confirmed by tracing `query_agent.py` line 145). Validating here catches all bad dates before they reach any request builder. The direct API route (`GET /api/reports/{name}`) bypasses this — lower priority since it's not used by the agent pipeline.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # In tests/unit/test_tools.py
@@ -1005,12 +1005,12 @@ async def test_execute_tool_success_wraps_data():
     assert result["data"] == [{"name": "Cash", "parent": "Cash-in-Hand"}]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_tools.py -v`
 Expected: FAIL — no validation exists yet (date tests fail), handler routing tests may pass
 
-- [ ] **Step 3: Add date validation to `execute_tool()`**
+- [x] **Step 3: Add date validation to `execute_tool()`**
 
 In `backend/agents/tools.py`, add pre-flight validation:
 
@@ -1050,12 +1050,12 @@ async def execute_tool(
         return {"error": f"Unexpected error in {tool_name!r}: {exc}"}
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_tools.py -v`
 Expected: PASS (all 11 tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/agents/tools.py tests/unit/test_tools.py
@@ -1068,7 +1068,7 @@ git commit -m "feat: validate date params in execute_tool with ISO autofix + too
 - Modify: `backend/tally_bridge/request_builder.py`
 - Test: `tests/unit/test_request_builder.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # Add to tests/unit/test_request_builder.py, in class TestDateRangeFilter
@@ -1094,12 +1094,12 @@ def test_ledger_vouchers_full_fy_range(self):
     assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_request_builder.py::TestDateRangeFilter -v`
 Expected: FAIL — `assert "DateRangeFilter" in xml` for ledger vouchers
 
-- [ ] **Step 3: Fix `build_ledger_vouchers()` to include DateRangeFilter**
+- [x] **Step 3: Fix `build_ledger_vouchers()` to include DateRangeFilter**
 
 Replace the function in `backend/tally_bridge/request_builder.py`:
 
@@ -1144,12 +1144,12 @@ def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, compan
 </ENVELOPE>"""
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_request_builder.py::TestDateRangeFilter -v`
 Expected: PASS (all existing + 3 new tests)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/request_builder.py tests/unit/test_request_builder.py
@@ -1161,7 +1161,7 @@ git commit -m "fix: add DateRangeFilter to build_ledger_vouchers (Tally ignores 
 **Files:**
 - Test: `tests/unit/test_request_builder.py`
 
-- [ ] **Step 1: Write tests for all builders with full FY range**
+- [x] **Step 1: Write tests for all builders with full FY range**
 
 ```python
 # Add new class to tests/unit/test_request_builder.py
@@ -1201,12 +1201,12 @@ class TestFullFYDateRange:
         assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
 ```
 
-- [ ] **Step 2: Run tests**
+- [x] **Step 2: Run tests**
 
 Run: `pytest tests/unit/test_request_builder.py::TestFullFYDateRange -v`
 Expected: PASS (all 7 tests — Task 3 must be done first for ledger_vouchers)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/unit/test_request_builder.py
@@ -1215,9 +1215,9 @@ git commit -m "test: add full FY date range tests for all request builders"
 
 ### Task 5: Run Full Test Suite
 
-- [ ] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
-- [ ] **Step 2:** Verify no regressions — all existing 477 BE tests pass + new tests
-- [ ] **Step 3:** Final commit if needed
+- [x] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
+- [x] **Step 2:** Verify no regressions — all existing 477 BE tests pass + new tests
+- [x] **Step 3:** Final commit if needed
 
 ### Phase 7 Files Modified (Expected)
 
@@ -1245,21 +1245,25 @@ git commit -m "test: add full FY date range tests for all request builders"
 
 ### Phase 7 Implementation Summary
 
-All tasks implemented across 5 commits. Code review fixes applied (no-mutation shallow copy, end-to-end crash scenario tests).
+All tasks implemented across 8 commits. Code review fixes applied (no-mutation shallow copy, end-to-end crash scenario tests).
+
+**Critical fix (commit 9e77cd2):** `$$InDateRange` is NOT a valid TallyPrime TDL function — it crashed Tally with "Cannot understand. Bad Formula!" error. This was introduced in Phase 6's `_wrap_voucher_collection()` and `build_ledger_vouchers()`. **Removed entirely.** Date filtering now relies on:
+1. `SVFROMDATE`/`SVTODATE` in STATICVARIABLES (first-pass, may be ignored by Tally for TYPE=Collection)
+2. Python-side `_filter_vouchers_by_date()` in `response_parser.py` (reliable safety net, called by all 4 voucher query functions)
 
 | Suite | Count | Delta |
 |-------|-------|-------|
-| Backend unit+integration+e2e | 513 | +36 |
+| Backend unit+integration+e2e | 512 | +35 |
 | Frontend Vitest | 101 | +0 |
-| **Total** | **614** | **+36** |
+| **Total** | **613** | **+35** |
 
-**Live Tally tests added**: 4 new tests in `tests/e2e_live/test_live_pipeline.py`:
-- `test_live_date_validation_iso_autofix` — ISO date through execute_tool → Tally responds (doesn't crash)
+**Live Tally tests**: 4 tests in `tests/e2e_live/test_live_pipeline.py` — all passing:
+- `test_live_date_validation_iso_autofix` — ISO date through execute_tool → Tally responds
 - `test_live_date_validation_garbage_rejected` — garbage date rejected before reaching Tally
 - `test_live_date_validation_full_fy_sales_register` — full FY sales register works
-- `test_live_ledger_vouchers_date_filter` — ledger vouchers with DateRangeFilter
+- `test_live_ledger_vouchers_date_filter` — ledger vouchers with LedgerFilter (no DateRangeFilter)
 
-**Pending**: Run live tests against real Tally + eval collect → judge → report (next session).
+**Status**: All live Tally tests pass. Ready for eval run.
 
 ### Note: Direct API Route
 
