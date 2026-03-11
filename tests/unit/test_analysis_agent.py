@@ -629,21 +629,54 @@ def test_max_tool_calls_default_is_15():
     assert agent.max_tool_calls == 15
 
 
-def test_comparison_table_data_tracker_prefers_period_comparison():
-    """For comparison queries, prefer compute_period_comparison results over last_table_data."""
-    comparison_data = {
-        "headers": ["Metric", "Q2", "Q3", "Change"],
-        "rows": [
-            ["Sales", 1195000, 1957500, 762500],
-            ["Purchases", 4171, 17114, 12943],
-        ],
-    }
-    aggregate_data = {
-        "headers": ["amount"],
-        "rows": [[216000]],
-    }
-    # comparison_table_data tracker should prefer comparison table over aggregate
-    preferred = comparison_data
-    assert len(preferred["rows"]) == 2
-    assert preferred["headers"][1] == "Q2"
-    assert len(aggregate_data["rows"]) == 1  # single row = wrong for comparison
+@pytest.mark.asyncio
+async def test_comparison_table_data_tracker_prefers_period_comparison():
+    """For comparison queries, compute_period_comparison result is preferred over compute_totals."""
+    agent = AnalysisAgent()
+    raw_data = [
+        {"label": "Sales", "value": 1000},
+        {"label": "Expenses", "value": 500},
+    ]
+
+    # Turn 1: Claude calls compute_period_comparison → returns 2-row comparison table
+    comparison_call = _make_tool_call_response(
+        "compute_period_comparison",
+        {
+            "period_a": [{"label": "Sales", "value": 1000}, {"label": "Expenses", "value": 500}],
+            "period_b": [{"label": "Sales", "value": 1200}, {"label": "Expenses", "value": 600}],
+            "period_a_name": "Q2",
+            "period_b_name": "Q3",
+        },
+        tool_use_id="tu_comp_1",
+    )
+    # Turn 2: Claude calls compute_totals → returns single aggregate row
+    totals_call = _make_tool_call_response(
+        "compute_totals",
+        {
+            "records": [{"amount": 216000}],
+            "numeric_fields": ["amount"],
+        },
+        tool_use_id="tu_comp_2",
+    )
+    # Turn 3: Claude produces final text
+    final = _make_text_response(
+        "Q2 vs Q3 comparison complete.\n"
+        "- Sales grew 20%\n"
+        "- Expenses grew 20%\n"
+        "Chart suggestion: grouped_bar\n"
+        "Chart title: Q2 vs Q3 Comparison"
+    )
+
+    with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
+        mock_claude.messages.create = AsyncMock(side_effect=[comparison_call, totals_call, final])
+        result = await agent.execute(raw_data, None, "Compare Q2 vs Q3", "comparison")
+
+    # The comparison table (2 rows) should be preferred over the totals (1 row)
+    assert len(result["tool_results"]) == 2
+    data = result["data"]
+    assert "Q2" in data["headers"]
+    assert "Q3" in data["headers"]
+    # Should have 2 data rows + 1 Total row (from _ensure_totals_row)
+    data_rows = [r for r in data["rows"] if r[0] != "Total"]
+    assert len(data_rows) == 2
+    assert result["chart_suggestion"] == "grouped_bar"

@@ -138,7 +138,7 @@ class Orchestrator:
         message = agent_result["message"]
         data = raw_data
 
-        if query_type in _ANALYSIS_TYPES and raw_data is not None:
+        if query_type in _ANALYSIS_TYPES and (raw_tally_data or computed_data):
             logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
             analysis_result = await self.analysis_agent.execute(
                 raw_tally_data, computed_data, user_message, query_type,
@@ -268,6 +268,8 @@ def _separate_tool_results(
             continue
 
         tool_name = tr.get("tool_name", "")
+        if not tool_name:
+            logger.warning("Tool result missing tool_name key — treating as raw data: %s", tr)
         data = result["data"]
 
         if tool_name in _COMPUTED_TOOL_NAMES:
