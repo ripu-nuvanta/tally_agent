@@ -416,16 +416,17 @@ async def execute_tool(
     if handler is None:
         return {"error": f"Unknown tool: {tool_name!r}"}
 
-    # Validate and autofix date parameters
+    # Validate and autofix date parameters (shallow copy to avoid mutating caller's dict)
+    validated_input = dict(tool_input)
     for param in _DATE_PARAMS:
-        if param in tool_input:
+        if param in validated_input:
             try:
-                tool_input[param] = validate_tally_date(tool_input[param], autofix=True)
+                validated_input[param] = validate_tally_date(validated_input[param], autofix=True)
             except ValueError as exc:
                 return {"error": str(exc)}
 
     try:
-        result = await handler(client, **tool_input)
+        result = await handler(client, **validated_input)
         return {"success": True, "data": result}
     except TallyConnectionError as exc:
         return {"error": str(exc)}

@@ -411,3 +411,96 @@ class TestExecuteToolDateValidation:
             })
         assert "error" in result
         assert "Invalid XML" in result["error"]
+
+    @pytest.mark.asyncio
+    async def test_execute_tool_does_not_mutate_caller_dict(self):
+        """execute_tool must not mutate the caller's tool_input dict."""
+        from unittest.mock import AsyncMock, patch
+        from backend.agents.tools import TOOL_HANDLERS
+        client = AsyncMock()
+        mock_handler = AsyncMock(return_value=[])
+        original_input = {"from_date": "2025-04-01", "to_date": "2026-03-31"}
+        with patch.dict(TOOL_HANDLERS, {"get_sales_register": mock_handler}):
+            await execute_tool(client, "get_sales_register", original_input)
+        # Caller's dict must be unchanged (ISO format preserved)
+        assert original_input["from_date"] == "2025-04-01"
+        assert original_input["to_date"] == "2026-03-31"
+
+
+# ---------------------------------------------------------------------------
+# TestCrashScenarioEndToEnd — exact scenario that crashed Tally
+# ---------------------------------------------------------------------------
+
+
+class TestCrashScenarioEndToEnd:
+    """End-to-end tests verifying bad dates never reach Tally XML.
+
+    These use the REAL handlers (not mocks) — only the HTTP client is mocked.
+    This proves the full chain: execute_tool → handler → request_builder → XML.
+    """
+
+    @pytest.mark.asyncio
+    async def test_iso_date_produces_correct_xml_for_sales_register(self):
+        """The exact crash scenario: Claude sends ISO dates for sales register.
+        Verify the XML sent to Tally has DD-MM-YYYY, not YYYY-MM-DD."""
+        from unittest.mock import AsyncMock
+        from backend.tally_bridge.client import TallyClient
+
+        # Mock only the HTTP layer — real handler + real request_builder
+        client = AsyncMock(spec=TallyClient)
+        client.post_xml = AsyncMock(return_value="<ENVELOPE><COLLECTION></COLLECTION></ENVELOPE>")
+
+        result = await execute_tool(client, "get_sales_register", {
+            "from_date": "2025-04-01",  # ISO format — what Claude might send
+            "to_date": "2026-03-31",
+        })
+
+        # Verify post_xml was called (handler ran)
+        client.post_xml.assert_called_once()
+        xml_sent = client.post_xml.call_args[0][0]
+
+        # The XML must contain DD-MM-YYYY dates, NOT ISO format
+        assert "01-04-2025" in xml_sent
+        assert "31-03-2026" in xml_sent
+        assert "2025-04-01" not in xml_sent  # ISO must NOT appear
+        assert "2026-03-31" not in xml_sent
+        # Must have TDL DateRangeFilter
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml_sent
+
+    @pytest.mark.asyncio
+    async def test_iso_date_produces_correct_xml_for_trial_balance(self):
+        """ISO dates auto-fixed for trial balance report XML."""
+        from unittest.mock import AsyncMock
+        from backend.tally_bridge.client import TallyClient
+
+        client = AsyncMock(spec=TallyClient)
+        # Trial balance returns XML with DSPACCNAME/DSPACCINFO sibling pairs
+        client.post_xml = AsyncMock(return_value="<ENVELOPE><DSPACCNAME><DSPDISPNAME>Test</DSPDISPNAME></DSPACCNAME><DSPACCINFO><DSPCLAMT>100</DSPCLAMT></DSPACCINFO></ENVELOPE>")
+
+        result = await execute_tool(client, "get_trial_balance", {
+            "from_date": "2025-04-01",
+            "to_date": "2026-03-31",
+        })
+
+        xml_sent = client.post_xml.call_args[0][0]
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml_sent
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml_sent
+        assert "2025-04-01" not in xml_sent
+        assert "2026-03-31" not in xml_sent
+
+    @pytest.mark.asyncio
+    async def test_garbage_date_never_reaches_tally(self):
+        """Garbage date must be rejected — no HTTP call to Tally at all."""
+        from unittest.mock import AsyncMock
+        from backend.tally_bridge.client import TallyClient
+
+        client = AsyncMock(spec=TallyClient)
+
+        result = await execute_tool(client, "get_sales_register", {
+            "from_date": "not-a-real-date",
+            "to_date": "31-03-2026",
+        })
+
+        assert "error" in result
+        assert "DD-MM-YYYY" in result["error"]
+        client.post_xml.assert_not_called()  # Tally never contacted
