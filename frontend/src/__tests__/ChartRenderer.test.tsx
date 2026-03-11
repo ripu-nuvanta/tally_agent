@@ -121,6 +121,33 @@ describe("ChartRenderer", () => {
     expect(screen.getByText("No Legend Chart")).toBeInTheDocument();
   });
 
+  it("renders Change % line with linear interpolation in composed chart", () => {
+    const spec: ChartSpec = {
+      chart_type: "composed",
+      title: "Test",
+      data: [
+        { label: "Nov 2025", Sales: 200000, "Change %": -27.3 },
+        { label: "Dec 2025", Sales: 200000, "Change %": 0 },
+      ],
+      config: {
+        x_key: "label",
+        y_keys: ["Sales"],
+        secondary_y_keys: ["Change %"],
+        secondary_colors: ["#9CA3AF"],
+      },
+    };
+
+    const { container } = render(<ChartRenderer chart={spec} />);
+
+    expect(screen.getByText("Test")).toBeInTheDocument();
+    expect(screen.getByTestId("responsive-container")).toBeInTheDocument();
+    const chartSpec = JSON.parse(
+      container.querySelector("[data-chart-spec]")!.getAttribute("data-chart-spec")!
+    );
+    expect(chartSpec.config.secondary_y_keys).toEqual(["Change %"]);
+    expect(chartSpec.chart_type).toBe("composed");
+  });
+
   it("uses config.y_keys when provided", () => {
     const chartWithKeys: ChartSpec = {
       chart_type: "bar",

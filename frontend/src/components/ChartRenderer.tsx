@@ -92,12 +92,12 @@ export default function ChartRenderer({ chart }: ChartRendererProps) {
                   <Line
                     key={key}
                     yAxisId="right"
-                    type="monotone"
+                    type="linear"
                     dataKey={key}
                     stroke={secondaryColors[i % secondaryColors.length]}
                     strokeWidth={2}
                     strokeDasharray="5 5"
-                    dot={false}
+                    dot={{ r: 3, fill: secondaryColors[i % secondaryColors.length] }}
                   />
                 ))}
               </ComposedChart>
