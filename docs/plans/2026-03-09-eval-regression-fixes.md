@@ -733,3 +733,516 @@ All 8 tasks implemented. 11 files changed, +330/-18 lines.
 **Note**: Totals verification in judge was added to `rubrics.py` (not `judge.py`/`prompts.py` as originally planned) since that's where `build_judge_prompt` lives. New `_should_verify_totals()` helper + `TOTALS_VERIFICATION_INSTRUCTIONS` constant in rubrics.py.
 
 **Pending**: Eval collect → judge → report run to verify acceptance criteria (scheduled for next session).
+
+---
+
+## Phase 7 — Date Format Validation & Ledger Voucher DateRangeFilter
+
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Prevent bad date formats from reaching Tally (which crashes it), add DateRangeFilter to `build_ledger_vouchers()`, and add comprehensive bridge-level tests.
+
+**Architecture:** Add a `validate_tally_date()` function in date_utils.py, wire it into `execute_tool()` as a pre-flight check on all date parameters, fix `build_ledger_vouchers()` to include TDL DateRangeFilter (matching `_wrap_voucher_collection` pattern), and add tests covering invalid formats, full FY ranges, and the ledger voucher gap.
+
+**Root causes from eval run_20260311_104350:**
+
+| # | Issue | Root Cause | Fix |
+|---|-------|-----------|-----|
+| 1 | Bad date format crashes Tally | No validation — Claude can pass YYYY-MM-DD, ISO, or garbage strings directly into XML | Add `validate_tally_date()` + pre-flight check in `execute_tool()` |
+| 2 | `build_ledger_vouchers()` ignores date range | Missing DateRangeFilter TDL — only has SVFROMDATE/SVTODATE which Tally ignores for TYPE=Collection | Add DateRangeFilter + LedgerFilter (both filters in same query) |
+
+### Task 1: Add `validate_tally_date()` to date_utils.py
+
+**Files:**
+- Modify: `backend/utils/date_utils.py`
+- Test: `tests/unit/test_date_utils.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# In tests/unit/test_date_utils.py
+
+from backend.utils.date_utils import validate_tally_date
+
+class TestValidateTallyDate:
+    def test_valid_date(self):
+        assert validate_tally_date("01-04-2025") == "01-04-2025"
+
+    def test_valid_date_end_of_month(self):
+        assert validate_tally_date("31-03-2026") == "31-03-2026"
+
+    def test_valid_date_leap_year(self):
+        assert validate_tally_date("29-02-2028") == "29-02-2028"
+
+    def test_iso_format_rejected(self):
+        """YYYY-MM-DD is NOT valid Tally format."""
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("2025-04-01")
+
+    def test_slash_format_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("01/04/2025")
+
+    def test_garbage_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("not-a-date")
+
+    def test_empty_rejected(self):
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("")
+
+    def test_invalid_day_rejected(self):
+        """Feb 30 doesn't exist."""
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("30-02-2025")
+
+    def test_iso_autofix(self):
+        """YYYY-MM-DD auto-converted to DD-MM-YYYY."""
+        assert validate_tally_date("2025-04-01", autofix=True) == "01-04-2025"
+
+    def test_iso_autofix_validates_result(self):
+        """Auto-fixed date must also be a valid calendar date."""
+        with pytest.raises(ValueError, match="DD-MM-YYYY"):
+            validate_tally_date("2025-13-01", autofix=True)
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_date_utils.py::TestValidateTallyDate -v`
+Expected: FAIL — `ImportError: cannot import name 'validate_tally_date'`
+
+- [ ] **Step 3: Implement `validate_tally_date`**
+
+Add to `backend/utils/date_utils.py`:
+
+```python
+import re
+from datetime import datetime
+
+_TALLY_DATE_RE = re.compile(r'^\d{2}-\d{2}-\d{4}$')
+_ISO_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+
+def validate_tally_date(date_str: str, autofix: bool = False) -> str:
+    """Validate a date string is in DD-MM-YYYY format.
+
+    Args:
+        date_str: Date string to validate.
+        autofix: If True, attempt to convert YYYY-MM-DD to DD-MM-YYYY.
+
+    Returns:
+        Validated DD-MM-YYYY string.
+
+    Raises:
+        ValueError: If date_str is not valid DD-MM-YYYY format.
+    """
+    if not date_str or not isinstance(date_str, str):
+        raise ValueError(f"Invalid date '{date_str}': expected DD-MM-YYYY format")
+
+    s = date_str.strip()
+
+    # Auto-fix ISO format (YYYY-MM-DD → DD-MM-YYYY)
+    if autofix and _ISO_DATE_RE.match(s):
+        parts = s.split("-")
+        s = f"{parts[2]}-{parts[1]}-{parts[0]}"
+
+    if not _TALLY_DATE_RE.match(s):
+        raise ValueError(f"Invalid date '{date_str}': expected DD-MM-YYYY format")
+
+    # Validate it's a real calendar date
+    try:
+        datetime.strptime(s, "%d-%m-%Y")
+    except ValueError:
+        raise ValueError(f"Invalid date '{date_str}': expected DD-MM-YYYY format")
+
+    return s
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_date_utils.py::TestValidateTallyDate -v`
+Expected: PASS (all 11 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/utils/date_utils.py tests/unit/test_date_utils.py
+git commit -m "feat: add validate_tally_date() with autofix for ISO dates"
+```
+
+### Task 2: Wire Date Validation into `execute_tool()` + Tool Handler Tests
+
+**Files:**
+- Modify: `backend/agents/tools.py`
+- Test: `tests/unit/test_tools.py`
+
+**Note on scope:** `execute_tool()` is the SOLE gateway for all Claude→Tally tool calls (confirmed by tracing `query_agent.py` line 145). Validating here catches all bad dates before they reach any request builder. The direct API route (`GET /api/reports/{name}`) bypasses this — lower priority since it's not used by the agent pipeline.
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# In tests/unit/test_tools.py
+
+import pytest
+from unittest.mock import AsyncMock, patch
+from backend.agents.tools import execute_tool
+
+# --- Date validation tests ---
+
+@pytest.mark.asyncio
+async def test_execute_tool_rejects_garbage_from_date():
+    """Garbage date string must be rejected before reaching Tally."""
+    client = AsyncMock()
+    result = await execute_tool(client, "get_day_book", {
+        "from_date": "garbage", "to_date": "31-03-2026"
+    })
+    assert "error" in result
+    assert "DD-MM-YYYY" in result["error"]
+    client.post_xml.assert_not_called()  # Must NOT reach Tally
+
+@pytest.mark.asyncio
+async def test_execute_tool_rejects_garbage_to_date():
+    """Bad to_date also rejected."""
+    client = AsyncMock()
+    result = await execute_tool(client, "get_trial_balance", {
+        "from_date": "01-04-2025", "to_date": "not-a-date"
+    })
+    assert "error" in result
+    assert "DD-MM-YYYY" in result["error"]
+
+@pytest.mark.asyncio
+async def test_execute_tool_rejects_garbage_as_on_date():
+    """as_on_date param validated too."""
+    client = AsyncMock()
+    result = await execute_tool(client, "get_balance_sheet", {
+        "as_on_date": "31/03/2026"
+    })
+    assert "error" in result
+    assert "DD-MM-YYYY" in result["error"]
+
+@pytest.mark.asyncio
+async def test_execute_tool_autofixes_iso_from_date():
+    """ISO YYYY-MM-DD auto-converted to DD-MM-YYYY before calling handler."""
+    client = AsyncMock()
+    with patch("backend.agents.tools._handle_trial_balance", new_callable=AsyncMock) as mock_handler:
+        mock_handler.return_value = {"report_name": "Trial Balance", "rows": []}
+        result = await execute_tool(client, "get_trial_balance", {
+            "from_date": "2025-04-01", "to_date": "2026-03-31"
+        })
+    # Handler should have received corrected DD-MM-YYYY dates
+    call_kwargs = mock_handler.call_args
+    assert call_kwargs is not None
+    _, kwargs = call_kwargs
+    assert kwargs["from_date"] == "01-04-2025"
+    assert kwargs["to_date"] == "31-03-2026"
+
+@pytest.mark.asyncio
+async def test_execute_tool_autofixes_iso_as_on_date():
+    """ISO as_on_date also auto-converted."""
+    client = AsyncMock()
+    with patch("backend.agents.tools._handle_balance_sheet", new_callable=AsyncMock) as mock_handler:
+        mock_handler.return_value = {"report_name": "Balance Sheet", "rows": []}
+        result = await execute_tool(client, "get_balance_sheet", {
+            "as_on_date": "2026-03-31"
+        })
+    _, kwargs = mock_handler.call_args
+    assert kwargs["as_on_date"] == "31-03-2026"
+
+@pytest.mark.asyncio
+async def test_execute_tool_valid_dates_pass_through():
+    """Valid DD-MM-YYYY dates pass through unchanged."""
+    client = AsyncMock()
+    with patch("backend.agents.tools._handle_sales_register", new_callable=AsyncMock) as mock_handler:
+        mock_handler.return_value = []
+        result = await execute_tool(client, "get_sales_register", {
+            "from_date": "01-04-2025", "to_date": "31-03-2026"
+        })
+    _, kwargs = mock_handler.call_args
+    assert kwargs["from_date"] == "01-04-2025"
+    assert kwargs["to_date"] == "31-03-2026"
+
+@pytest.mark.asyncio
+async def test_execute_tool_no_dates_skips_validation():
+    """Tools without date params (list_companies, search_ledger) skip validation."""
+    client = AsyncMock()
+    with patch("backend.agents.tools._handle_list_companies", new_callable=AsyncMock) as mock_handler:
+        mock_handler.return_value = [{"name": "Test Co"}]
+        result = await execute_tool(client, "list_companies", {})
+    assert "error" not in result
+    mock_handler.assert_called_once()
+
+# --- Tool handler routing tests ---
+
+@pytest.mark.asyncio
+async def test_execute_tool_unknown_tool():
+    """Unknown tool name returns error."""
+    client = AsyncMock()
+    result = await execute_tool(client, "nonexistent_tool", {})
+    assert "error" in result
+    assert "Unknown tool" in result["error"]
+
+@pytest.mark.asyncio
+async def test_execute_tool_tally_connection_error():
+    """TallyConnectionError is caught and returned as error dict."""
+    from backend.tally_bridge.exceptions import TallyConnectionError
+    client = AsyncMock()
+    with patch("backend.agents.tools._handle_trial_balance", new_callable=AsyncMock) as mock_handler:
+        mock_handler.side_effect = TallyConnectionError("Tally unreachable")
+        result = await execute_tool(client, "get_trial_balance", {
+            "from_date": "01-04-2025", "to_date": "31-03-2026"
+        })
+    assert "error" in result
+    assert "unreachable" in result["error"]
+
+@pytest.mark.asyncio
+async def test_execute_tool_success_wraps_data():
+    """Successful tool call wraps result in {success: True, data: ...}."""
+    client = AsyncMock()
+    with patch("backend.agents.tools._handle_search_ledger", new_callable=AsyncMock) as mock_handler:
+        mock_handler.return_value = [{"name": "Cash", "parent": "Cash-in-Hand"}]
+        result = await execute_tool(client, "search_ledger", {"search_term": "cash"})
+    assert result["success"] is True
+    assert result["data"] == [{"name": "Cash", "parent": "Cash-in-Hand"}]
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_tools.py -v`
+Expected: FAIL — no validation exists yet (date tests fail), handler routing tests may pass
+
+- [ ] **Step 3: Add date validation to `execute_tool()`**
+
+In `backend/agents/tools.py`, add pre-flight validation:
+
+```python
+from backend.utils.date_utils import validate_tally_date
+
+# Date parameter names across all tools
+_DATE_PARAMS = {"from_date", "to_date", "as_on_date"}
+
+
+async def execute_tool(
+    client: TallyClient,
+    tool_name: str,
+    tool_input: dict[str, Any],
+) -> dict[str, Any]:
+    handler = TOOL_HANDLERS.get(tool_name)
+    if handler is None:
+        return {"error": f"Unknown tool: {tool_name!r}"}
+
+    # Validate and autofix date parameters
+    for param in _DATE_PARAMS:
+        if param in tool_input:
+            try:
+                tool_input[param] = validate_tally_date(tool_input[param], autofix=True)
+            except ValueError as exc:
+                return {"error": str(exc)}
+
+    try:
+        result = await handler(client, **tool_input)
+        return {"success": True, "data": result}
+    except TallyConnectionError as exc:
+        return {"error": str(exc)}
+    except TallyResponseError as exc:
+        return {"error": str(exc)}
+    except Exception as exc:
+        logger.exception("Unexpected error in tool %r", tool_name)
+        return {"error": f"Unexpected error in {tool_name!r}: {exc}"}
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_tools.py -v`
+Expected: PASS (all 11 tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/agents/tools.py tests/unit/test_tools.py
+git commit -m "feat: validate date params in execute_tool with ISO autofix + tool handler tests"
+```
+
+### Task 3: Add DateRangeFilter to `build_ledger_vouchers()`
+
+**Files:**
+- Modify: `backend/tally_bridge/request_builder.py`
+- Test: `tests/unit/test_request_builder.py`
+
+- [ ] **Step 1: Write failing tests**
+
+```python
+# Add to tests/unit/test_request_builder.py, in class TestDateRangeFilter
+
+def test_ledger_vouchers_has_date_filter(self):
+    xml = build_ledger_vouchers("Cash", "01-07-2025", "31-07-2025")
+    assert "DateRangeFilter" in xml
+    assert "$$InDateRange:$Date:01-07-2025:31-07-2025" in xml
+
+def test_ledger_vouchers_has_both_filters(self):
+    """Ledger vouchers need both DateRangeFilter AND LedgerFilter."""
+    xml = build_ledger_vouchers("HDFC Bank", "01-04-2025", "31-03-2026")
+    assert "DateRangeFilter" in xml
+    assert "LedgerFilter" in xml
+    assert "$$InDateRange" in xml
+    assert "HDFC Bank" in xml
+
+def test_ledger_vouchers_full_fy_range(self):
+    """Full FY query should work — dates in correct DD-MM-YYYY format."""
+    xml = build_ledger_vouchers("Cash", "01-04-2025", "31-03-2026")
+    assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+    assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+    assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+```
+
+- [ ] **Step 2: Run tests to verify they fail**
+
+Run: `pytest tests/unit/test_request_builder.py::TestDateRangeFilter -v`
+Expected: FAIL — `assert "DateRangeFilter" in xml` for ledger vouchers
+
+- [ ] **Step 3: Fix `build_ledger_vouchers()` to include DateRangeFilter**
+
+Replace the function in `backend/tally_bridge/request_builder.py`:
+
+```python
+def build_ledger_vouchers(ledger_name: str, from_date: str, to_date: str, company: str | None = None) -> str:
+    """Fetch vouchers for a specific ledger using TDL Collection with filters.
+    Uses $PartyLedgerName comparison instead of $$IsLedgerInVoucher because
+    the latter cannot handle ledger names containing commas.
+    Includes DateRangeFilter because Tally ignores SVFROMDATE/SVTODATE for TYPE=Collection.
+    """
+    company_var = f"<SVCurrentCompany>{company}</SVCurrentCompany>" if company else ""
+    safe_name = xml_escape(ledger_name, {'"': "&quot;"})
+    return f"""<ENVELOPE>
+<HEADER>
+<VERSION>1</VERSION>
+<TALLYREQUEST>Export</TALLYREQUEST>
+<TYPE>Collection</TYPE>
+<ID>LedgerVchs</ID>
+</HEADER>
+<BODY>
+<DESC>
+<STATICVARIABLES>
+<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+<SVFROMDATE>{from_date}</SVFROMDATE>
+<SVTODATE>{to_date}</SVTODATE>
+{company_var}
+</STATICVARIABLES>
+<TDL>
+<TDLMESSAGE>
+<COLLECTION NAME="LedgerVchs" ISMODIFY="No">
+<TYPE>Voucher</TYPE>
+<FILTER>DateRangeFilter</FILTER>
+<FILTER>LedgerFilter</FILTER>
+{_voucher_native_methods()}
+</COLLECTION>
+<SYSTEM TYPE="Formulae" NAME="DateRangeFilter">$$InDateRange:$Date:{from_date}:{to_date}</SYSTEM>
+<SYSTEM TYPE="Formulae" NAME="LedgerFilter">$PartyLedgerName = "{safe_name}"</SYSTEM>
+</TDLMESSAGE>
+</TDL>
+</DESC>
+</BODY>
+</ENVELOPE>"""
+```
+
+- [ ] **Step 4: Run tests to verify they pass**
+
+Run: `pytest tests/unit/test_request_builder.py::TestDateRangeFilter -v`
+Expected: PASS (all existing + 3 new tests)
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add backend/tally_bridge/request_builder.py tests/unit/test_request_builder.py
+git commit -m "fix: add DateRangeFilter to build_ledger_vouchers (Tally ignores SVFROMDATE for Collection)"
+```
+
+### Task 4: Add Bridge-Level Tests for Full FY Date Ranges
+
+**Files:**
+- Test: `tests/unit/test_request_builder.py`
+
+- [ ] **Step 1: Write tests for all builders with full FY range**
+
+```python
+# Add new class to tests/unit/test_request_builder.py
+
+class TestFullFYDateRange:
+    """Verify all report/voucher builders handle full FY date ranges correctly."""
+
+    def test_trial_balance_full_fy(self):
+        xml = build_trial_balance("01-04-2025", "31-03-2026")
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+
+    def test_profit_and_loss_full_fy(self):
+        xml = build_profit_and_loss("01-04-2025", "31-03-2026")
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+
+    def test_sales_register_full_fy(self):
+        xml = build_sales_register("01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+        assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
+
+    def test_purchase_register_full_fy(self):
+        xml = build_purchase_register("01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+
+    def test_day_book_full_fy(self):
+        xml = build_day_book("01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+
+    def test_ledger_vouchers_full_fy(self):
+        xml = build_ledger_vouchers("Cash", "01-04-2025", "31-03-2026")
+        assert "$$InDateRange:$Date:01-04-2025:31-03-2026" in xml
+
+    def test_balance_sheet_single_date(self):
+        xml = build_balance_sheet("31-03-2026")
+        assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+```
+
+- [ ] **Step 2: Run tests**
+
+Run: `pytest tests/unit/test_request_builder.py::TestFullFYDateRange -v`
+Expected: PASS (all 7 tests — Task 3 must be done first for ledger_vouchers)
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add tests/unit/test_request_builder.py
+git commit -m "test: add full FY date range tests for all request builders"
+```
+
+### Task 5: Run Full Test Suite
+
+- [ ] **Step 1:** `ANTHROPIC_API_KEY=test-key PYTHONPATH=. pytest tests/unit/ tests/integration/ tests/e2e/ -v`
+- [ ] **Step 2:** Verify no regressions — all existing 477 BE tests pass + new tests
+- [ ] **Step 3:** Final commit if needed
+
+### Phase 7 Files Modified (Expected)
+
+| # | File | Changes |
+|---|------|---------|
+| 1 | `backend/utils/date_utils.py` | New `validate_tally_date()` with autofix |
+| 2 | `backend/agents/tools.py` | Date validation in `execute_tool()` pre-flight |
+| 3 | `backend/tally_bridge/request_builder.py` | DateRangeFilter added to `build_ledger_vouchers()` |
+| 4 | `tests/unit/test_date_utils.py` | +11 tests (validate_tally_date) |
+| 5 | `tests/unit/test_tools.py` | +11 tests (date validation, autofix, handler routing, error handling) |
+| 6 | `tests/unit/test_request_builder.py` | +10 tests (ledger DateRangeFilter + full FY range) |
+
+### Phase 7 Acceptance Criteria
+
+1. `validate_tally_date("2025-04-01")` raises ValueError (ISO format rejected)
+2. `validate_tally_date("2025-04-01", autofix=True)` returns `"01-04-2025"`
+3. `validate_tally_date("garbage")` raises ValueError
+4. `execute_tool(client, "get_trial_balance", {"from_date": "2025-04-01", ...})` auto-fixes ISO→DD-MM-YYYY before calling handler
+5. `execute_tool(client, "get_day_book", {"from_date": "garbage", ...})` returns `{"error": "..."}` and does NOT call Tally
+6. `execute_tool(client, "get_balance_sheet", {"as_on_date": "2026-03-31"})` auto-fixes as_on_date too
+7. `execute_tool` with TallyConnectionError returns error dict (not exception)
+8. `build_ledger_vouchers("Cash", ...)` XML contains `DateRangeFilter` and `$$InDateRange`
+9. All builders produce correct XML for full FY range `01-04-2025` to `31-03-2026`
+10. All tests pass: 477+ BE existing + ~32 new = 509+ total
+
+### Note: Direct API Route
+
+`GET /api/reports/{name}` in `backend/api/reports.py` bypasses `execute_tool()`, but it's unused — the frontend and agent pipeline never call it. It's a standalone REST endpoint from Phase 3 for manual `curl` testing. Not in scope for Phase 7.
