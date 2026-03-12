@@ -475,13 +475,33 @@ PYTHONPATH=. python tests/eval/report.py
 5. **All backend tests pass**: 520+ existing + ~5 new
 6. **All frontend tests pass**: 102+ Vitest + 30+ Playwright
 
-### Phase 8b Files Modified (Expected)
+### Phase 8b Eval Results (run_20260311_212338)
+
+| Turn | Query | Table | Chart | Factual | Quality | Coherence | Chart |
+|------|-------|-------|-------|---------|---------|-----------|-------|
+| 1 | P&L this month | No | No | 3 | 4 | 4 | - |
+| 2 | Sales trend FY 25-26 | Yes | Yes | 5 | 5 | 4 | 5 |
+| 3 | Compare Q2 vs Q3 | Yes | Yes | 4 | 5 | 5 | 4 |
+| 4 | Top 10 customers | Yes | Yes | 5 | 5 | 5 | 4 |
+| 5 | HCODE trend | Yes | Yes | 5 | 5 | 5 | 4 |
+
+**All acceptance criteria met.** Turn 3 fixed (was 1/1/2/1 → now 4/5/5/4).
+
+### Remaining Issues (Phase 4 Exploration)
+
+1. **Double computation**: AnalysisAgent re-computes from raw data even when pre-computed results are provided (~5-6 redundant tool calls per session). The AnalysisAgent does extract richer analysis than QueryAgent (per-ledger breakdowns, per-vendor comparisons), so a better architecture would be to restrict QueryAgent to data gathering only and let AnalysisAgent do ALL computation. This avoids the separation/tagging complexity entirely.
+
+2. **Context loss between agents**: Not observed in current eval (context flows well via session history), but may manifest in longer sessions or topic shifts. Worth exploring in Phase 4 with more complex multi-turn scenarios.
+
+### Phase 8b Files Modified (Actual)
 
 | # | File | Changes |
 |---|------|---------|
-| 1 | `backend/agents/orchestrator.py` | New `_separate_tool_results()`, tagged data handoff to AnalysisAgent |
+| 1 | `backend/agents/orchestrator.py` | New `_separate_tool_results()`, tagged data handoff, routing guard fix |
 | 2 | `backend/agents/analysis_agent.py` | New signature (raw_data, computed_data), `MAX_TOOL_CALLS` 8→15, `comparison_table_data` tracker |
 | 3 | `frontend/src/components/ChartRenderer.tsx` | `type="linear"` + `dot={{ r: 3 }}` for secondary Y-axis lines |
-| 4 | `tests/unit/test_orchestrator.py` | +3 tests (_separate_tool_results) |
-| 5 | `tests/unit/test_analysis_agent.py` | +2 tests (MAX_TOOL_CALLS, comparison tracker) |
+| 4 | `tests/unit/test_orchestrator.py` | +4 tests (_separate_tool_results + handoff) |
+| 5 | `tests/unit/test_analysis_agent.py` | +2 tests (MAX_TOOL_CALLS, comparison tracker behavioral) |
 | 6 | `frontend/src/__tests__/ChartRenderer.test.tsx` | +1 test (linear interpolation) |
+| 7 | `tests/eval/report.py` | Full screenshots in HTML report |
+| 8 | `tests/eval/templates/report.html.j2` | Full screenshot display section |

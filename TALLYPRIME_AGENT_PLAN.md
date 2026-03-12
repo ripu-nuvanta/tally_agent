@@ -979,6 +979,10 @@ After the core is working:
 
 6. **WhatsApp Integration**: Add Twilio/Meta webhook endpoint. Format responses as text-only (no charts). Send tables as formatted text.
 
+7. **Agent Architecture Refinement**: QueryAgent currently calls both Tally tools AND analysis tools (compute_totals, compute_trend, etc.), causing double computation when AnalysisAgent re-computes from raw data. Better architecture: restrict QueryAgent to data gathering only (Tally API calls), let AnalysisAgent handle ALL computation. This eliminates the raw-vs-computed separation complexity and saves ~5-6 redundant tool calls per session.
+
+8. **Cross-Agent Context Preservation**: Investigate context loss in longer multi-turn sessions where topics shift. Current session history works well for 5-turn eval but may degrade with 10+ turns or when user revisits earlier topics. Explore: summarization of prior turns, explicit context injection between agents, or a shared memory store.
+
 ---
 
 ## 10. TESTING STRATEGY
