@@ -156,6 +156,7 @@ async def collect_scenario(
     golden_data: dict | None = None,
     scenario_file: str | None = None,
     run_dir: Path | None = None,
+    tally_mode: str = "live",
 ) -> dict:
     """Run a full scenario through the frontend and collect responses.
 
@@ -179,6 +180,7 @@ async def collect_scenario(
         "scenario_file": scenario_name,
         "timestamp": datetime.now().isoformat(),
         "frontend_url": frontend_url,
+        "tally_mode": tally_mode,
         "turns": [],
     }
 
@@ -194,6 +196,19 @@ async def collect_scenario(
         await page.wait_for_selector("textarea", timeout=30000)
         # Give extra time for CompanySelector to populate
         await page.wait_for_timeout(2000)
+
+        # Set tally mode via frontend toggle if mock
+        if tally_mode == "mock":
+            toggle = page.get_by_test_id("tally-mode-toggle")
+            label = page.get_by_test_id("tally-mode-label")
+            current_label = await label.inner_text()
+            if current_label != "Mock Tally":
+                await toggle.click()
+                await page.wait_for_function(
+                    '() => document.querySelector("[data-testid=tally-mode-label]")?.textContent === "Mock Tally"',
+                    timeout=5000,
+                )
+            print("Tally mode set to: mock")
 
         for turn_idx, turn_def in enumerate(scenario["turns"]):
             query = turn_def["query"]
@@ -347,6 +362,12 @@ async def main():
     parser.add_argument("--frontend-url", default=FRONTEND_URL)
     parser.add_argument("--host", default=None, help="Tally host for live ground truth")
     parser.add_argument("--port", type=int, default=9000, help="Tally port")
+    parser.add_argument(
+        "--tally-mode",
+        choices=["mock", "live"],
+        default="live",
+        help="Tally mode: mock (uses built-in mock data) or live (real Tally)",
+    )
     args = parser.parse_args()
 
     # Auto-detect Tally from config if --host not provided
@@ -381,9 +402,17 @@ async def main():
 
     print(f"Run directory: {run_dir}")
 
-    # Optionally collect live ground truth
+    # Collect ground truth based on tally mode
     live_golden = {}
-    if args.host:
+    if args.tally_mode == "mock":
+        mock_golden_path = GOLDEN_DIR / "mock_golden.json"
+        if mock_golden_path.exists():
+            with open(mock_golden_path) as f:
+                live_golden = json.load(f)
+            print(f"Loaded mock golden data from {mock_golden_path}")
+        else:
+            print(f"Warning: mock golden data not found at {mock_golden_path}")
+    elif args.host:
         print(f"Collecting live ground truth from Tally at {args.host}:{args.port}...")
         from backend.tally_bridge.client import TallyClient
         from backend.tally_bridge.queries import reports
@@ -422,6 +451,7 @@ async def main():
             golden_data=golden,
             scenario_file=name,
             run_dir=run_dir,
+            tally_mode=args.tally_mode,
         )
 
         save_transcript(name, transcript, run_dir=run_dir)
