@@ -34,9 +34,9 @@ async def test_sales_register(mock_tally):
 
 @pytest.mark.asyncio
 async def test_purchase_register(mock_tally):
-    vouchers = await purchase_register(mock_tally, "01-10-2025", "31-10-2025")
-    assert len(vouchers) == 2
-    assert all(v["voucher_type"] == "Sales" for v in vouchers)  # reuses sales fixture
+    vouchers = await purchase_register(mock_tally, "01-04-2025", "31-03-2026")
+    assert len(vouchers) == 10
+    assert all(v["voucher_type"] == "Purchase" for v in vouchers)
 
 
 @pytest.mark.asyncio
