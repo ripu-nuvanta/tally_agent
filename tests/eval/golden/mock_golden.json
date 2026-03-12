@@ -1,0 +1,209 @@
+{
+  "trial_balance": {
+    "report_name": "Trial Balance",
+    "company": "",
+    "from_date": null,
+    "to_date": null,
+    "rows": [
+      {
+        "account_name": "Capital Account",
+        "debit_amount": 0.0,
+        "credit_amount": 100000.0,
+        "closing_balance": 100000.0
+      },
+      {
+        "account_name": "Current Liabilities",
+        "debit_amount": -279384.87,
+        "credit_amount": 55856.21,
+        "closing_balance": -223528.66
+      },
+      {
+        "account_name": "Fixed Assets",
+        "debit_amount": -208496.0,
+        "credit_amount": 0.0,
+        "closing_balance": -208496.0
+      },
+      {
+        "account_name": "Current Assets",
+        "debit_amount": -1048846.53,
+        "credit_amount": 0.0,
+        "closing_balance": -1048846.53
+      },
+      {
+        "account_name": "Sales Accounts",
+        "debit_amount": 0.0,
+        "credit_amount": 3764350.0,
+        "closing_balance": 3764350.0
+      },
+      {
+        "account_name": "Purchase Accounts",
+        "debit_amount": -32181.61,
+        "credit_amount": 0.0,
+        "closing_balance": -32181.61
+      },
+      {
+        "account_name": "Indirect Expenses",
+        "debit_amount": -2351297.74,
+        "credit_amount": 0.54,
+        "closing_balance": -2351297.2
+      }
+    ],
+    "raw_response": null
+  },
+  "profit_and_loss": {
+    "report_name": "Profit and Loss",
+    "company": "",
+    "from_date": null,
+    "to_date": null,
+    "rows": [
+      {
+        "account_name": "Sales Accounts",
+        "debit_amount": 0.0,
+        "credit_amount": 3764350.0,
+        "closing_balance": 3764350.0
+      },
+      {
+        "account_name": "Cost of Sales :",
+        "debit_amount": -32181.61,
+        "credit_amount": 0.0,
+        "closing_balance": -32181.61
+      },
+      {
+        "account_name": "Opening Stock",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Add: Purchase Accounts",
+        "debit_amount": -32181.61,
+        "credit_amount": 0.0,
+        "closing_balance": -32181.61
+      },
+      {
+        "account_name": "Less: Closing Stock",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Indirect Expenses",
+        "debit_amount": -2351297.2,
+        "credit_amount": 0.0,
+        "closing_balance": -2351297.2
+      }
+    ],
+    "raw_response": null
+  },
+  "balance_sheet": {
+    "report_name": "Balance Sheet",
+    "company": "",
+    "from_date": null,
+    "to_date": null,
+    "rows": [
+      {
+        "account_name": "Capital Account",
+        "debit_amount": 0.0,
+        "credit_amount": 100000.0,
+        "closing_balance": 100000.0
+      },
+      {
+        "account_name": "Loans (Liability)",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Current Liabilities",
+        "debit_amount": -223528.66,
+        "credit_amount": 0.0,
+        "closing_balance": -223528.66
+      },
+      {
+        "account_name": "Suspense A/c",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Profit & Loss A/c",
+        "debit_amount": 0.0,
+        "credit_amount": 1380871.19,
+        "closing_balance": 1380871.19
+      },
+      {
+        "account_name": "Fixed Assets",
+        "debit_amount": -208496.0,
+        "credit_amount": 0.0,
+        "closing_balance": -208496.0
+      },
+      {
+        "account_name": "Current Assets",
+        "debit_amount": -1048846.53,
+        "credit_amount": 0.0,
+        "closing_balance": -1048846.53
+      }
+    ],
+    "raw_response": null
+  },
+  "bills_receivable": [
+    {
+      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
+      "bill_number": "#1",
+      "bill_date": "2025-07-02",
+      "due_date": null,
+      "amount": 200000.0,
+      "pending_amount": 200000.0
+    },
+    {
+      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
+      "bill_number": "#4",
+      "bill_date": "2025-08-02",
+      "due_date": null,
+      "amount": 200000.0,
+      "pending_amount": 200000.0
+    }
+  ],
+  "stock_summary": [
+    {
+      "name": "Data Cleaning and Matching Application Software",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -1.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "IT Project Technical Consulting",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -2.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "IT Project Technical Consulting(WITHOUT GST)",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -154.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "Smartbike Software Development Technical Services",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -3.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "Website Design and App Development",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -2.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    }
+  ]
+}
