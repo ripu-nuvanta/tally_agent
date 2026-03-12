@@ -1524,7 +1524,7 @@ git commit -m "chore: final verification — all tests passing"
 **Files:**
 - Modify: `frontend/src/components/Header.tsx`
 
-- [ ] **Step 1: Replace single button with toggle switch + status indicator**
+- [x] **Step 1: Replace single button with toggle switch + status indicator**
 
 New Header layout:
 ```
@@ -1570,7 +1570,7 @@ Replace the existing `<button onClick={handleToggleMode}>` with two separate ele
 </span>
 ```
 
-- [ ] **Step 2: Update handleToggleMode to refresh page**
+- [x] **Step 2: Update handleToggleMode to refresh page**
 
 Replace the current `handleToggleMode` function:
 ```typescript
@@ -1590,7 +1590,7 @@ const handleToggleMode = async () => {
 
 Key change: On success, `window.location.reload()` instead of updating state locally. This ensures company list, health status, and all state re-initializes from the backend.
 
-- [ ] **Step 3: Update Header JSX structure**
+- [x] **Step 3: Update Header JSX structure**
 
 Full return JSX:
 ```tsx
@@ -1613,7 +1613,7 @@ Full return JSX:
 **Files:**
 - Modify: `frontend/src/__tests__/Header.test.tsx`
 
-- [ ] **Step 1: Update test selectors for new data-testid attrs**
+- [x] **Step 1: Update test selectors for new data-testid attrs**
 
 Replace references to old data-testids:
 - `tally-mode-toggle` → `demo-mode-toggle`
@@ -1626,7 +1626,7 @@ Add new test cases:
 - Toggling checkbox calls `setTallyMode` and then `window.location.reload()`
 - Mock `window.location.reload` in tests: `const reloadMock = vi.fn(); Object.defineProperty(window, 'location', { value: { reload: reloadMock } });`
 
-- [ ] **Step 2: Update snapshot/assertion for label text**
+- [x] **Step 2: Update snapshot/assertion for label text**
 
 - "Mock Tally" → "Demo" in status label
 - "Tally" stays the same for live mode
@@ -1638,15 +1638,15 @@ Add new test cases:
 - Modify: `tests/eval/collect.py` (update Playwright selector for mode toggle)
 - Modify: `frontend/tests/playwright/` (update screenshots if affected)
 
-- [ ] **Step 1: Update eval collector toggle selector**
+- [x] **Step 1: Update eval collector toggle selector**
 
 In `tests/eval/collect.py`, find the Playwright click that toggles tally mode and update the selector from `[data-testid="tally-mode-toggle"]` to `[data-testid="demo-mode-toggle"]` (or the checkbox input `[data-testid="demo-mode-checkbox"]`).
 
-- [ ] **Step 2: Update E2E mock tests if they reference old selectors**
+- [x] **Step 2: Update E2E mock tests if they reference old selectors**
 
 Check `tests/e2e/test_chat_pipeline.py` for any references to old testids and update.
 
-- [ ] **Step 3: Run all tests and update Playwright screenshots**
+- [x] **Step 3: Run all tests and update Playwright screenshots**
 
 ```bash
 # Backend tests
@@ -1669,11 +1669,11 @@ Visually inspect Playwright screenshots to confirm new toggle layout renders cor
 - Modify: `backend/api/tally_mode.py`
 - Modify: `backend/api/health.py`
 
-- [ ] **Step 1: Fix Bills Payable fixture mapping**
+- [x] **Step 1: Fix Bills Payable fixture mapping**
 
 In `mock_handler.py`, add comment explaining Bills Payable uses receivable fixture (or create `bills_payable.xml` if data exists).
 
-- [ ] **Step 2: Use Literal type for TallyModeRequest.mode**
+- [x] **Step 2: Use Literal type for TallyModeRequest.mode**
 
 In `backend/api/models.py`, replace `mode: str` + validator with:
 ```python
@@ -1682,18 +1682,18 @@ mode: Literal["mock", "live"]
 ```
 Remove the `@field_validator`.
 
-- [ ] **Step 3: Add cache_clear docstring note**
+- [x] **Step 3: Add cache_clear docstring note**
 
 In `mock_handler.py`, add docstring to `_load_fixture` noting `_load_fixture.cache_clear()` for dev use.
 
-- [ ] **Step 4: Switch to pathlib.Path**
+- [x] **Step 4: Switch to pathlib.Path**
 
 In `mock_handler.py`, replace `os.path` usage with `pathlib.Path`.
 
-- [ ] **Step 5: Add logging to tally-mode endpoint**
+- [x] **Step 5: Add logging to tally-mode endpoint**
 
 In `backend/api/tally_mode.py`, add `logger.info(...)` on mode switch.
 
-- [ ] **Step 6: Always return mode in health response**
+- [x] **Step 6: Always return mode in health response**
 
 In `backend/api/health.py`, set `mode="live"` as default instead of `None`.
