@@ -1697,3 +1697,17 @@ In `backend/api/tally_mode.py`, add `logger.info(...)` on mode switch.
 - [x] **Step 6: Always return mode in health response**
 
 In `backend/api/health.py`, set `mode="live"` as default instead of `None`.
+
+### Task 22: Add --tally-mode mock to e2e_live Tests
+
+**Files:**
+- Modify: `tests/e2e_live/conftest.py`
+
+- [x] **Step 1: Add --tally-mode CLI option and update skip logic**
+
+Add `--tally-mode` option (choices: live/mock, default: live). Replace `pytestmark` skip with `pytest_collection_modifyitems` hook — tests run when `RUN_LIVE_TESTS=1` OR `--tally-mode mock`. In mock mode, set `client.mock_mode = True` and skip health check.
+
+- [x] **Step 2: Verify mock mode works**
+
+Run: `PYTHONPATH=. pytest tests/e2e_live/ -v --tally-mode mock`
+Result: 17/19 pass, 2 fail on Claude API auth only (greeting + quarterly comparison need real API key for orchestrator classification).
