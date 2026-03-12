@@ -38,6 +38,7 @@ class HealthResponse(BaseModel):
     status: str
     tally_connected: bool
     tally_url: str
+    mode: str | None = None
 
 
 class CompanyItem(BaseModel):
@@ -51,6 +52,21 @@ class CompaniesResponse(BaseModel):
 class ReportResponse(BaseModel):
     headers: list[str]
     rows: list[list[Any]]
+
+
+class TallyModeRequest(BaseModel):
+    mode: str
+
+    @field_validator("mode")
+    @classmethod
+    def mode_must_be_valid(cls, v: str) -> str:
+        if v not in ("mock", "live"):
+            raise ValueError("Mode must be 'mock' or 'live'")
+        return v
+
+
+class TallyModeResponse(BaseModel):
+    mode: str
 
 
 class ErrorResponse(BaseModel):

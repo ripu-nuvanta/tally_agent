@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.agents.context import SessionStore
-from backend.api import chat, companies, health, reports
+from backend.api import chat, companies, health, reports, tally_mode
 from backend.api.models import ErrorResponse
 from backend.config import settings
 from backend.tally_bridge.client import TallyClient
@@ -23,6 +23,7 @@ from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseE
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.tally_client = TallyClient(settings.TALLY_HOST, settings.TALLY_PORT)
+    app.state.tally_client.mock_mode = settings.TALLY_MODE == "mock"
     app.state.session_store = SessionStore(ttl_minutes=settings.SESSION_TTL_MINUTES)
     if settings.LANGFUSE_PUBLIC_KEY:
         import base64
@@ -74,6 +75,7 @@ app.include_router(chat.router, prefix="/api")
 app.include_router(health.router, prefix="/api")
 app.include_router(companies.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
+app.include_router(tally_mode.router, prefix="/api")
 
 
 @app.exception_handler(TallyConnectionError)

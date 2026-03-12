@@ -21,6 +21,7 @@ def app():
 def mock_client():
     client = AsyncMock()
     client.base_url = "http://localhost:9000"
+    client.mock_mode = False
     return client
 
 
