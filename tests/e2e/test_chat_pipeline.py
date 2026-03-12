@@ -533,3 +533,45 @@ async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
     assert chart is not None, "Expected chart for trend query"
     chart_labels = [point.get("label", "") for point in chart["data"]]
     assert "Total" not in chart_labels, f"Chart data should exclude Total row, got labels: {chart_labels}"
+
+
+class TestChatPipelineMockTally:
+    """E2E tests running the full pipeline with mock Tally mode."""
+
+    @pytest.fixture(autouse=True)
+    async def setup_mock_mode(self, e2e_client):
+        """Switch to mock mode before tests, restore after."""
+        client, _, _ = e2e_client
+        from backend.main import app
+        app.state.tally_client.mock_mode = True
+        yield
+        app.state.tally_client.mock_mode = False
+
+    @pytest.mark.asyncio
+    async def test_health_in_mock_mode(self, e2e_client):
+        client, _, _ = e2e_client
+        resp = await client.get("/api/health")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["tally_connected"] is True
+        assert body["mode"] == "mock"
+
+    @pytest.mark.asyncio
+    async def test_companies_in_mock_mode(self, e2e_client):
+        client, _, _ = e2e_client
+        resp = await client.get("/api/companies")
+        assert resp.status_code == 200
+        companies = resp.json()["companies"]
+        assert len(companies) >= 1
+
+    @pytest.mark.asyncio
+    async def test_tally_mode_toggle_endpoint(self, e2e_client):
+        client, _, _ = e2e_client
+        # GET mode
+        resp = await client.get("/api/tally-mode")
+        assert resp.json()["mode"] == "mock"  # set by fixture
+        # Toggle to live and back
+        resp = await client.post("/api/tally-mode", json={"mode": "live"})
+        assert resp.json()["mode"] == "live"
+        resp = await client.post("/api/tally-mode", json={"mode": "mock"})
+        assert resp.json()["mode"] == "mock"
