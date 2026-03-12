@@ -1,14 +1,14 @@
 name: "Quick Action Buttons"
-description: "Tests the 6 preset quick-action queries available in the UI. Each is a single-turn interaction."
+description: "Tests the 5 preset quick-action queries available in the UI. Each is a single-turn interaction."
 tags: [quick_actions, single_query, ui_buttons]
 
 turns:
-  - query: "P&L this month"
+  - query: "P&L last month"
     expect:
       has_data: true
       checks:
-        - "Returns profit and loss data for the current month"
-        - "Date range corresponds to the current calendar month"
+        - "Returns profit and loss data for last month"
+        - "Date range corresponds to the previous calendar month"
         - "Income and expense categories shown"
 
   - query: "Outstanding receivables"
@@ -26,14 +26,6 @@ turns:
         - "Shows the cash ledger balance"
         - "Amount is in Indian rupee format"
 
-  - query: "Stock summary"
-    expect:
-      query_type: simple_lookup
-      has_data: true
-      checks:
-        - "Lists stock items with quantities and values"
-        - "Quantities shown with units"
-
   - query: "Top 10 customers"
     expect:
       query_type: top_n
@@ -42,10 +34,10 @@ turns:
         - "Lists up to 10 customers ranked by sales amount"
         - "Amounts are sorted in descending order"
 
-  - query: "Sales vs purchases this month"
+  - query: "Sales vs purchases last month"
     expect:
       query_type: comparison
       has_data: true
       checks:
-        - "Shows both total sales and total purchases for current month"
+        - "Shows both total sales and total purchases for last month"
         - "Comparison or difference is mentioned"

@@ -3,12 +3,12 @@ description: "Queries from manual testing that previously failed. Tests date res
 tags: [regression, date_resolution, trends, comparison]
 
 turns:
-  - query: "P&L this month"
+  - query: "P&L last month"
     expect:
       has_data: true
       checks:
-        - "Returns profit and loss data for the current calendar month"
-        - "Date range is correct for the current month (not full year)"
+        - "Returns profit and loss data for the previous calendar month"
+        - "Date range is correct for last month (not full year)"
         - "Income and expense categories shown"
 
   - query: "show me sales trend over 25-26 FY"
