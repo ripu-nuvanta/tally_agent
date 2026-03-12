@@ -49,7 +49,8 @@ async def judge_turn_text(
         turn: Collected turn data with response_message, response_data, chart_spec
         prior_turns: List of prior turns for conversation context
         scenario_turn: The scenario YAML turn definition with expected checks
-        ground_truth: Optional ground truth data
+        ground_truth: Optional ground truth data (may come from live or mock golden data
+                     based on tally_mode in transcript metadata)
 
     Returns:
         Dict with scores per dimension and check results
@@ -185,11 +186,15 @@ async def judge_transcript(
     Returns:
         Full scores dict with per-turn results and metadata
     """
+    # Read tally_mode from transcript metadata to support both live and mock golden data
+    tally_mode = transcript.get("tally_mode", "live")
+
     scores = {
         "scenario_name": transcript["scenario_name"],
         "scenario_file": transcript.get("scenario_file", ""),
         "judge_model": model,
         "timestamp": transcript.get("timestamp", ""),
+        "tally_mode": tally_mode,
         "turns": [],
     }
 
@@ -341,6 +346,11 @@ async def main():
         print(f"{'='*60}")
 
         transcript = json.loads(path.read_text())
+
+        # Log tally_mode from transcript metadata
+        tally_mode = transcript.get("tally_mode", "live")
+        print(f"Tally mode: {tally_mode}")
+
         scenario = load_scenario_for_transcript(transcript)
 
         if not scenario:
