@@ -13,8 +13,12 @@ class TallyClient:
         self.base_url = f"http://{host}:{port}"
         self.timeout = httpx.Timeout(30.0, connect=5.0)
         self._client = httpx.AsyncClient(timeout=self.timeout)
+        self.mock_mode: bool = False
 
     async def post_xml(self, xml_payload: str) -> str:
+        if self.mock_mode:
+            from backend.tally_bridge.mock_handler import mock_tally_request
+            return mock_tally_request(xml_payload)
         try:
             response = await self._client.post(
                 self.base_url,
