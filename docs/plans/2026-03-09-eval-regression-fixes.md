@@ -236,7 +236,17 @@ QueryAgent and AnalysisAgent have overlapping tool sets — `_ALL_QUERY_TOOLS` i
 
 **Recommendation**: Start with C2 (lowest risk, testable via eval). If insufficient, move to C1 or C3. Evaluate alongside model upgrade (Option A) since a better model may reduce the need for agent specialization.
 
-**Blocked on**: Eval results from Phase 8 prompt fixes — if prompt rules (exact ledger names, tool-only computation) significantly improve Turn 3 accuracy, the architectural change becomes lower priority.
+**Status after Phase 8b (run_20260311_212338):**
+
+Phase 8b implemented Option C4 (streaming handover with computed-data flag) via `_separate_tool_results()` in the orchestrator. Results:
+- Turn 3 fixed: 1/1/2/1 → 4/5/5/4. No more "Reached analysis tool limit".
+- **Double computation persists**: AnalysisAgent still re-computes ~5-6 redundant tool calls per session despite receiving pre-computed data in labeled prompt sections. The AnalysisAgent explicitly chooses "I'll compute using raw voucher data" — ignoring the pre-computed section.
+- **However**, AnalysisAgent produces richer analysis (per-ledger breakdowns, per-vendor comparisons) beyond what QueryAgent pre-computed. So the redundancy is partial, not total.
+- **Context loss**: Not observed in 5-turn eval. Session history flows well between agents. Worth revisiting with longer sessions.
+
+**Revised recommendation**: Option C1 (remove ANALYSIS_TOOLS from QueryAgent) is now the best path forward. Since AnalysisAgent produces richer analysis anyway, letting QueryAgent focus on data-only fetching avoids the tagging complexity. Simple queries (`simple_lookup`) that don't route to AnalysisAgent would need a lightweight computation pass — either route them to AnalysisAgent too, or keep a minimal subset of tools for QueryAgent.
+
+**Priority**: Medium. Current eval scores are strong (avg 4.4 factual, 4.8 quality, 4.25 chart). The double computation costs ~5-6 extra tool calls (~$0.01-0.02 per query) and ~10-15s latency. Worth optimizing but not blocking.
 
 ---
 
@@ -1349,7 +1359,7 @@ All tasks implemented across 8 commits. Code review fixes applied (no-mutation s
 | 3 | Turn 3: hallucinated ledger + wrong chart title + manual computation | 3 | Three analysis agent issues: (a) fabricated "SALES EXPORT (Dubai)" from voucher narration "Amit Jain (Dubai)" — only 3 real ledgers exist; (b) chart title "Gross Profit & Net Profit" doesn't match sales-only data; (c) model manually computed per-ledger breakdowns (8,95,000 vs 11,95,000) instead of using tools — only called compute_totals for the final aggregate | Add 3 prompt rules to analysis agent: exact ledger names, chart title accuracy, tool-only computation |
 | 4 | Missing months not explained | 2 | `_trim_trailing_zeros` removes Apr-Jun 2025 (no data), model doesn't explain their absence to user | Add prompt rule: explain data gaps |
 
-**Parked for Phase 4 (architectural):** QueryAgent and AnalysisAgent have overlapping ANALYSIS_TOOLS — QueryAgent computes (3-4 calls), then AnalysisAgent re-computes (2-3 calls). This causes Turn 3's 75s latency and text/table total mismatch (11,95,000 in QueryAgent vs 8,95,000 in AnalysisAgent). Requires deeper redesign of agent responsibilities and tool routing. May coincide with model change decision.
+**Parked for Phase 4 (architectural):** QueryAgent and AnalysisAgent have overlapping ANALYSIS_TOOLS — QueryAgent computes (3-4 calls), then AnalysisAgent re-computes (2-3 calls). Phase 8b mitigated this with `_separate_tool_results()` tagging and `MAX_TOOL_CALLS` 8→15 (Turn 3 fixed: 1/1/2/1 → 4/5/5/4). Double computation still persists (~5-6 redundant calls/session). Best next step: Option C1 (remove ANALYSIS_TOOLS from QueryAgent). See Phase 4 section for updated analysis.
 
 ### Task 1: Restore Trend Totals in Structured Data
 
@@ -1760,7 +1770,7 @@ All 8 tasks implemented across 9 commits (8a8c4f3..1c7fbbe). Tests: 522 BE + 103
 8. **Tables**: Markdown tables render inline within message (Langfuse-style), preserving model headers
 9. **Eval screenshots**: Full message screenshots captured and used by judge
 
-**Note**: Turn 3 latency (75s) and text/table total mismatch from duplicate QueryAgent/AnalysisAgent computation are **parked for Phase 4** (agent architecture redesign).
+**Note**: Turn 3 latency and duplicate computation partially addressed in Phase 8b (tagging + tool limit raise). Double computation still persists (~5-6 redundant calls). Full fix: Phase 4 Option C1 (QueryAgent → data-only).
 
 ### Phase 8 Files Modified (Expected)
 
