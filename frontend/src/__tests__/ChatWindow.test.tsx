@@ -111,7 +111,7 @@ describe("ChatWindow", () => {
     const user = userEvent.setup();
     mockedApi.sendChat.mockResolvedValue({ message: "P&L data", session_id: "sess-1" });
     renderWithProvider();
-    await user.click(screen.getByRole("button", { name: "P&L this month" }));
-    expect(mockedApi.sendChat).toHaveBeenCalledWith(expect.objectContaining({ message: "P&L this month" }));
+    await user.click(screen.getByRole("button", { name: "P&L last month" }));
+    expect(mockedApi.sendChat).toHaveBeenCalledWith(expect.objectContaining({ message: "P&L last month" }));
   });
 });

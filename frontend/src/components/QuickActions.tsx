@@ -1,10 +1,9 @@
 const QUICK_QUERIES = [
-  "P&L this month",
+  "P&L last month",
   "Outstanding receivables",
   "Cash balance",
-  "Stock summary",
   "Top 10 customers",
-  "Sales vs purchases this month",
+  "Sales vs purchases last month",
 ];
 
 interface QuickActionsProps {

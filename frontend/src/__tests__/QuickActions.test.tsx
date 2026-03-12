@@ -4,12 +4,12 @@ import userEvent from "@testing-library/user-event";
 import QuickActions from "../components/QuickActions";
 
 const EXPECTED_QUERIES = [
-  "P&L this month", "Outstanding receivables", "Cash balance",
-  "Stock summary", "Top 10 customers", "Sales vs purchases this month",
+  "P&L last month", "Outstanding receivables", "Cash balance",
+  "Top 10 customers", "Sales vs purchases last month",
 ];
 
 describe("QuickActions", () => {
-  it("renders all 6 query buttons", () => {
+  it("renders all 5 query buttons", () => {
     render(<QuickActions onSelect={() => {}} />);
     for (const query of EXPECTED_QUERIES) {
       expect(screen.getByRole("button", { name: query })).toBeInTheDocument();
