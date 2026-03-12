@@ -22,7 +22,7 @@
 - Modify: `frontend/src/components/QuickActions.tsx`
 - Modify: `frontend/src/__tests__/QuickActions.test.tsx`
 
-- [ ] **Step 1: Update button text and remove Stock summary**
+- [x] **Step 1: Update button text and remove Stock summary**
 
 In `frontend/src/components/QuickActions.tsx`, replace the `QUICK_QUERIES` array:
 
@@ -36,7 +36,7 @@ const QUICK_QUERIES = [
 ];
 ```
 
-- [ ] **Step 2: Update test expectations**
+- [x] **Step 2: Update test expectations**
 
 In `frontend/src/__tests__/QuickActions.test.tsx`, update:
 
@@ -91,12 +91,12 @@ describe("QuickActions", () => {
 });
 ```
 
-- [ ] **Step 3: Run frontend tests**
+- [x] **Step 3: Run frontend tests**
 
 Run: `cd frontend && npm test -- --run`
 Expected: All QuickActions tests PASS (5 tests)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add frontend/src/components/QuickActions.tsx frontend/src/__tests__/QuickActions.test.tsx
@@ -109,7 +109,7 @@ git commit -m "feat: update quick action buttons — last month, remove stock su
 - Modify: `tests/eval/scenarios/quick_actions.yaml`
 - Modify: `tests/eval/scenarios/manual_test_regression.yaml`
 
-- [ ] **Step 1: Update quick_actions.yaml**
+- [x] **Step 1: Update quick_actions.yaml**
 
 Replace full content:
 
@@ -159,7 +159,7 @@ turns:
         - "Comparison or difference is mentioned"
 ```
 
-- [ ] **Step 2: Update manual_test_regression.yaml turn 1**
+- [x] **Step 2: Update manual_test_regression.yaml turn 1**
 
 Change only the first turn — replace `"P&L this month"` with `"P&L last month"` and update checks:
 
@@ -173,7 +173,7 @@ Change only the first turn — replace `"P&L this month"` with `"P&L last month"
         - "Income and expense categories shown"
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/eval/scenarios/quick_actions.yaml tests/eval/scenarios/manual_test_regression.yaml
@@ -185,12 +185,12 @@ git commit -m "feat: update eval scenarios for new quick action button text"
 **Files:**
 - Modify: `frontend/tests/playwright/` (screenshot baselines will update automatically)
 
-- [ ] **Step 1: Run Playwright tests to update screenshots**
+- [x] **Step 1: Run Playwright tests to update screenshots**
 
 Run: `cd frontend && npm run test:playwright -- --update-snapshots`
 Expected: Tests run, screenshots regenerated with new button text (5 buttons instead of 6).
 
-- [ ] **Step 2: Visually inspect screenshots**
+- [x] **Step 2: Visually inspect screenshots**
 
 Check `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/` for:
 - Empty chat state shows 5 buttons (not 6)
@@ -198,7 +198,7 @@ Check `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/` for:
 - Buttons say "last month" not "this month"
 - No blank space, cutoffs, or layout issues
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/tests/playwright/
@@ -215,7 +215,7 @@ git commit -m "test: update Playwright screenshots for new quick action buttons"
 - Modify: `backend/config.py`
 - Test: `tests/unit/test_config.py` (if exists, otherwise skip test — config is trivial)
 
-- [ ] **Step 1: Add TALLY_MODE setting**
+- [x] **Step 1: Add TALLY_MODE setting**
 
 In `backend/config.py`, add after `SESSION_TTL_MINUTES`:
 
@@ -223,7 +223,7 @@ In `backend/config.py`, add after `SESSION_TTL_MINUTES`:
 TALLY_MODE: str = "live"  # "live" or "mock"
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add backend/config.py
@@ -236,7 +236,7 @@ git commit -m "feat: add TALLY_MODE config setting (default: live)"
 - Create: `backend/tally_bridge/mock_handler.py`
 - Test: `tests/unit/test_mock_handler.py`
 
-- [ ] **Step 1: Write failing tests for mock handler**
+- [x] **Step 1: Write failing tests for mock handler**
 
 Create `tests/unit/test_mock_handler.py`:
 
@@ -326,12 +326,12 @@ class TestMockHandler:
             assert result.strip().startswith("<"), f"Invalid XML for {report_name}"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_mock_handler.py -v`
 Expected: FAIL — `mock_handler` module does not exist
 
-- [ ] **Step 3: Implement mock handler**
+- [x] **Step 3: Implement mock handler**
 
 Create `backend/tally_bridge/mock_handler.py`:
 
@@ -397,12 +397,12 @@ def mock_tally_request(xml_body: str) -> str:
     return _ERROR_RESPONSE
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_mock_handler.py -v`
 Expected: All 14 tests PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/mock_handler.py tests/unit/test_mock_handler.py
@@ -419,23 +419,23 @@ git commit -m "feat: add in-process mock Tally handler with fixture loading"
 
 The current fixtures are minimal. For mock Tally to behave realistically, the key fixture that needs creating is `purchase_register.xml` (currently PurchaseVchs maps to sales_register.xml which returns wrong data). The existing sales_register.xml and day_book.xml are sufficient for initial mock mode — they can be expanded later as needed when eval results show gaps.
 
-- [ ] **Step 1: Create purchase_register.xml**
+- [x] **Step 1: Create purchase_register.xml**
 
 Create `tests/fixtures/purchase_register.xml` with Bharat Traders purchase vouchers (structure matching sales_register.xml but with purchase data). Use the same XML structure as sales_register.xml but with purchase ledgers/parties from the TALLYPRIME_AGENT_PLAN.md spec.
 
-- [ ] **Step 2: Update mock handler mapping**
+- [x] **Step 2: Update mock handler mapping**
 
 In `backend/tally_bridge/mock_handler.py`, change:
 ```python
 "PurchaseVchs": "purchase_register.xml",  # was: "sales_register.xml"
 ```
 
-- [ ] **Step 3: Run mock handler tests**
+- [x] **Step 3: Run mock handler tests**
 
 Run: `pytest tests/unit/test_mock_handler.py -v`
 Expected: All tests PASS (purchase register now returns purchase data)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/fixtures/purchase_register.xml backend/tally_bridge/mock_handler.py
@@ -448,7 +448,7 @@ git commit -m "feat: add purchase_register fixture, fix PurchaseVchs mapping"
 - Modify: `backend/tally_bridge/client.py`
 - Test: `tests/unit/test_tally_client_mock.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/unit/test_tally_client_mock.py`:
 
@@ -496,12 +496,12 @@ class TestTallyClientMockMode:
         await client.close()
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_tally_client_mock.py -v`
 Expected: FAIL — `TallyClient` has no `mock_mode` attribute
 
-- [ ] **Step 3: Add mock_mode to TallyClient**
+- [x] **Step 3: Add mock_mode to TallyClient**
 
 In `backend/tally_bridge/client.py`, modify the class:
 
@@ -563,12 +563,12 @@ class TallyClient:
             return False
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_tally_client_mock.py -v`
 Expected: All 5 tests PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/client.py tests/unit/test_tally_client_mock.py
@@ -580,7 +580,7 @@ git commit -m "feat: add mock_mode to TallyClient — routes to mock handler whe
 **Files:**
 - Modify: `tests/mocks/mock_tally_server.py`
 
-- [ ] **Step 1: Refactor to delegate to mock_handler**
+- [x] **Step 1: Refactor to delegate to mock_handler**
 
 Replace `tests/mocks/mock_tally_server.py`:
 
@@ -607,12 +607,12 @@ def create_mock_tally_app() -> web.Application:
     return app
 ```
 
-- [ ] **Step 2: Run existing integration and E2E tests to verify no regression**
+- [x] **Step 2: Run existing integration and E2E tests to verify no regression**
 
 Run: `ANTHROPIC_API_KEY=test-key pytest tests/integration/ tests/e2e/ -v`
 Expected: All existing tests PASS (mock server still works, now via mock_handler)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/mocks/mock_tally_server.py
@@ -628,7 +628,7 @@ git commit -m "refactor: mock_tally_server delegates to canonical mock_handler"
 - Modify: `backend/api/health.py`
 - Test: `tests/unit/test_tally_mode_api.py`
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 Create `tests/unit/test_tally_mode_api.py`:
 
@@ -706,12 +706,12 @@ class TestTallyModeAPI:
         assert body["tally_connected"] is False
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_tally_mode_api.py -v`
 Expected: FAIL — `/api/tally-mode` endpoint does not exist
 
-- [ ] **Step 3: Add TallyModeRequest/Response models**
+- [x] **Step 3: Add TallyModeRequest/Response models**
 
 In `backend/api/models.py`, add at end:
 
@@ -741,7 +741,7 @@ class HealthResponse(BaseModel):
     mode: str | None = None
 ```
 
-- [ ] **Step 4: Create tally_mode endpoint**
+- [x] **Step 4: Create tally_mode endpoint**
 
 Create `backend/api/tally_mode.py`:
 
@@ -771,7 +771,7 @@ async def set_tally_mode(
     return TallyModeResponse(mode=request.mode)
 ```
 
-- [ ] **Step 5: Update health endpoint to include mode**
+- [x] **Step 5: Update health endpoint to include mode**
 
 In `backend/api/health.py`:
 
@@ -804,7 +804,7 @@ async def health_check(client: TallyClient = Depends(get_client)) -> HealthRespo
     )
 ```
 
-- [ ] **Step 6: Register route in main.py**
+- [x] **Step 6: Register route in main.py**
 
 In `backend/main.py`, add import and router:
 
@@ -825,17 +825,17 @@ app.state.tally_client = TallyClient(settings.TALLY_HOST, settings.TALLY_PORT)
 app.state.tally_client.mock_mode = settings.TALLY_MODE == "mock"
 ```
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [x] **Step 7: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_tally_mode_api.py -v`
 Expected: All 7 tests PASS
 
-- [ ] **Step 8: Run all backend tests to check for regressions**
+- [x] **Step 8: Run all backend tests to check for regressions**
 
 Run: `ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v`
 Expected: All existing tests still PASS
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add backend/api/models.py backend/api/tally_mode.py backend/api/health.py backend/main.py tests/unit/test_tally_mode_api.py
@@ -847,7 +847,7 @@ git commit -m "feat: add /api/tally-mode endpoints and health mode indicator"
 **Files:**
 - Create: `tests/integration/test_mock_tally_integration.py`
 
-- [ ] **Step 1: Write integration tests**
+- [x] **Step 1: Write integration tests**
 
 Create `tests/integration/test_mock_tally_integration.py`:
 
@@ -904,12 +904,12 @@ class TestMockTallyIntegration:
         assert len(ledgers) > 0
 ```
 
-- [ ] **Step 2: Run integration tests**
+- [x] **Step 2: Run integration tests**
 
 Run: `pytest tests/integration/test_mock_tally_integration.py -v`
 Expected: All 6 tests PASS (fixture XML parses through real response_parser)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/integration/test_mock_tally_integration.py
@@ -926,7 +926,7 @@ git commit -m "test: integration tests for mock Tally through parse pipeline"
 - Modify: `frontend/src/types/index.ts`
 - Modify: `frontend/src/api/client.ts`
 
-- [ ] **Step 1: Add TypeScript types**
+- [x] **Step 1: Add TypeScript types**
 
 In `frontend/src/types/index.ts`, add at end:
 
@@ -951,7 +951,7 @@ export interface HealthResponse {
 }
 ```
 
-- [ ] **Step 2: Add API functions**
+- [x] **Step 2: Add API functions**
 
 In `frontend/src/api/client.ts`, add imports and functions:
 
@@ -978,7 +978,7 @@ export async function setTallyMode(mode: "mock" | "live"): Promise<TallyModeResp
 }
 ```
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/src/types/index.ts frontend/src/api/client.ts
@@ -991,7 +991,7 @@ git commit -m "feat: add tally mode API types and client functions"
 - Modify: `frontend/src/components/Header.tsx`
 - Test: `frontend/src/__tests__/Header.test.tsx`
 
-- [ ] **Step 1: Update Header component**
+- [x] **Step 1: Update Header component**
 
 Replace `frontend/src/components/Header.tsx`:
 
@@ -1079,7 +1079,7 @@ export default function Header() {
 }
 ```
 
-- [ ] **Step 2: Add toggle tests to existing Header.test.tsx**
+- [x] **Step 2: Add toggle tests to existing Header.test.tsx**
 
 The existing `Header.test.tsx` uses `vi.mock("../api/client")` + `vi.mocked(api)` pattern with `SessionProvider` wrapper. **Preserve all 6 existing tests.** Add the new mock functions to `beforeEach` and append new toggle tests.
 
@@ -1160,24 +1160,24 @@ Add new tests inside the existing `describe("Header")` block:
 
 **Important:** The existing Header now uses a `<button>` with `title` attributes for the toggle, so update existing tests that check `title` attributes (e.g., "Tally connected", "Tally disconnected", "Checking Tally connection...") to use `data-testid` or adjust the title prop on the toggle button to preserve backward compatibility. The simplest fix: keep the `title` attribute on the toggle button matching the existing test expectations based on connection state.
 
-- [ ] **Step 3: Run frontend tests**
+- [x] **Step 3: Run frontend tests**
 
 Run: `cd frontend && npm test -- --run`
 Expected: All Header and QuickActions tests PASS
 
-- [ ] **Step 4: Run Playwright to update screenshots**
+- [x] **Step 4: Run Playwright to update screenshots**
 
 Run: `cd frontend && npm run test:playwright -- --update-snapshots`
 Expected: Screenshots updated with new toggle button in header
 
-- [ ] **Step 5: Visually inspect Playwright screenshots**
+- [x] **Step 5: Visually inspect Playwright screenshots**
 
 Check header area in `frontend/tests/playwright/__screenshots__/` for:
 - Toggle button visible with "Tally" label
 - Green/red/gray dot present
 - No layout overflow or misalignment
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/src/components/Header.tsx frontend/src/__tests__/Header.test.tsx frontend/tests/playwright/
@@ -1193,7 +1193,7 @@ git commit -m "feat: add mock Tally toggle to Header with indicator and tests"
 **Files:**
 - Modify: `tests/eval/collect.py`
 
-- [ ] **Step 1: Add CLI argument**
+- [x] **Step 1: Add CLI argument**
 
 In `tests/eval/collect.py`, in the `main()` function's argparse section, add:
 
@@ -1206,7 +1206,7 @@ parser.add_argument(
 )
 ```
 
-- [ ] **Step 2: Add Playwright toggle action**
+- [x] **Step 2: Add Playwright toggle action**
 
 After the page loads and before running scenarios, add the toggle logic. Find the line `await page.wait_for_selector("textarea", timeout=30000)` and add after it:
 
@@ -1225,11 +1225,11 @@ if args.tally_mode == "mock":
     print("Tally mode set to: mock")
 ```
 
-- [ ] **Step 3: Record tally_mode in transcript metadata**
+- [x] **Step 3: Record tally_mode in transcript metadata**
 
 In the transcript output dict, add `"tally_mode": args.tally_mode` alongside existing fields like `"scenario_name"`, `"timestamp"`, etc.
 
-- [ ] **Step 4: Skip live ground truth when mock**
+- [x] **Step 4: Skip live ground truth when mock**
 
 Wrap the live ground truth collection block with:
 
@@ -1249,7 +1249,7 @@ if args.tally_mode == "mock":
         print(f"Loaded mock golden data from {mock_golden_path}")
 ```
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add tests/eval/collect.py
@@ -1261,7 +1261,7 @@ git commit -m "feat: add --tally-mode flag to eval collector with Playwright tog
 **Files:**
 - Modify: `tests/eval/judge.py`
 
-- [ ] **Step 1: Add tally_mode awareness**
+- [x] **Step 1: Add tally_mode awareness**
 
 In `judge.py`, when loading transcript data, read `tally_mode` from metadata:
 
@@ -1271,7 +1271,7 @@ tally_mode = transcript.get("tally_mode", "live")
 
 Pass this to ground truth loading so the judge uses correct golden data. No other changes needed — the judge already receives ground truth as a parameter.
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add tests/eval/judge.py
@@ -1284,7 +1284,7 @@ git commit -m "feat: judge.py reads tally_mode from transcript metadata"
 - Create: `tests/eval/golden/mock_golden.json`
 - Create: `scripts/generate_mock_golden.py`
 
-- [ ] **Step 1: Create generation script**
+- [x] **Step 1: Create generation script**
 
 Create `scripts/generate_mock_golden.py`:
 
@@ -1342,12 +1342,12 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-- [ ] **Step 2: Run the script to generate golden data**
+- [x] **Step 2: Run the script to generate golden data**
 
 Run: `PYTHONPATH=. python scripts/generate_mock_golden.py`
 Expected: `tests/eval/golden/mock_golden.json` created with 5 report types
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add scripts/generate_mock_golden.py tests/eval/golden/mock_golden.json
@@ -1359,7 +1359,7 @@ git commit -m "feat: add mock golden data generation for eval judging"
 **Files:**
 - Create: `tests/eval/scenarios/mock_tally_validation.yaml`
 
-- [ ] **Step 1: Create scenario**
+- [x] **Step 1: Create scenario**
 
 Create `tests/eval/scenarios/mock_tally_validation.yaml`:
 
@@ -1409,7 +1409,7 @@ turns:
         - "Lists customers ranked by sales"
 ```
 
-- [ ] **Step 2: Commit**
+- [x] **Step 2: Commit**
 
 ```bash
 git add tests/eval/scenarios/mock_tally_validation.yaml
@@ -1421,7 +1421,7 @@ git commit -m "feat: add mock_tally_validation eval scenario"
 **Files:**
 - Modify: `tests/e2e/test_chat_pipeline.py` (add mock mode test class)
 
-- [ ] **Step 1: Add mock mode E2E tests**
+- [x] **Step 1: Add mock mode E2E tests**
 
 In `tests/e2e/test_chat_pipeline.py`, add a new test class at the end of the file:
 
@@ -1469,12 +1469,12 @@ class TestChatPipelineMockTally:
         assert resp.json()["mode"] == "mock"
 ```
 
-- [ ] **Step 2: Run E2E tests**
+- [x] **Step 2: Run E2E tests**
 
 Run: `ANTHROPIC_API_KEY=test-key pytest tests/e2e/test_chat_pipeline.py::TestChatPipelineMockTally -v`
 Expected: All 3 mock mode E2E tests PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add tests/e2e/test_chat_pipeline.py
@@ -1483,22 +1483,22 @@ git commit -m "test: E2E tests for chat pipeline with mock Tally mode"
 
 ### Task 17: Final Verification
 
-- [ ] **Step 1: Run ALL backend tests**
+- [x] **Step 1: Run ALL backend tests**
 
 Run: `ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v`
 Expected: All tests PASS, no regressions
 
-- [ ] **Step 2: Run ALL frontend tests**
+- [x] **Step 2: Run ALL frontend tests**
 
 Run: `cd frontend && npm test -- --run`
 Expected: All tests PASS
 
-- [ ] **Step 3: Run Playwright**
+- [x] **Step 3: Run Playwright**
 
 Run: `cd frontend && npm run test:playwright`
 Expected: All tests PASS. Visually inspect screenshots.
 
-- [ ] **Step 4: Manual smoke test (optional)**
+- [x] **Step 4: Manual smoke test (optional)**
 
 Start backend and frontend, verify:
 1. Toggle button visible in header
@@ -1506,7 +1506,7 @@ Start backend and frontend, verify:
 3. Quick action buttons show correct text (5 buttons, "last month")
 4. Sending a query in mock mode returns data
 
-- [ ] **Step 5: Final commit (if any remaining changes)**
+- [x] **Step 5: Final commit (if any remaining changes)**
 
 ```bash
 git add -A
