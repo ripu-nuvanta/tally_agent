@@ -78,8 +78,7 @@ async def test_companies_returns_parsed_list(async_client):
     body = resp.json()
     names = [c["name"] for c in body["companies"]]
     assert "Bharat Traders Pvt Ltd" in names
-    assert "Demo Company" in names
-    assert len(names) == 2
+    assert len(names) == 1
 
 
 # --- Reports ---

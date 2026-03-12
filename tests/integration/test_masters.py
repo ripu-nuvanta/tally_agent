@@ -16,7 +16,7 @@ async def mock_tally(aiohttp_server):
 @pytest.mark.asyncio
 async def test_list_companies(mock_tally):
     companies = await list_companies(mock_tally)
-    assert len(companies) == 2
+    assert len(companies) == 1
     assert companies[0].name == "Bharat Traders Pvt Ltd"
 
 

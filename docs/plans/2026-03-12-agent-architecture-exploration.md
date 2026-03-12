@@ -81,3 +81,37 @@ Option C1 (remove ANALYSIS_TOOLS from QueryAgent) is now the best path forward. 
 ### Priority Assessment
 
 **Medium**. Current eval scores are strong (avg 4.4 factual, 4.8 quality, 4.25 chart). The double computation costs ~5-6 extra tool calls (~$0.01-0.02 per query) and ~10-15s latency. Worth optimizing but not blocking.
+
+---
+
+## Company Selector — End-to-End Implementation
+
+### Current State
+
+The company selector exists in the UI but has no effect on query execution:
+
+- **Frontend**: `CompanySelector` fetches companies via `GET /api/companies`, displays a dropdown, and passes the selected company in the `POST /api/chat` request body.
+- **Backend chat endpoint**: Stores `company` in `SessionContext` when received from the frontend.
+- **Orchestrator / QueryAgent**: Never read `session.company` — it is stored but completely unused.
+- **Tally Bridge**: `request_builder.py` supports `<SVCurrentCompany>` in XML envelopes, but no tool handler ever passes it through.
+- **Mock mode**: `mock_handler.py` ignores company entirely — it pattern-matches report names only.
+- **Net effect**: The company dropdown is display-only. All queries execute against Tally's currently active company regardless of the user's selection.
+
+### What Needs to Be Done
+
+1. **Extract company in orchestrator**: Read `company = session.company` in `orchestrator.process_query()` and make it available to the agent pipeline.
+2. **Include company in Claude's system prompt**: Add the selected company name to the system prompt so Claude knows which company context it is operating in (e.g., "You are querying data for company: Bharat Traders Pvt Ltd").
+3. **Auto-populate company in tool inputs**: Before dispatching tool calls to Tally, inject the company parameter into tool handler kwargs — rather than relying on Claude to pass it explicitly. This avoids prompt-following failures.
+4. **Ensure all `request_builder.py` calls include `<SVCurrentCompany>`**: When a company is specified, every XML request envelope must include the `<SVCurrentCompany>` element so Tally scopes the query to that company.
+5. **Mock mode company filtering** (low priority): Optionally differentiate responses by company in `mock_handler.py`. For the single-company demo this is not critical, but the hook should exist for future multi-company support.
+
+### Implementation Notes
+
+- The `<SVCurrentCompany>` element is already templated in `request_builder.py` but never populated. The plumbing exists; it just needs to be connected.
+- Tool handlers in `tools.py` receive kwargs from `execute_tool()` — adding a `company` kwarg and forwarding it to the bridge client is straightforward.
+- For the system prompt, the company name should come from `SessionContext`, not from the tool result, to avoid a chicken-and-egg problem.
+- Multi-company Tally setups are common in Indian businesses (e.g., separate companies for GST registrations). This feature becomes essential when targeting real deployments.
+
+### Priority Assessment
+
+**Medium-High**. The feature is user-visible (dropdown exists, does nothing) which creates a UX trust issue. Implementation is low-risk and moderate effort (~50-100 LOC across 4-5 files). Should be addressed before any public demo or user testing.
