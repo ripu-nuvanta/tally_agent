@@ -8,6 +8,12 @@ import * as api from "../api/client";
 vi.mock("../api/client");
 const mockedApi = vi.mocked(api);
 
+const reloadMock = vi.fn();
+Object.defineProperty(window, "location", {
+  value: { ...window.location, reload: reloadMock },
+  writable: true,
+});
+
 function renderWithProvider() {
   return render(
     <SessionProvider>
@@ -46,7 +52,7 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    const indicator = screen.getByTestId("tally-mode-indicator");
+    const indicator = screen.getByTestId("tally-status-dot");
     expect(indicator.className).toContain("bg-green-500");
   });
 
@@ -57,7 +63,7 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    const indicator = screen.getByTestId("tally-mode-indicator");
+    const indicator = screen.getByTestId("tally-status-dot");
     expect(indicator.className).toContain("bg-red-500");
   });
 
@@ -65,7 +71,7 @@ describe("Header", () => {
     mockedApi.getHealth.mockReturnValue(new Promise(() => {}));
     mockedApi.getTallyMode.mockReturnValue(new Promise(() => {}));
     renderWithProvider();
-    const indicator = screen.getByTestId("tally-mode-indicator");
+    const indicator = screen.getByTestId("tally-status-dot");
     expect(indicator.className).toContain("bg-gray-300");
   });
 
@@ -74,7 +80,7 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    const indicator = screen.getByTestId("tally-mode-indicator");
+    const indicator = screen.getByTestId("tally-status-dot");
     expect(indicator.className).toContain("bg-red-500");
   });
 
@@ -105,10 +111,21 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    expect(screen.getByTestId("tally-mode-label")).toHaveTextContent("Tally");
+    expect(screen.getByTestId("tally-status-label")).toHaveTextContent("Tally");
   });
 
-  it("shows Mock Tally label after toggle", async () => {
+  it("shows Demo label when in mock mode", async () => {
+    mockedApi.getTallyMode.mockResolvedValue({ mode: "mock" });
+    mockedApi.getHealth.mockResolvedValue({
+      status: "ok", tally_connected: true, tally_url: "http://localhost:9000", mode: "mock",
+    });
+    await act(async () => {
+      renderWithProvider();
+    });
+    expect(screen.getByTestId("tally-status-label")).toHaveTextContent("Demo");
+  });
+
+  it("toggle checkbox calls setTallyMode then window.location.reload", async () => {
     mockedApi.getHealth.mockResolvedValue({
       status: "ok", tally_connected: true, tally_url: "http://localhost:9000", mode: null,
     });
@@ -117,8 +134,9 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    await user.click(screen.getByTestId("tally-mode-toggle"));
-    expect(screen.getByTestId("tally-mode-label")).toHaveTextContent("Mock Tally");
+    await user.click(screen.getByTestId("demo-mode-checkbox"));
+    expect(mockedApi.setTallyMode).toHaveBeenCalledWith("mock");
+    expect(reloadMock).toHaveBeenCalled();
     vi.useFakeTimers();
   });
 
@@ -131,7 +149,7 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    await user.click(screen.getByTestId("tally-mode-toggle"));
+    await user.click(screen.getByTestId("demo-mode-toggle"));
     expect(mockedApi.setTallyMode).toHaveBeenCalledWith("mock");
     vi.useFakeTimers();
   });
@@ -143,9 +161,11 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    expect(screen.getByTestId("tally-mode-toggle")).toBeInTheDocument();
-    expect(screen.getByTestId("tally-mode-indicator")).toBeInTheDocument();
-    expect(screen.getByTestId("tally-mode-label")).toBeInTheDocument();
+    expect(screen.getByTestId("demo-mode-toggle")).toBeInTheDocument();
+    expect(screen.getByTestId("demo-mode-checkbox")).toBeInTheDocument();
+    expect(screen.getByTestId("tally-status-indicator")).toBeInTheDocument();
+    expect(screen.getByTestId("tally-status-dot")).toBeInTheDocument();
+    expect(screen.getByTestId("tally-status-label")).toBeInTheDocument();
   });
 
   it("reconciles mode on toggle error", async () => {
@@ -158,8 +178,22 @@ describe("Header", () => {
     await act(async () => {
       renderWithProvider();
     });
-    await user.click(screen.getByTestId("tally-mode-toggle"));
+    await user.click(screen.getByTestId("demo-mode-toggle"));
     expect(mockedApi.getTallyMode).toHaveBeenCalled();
+    expect(reloadMock).not.toHaveBeenCalled();
     vi.useFakeTimers();
+  });
+
+  it("status indicator is a span (not button), not clickable", async () => {
+    mockedApi.getHealth.mockResolvedValue({
+      status: "ok", tally_connected: true, tally_url: "http://localhost:9000", mode: null,
+    });
+    await act(async () => {
+      renderWithProvider();
+    });
+    const indicator = screen.getByTestId("tally-status-indicator");
+    expect(indicator.tagName).toBe("SPAN");
+    // Should not have onClick handler — no button role
+    expect(indicator.getAttribute("role")).toBeNull();
   });
 });

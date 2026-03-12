@@ -6,12 +6,10 @@ corresponding fixture files. This is the single canonical mock
 implementation — tests/mocks/mock_tally_server.py delegates to this.
 """
 
-import os
 from functools import lru_cache
+from pathlib import Path
 
-FIXTURES_DIR = os.path.join(
-    os.path.dirname(__file__), "..", "..", "tests", "fixtures"
-)
+FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "tests" / "fixtures"
 
 # Same mapping as tests/mocks/mock_tally_server.py — kept in sync
 REPORT_FIXTURES: dict[str, str] = {
@@ -21,7 +19,7 @@ REPORT_FIXTURES: dict[str, str] = {
     "Profit and Loss": "profit_and_loss.xml",
     "Balance Sheet": "balance_sheet.xml",
     "Bills Receivable": "bills_receivable.xml",
-    "Bills Payable": "bills_receivable.xml",
+    "Bills Payable": "bills_receivable.xml",  # Intentional: demo company uses same fixture format for both receivable and payable
     "Stock Summary": "stock_summary.xml",
     "DayBookVchs": "day_book.xml",
     "SalesVchs": "sales_register.xml",
@@ -36,12 +34,15 @@ _ERROR_RESPONSE = (
 
 @lru_cache(maxsize=32)
 def _load_fixture(filename: str) -> str:
-    """Load a fixture file, cached for performance."""
-    path = os.path.join(FIXTURES_DIR, filename)
-    if not os.path.exists(path):
+    """Load a fixture file, cached for performance.
+
+    Call ``_load_fixture.cache_clear()`` to invalidate the cache during
+    development (e.g. after editing fixture files on disk).
+    """
+    path = FIXTURES_DIR / filename
+    if not path.exists():
         return _ERROR_RESPONSE
-    with open(path) as f:
-        return f.read()
+    return path.read_text()
 
 
 def mock_tally_request(xml_body: str) -> str:

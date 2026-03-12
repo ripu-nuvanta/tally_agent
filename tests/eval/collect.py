@@ -199,15 +199,15 @@ async def collect_scenario(
 
         # Set tally mode via frontend toggle if mock
         if tally_mode == "mock":
-            toggle = page.get_by_test_id("tally-mode-toggle")
-            label = page.get_by_test_id("tally-mode-label")
+            toggle = page.get_by_test_id("demo-mode-toggle")
+            label = page.get_by_test_id("tally-status-label")
             current_label = await label.inner_text()
-            if current_label != "Mock Tally":
+            if current_label != "Demo":
                 await toggle.click()
-                await page.wait_for_function(
-                    '() => document.querySelector("[data-testid=tally-mode-label]")?.textContent === "Mock Tally"',
-                    timeout=5000,
-                )
+                # Toggle triggers page reload — wait for page to reload and settle
+                await page.wait_for_load_state("networkidle", timeout=10000)
+                await page.wait_for_selector("textarea", timeout=30000)
+                await page.wait_for_timeout(2000)
             print("Tally mode set to: mock")
 
         for turn_idx, turn_def in enumerate(scenario["turns"]):

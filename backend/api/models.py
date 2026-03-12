@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, field_validator
 
@@ -55,14 +55,7 @@ class ReportResponse(BaseModel):
 
 
 class TallyModeRequest(BaseModel):
-    mode: str
-
-    @field_validator("mode")
-    @classmethod
-    def mode_must_be_valid(cls, v: str) -> str:
-        if v not in ("mock", "live"):
-            raise ValueError("Mode must be 'mock' or 'live'")
-        return v
+    mode: Literal["mock", "live"]
 
 
 class TallyModeResponse(BaseModel):

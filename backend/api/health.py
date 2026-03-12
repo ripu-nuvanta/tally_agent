@@ -23,4 +23,5 @@ async def health_check(client: TallyClient = Depends(get_client)) -> HealthRespo
         status="healthy" if connected else "degraded",
         tally_connected=connected,
         tally_url=client.base_url,
+        mode="live",
     )

@@ -30,16 +30,10 @@ export default function Header() {
   const handleToggleMode = async () => {
     const newMode = tallyMode === "live" ? "mock" : "live";
     try {
-      const res = await setTallyMode(newMode);
-      setTallyModeState(res.mode);
-      // Re-check health after mode switch
-      getHealth()
-        .then((res) => {
-          setConnected(res.tally_connected);
-        })
-        .catch(() => setConnected(false));
+      await setTallyMode(newMode);
+      window.location.reload();
     } catch {
-      // Reconcile on error
+      // Reconcile on error — don't refresh
       getTallyMode()
         .then((res) => setTallyModeState(res.mode))
         .catch(() => {});
@@ -48,32 +42,52 @@ export default function Header() {
 
   const isMock = tallyMode === "mock";
 
+  // Status dot color: green for mock or live+connected, red for live+disconnected, gray for checking
+  const dotColor = isMock
+    ? "bg-green-500"
+    : connected === null
+      ? "bg-gray-300"
+      : connected
+        ? "bg-green-500"
+        : "bg-red-500";
+
   return (
     <header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between">
-      <h1 className="text-lg font-semibold text-gray-900">TallyPrime AI</h1>
       <div className="flex items-center gap-3">
-        <button
-          onClick={handleToggleMode}
-          data-testid="tally-mode-toggle"
-          className="flex items-center gap-1.5 px-2 py-1 rounded text-xs border border-gray-200 hover:bg-gray-50 transition-colors"
-          title={isMock ? "Switch to Live Tally" : "Switch to Mock Tally"}
+        <h1 className="text-lg font-semibold text-gray-900">TallyPrime AI</h1>
+        {/* Demo Mode toggle switch */}
+        <label
+          data-testid="demo-mode-toggle"
+          className="flex items-center gap-2 cursor-pointer select-none"
         >
-          <div
-            data-testid="tally-mode-indicator"
-            className={`w-2 h-2 rounded-full ${
-              isMock
-                ? "bg-green-500"
-                : connected === null
-                  ? "bg-gray-300"
-                  : connected
-                    ? "bg-green-500"
-                    : "bg-red-500"
-            }`}
+          <span className="text-xs text-gray-600">Demo Mode</span>
+          <div className="relative">
+            <input
+              type="checkbox"
+              data-testid="demo-mode-checkbox"
+              className="sr-only peer"
+              checked={isMock}
+              onChange={handleToggleMode}
+            />
+            <div className="w-9 h-5 bg-gray-200 rounded-full peer peer-checked:bg-blue-500 transition-colors" />
+            <div className="absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform peer-checked:translate-x-4" />
+          </div>
+        </label>
+      </div>
+      <div className="flex items-center gap-3">
+        {/* Status indicator (non-clickable) */}
+        <span
+          data-testid="tally-status-indicator"
+          className="flex items-center gap-1.5 text-xs text-gray-600"
+        >
+          <span
+            data-testid="tally-status-dot"
+            className={`w-2 h-2 rounded-full ${dotColor}`}
           />
-          <span data-testid="tally-mode-label">
-            {isMock ? "Mock Tally" : "Tally"}
+          <span data-testid="tally-status-label">
+            {isMock ? "Demo" : "Tally"}
           </span>
-        </button>
+        </span>
         <CompanySelector />
       </div>
     </header>

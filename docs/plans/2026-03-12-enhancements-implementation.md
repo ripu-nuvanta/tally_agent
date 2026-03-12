@@ -1512,3 +1512,188 @@ Start backend and frontend, verify:
 git add -A
 git commit -m "chore: final verification — all tests passing"
 ```
+
+---
+
+## Chunk 5: Demo Mode Toggle Redesign (Feature D)
+
+**Goal:** Replace the single clickable toggle button in the Header with two separate elements: a sliding toggle switch for enabling/disabling Demo Mode, and a non-clickable status indicator. Page refreshes after mode switch so company list, health, and all state re-initialize from the backend.
+
+### Task 18: Redesign Header Component
+
+**Files:**
+- Modify: `frontend/src/components/Header.tsx`
+
+- [ ] **Step 1: Replace single button with toggle switch + status indicator**
+
+New Header layout:
+```
+[TallyPrime AI  [Demo Mode ○━━ toggle]]  ···flex-spacer···  [● Tally/Demo]  [CompanySelector]
+```
+
+Replace the existing `<button onClick={handleToggleMode}>` with two separate elements:
+
+**a) Toggle switch** (left side, after title):
+```tsx
+<label className="flex items-center gap-2 cursor-pointer" data-testid="demo-mode-toggle">
+  <span className="text-xs text-gray-600">Demo Mode</span>
+  <div className="relative">
+    <input
+      type="checkbox"
+      checked={isMock}
+      onChange={handleToggleMode}
+      className="sr-only peer"
+      data-testid="demo-mode-checkbox"
+    />
+    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:bg-blue-600 transition-colors" />
+    <div className="absolute left-[2px] top-[2px] bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-4" />
+  </div>
+</label>
+```
+
+**b) Status indicator** (right side, before CompanySelector):
+```tsx
+<span className="flex items-center gap-1.5 text-xs text-gray-500" data-testid="tally-status-indicator">
+  <span
+    data-testid="tally-status-dot"
+    className={`w-2 h-2 rounded-full ${
+      isMock
+        ? "bg-green-500"
+        : connected === null
+          ? "bg-gray-300"
+          : connected
+            ? "bg-green-500"
+            : "bg-red-500"
+    }`}
+  />
+  <span data-testid="tally-status-label">{isMock ? "Demo" : "Tally"}</span>
+</span>
+```
+
+- [ ] **Step 2: Update handleToggleMode to refresh page**
+
+Replace the current `handleToggleMode` function:
+```typescript
+const handleToggleMode = async () => {
+  const newMode = tallyMode === "live" ? "mock" : "live";
+  try {
+    await setTallyMode(newMode);
+    window.location.reload();
+  } catch {
+    // Reconcile on error — don't refresh
+    getTallyMode()
+      .then((res) => setTallyModeState(res.mode))
+      .catch(() => {});
+  }
+};
+```
+
+Key change: On success, `window.location.reload()` instead of updating state locally. This ensures company list, health status, and all state re-initializes from the backend.
+
+- [ ] **Step 3: Update Header JSX structure**
+
+Full return JSX:
+```tsx
+<header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between">
+  <div className="flex items-center gap-4">
+    <h1 className="text-lg font-semibold text-gray-900">TallyPrime AI</h1>
+    {/* Demo Mode toggle switch */}
+    <label ...>...</label>
+  </div>
+  <div className="flex items-center gap-3">
+    {/* Status indicator (non-clickable) */}
+    <span ...>...</span>
+    <CompanySelector />
+  </div>
+</header>
+```
+
+### Task 19: Update Header Tests
+
+**Files:**
+- Modify: `frontend/src/__tests__/Header.test.tsx`
+
+- [ ] **Step 1: Update test selectors for new data-testid attrs**
+
+Replace references to old data-testids:
+- `tally-mode-toggle` → `demo-mode-toggle`
+- `tally-mode-indicator` → `tally-status-dot`
+- `tally-mode-label` → `tally-status-label`
+
+Add new test cases:
+- Toggle switch renders as checkbox input with `demo-mode-checkbox` testid
+- Status indicator is NOT clickable (no onClick handler, is a `<span>`)
+- Toggling checkbox calls `setTallyMode` and then `window.location.reload()`
+- Mock `window.location.reload` in tests: `const reloadMock = vi.fn(); Object.defineProperty(window, 'location', { value: { reload: reloadMock } });`
+
+- [ ] **Step 2: Update snapshot/assertion for label text**
+
+- "Mock Tally" → "Demo" in status label
+- "Tally" stays the same for live mode
+- "Demo Mode" label text appears next to toggle
+
+### Task 20: Update Playwright Tests & Eval Collector
+
+**Files:**
+- Modify: `tests/eval/collect.py` (update Playwright selector for mode toggle)
+- Modify: `frontend/tests/playwright/` (update screenshots if affected)
+
+- [ ] **Step 1: Update eval collector toggle selector**
+
+In `tests/eval/collect.py`, find the Playwright click that toggles tally mode and update the selector from `[data-testid="tally-mode-toggle"]` to `[data-testid="demo-mode-toggle"]` (or the checkbox input `[data-testid="demo-mode-checkbox"]`).
+
+- [ ] **Step 2: Update E2E mock tests if they reference old selectors**
+
+Check `tests/e2e/test_chat_pipeline.py` for any references to old testids and update.
+
+- [ ] **Step 3: Run all tests and update Playwright screenshots**
+
+```bash
+# Backend tests
+ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/
+
+# Frontend unit tests
+cd frontend && npm test -- --run
+
+# Playwright (will generate new screenshots)
+cd frontend && npm run test:playwright -- --update-snapshots
+```
+
+Visually inspect Playwright screenshots to confirm new toggle layout renders correctly.
+
+### Task 21: Address Code Review Phase 9 Issues (from docs/code-review-phase9.md)
+
+**Files:**
+- Modify: `backend/tally_bridge/mock_handler.py`
+- Modify: `backend/api/models.py`
+- Modify: `backend/api/tally_mode.py`
+- Modify: `backend/api/health.py`
+
+- [ ] **Step 1: Fix Bills Payable fixture mapping**
+
+In `mock_handler.py`, add comment explaining Bills Payable uses receivable fixture (or create `bills_payable.xml` if data exists).
+
+- [ ] **Step 2: Use Literal type for TallyModeRequest.mode**
+
+In `backend/api/models.py`, replace `mode: str` + validator with:
+```python
+from typing import Literal
+mode: Literal["mock", "live"]
+```
+Remove the `@field_validator`.
+
+- [ ] **Step 3: Add cache_clear docstring note**
+
+In `mock_handler.py`, add docstring to `_load_fixture` noting `_load_fixture.cache_clear()` for dev use.
+
+- [ ] **Step 4: Switch to pathlib.Path**
+
+In `mock_handler.py`, replace `os.path` usage with `pathlib.Path`.
+
+- [ ] **Step 5: Add logging to tally-mode endpoint**
+
+In `backend/api/tally_mode.py`, add `logger.info(...)` on mode switch.
+
+- [ ] **Step 6: Always return mode in health response**
+
+In `backend/api/health.py`, set `mode="live"` as default instead of `None`.

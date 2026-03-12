@@ -58,7 +58,7 @@ class TestTallyModeAPI:
         assert body["mode"] == "mock"
         assert body["tally_connected"] is True
 
-    async def test_health_mode_none_when_live(self, client):
+    async def test_health_mode_live_when_live(self, client):
         resp = await client.get("/api/health")
         body = resp.json()
-        assert body.get("mode") is None
+        assert body["mode"] == "live"
