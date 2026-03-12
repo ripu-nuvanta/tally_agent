@@ -4,6 +4,7 @@ import type {
   ChatResponse,
   CompaniesResponse,
   HealthResponse,
+  TallyModeResponse,
 } from "../types";
 
 const api = axios.create({
@@ -24,5 +25,15 @@ export async function getHealth(): Promise<HealthResponse> {
 
 export async function getCompanies(): Promise<CompaniesResponse> {
   const { data } = await api.get<CompaniesResponse>("/companies");
+  return data;
+}
+
+export async function getTallyMode(): Promise<TallyModeResponse> {
+  const { data } = await api.get<TallyModeResponse>("/tally-mode");
+  return data;
+}
+
+export async function setTallyMode(mode: "mock" | "live"): Promise<TallyModeResponse> {
+  const { data } = await api.post<TallyModeResponse>("/tally-mode", { mode });
   return data;
 }

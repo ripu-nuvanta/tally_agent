@@ -37,6 +37,7 @@ export interface HealthResponse {
   status: string;
   tally_connected: boolean;
   tally_url: string;
+  mode?: "mock" | "live" | null;
 }
 
 export interface Company {
@@ -45,4 +46,12 @@ export interface Company {
 
 export interface CompaniesResponse {
   companies: Company[];
+}
+
+export interface TallyModeResponse {
+  mode: "mock" | "live";
+}
+
+export interface TallyModeRequest {
+  mode: "mock" | "live";
 }
