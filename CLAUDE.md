@@ -75,9 +75,13 @@ cd frontend
 npm install
 npm run dev                          # Vite dev server
 npm run build                        # Production build
-npm test                             # Vitest unit tests (69 tests)
+npm test                             # Vitest unit tests (111 tests)
 npm run test:watch                   # Vitest in watch mode
-npm run test:playwright              # Playwright visual tests (30 tests: responsive + eval-visual × 3 viewports)
+npm run test:playwright              # Playwright visual tests (39 tests: responsive + eval-visual × 3 viewports)
+
+# IMPORTANT: To force-regenerate Playwright screenshots, DELETE the __screenshots__
+# directory first. Playwright's pixel-diff threshold can hide stale content.
+rm -rf tests/playwright/__screenshots__ && npm run test:playwright -- --update-snapshots
 ```
 
 ## Architecture
@@ -148,8 +152,9 @@ VITE_API_URL (default: http://localhost:8000)
 - **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. 12 tests.
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var. Uses conversation loop to handle Claude follow-ups automatically. 15 tests.
 - **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 7 scenarios, 44 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`.
-- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 71 tests.
-- **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (5 fixtures × 3 viewports) = 30 tests. **IMPORTANT: After running Playwright tests, always visually inspect the eval-visual screenshots** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/eval-visual.spec.ts/` before reporting pass/fail. Check for: blank space, content cutoff, header leaking into screenshots, missing text/tables/charts. A test suite reporting "30 passed" is NOT sufficient — screenshots must be visually verified.
+- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 111 tests.
+- **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) = 39 tests. **IMPORTANT: After running Playwright tests, always visually inspect the eval-visual screenshots** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/eval-visual.spec.ts/` before reporting pass/fail. Check for: blank space, content cutoff, header leaking into screenshots, missing text/tables/charts. A test suite reporting "39 passed" is NOT sufficient — screenshots must be visually verified.
+- **Playwright screenshot regeneration**: Always delete `frontend/tests/playwright/__screenshots__/` before running `--update-snapshots`. Playwright's pixel-diff threshold can silently keep stale screenshots that don't reflect code changes (e.g., updated button text, new header layout).
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
 
