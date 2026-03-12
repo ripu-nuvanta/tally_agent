@@ -40,7 +40,7 @@ Down from 6 buttons to 5. Removed: "Stock summary". Changed: "this month" → "l
 | Frontend unit | Update button text assertions (6→5), click handler tests for each button |
 | Playwright | Update responsive screenshots showing empty chat state, add click interaction test |
 | E2E | Update any tests sending old button queries |
-| Eval scenarios | `quick_actions.yaml`: update text, remove stock summary turn. `manual_test_regression.yaml`: "P&L this month" → "P&L last month" |
+| Eval scenarios | `quick_actions.yaml`: update text, remove stock summary turn, update `checks` text ("this month" → "last month"). `manual_test_regression.yaml`: "P&L this month" → "P&L last month", update checks text |
 
 ---
 
@@ -51,7 +51,12 @@ Down from 6 buttons to 5. Removed: "Stock summary". Changed: "this month" → "l
 ```
 Frontend toggle → POST /api/tally-mode {"mode": "mock"|"live"}
                 → Backend sets TallyClient.mock_mode = True/False
-                → TallyClient.post() checks mock_mode:
+
+                  GET /api/tally-mode
+                → Returns {"mode": "mock"|"live"}
+                → Frontend calls on mount to initialize toggle state
+
+                  TallyClient.post() checks mock_mode:
                     if True  → mock_handler(xml_request) → XML response
                     if False → httpx.post(tally_host, xml_request) → XML response
 ```
@@ -61,13 +66,17 @@ Frontend toggle → POST /api/tally-mode {"mode": "mock"|"live"}
 - **Built-in handler** (not separate process): Mock logic lives inside the backend, toggled by a flag. No process management needed.
 - **Returns full dataset**: Mock server returns all Bharat Traders data regardless of date parameters. Backend's existing Python-side date filtering (`_filter_vouchers_by_date()`) handles date-range queries.
 - **Backend-driven switching**: Frontend sends toggle request to `POST /api/tally-mode`, backend switches `TallyClient` state. Instant, no restart.
+- **Single-developer tool**: `TallyClient` is a shared singleton — toggling mock mode affects all concurrent requests. This is acceptable for the current single-developer use case. Documented as a known limitation.
+- **One canonical mock implementation**: `mock_handler.py` is the single source of truth for mock pattern-matching. The existing `tests/mocks/mock_tally_server.py` will be refactored to delegate to `mock_handler.py`, eliminating duplication.
+- **Fixture-based data**: Mock data uses enhanced XML fixture files in `tests/fixtures/` (not hardcoded XML strings) loaded at import time. Existing Bharat Traders fixtures are augmented with missing data (vouchers, stock, purchase register). Keeps data human-readable and maintainable.
+- **Optimistic UI with reconciliation**: Frontend toggle is optimistic. On error or reconnect, `GET /api/tally-mode` reconciles state.
+- **Environment config**: `TALLY_MODE: str = "live"` in `backend/config.py` sets initial mode. Useful for CI (`TALLY_MODE=mock pytest`) and headless runs without frontend toggle.
 
 ### New Files
 
 | File | Purpose |
 |------|---------|
-| `backend/tally_bridge/mock_handler.py` | Takes XML request string, pattern-matches report type, returns XML response |
-| `backend/tally_bridge/mock_data.py` | Bharat Traders fixture data: pre-built XML strings for each report type |
+| `backend/tally_bridge/mock_handler.py` | Takes XML request string, pattern-matches report type, returns XML response from fixture files. Single canonical mock implementation — `tests/mocks/mock_tally_server.py` delegates to this. |
 | `backend/api/tally_mode.py` | `POST /api/tally-mode` + `GET /api/tally-mode` endpoints |
 
 ### Modified Files
@@ -76,10 +85,14 @@ Frontend toggle → POST /api/tally-mode {"mode": "mock"|"live"}
 |------|---------|
 | `backend/tally_bridge/client.py` | Add `mock_mode` flag, `post()` short-circuits to mock_handler when active |
 | `backend/api/health.py` | Return `{"tally_connected": true, "mode": "mock"}` when mock active |
-| `backend/main.py` | Register tally_mode routes |
-| `frontend/src/components/Header.tsx` | Toggle button next to health dot, "Mock Tally" label + green indicator |
+| `backend/api/models.py` | Add `mode: str \| None = None` to `HealthResponse`, add `TallyModeResponse` model |
+| `backend/config.py` | Add `TALLY_MODE: str = "live"` to Settings |
+| `backend/main.py` | Register tally_mode routes, initialize `mock_mode` from config |
+| `tests/mocks/mock_tally_server.py` | Refactor to delegate to `mock_handler.py` |
+| `frontend/src/components/Header.tsx` | Toggle button (`data-testid="tally-mode-toggle"`) next to health dot, "Mock Tally" label + green indicator (`data-testid="tally-mode-indicator"`). Calls `GET /api/tally-mode` on mount to initialize state. |
 | `frontend/src/api.ts` | `setTallyMode()` and `getTallyMode()` API calls |
-| `frontend/src/types/index.ts` | `TallyModeResponse` type |
+| `frontend/src/types/index.ts` | `TallyModeResponse` type, add `mode?: string` to `HealthResponse` |
+| `tests/fixtures/` | Augment Bharat Traders fixtures: add purchase_register.xml, expand day_book.xml with all 50 vouchers, expand sales_register.xml with all 16 invoices |
 
 ### Mock Data Scope (from Bharat Traders spec in TALLYPRIME_AGENT_PLAN.md)
 
@@ -118,8 +131,8 @@ All vouchers span **Oct 2025 – Mar 2026**.
 ### `collect.py` Changes
 
 - New CLI arg: `--tally-mode mock|live` (default: `live`)
-- First Playwright action after page load: if `--tally-mode mock`, click frontend Tally toggle, wait for green "Mock Tally" indicator
-- Skip live Tally ground truth collection in mock mode; use `tests/eval/golden/mock_golden.json`
+- First Playwright action after page load: if `--tally-mode mock`, click frontend Tally toggle (`data-testid="tally-mode-toggle"`), wait for indicator (`data-testid="tally-mode-indicator"`) to show "Mock Tally"
+- Skip live Tally ground truth collection in mock mode; use `tests/eval/golden/mock_golden.json` (auto-generated from mock handler output via a generate script)
 - Transcript metadata records `tally_mode: "mock"|"live"`
 
 ### `judge.py` Changes
@@ -129,14 +142,14 @@ All vouchers span **Oct 2025 – Mar 2026**.
 
 ### New Eval Scenario
 
-`mock_tally_validation.yaml` — Queries designed to validate mock coverage: P&L, trial balance, sales trend, top customers, outstanding receivables. Success = comparable eval scores in mock vs live.
+`mock_tally_validation.yaml` — Queries designed to validate mock coverage: P&L, trial balance, sales trend, top customers, outstanding receivables, stock summary. Success = comparable eval scores in mock vs live.
 
 ### Existing Scenario Updates
 
 | Scenario | Change |
 |----------|--------|
-| `quick_actions.yaml` | Update button text ("last month"), remove stock summary turn (6→5 turns) |
-| `manual_test_regression.yaml` | "P&L this month" → "P&L last month" |
+| `quick_actions.yaml` | Update button text ("last month"), remove stock summary turn (6→5 turns), update checks text |
+| `manual_test_regression.yaml` | "P&L this month" → "P&L last month", update checks text |
 
 ### Tests
 
@@ -160,9 +173,15 @@ Content includes:
 
 ---
 
+## Known Limitations
+
+- **Single-user mode switching**: `TallyClient.mock_mode` is a singleton flag. Toggling affects all concurrent requests. Acceptable for single-developer use; not suitable for multi-tenant deployment.
+
+---
+
 ## Out of Scope
 
-- Seed data script execution (mock uses hardcoded fixture data, not seeded Tally)
+- Seed data script execution (mock uses fixture files, not seeded Tally)
 - Agent architecture redesign (extracted to separate plan)
 - Model upgrade evaluation
 - GST report enhancements
