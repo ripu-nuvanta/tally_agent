@@ -1,0 +1,4105 @@
+/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/pytest_asyncio/plugin.py:207: PytestDeprecationWarning: The configuration option "asyncio_default_fixture_loop_scope" is unset.
+The event loop scope for asynchronous fixtures will default to the fixture caching scope. Future versions of pytest-asyncio will default the loop scope for asynchronous fixtures to function scope. Set the default fixture loop scope explicitly in order to avoid unexpected behavior in the future. Valid fixture loop scopes are: "function", "class", "module", "package", "session"
+
+  warnings.warn(PytestDeprecationWarning(_DEFAULT_FIXTURE_LOOP_SCOPE_UNSET))
+============================= test session starts ==============================
+platform darwin -- Python 3.12.7, pytest-8.3.5, pluggy-1.5.0 -- /Users/ripu/miniforge3/envs/py312/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/ripu/work/nuvanta_repos/tally_agent
+configfile: pyproject.toml
+plugins: anyio-4.9.0, Faker-37.1.0, asyncio-0.25.3, langsmith-0.4.4, aiohttp-1.1.0, cov-7.0.0
+asyncio: mode=Mode.AUTO, asyncio_default_fixture_loop_scope=None
+collecting ... collected 19 items
+
+tests/e2e_live/test_live_pipeline.py::test_live_greeting backend.agents.orchestrator | INFO | Orchestrator — classified 'Hello!' as query_type=greeting, requires_chart=False
+
+================================================================================
+TEST: test_live_greeting
+QUERY: Hello!
+================================================================================
+  query_type: greeting
+  session_id: bafc794f-e23a-4716-a067-b4c86fa6f8f7
+  message: Hello! I'm your TallyPrime assistant. Ask me about your accounting data — balances, sales, outstanding bills, profit & loss, and more.
+  data: None
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_list_companies backend.agents.orchestrator | INFO | Orchestrator — classified 'List all companies' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='List all companies'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'list_companies' with input:
+{}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'list_companies' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "name": "Bharat Traders Pvt Ltd",
+      "fy_start": null,
+      "fy_end": null
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+There is **1 company** currently loaded in TallyPrime:
+
+1. **Bharat Traders Pvt Ltd**
+
+Let me know if you'd like to view any reports or data for this company!
+backend.agents.query_agent | INFO | QueryAgent turn 2 — final answer (158 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — FINAL ANSWER:
+There is **1 company** currently loaded in TallyPrime:
+
+1. **Bharat Traders Pvt Ltd**
+
+Let me know if you'd like to view any reports or data for this company!
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 1 tool call(s), 1 data set(s) (1 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=There is **1 company** currently loaded in TallyPrime:
+
+1. **Bharat Traders Pvt Ltd**
+
+Let me know i...
+
+================================================================================
+TEST: test_live_list_companies
+QUERY: List all companies
+================================================================================
+  query_type: simple_lookup
+  session_id: e4098a6a-a9eb-4012-8906-c7e3595744f5
+  message: There is **1 company** currently loaded in TallyPrime:
+
+1. **Bharat Traders Pvt Ltd**
+
+Let me know if you'd like to view any reports or data for this company!
+  data: list with 1 items
+    first: {'name': 'Bharat Traders Pvt Ltd', 'fy_start': None, 'fy_end': None}
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_trial_balance backend.agents.orchestrator | INFO | Orchestrator — classified 'Show trial balance for April 2025 to March 2026' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Show trial balance for April 2025 to March 2026'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_trial_balance' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_trial_balance' full result:
+{
+  "success": true,
+  "data": {
+    "report_name": "Trial Balance",
+    "company": "",
+    "from_date": null,
+    "to_date": null,
+    "rows": [
+      {
+        "account_name": "Capital Account",
+        "debit_amount": 0.0,
+        "credit_amount": 100000.0,
+        "closing_balance": 100000.0
+      },
+      {
+        "account_name": "Current Liabilities",
+        "debit_amount": -279384.87,
+        "credit_amount": 55856.21,
+        "closing_balance": -223528.66
+      },
+      {
+        "account_name": "Fixed Assets",
+        "debit_amount": -208496.0,
+        "credit_amount": 0.0,
+        "closing_balance": -208496.0
+      },
+      {
+        "account_name": "Current Assets",
+        "debit_amount": -1048846.53,
+        "credit_amount": 0.0,
+        "closing_balance": -1048846.53
+      },
+      {
+        "account_name": "Sales Accounts",
+        "debit_amount": 0.0,
+        "credit_amount": 3764350.0,
+        "closing_balance": 3764350.0
+      },
+      {
+        "account_name": "Purchase Accounts",
+        "debit_amount": -32181.61,
+        "credit_amount": 0.0,
+        "closing_balance": -32181.61
+      },
+      {
+        "account_name": "Indirect Expenses",
+        "debit_amount": -2351297.74,
+        "credit_amount": 0.54,
+        "closing_balance": -2351297.2
+      }
+    ],
+    "raw_response": null
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+Here is the **Trial Balance for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+### 📊 Trial Balance — 01-Apr-2025 to 31-Mar-2026
+
+| Account Name | Debit (₹) | Credit (₹) | Closing Balance (₹) |
+|---|---|---|---|
+| Capital Account | — | 1,00,000.00 | 1,00,000.00 Cr |
+| Current Liabilities | 2,79,384.87 | 55,856.21 | 2,23,528.66 Dr |
+| Fixed Assets | 2,08,496.00 | — | 2,08,496.00 Dr |
+| Current Assets | 10,48,846.53 | — | 10,48,846.53 Dr |
+| Sales Accounts | — | 37,64,350.00 | 37,64,350.00 Cr |
+| Purchase Accounts | 32,181.61 | — | 32,181.61 Dr |
+| Indirect Expenses | 23,51,297.74 | 0.54 | 23,51,297.20 Dr |
+
+---
+
+### 📝 Key Highlights:
+
+- **Sales (Revenue):** ₹37,64,350.00 Cr — the primary income source for the year.
+- **Indirect Expenses:** ₹23,51,297.20 Dr — the largest expenditure category.
+- **Current Assets:** ₹10,48,846.53 Dr — reflecting working capital deployed.
+- **Fixed Assets:** ₹2,08,496.00 Dr — capital investments held.
+- **Purchase Accounts:** ₹32,181.61 Dr — relatively low direct purchases.
+- **Capital Account:** ₹1,00,000.00 Cr — owner's equity contribution.
+- **Current Liabilities (Net):** ₹2,23,528.66 Dr — net debit position indicating more payments made than liabilities outstanding.
+
+> **Sign Convention:** Negative = Debit (outflow/asset/expense) | Positive = Credit (inflow/liability/income)
+backend.agents.query_agent | INFO | QueryAgent turn 2 — final answer (1326 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — FINAL ANSWER:
+Here is the **Trial Balance for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+### 📊 Trial Balance — 01-Apr-2025 to 31-Mar-2026
+
+| Account Name | Debit (₹) | Credit (₹) | Closing Balance (₹) |
+|---|---|---|---|
+| Capital Account | — | 1,00,000.00 | 1,00,000.00 Cr |
+| Current Liabilities | 2,79,384.87 | 55,856.21 | 2,23,528.66 Dr |
+| Fixed Assets | 2,08,496.00 | — | 2,08,496.00 Dr |
+| Current Assets | 10,48,846.53 | — | 10,48,846.53 Dr |
+| Sales Accounts | — | 37,64,350.00 | 37,64,350.00 Cr |
+| Purchase Accounts | 32,181.61 | — | 32,181.61 Dr |
+| Indirect Expenses | 23,51,297.74 | 0.54 | 23,51,297.20 Dr |
+
+---
+
+### 📝 Key Highlights:
+
+- **Sales (Revenue):** ₹37,64,350.00 Cr — the primary income source for the year.
+- **Indirect Expenses:** ₹23,51,297.20 Dr — the largest expenditure category.
+- **Current Assets:** ₹10,48,846.53 Dr — reflecting working capital deployed.
+- **Fixed Assets:** ₹2,08,496.00 Dr — capital investments held.
+- **Purchase Accounts:** ₹32,181.61 Dr — relatively low direct purchases.
+- **Capital Account:** ₹1,00,000.00 Cr — owner's equity contribution.
+- **Current Liabilities (Net):** ₹2,23,528.66 Dr — net debit position indicating more payments made than liabilities outstanding.
+
+> **Sign Convention:** Negative = Debit (outflow/asset/expense) | Positive = Credit (inflow/liability/income)
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 1 tool call(s), 1 data set(s) (1 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=Here is the **Trial Balance for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+### 📊 Trial Balance — ...
+
+================================================================================
+TEST: test_live_trial_balance
+QUERY: Show trial balance for April 2025 to March 2026
+================================================================================
+  query_type: simple_lookup
+  session_id: 3ee0f7ab-e1d4-4eb3-814b-2fa6d753ddca
+  message: Here is the **Trial Balance for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+### 📊 Trial Balance — 01-Apr-2025 to 31-Mar-2026
+
+| Account Name | Debit (₹) | Credit (₹) | Closing Balance (₹) |
+|---|---|---|---|
+| Capital Account | — | 1,00,000.00 | 1,00,000.00 Cr |
+| Current Liabilities | 2,79,384.87 | 55,856.21 | 2,23,528.66 Dr |
+| Fixed Assets | 2,08,496.00 | — | 2,08,496.00 Dr |
+| Current Assets | 10,48,846.53 | — | 10,48,846.53 Dr |
+| Sales Accounts | — | 37,64,350.00 | 37,64,350.00 Cr |
+| Purchase Accounts | 32,181.61 | — | 32,181.61 Dr |
+| Indirect Expenses | 23,51,297.74 | 0.54 | 23,51,297.20 Dr |
+
+---
+
+### 📝 Key Highlights:
+
+- **Sales (Revenue):** ₹37,64,350.00 Cr — the primary income source for the year.
+- **Indirect Expenses:** ₹23,51,297.20 Dr — the largest expenditure category.
+- **Current Assets:** ₹10,48,846.53 Dr — reflecting working capital deployed.
+- **Fixed Assets:** ₹2,08,496.00 Dr — capital investments held.
+- **Purchase Accounts:** ₹32,181.61 Dr — relatively low direct purchases.
+- **Capital Account:** ₹1,00,000.00 Cr — owner's equity contribution.
+- **Current Liabilities (Net):** ₹2,23,528.66 Dr — net debit position indicating more payments made than liabilities outstanding.
+
+> **Sign Convention:** Negative = Debit (outflow/asset/expense) | Positive = Credit (inflow/liability/income)
+  data: 0 columns, 7 rows
+    first row: {'account_name': 'Capital Account', 'debit_amount': 0.0, 'credit_amount': 100000.0, 'closing_balance': 100000.0}
+    last row:  {'account_name': 'Indirect Expenses', 'debit_amount': -2351297.74, 'credit_amount': 0.54, 'closing_balance': -2351297.2}
+    report_name: Trial Balance
+    company: 
+    from_date: None
+    to_date: None
+    raw_response: None
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_profit_and_loss backend.agents.orchestrator | INFO | Orchestrator — classified 'What is the profit and loss for April 2025 to March 2026?' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='What is the profit and loss for April 2025 to March 2026?'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_profit_and_loss' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_profit_and_loss' full result:
+{
+  "success": true,
+  "data": {
+    "report_name": "Profit and Loss",
+    "company": "",
+    "from_date": null,
+    "to_date": null,
+    "rows": [
+      {
+        "account_name": "Sales Accounts",
+        "debit_amount": 0.0,
+        "credit_amount": 3764350.0,
+        "closing_balance": 3764350.0
+      },
+      {
+        "account_name": "Cost of Sales :",
+        "debit_amount": -32181.61,
+        "credit_amount": 0.0,
+        "closing_balance": -32181.61
+      },
+      {
+        "account_name": "Opening Stock",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Add: Purchase Accounts",
+        "debit_amount": -32181.61,
+        "credit_amount": 0.0,
+        "closing_balance": -32181.61
+      },
+      {
+        "account_name": "Less: Closing Stock",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Indirect Expenses",
+        "debit_amount": -2351297.2,
+        "credit_amount": 0.0,
+        "closing_balance": -2351297.2
+      }
+    ],
+    "raw_response": null
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "account_name": "Sales Accounts",
+      "closing_balance": 3764350.0
+    },
+    {
+      "account_name": "Cost of Sales (Purchases)",
+      "closing_balance": -32181.61
+    },
+    {
+      "account_name": "Indirect Expenses",
+      "closing_balance": -2351297.2
+    }
+  ],
+  "numeric_fields": [
+    "closing_balance"
+  ]
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "closing_balance": 1380871.1899999997
+      }
+    ],
+    "headers": [
+      "closing_balance"
+    ],
+    "rows": [
+      [
+        1380871.1899999997
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — Claude text:
+Here is the **Profit & Loss Statement for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+**Income**
+- **Sales Accounts:** ₹37,64,350.00
+
+**Expenses**
+- **Cost of Sales (Purchases):** ₹32,181.61
+- **Indirect Expenses:** ₹23,51,297.20
+- **Total Expenses:** ₹23,83,478.81
+
+---
+
+**Net Profit: ₹13,80,871.19**
+
+---
+
+**Key Highlights:**
+- The company generated total revenue of **₹37,64,350.00** from sales during the year.
+- Direct costs (purchases) were relatively low at **₹32,181.61**, with no opening or closing stock recorded.
+- Indirect expenses were the major cost driver at **₹23,51,297.20**.
+- The business closed the financial year with a healthy **net profit of ₹13,80,871.19**, representing approximately **36.7% net profit margin** on sales.
+backend.agents.query_agent | INFO | QueryAgent turn 3 — final answer (748 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — FINAL ANSWER:
+Here is the **Profit & Loss Statement for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+**Income**
+- **Sales Accounts:** ₹37,64,350.00
+
+**Expenses**
+- **Cost of Sales (Purchases):** ₹32,181.61
+- **Indirect Expenses:** ₹23,51,297.20
+- **Total Expenses:** ₹23,83,478.81
+
+---
+
+**Net Profit: ₹13,80,871.19**
+
+---
+
+**Key Highlights:**
+- The company generated total revenue of **₹37,64,350.00** from sales during the year.
+- Direct costs (purchases) were relatively low at **₹32,181.61**, with no opening or closing stock recorded.
+- Indirect expenses were the major cost driver at **₹23,51,297.20**.
+- The business closed the financial year with a healthy **net profit of ₹13,80,871.19**, representing approximately **36.7% net profit margin** on sales.
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 2 tool call(s), 2 data set(s) (1 raw, 1 computed)
+  [turn 1] query_type=simple_lookup, message=Here is the **Profit & Loss Statement for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+**Income**
+-...
+
+================================================================================
+TEST: test_live_profit_and_loss
+QUERY: What is the profit and loss for April 2025 to March 2026?
+================================================================================
+  query_type: simple_lookup
+  session_id: 12e3e702-9f7c-4222-892a-380bb9bbb0eb
+  message: Here is the **Profit & Loss Statement for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+**Income**
+- **Sales Accounts:** ₹37,64,350.00
+
+**Expenses**
+- **Cost of Sales (Purchases):** ₹32,181.61
+- **Indirect Expenses:** ₹23,51,297.20
+- **Total Expenses:** ₹23,83,478.81
+
+---
+
+**Net Profit: ₹13,80,871.19**
+
+---
+
+**Key Highlights:**
+- The company generated total revenue of **₹37,64,350.00** from sales during the year.
+- Direct costs (purchases) were relatively low at **₹32,181.61**, with no opening or closing stock recorded.
+- Indirect expenses were the major cost driver at **₹23,51,297.20**.
+- The business closed the financial year with a healthy **net profit of ₹13,80,871.19**, representing approximately **36.7% net profit margin** on sales.
+  data: list with 2 items
+    first: {'report_name': 'Profit and Loss', 'company': '', 'from_date': None, 'to_date': None, 'rows': [{'account_name': 'Sales Accounts', 'debit_amount': 0.0, 'credit_amount': 3764350.0, 'closing_balance': 37
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_balance_sheet backend.agents.orchestrator | INFO | Orchestrator — classified 'Show balance sheet as of March 2026' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Show balance sheet as of March 2026'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_balance_sheet' with input:
+{
+  "as_on_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_balance_sheet' full result:
+{
+  "success": true,
+  "data": {
+    "report_name": "Balance Sheet",
+    "company": "",
+    "from_date": null,
+    "to_date": null,
+    "rows": [
+      {
+        "account_name": "Capital Account",
+        "debit_amount": 0.0,
+        "credit_amount": 100000.0,
+        "closing_balance": 100000.0
+      },
+      {
+        "account_name": "Loans (Liability)",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Current Liabilities",
+        "debit_amount": -223528.66,
+        "credit_amount": 0.0,
+        "closing_balance": -223528.66
+      },
+      {
+        "account_name": "Suspense A/c",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Profit & Loss A/c",
+        "debit_amount": 0.0,
+        "credit_amount": 1380871.19,
+        "closing_balance": 1380871.19
+      },
+      {
+        "account_name": "Fixed Assets",
+        "debit_amount": -208496.0,
+        "credit_amount": 0.0,
+        "closing_balance": -208496.0
+      },
+      {
+        "account_name": "Current Assets",
+        "debit_amount": -1048846.53,
+        "credit_amount": 0.0,
+        "closing_balance": -1048846.53
+      }
+    ],
+    "raw_response": null
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+Here is the **Balance Sheet as on 31st March 2026**:
+
+---
+
+### 📋 Liabilities
+
+| Account | Amount |
+|---|---|
+| Capital Account | ₹1,00,000.00 |
+| Loans (Liability) | ₹0.00 |
+| Current Liabilities | ₹2,23,528.66 |
+| Profit & Loss A/c | ₹13,80,871.19 |
+
+> ⚠️ Note: Current Liabilities show a **debit (negative) closing balance of ₹2,23,528.66**, which is unusual — this may indicate a net debit position in payables/advances and should be reviewed.
+
+---
+
+### 📋 Assets
+
+| Account | Amount |
+|---|---|
+| Fixed Assets | ₹2,08,496.00 |
+| Current Assets | ₹10,48,846.53 |
+
+---
+
+### 📊 Summary
+
+| | Amount |
+|---|---|
+| **Total Liabilities (incl. P&L)** | ₹14,80,871.19 |
+| **Total Assets** | ₹12,57,342.53 |
+
+---
+
+**Key Highlights:**
+- **Capital Account** stands at ₹1,00,000.00.
+- **Profit & Loss A/c** shows a healthy credit balance of ₹13,80,871.19, indicating accumulated profits.
+- **Current Assets** are the largest asset group at ₹10,48,846.53.
+- **Fixed Assets** stand at ₹2,08,496.00.
+- The **Current Liabilities** group shows an unusual negative (debit) balance of ₹2,23,528.66 — this warrants a closer look at the underlying ledgers.
+
+Would you like to drill down into any specific group, such as Current Assets or Current Liabilities?
+backend.agents.query_agent | INFO | QueryAgent turn 2 — final answer (1238 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — FINAL ANSWER:
+Here is the **Balance Sheet as on 31st March 2026**:
+
+---
+
+### 📋 Liabilities
+
+| Account | Amount |
+|---|---|
+| Capital Account | ₹1,00,000.00 |
+| Loans (Liability) | ₹0.00 |
+| Current Liabilities | ₹2,23,528.66 |
+| Profit & Loss A/c | ₹13,80,871.19 |
+
+> ⚠️ Note: Current Liabilities show a **debit (negative) closing balance of ₹2,23,528.66**, which is unusual — this may indicate a net debit position in payables/advances and should be reviewed.
+
+---
+
+### 📋 Assets
+
+| Account | Amount |
+|---|---|
+| Fixed Assets | ₹2,08,496.00 |
+| Current Assets | ₹10,48,846.53 |
+
+---
+
+### 📊 Summary
+
+| | Amount |
+|---|---|
+| **Total Liabilities (incl. P&L)** | ₹14,80,871.19 |
+| **Total Assets** | ₹12,57,342.53 |
+
+---
+
+**Key Highlights:**
+- **Capital Account** stands at ₹1,00,000.00.
+- **Profit & Loss A/c** shows a healthy credit balance of ₹13,80,871.19, indicating accumulated profits.
+- **Current Assets** are the largest asset group at ₹10,48,846.53.
+- **Fixed Assets** stand at ₹2,08,496.00.
+- The **Current Liabilities** group shows an unusual negative (debit) balance of ₹2,23,528.66 — this warrants a closer look at the underlying ledgers.
+
+Would you like to drill down into any specific group, such as Current Assets or Current Liabilities?
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 1 tool call(s), 1 data set(s) (1 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=Here is the **Balance Sheet as on 31st March 2026**:
+
+---
+
+### 📋 Liabilities
+
+| Account | Amount |
+|...
+
+================================================================================
+TEST: test_live_balance_sheet
+QUERY: Show balance sheet as of March 2026
+================================================================================
+  query_type: simple_lookup
+  session_id: 66933e3c-a2a9-42fb-a497-38c023bd7c40
+  message: Here is the **Balance Sheet as on 31st March 2026**:
+
+---
+
+### 📋 Liabilities
+
+| Account | Amount |
+|---|---|
+| Capital Account | ₹1,00,000.00 |
+| Loans (Liability) | ₹0.00 |
+| Current Liabilities | ₹2,23,528.66 |
+| Profit & Loss A/c | ₹13,80,871.19 |
+
+> ⚠️ Note: Current Liabilities show a **debit (negative) closing balance of ₹2,23,528.66**, which is unusual — this may indicate a net debit position in payables/advances and should be reviewed.
+
+---
+
+### 📋 Assets
+
+| Account | Amount |
+|---|---|
+| Fixed Assets | ₹2,08,496.00 |
+| Current Assets | ₹10,48,846.53 |
+
+---
+
+### 📊 Summary
+
+| | Amount |
+|---|---|
+| **Total Liabilities (incl. P&L)** | ₹14,80,871.19 |
+| **Total Assets** | ₹12,57,342.53 |
+
+---
+
+**Key Highlights:**
+- **Capital Account** stands at ₹1,00,000.00.
+- **Profit & Loss A/c** shows a healthy credit balance of ₹13,80,871.19, indicating accumulated profits.
+- **Current Assets** are the largest asset group at ₹10,48,846.53.
+- **Fixed Assets** stand at ₹2,08,496.00.
+- The **Current Liabilities** group shows an unusual negative (debit) balance of ₹2,23,528.66 — this warrants a closer look at the underlying ledgers.
+
+Would you like to drill down into any specific group, such as Current Assets or Current Liabilities?
+  data: 0 columns, 7 rows
+    first row: {'account_name': 'Capital Account', 'debit_amount': 0.0, 'credit_amount': 100000.0, 'closing_balance': 100000.0}
+    last row:  {'account_name': 'Current Assets', 'debit_amount': -1048846.53, 'credit_amount': 0.0, 'closing_balance': -1048846.53}
+    report_name: Balance Sheet
+    company: 
+    from_date: None
+    to_date: None
+    raw_response: None
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_receivables backend.agents.orchestrator | INFO | Orchestrator — classified 'Show outstanding receivables' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Show outstanding receivables'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=2
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+I'll fetch the outstanding receivables as of today's date (12-03-2026) right away!
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_outstanding_receivables' with input:
+{
+  "as_on_date": "12-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_outstanding_receivables' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
+      "bill_number": "#1",
+      "bill_date": "2025-07-02",
+      "due_date": null,
+      "amount": 200000.0,
+      "pending_amount": 200000.0
+    },
+    {
+      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
+      "bill_number": "#4",
+      "bill_date": "2025-08-02",
+      "due_date": null,
+      "amount": 200000.0,
+      "pending_amount": 200000.0
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
+      "bill_number": "#1",
+      "bill_date": "2025-07-02",
+      "amount": 200000.0,
+      "pending_amount": 200000.0
+    },
+    {
+      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
+      "bill_number": "#4",
+      "bill_date": "2025-08-02",
+      "amount": 200000.0,
+      "pending_amount": 200000.0
+    }
+  ],
+  "numeric_fields": [
+    "amount",
+    "pending_amount"
+  ]
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 400000.0,
+        "pending_amount": 400000.0
+      }
+    ],
+    "headers": [
+      "amount",
+      "pending_amount"
+    ],
+    "rows": [
+      [
+        400000.0,
+        400000.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — Claude text:
+Here is a summary of your **Outstanding Receivables as on 12-03-2026**:
+
+---
+
+**Party:** HCODE TECHNOLOGIES PRIVATE LIMITED
+
+| Bill No. | Bill Date | Amount | Pending Amount |
+|----------|-----------|--------|----------------|
+| #1 | 02-Jul-2025 | ₹2,00,000.00 | ₹2,00,000.00 |
+| #4 | 02-Aug-2025 | ₹2,00,000.00 | ₹2,00,000.00 |
+
+---
+
+**📌 Key Highlights:**
+- **Total Bills Outstanding:** 2
+- **Total Billed Amount:** ₹4,00,000.00
+- **Total Pending Amount:** ₹4,00,000.00
+- **Party:** All receivables are from a single party — **HCODE TECHNOLOGIES PRIVATE LIMITED**
+- **Due Dates:** No due dates have been set for either bill — consider updating payment terms for better follow-up.
+
+⚠️ Both bills are **fully unpaid** (100% pending), with the oldest dating back to **2nd July 2025** — over **8 months** overdue. It is recommended to follow up promptly with the party for collection.
+backend.agents.query_agent | INFO | QueryAgent turn 3 — final answer (881 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — FINAL ANSWER:
+Here is a summary of your **Outstanding Receivables as on 12-03-2026**:
+
+---
+
+**Party:** HCODE TECHNOLOGIES PRIVATE LIMITED
+
+| Bill No. | Bill Date | Amount | Pending Amount |
+|----------|-----------|--------|----------------|
+| #1 | 02-Jul-2025 | ₹2,00,000.00 | ₹2,00,000.00 |
+| #4 | 02-Aug-2025 | ₹2,00,000.00 | ₹2,00,000.00 |
+
+---
+
+**📌 Key Highlights:**
+- **Total Bills Outstanding:** 2
+- **Total Billed Amount:** ₹4,00,000.00
+- **Total Pending Amount:** ₹4,00,000.00
+- **Party:** All receivables are from a single party — **HCODE TECHNOLOGIES PRIVATE LIMITED**
+- **Due Dates:** No due dates have been set for either bill — consider updating payment terms for better follow-up.
+
+⚠️ Both bills are **fully unpaid** (100% pending), with the oldest dating back to **2nd July 2025** — over **8 months** overdue. It is recommended to follow up promptly with the party for collection.
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 2 tool call(s), 2 data set(s) (1 raw, 1 computed)
+  [turn 1] query_type=simple_lookup, message=Here is a summary of your **Outstanding Receivables as on 12-03-2026**:
+
+---
+
+**Party:** HCODE TECHN...
+
+================================================================================
+TEST: test_live_receivables
+QUERY: Show outstanding receivables
+================================================================================
+  query_type: simple_lookup
+  session_id: 5ba7b76c-2e00-4249-afad-bfdd7ddfa43f
+  message: Here is a summary of your **Outstanding Receivables as on 12-03-2026**:
+
+---
+
+**Party:** HCODE TECHNOLOGIES PRIVATE LIMITED
+
+| Bill No. | Bill Date | Amount | Pending Amount |
+|----------|-----------|--------|----------------|
+| #1 | 02-Jul-2025 | ₹2,00,000.00 | ₹2,00,000.00 |
+| #4 | 02-Aug-2025 | ₹2,00,000.00 | ₹2,00,000.00 |
+
+---
+
+**📌 Key Highlights:**
+- **Total Bills Outstanding:** 2
+- **Total Billed Amount:** ₹4,00,000.00
+- **Total Pending Amount:** ₹4,00,000.00
+- **Party:** All receivables are from a single party — **HCODE TECHNOLOGIES PRIVATE LIMITED**
+- **Due Dates:** No due dates have been set for either bill — consider updating payment terms for better follow-up.
+
+⚠️ Both bills are **fully unpaid** (100% pending), with the oldest dating back to **2nd July 2025** — over **8 months** overdue. It is recommended to follow up promptly with the party for collection.
+  data: list with 3 items
+    first: {'party_name': 'HCODE TECHNOLOGIES PRIVATE LIMITED', 'bill_number': '#1', 'bill_date': '2025-07-02', 'due_date': None, 'amount': 200000.0, 'pending_amount': 200000.0, '_dataset_index': 0}
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_sales_register backend.agents.orchestrator | INFO | Orchestrator — classified 'Show sales register for April 2025 to March 2026' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Show sales register for April 2025 to March 2026'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_sales_register' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_sales_register' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "date": "20251001",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S001",
+      "party_name": "Apex Technologies Pvt Ltd",
+      "narration": "Invoice #S001 - Laptops and peripherals",
+      "ledger_entries": [
+        {
+          "ledger_name": "Apex Technologies Pvt Ltd",
+          "amount": -94000.0
+        }
+      ]
+    },
+    {
+      "date": "20251008",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S002",
+      "party_name": "Sunrise Electronics Mumbai",
+      "narration": "Invoice #S002 - Samsung products",
+      "ledger_entries": [
+        {
+          "ledger_name": "Sunrise Electronics Mumbai",
+          "amount": -110500.0
+        }
+      ]
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+Here is the **Sales Register for FY 2025-26 (April 2025 – March 2026)**. A total of **2 sales vouchers** were recorded during the period:
+
+1. **01-Oct-2025 | S001 | Apex Technologies Pvt Ltd**
+   - Laptops and peripherals
+   - Amount: ₹94,000.00
+
+2. **08-Oct-2025 | S002 | Sunrise Electronics Mumbai**
+   - Samsung products
+   - Amount: ₹1,10,500.00
+
+**Key Highlights:**
+- **Total Sales Vouchers:** 2
+- **Total Sales Value:** ₹2,04,500.00
+- **Period with Activity:** October 2025 only (no sales recorded in other months)
+- **Parties:** Apex Technologies Pvt Ltd and Sunrise Electronics Mumbai
+
+> ⚠️ Note: Sales activity appears to be limited to October 2025. You may want to verify if all vouchers have been entered in Tally for the remaining months of FY 2025-26.
+backend.agents.query_agent | INFO | QueryAgent turn 2 — final answer (764 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — FINAL ANSWER:
+Here is the **Sales Register for FY 2025-26 (April 2025 – March 2026)**. A total of **2 sales vouchers** were recorded during the period:
+
+1. **01-Oct-2025 | S001 | Apex Technologies Pvt Ltd**
+   - Laptops and peripherals
+   - Amount: ₹94,000.00
+
+2. **08-Oct-2025 | S002 | Sunrise Electronics Mumbai**
+   - Samsung products
+   - Amount: ₹1,10,500.00
+
+**Key Highlights:**
+- **Total Sales Vouchers:** 2
+- **Total Sales Value:** ₹2,04,500.00
+- **Period with Activity:** October 2025 only (no sales recorded in other months)
+- **Parties:** Apex Technologies Pvt Ltd and Sunrise Electronics Mumbai
+
+> ⚠️ Note: Sales activity appears to be limited to October 2025. You may want to verify if all vouchers have been entered in Tally for the remaining months of FY 2025-26.
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 1 tool call(s), 1 data set(s) (1 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=Here is the **Sales Register for FY 2025-26 (April 2025 – March 2026)**. A total of **2 sales vouche...
+
+================================================================================
+TEST: test_live_sales_register
+QUERY: Show sales register for April 2025 to March 2026
+================================================================================
+  query_type: simple_lookup
+  session_id: 5a148a64-eec9-4ddf-9ac8-ba7a3134a95d
+  message: Here is the **Sales Register for FY 2025-26 (April 2025 – March 2026)**. A total of **2 sales vouchers** were recorded during the period:
+
+1. **01-Oct-2025 | S001 | Apex Technologies Pvt Ltd**
+   - Laptops and peripherals
+   - Amount: ₹94,000.00
+
+2. **08-Oct-2025 | S002 | Sunrise Electronics Mumbai**
+   - Samsung products
+   - Amount: ₹1,10,500.00
+
+**Key Highlights:**
+- **Total Sales Vouchers:** 2
+- **Total Sales Value:** ₹2,04,500.00
+- **Period with Activity:** October 2025 only (no sales recorded in other months)
+- **Parties:** Apex Technologies Pvt Ltd and Sunrise Electronics Mumbai
+
+> ⚠️ Note: Sales activity appears to be limited to October 2025. You may want to verify if all vouchers have been entered in Tally for the remaining months of FY 2025-26.
+  data: list with 2 items
+    first: {'date': '20251001', 'month': 'Oct 2025', 'voucher_type': 'Sales', 'voucher_number': 'S001', 'party_name': 'Apex Technologies Pvt Ltd', 'narration': 'Invoice #S001 - Laptops and peripherals', 'ledger_
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_top_customers backend.agents.orchestrator | INFO | Orchestrator — classified 'Top 5 customers by sales for April 2025 to March 2026' as query_type=top_n, requires_chart=True
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Top 5 customers by sales for April 2025 to March 2026'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=2
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+I'll fetch the sales register for FY 2025-26 right away!
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_sales_register' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_sales_register' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "date": "20251001",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S001",
+      "party_name": "Apex Technologies Pvt Ltd",
+      "narration": "Invoice #S001 - Laptops and peripherals",
+      "ledger_entries": [
+        {
+          "ledger_name": "Apex Technologies Pvt Ltd",
+          "amount": -94000.0
+        }
+      ]
+    },
+    {
+      "date": "20251008",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S002",
+      "party_name": "Sunrise Electronics Mumbai",
+      "narration": "Invoice #S002 - Samsung products",
+      "ledger_entries": [
+        {
+          "ledger_name": "Sunrise Electronics Mumbai",
+          "amount": -110500.0
+        }
+      ]
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    },
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ],
+  "group_by": "party_name"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": 94000.0
+      },
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": 110500.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Apex Technologies Pvt Ltd",
+        94000.0
+      ],
+      [
+        "Sunrise Electronics Mumbai",
+        110500.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 3 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 3 — calling tool 'sort_by_field' with input:
+{
+  "records": [
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    },
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    }
+  ],
+  "field": "amount",
+  "label_field": "party_name",
+  "limit": 5,
+  "descending": true
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — tool 'sort_by_field' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": 110500.0
+      },
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": 94000.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Sunrise Electronics Mumbai",
+        110500.0
+      ],
+      [
+        "Apex Technologies Pvt Ltd",
+        94000.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 4 — sending 7 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 4 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — Claude text:
+Here are the **Top 5 Customers by Sales for FY 2025-26 (April 2025 – March 2026)**:
+
+> ⚠️ **Note:** Only **2 customers** have sales recorded in Tally for this period. Here's the ranking:
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+
+**Key Highlights:**
+- 📊 **Total Sales:** ₹2,04,500.00
+- 🥇 **Top Customer:** Sunrise Electronics Mumbai with ₹1,10,500.00 (~54% of total sales)
+- Only **2 sales vouchers** (S001 & S002) were recorded in the entire FY 2025-26
+
+If you'd like a deeper drill-down — such as monthly trend, product-wise breakup, or outstanding receivables for these customers — just let me know!
+backend.agents.query_agent | INFO | QueryAgent turn 4 — final answer (727 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — FINAL ANSWER:
+Here are the **Top 5 Customers by Sales for FY 2025-26 (April 2025 – March 2026)**:
+
+> ⚠️ **Note:** Only **2 customers** have sales recorded in Tally for this period. Here's the ranking:
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+
+**Key Highlights:**
+- 📊 **Total Sales:** ₹2,04,500.00
+- 🥇 **Top Customer:** Sunrise Electronics Mumbai with ₹1,10,500.00 (~54% of total sales)
+- Only **2 sales vouchers** (S001 & S002) were recorded in the entire FY 2025-26
+
+If you'd like a deeper drill-down — such as monthly trend, product-wise breakup, or outstanding receivables for these customers — just let me know!
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 3 tool call(s), 3 data set(s) (1 raw, 2 computed)
+backend.agents.orchestrator | INFO | Orchestrator — routing to AnalysisAgent (query_type=top_n)
+backend.agents.analysis_agent | INFO | AnalysisAgent start — query_type=top_n, query='Top 5 customers by sales for April 2025 to March 2026'
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — stop_reason=tool_use
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — Claude text:
+I need to first aggregate the sales by customer, then rank them to find the top 5.
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — 1 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'compute_totals' with input:
+{
+  "records": [
+    {
+      "date": "20251001",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S001",
+      "party_name": "Apex Technologies Pvt Ltd",
+      "narration": "Invoice #S001 - Laptops and peripherals",
+      "ledger_name": "Apex Technologies Pvt Ltd",
+      "amount": -94000.0
+    },
+    {
+      "date": "20251008",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S002",
+      "party_name": "Sunrise Electronics Mumbai",
+      "narration": "Invoice #S002 - Samsung products",
+      "ledger_name": "Sunrise Electronics Mumbai",
+      "amount": -110500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ],
+  "group_by": "party_name"
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": -94000.0
+      },
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": -110500.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Apex Technologies Pvt Ltd",
+        -94000.0
+      ],
+      [
+        "Sunrise Electronics Mumbai",
+        -110500.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — stop_reason=tool_use
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — 1 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — calling 'sort_by_field' with input:
+{
+  "records": [
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    },
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    }
+  ],
+  "field": "amount",
+  "label_field": "party_name",
+  "limit": 5,
+  "descending": true
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — tool 'sort_by_field' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": 110500.0
+      },
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": 94000.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Sunrise Electronics Mumbai",
+        110500.0
+      ],
+      [
+        "Apex Technologies Pvt Ltd",
+        94000.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 3 — stop_reason=tool_use
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 3 — 1 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 3 — calling 'compute_totals' with input:
+{
+  "records": [
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    },
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 3 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 204500.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        204500.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 4 — stop_reason=end_turn
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 4 — Claude text:
+## 🏆 Top 5 Customers by Sales — Apr 2025 to Mar 2026
+
+> **Note:** Sales data is available only for **October 2025** (2 transactions). No sales transactions were recorded for Apr–Sep 2025 or Nov 2025–Mar 2026 in the Tally data provided. Figures below represent **invoice values (incl. GST)** as booked in Tally. Only **2 customers** were found — fewer than the requested top 5.
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 🥇 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 🥈 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| **Total** | | **₹2,04,500.00** |
+
+---
+
+### Key Insights
+
+- **Sunrise Electronics Mumbai** is the top customer with sales of ₹1,10,500.00, accounting for **~54%** of total sales in this period.
+- **Apex Technologies Pvt Ltd** follows at ₹94,000.00, contributing the remaining **~46%** — making this a near-even split between just two customers.
+- Both sales were recorded in **October 2025** only — the business has a very narrow data window, and **no transactions exist** for the remaining 11 months of FY 2025–26 in the provided dataset.
+- The **customer base is highly concentrated** — with only 2 customers on record, there is significant dependency risk. A broader customer base would reduce revenue concentration.
+- **Total sales for the FY stand at ₹2,04,500.00** — this may be partial/incomplete data; please verify that all sales vouchers for Apr 2025–Mar 2026 have been synced from Tally.
+
+Chart suggestion: bar
+Chart title: Top Customers by Sales — FY 2025–26 (Oct 2025 Data)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 4 — final answer (1535 chars)
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 4 — FINAL ANSWER:
+## 🏆 Top 5 Customers by Sales — Apr 2025 to Mar 2026
+
+> **Note:** Sales data is available only for **October 2025** (2 transactions). No sales transactions were recorded for Apr–Sep 2025 or Nov 2025–Mar 2026 in the Tally data provided. Figures below represent **invoice values (incl. GST)** as booked in Tally. Only **2 customers** were found — fewer than the requested top 5.
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 🥇 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 🥈 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| **Total** | | **₹2,04,500.00** |
+
+---
+
+### Key Insights
+
+- **Sunrise Electronics Mumbai** is the top customer with sales of ₹1,10,500.00, accounting for **~54%** of total sales in this period.
+- **Apex Technologies Pvt Ltd** follows at ₹94,000.00, contributing the remaining **~46%** — making this a near-even split between just two customers.
+- Both sales were recorded in **October 2025** only — the business has a very narrow data window, and **no transactions exist** for the remaining 11 months of FY 2025–26 in the provided dataset.
+- The **customer base is highly concentrated** — with only 2 customers on record, there is significant dependency risk. A broader customer base would reduce revenue concentration.
+- **Total sales for the FY stand at ₹2,04,500.00** — this may be partial/incomplete data; please verify that all sales vouchers for Apr 2025–Mar 2026 have been synced from Tally.
+
+Chart suggestion: bar
+Chart title: Top Customers by Sales — FY 2025–26 (Oct 2025 Data)
+backend.agents.orchestrator | INFO | Orchestrator — AnalysisAgent returned 3 tool call(s), chart_suggestion=bar
+  [turn 1] query_type=top_n, message=## 🏆 Top 5 Customers by Sales — Apr 2025 to Mar 2026
+
+> **Note:** Sales data is available only for *...
+
+================================================================================
+TEST: test_live_top_customers
+QUERY: Top 5 customers by sales for April 2025 to March 2026
+================================================================================
+  query_type: top_n
+  session_id: 5f57b386-0e2d-41a1-b959-3cd7915e09fe
+  message: ## 🏆 Top 5 Customers by Sales — Apr 2025 to Mar 2026
+
+> **Note:** Sales data is available only for **October 2025** (2 transactions). No sales transactions were recorded for Apr–Sep 2025 or Nov 2025–Mar 2026 in the Tally data provided. Figures below represent **invoice values (incl. GST)** as booked in Tally. Only **2 customers** were found — fewer than the requested top 5.
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 🥇 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 🥈 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| **Total** | | **₹2,04,500.00** |
+
+---
+
+### Key Insights
+
+- **Sunrise Electronics Mumbai** is the top customer with sales of ₹1,10,500.00, accounting for **~54%** of total sales in this period.
+- **Apex Technologies Pvt Ltd** follows at ₹94,000.00, contributing the remaining **~46%** — making this a near-even split between just two customers.
+- Both sales were recorded in **October 2025** only — the business has a very narrow data window, and **no transactions exist** for the remaining 11 months of FY 2025–26 in the provided dataset.
+- The **customer base is highly concentrated** — with only 2 customers on record, there is significant dependency risk. A broader customer base would reduce revenue concentration.
+- **Total sales for the FY stand at ₹2,04,500.00** — this may be partial/incomplete data; please verify that all sales vouchers for Apr 2025–Mar 2026 have been synced from Tally.
+  data: 2 columns, 3 rows
+    headers: ['party_name', 'amount']
+    first row: ['Sunrise Electronics Mumbai', 110500.0]
+    last row:  ['Total', 204500.0]
+  chart: type=None, title=Top Customers by Sales — FY 2025–26 (Oct 2025 Data)
+    chart data points: 2
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_comparison backend.agents.orchestrator | INFO | Orchestrator — classified 'Compare sales and purchases for April 2025 to March 2026' as query_type=comparison, requires_chart=True
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Compare sales and purchases for April 2025 to March 2026'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=3
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+I'll fetch both the Sales Register and Purchase Register for the full FY 2025-26 in one go!
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 2 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_sales_register' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_sales_register' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "date": "20251001",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S001",
+      "party_name": "Apex Technologies Pvt Ltd",
+      "narration": "Invoice #S001 - Laptops and peripherals",
+      "ledger_entries": [
+        {
+          "ledger_name": "Apex Technologies Pvt Ltd",
+          "amount": -94000.0
+        }
+      ]
+    },
+    {
+      "date": "20251008",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S002",
+      "party_name": "Sunrise Electronics Mumbai",
+      "narration": "Invoice #S002 - Samsung products",
+      "ledger_entries": [
+        {
+          "ledger_name": "Sunrise Electronics Mumbai",
+          "amount": -110500.0
+        }
+      ]
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_purchase_register' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_purchase_register' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "date": "20250410",
+      "month": "Apr 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P001",
+      "party_name": "TechnoVision Electronics",
+      "narration": "Invoice #P001 - Laptop stock procurement",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 75000.0
+        }
+      ]
+    },
+    {
+      "date": "20250425",
+      "month": "Apr 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P002",
+      "party_name": "Supreme Office Supplies",
+      "narration": "Invoice #P002 - Printer and toner cartridges",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 42500.0
+        }
+      ]
+    },
+    {
+      "date": "20250515",
+      "month": "May 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P003",
+      "party_name": "Digital World Components",
+      "narration": "Invoice #P003 - Keyboards and mouse units",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 18750.0
+        }
+      ]
+    },
+    {
+      "date": "20250610",
+      "month": "Jun 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P004",
+      "party_name": "Rajesh Electronics Wholesale",
+      "narration": "Invoice #P004 - Monitor screens bulk order",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 96000.0
+        }
+      ]
+    },
+    {
+      "date": "20250715",
+      "month": "Jul 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P005",
+      "party_name": "TechnoVision Electronics",
+      "narration": "Invoice #P005 - USB hubs and cables",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 12300.0
+        }
+      ]
+    },
+    {
+      "date": "20250820",
+      "month": "Aug 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P006",
+      "party_name": "Supreme Office Supplies",
+      "narration": "Invoice #P006 - Office stationery and supplies",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 8900.0
+        }
+      ]
+    },
+    {
+      "date": "20250912",
+      "month": "Sep 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P007",
+      "party_name": "Digital World Components",
+      "narration": "Invoice #P007 - External hard drives and SSDs",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 54000.0
+        }
+      ]
+    },
+    {
+      "date": "20251105",
+      "month": "Nov 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P008",
+      "party_name": "Rajesh Electronics Wholesale",
+      "narration": "Invoice #P008 - Laptop batch for Q3 stock",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 135000.0
+        }
+      ]
+    },
+    {
+      "date": "20251218",
+      "month": "Dec 2025",
+      "voucher_type": "Purchase",
+      "voucher_number": "P009",
+      "party_name": "TechnoVision Electronics",
+      "narration": "Invoice #P009 - Webcams and headsets",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 27600.0
+        }
+      ]
+    },
+    {
+      "date": "20260115",
+      "month": "Jan 2026",
+      "voucher_type": "Purchase",
+      "voucher_number": "P010",
+      "party_name": "Supreme Office Supplies",
+      "narration": "Invoice #P010 - Printer paper and ink cartridges",
+      "ledger_entries": [
+        {
+          "ledger_name": "Purchase Account",
+          "amount": 15400.0
+        }
+      ]
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=3
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+Now let me compute the monthly totals for both Sales and Purchases:
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 2 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "month": "Oct 2025",
+      "amount": 94000.0
+    },
+    {
+      "month": "Oct 2025",
+      "amount": 110500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ],
+  "group_by": "month"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "month": "Oct 2025",
+        "amount": 204500.0
+      }
+    ],
+    "headers": [
+      "month",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Oct 2025",
+        204500.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "month": "Apr 2025",
+      "amount": 75000.0
+    },
+    {
+      "month": "Apr 2025",
+      "amount": 42500.0
+    },
+    {
+      "month": "May 2025",
+      "amount": 18750.0
+    },
+    {
+      "month": "Jun 2025",
+      "amount": 96000.0
+    },
+    {
+      "month": "Jul 2025",
+      "amount": 12300.0
+    },
+    {
+      "month": "Aug 2025",
+      "amount": 8900.0
+    },
+    {
+      "month": "Sep 2025",
+      "amount": 54000.0
+    },
+    {
+      "month": "Nov 2025",
+      "amount": 135000.0
+    },
+    {
+      "month": "Dec 2025",
+      "amount": 27600.0
+    },
+    {
+      "month": "Jan 2026",
+      "amount": 15400.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ],
+  "group_by": "month"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "month": "Apr 2025",
+        "amount": 117500.0
+      },
+      {
+        "month": "May 2025",
+        "amount": 18750.0
+      },
+      {
+        "month": "Jun 2025",
+        "amount": 96000.0
+      },
+      {
+        "month": "Jul 2025",
+        "amount": 12300.0
+      },
+      {
+        "month": "Aug 2025",
+        "amount": 8900.0
+      },
+      {
+        "month": "Sep 2025",
+        "amount": 54000.0
+      },
+      {
+        "month": "Nov 2025",
+        "amount": 135000.0
+      },
+      {
+        "month": "Dec 2025",
+        "amount": 27600.0
+      },
+      {
+        "month": "Jan 2026",
+        "amount": 15400.0
+      }
+    ],
+    "headers": [
+      "month",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Apr 2025",
+        117500.0
+      ],
+      [
+        "May 2025",
+        18750.0
+      ],
+      [
+        "Jun 2025",
+        96000.0
+      ],
+      [
+        "Jul 2025",
+        12300.0
+      ],
+      [
+        "Aug 2025",
+        8900.0
+      ],
+      [
+        "Sep 2025",
+        54000.0
+      ],
+      [
+        "Nov 2025",
+        135000.0
+      ],
+      [
+        "Dec 2025",
+        27600.0
+      ],
+      [
+        "Jan 2026",
+        15400.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=tool_use, content_blocks=3
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — Claude text:
+Now let me compute the grand totals and compare:
+backend.agents.query_agent | INFO | QueryAgent turn 3 — 2 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 3 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "type": "Sales",
+      "amount": 204500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 204500.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        204500.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "type": "Purchases",
+      "amount": 117500.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 18750.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 96000.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 12300.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 8900.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 54000.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 135000.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 27600.0
+    },
+    {
+      "type": "Purchases",
+      "amount": 15400.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 485450.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        485450.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 4 — sending 7 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 4 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 4 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 4 — calling tool 'compute_period_comparison' with input:
+{
+  "period_a": [
+    {
+      "label": "Apr 2025",
+      "value": 0
+    },
+    {
+      "label": "May 2025",
+      "value": 0
+    },
+    {
+      "label": "Jun 2025",
+      "value": 0
+    },
+    {
+      "label": "Jul 2025",
+      "value": 0
+    },
+    {
+      "label": "Aug 2025",
+      "value": 0
+    },
+    {
+      "label": "Sep 2025",
+      "value": 0
+    },
+    {
+      "label": "Oct 2025",
+      "value": 204500.0
+    },
+    {
+      "label": "Nov 2025",
+      "value": 0
+    },
+    {
+      "label": "Dec 2025",
+      "value": 0
+    },
+    {
+      "label": "Jan 2026",
+      "value": 0
+    },
+    {
+      "label": "Feb 2026",
+      "value": 0
+    },
+    {
+      "label": "Mar 2026",
+      "value": 0
+    }
+  ],
+  "period_b": [
+    {
+      "label": "Apr 2025",
+      "value": 117500.0
+    },
+    {
+      "label": "May 2025",
+      "value": 18750.0
+    },
+    {
+      "label": "Jun 2025",
+      "value": 96000.0
+    },
+    {
+      "label": "Jul 2025",
+      "value": 12300.0
+    },
+    {
+      "label": "Aug 2025",
+      "value": 8900.0
+    },
+    {
+      "label": "Sep 2025",
+      "value": 54000.0
+    },
+    {
+      "label": "Oct 2025",
+      "value": 0
+    },
+    {
+      "label": "Nov 2025",
+      "value": 135000.0
+    },
+    {
+      "label": "Dec 2025",
+      "value": 27600.0
+    },
+    {
+      "label": "Jan 2026",
+      "value": 15400.0
+    },
+    {
+      "label": "Feb 2026",
+      "value": 0
+    },
+    {
+      "label": "Mar 2026",
+      "value": 0
+    }
+  ],
+  "period_a_name": "Sales (FY 2025-26)",
+  "period_b_name": "Purchases (FY 2025-26)"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — tool 'compute_period_comparison' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "label": "Apr 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 117500.0,
+        "change": 117500.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "May 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 18750.0,
+        "change": 18750.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Jun 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 96000.0,
+        "change": 96000.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Jul 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 12300.0,
+        "change": 12300.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Aug 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 8900.0,
+        "change": 8900.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Sep 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 54000.0,
+        "change": 54000.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Oct 2025",
+        "Sales (FY 2025-26)": 204500.0,
+        "Purchases (FY 2025-26)": 0.0,
+        "change": -204500.0,
+        "change_pct": "-100.0%"
+      },
+      {
+        "label": "Nov 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 135000.0,
+        "change": 135000.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Dec 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 27600.0,
+        "change": 27600.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Jan 2026",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 15400.0,
+        "change": 15400.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Feb 2026",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 0.0,
+        "change": 0.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Mar 2026",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 0.0,
+        "change": 0.0,
+        "change_pct": "N/A"
+      }
+    ],
+    "headers": [
+      "Item",
+      "Sales (FY 2025-26)",
+      "Purchases (FY 2025-26)",
+      "Change",
+      "Change %"
+    ],
+    "rows": [
+      [
+        "Apr 2025",
+        0.0,
+        117500.0,
+        117500.0,
+        "N/A"
+      ],
+      [
+        "May 2025",
+        0.0,
+        18750.0,
+        18750.0,
+        "N/A"
+      ],
+      [
+        "Jun 2025",
+        0.0,
+        96000.0,
+        96000.0,
+        "N/A"
+      ],
+      [
+        "Jul 2025",
+        0.0,
+        12300.0,
+        12300.0,
+        "N/A"
+      ],
+      [
+        "Aug 2025",
+        0.0,
+        8900.0,
+        8900.0,
+        "N/A"
+      ],
+      [
+        "Sep 2025",
+        0.0,
+        54000.0,
+        54000.0,
+        "N/A"
+      ],
+      [
+        "Oct 2025",
+        204500.0,
+        0.0,
+        -204500.0,
+        "-100.0%"
+      ],
+      [
+        "Nov 2025",
+        0.0,
+        135000.0,
+        135000.0,
+        "N/A"
+      ],
+      [
+        "Dec 2025",
+        0.0,
+        27600.0,
+        27600.0,
+        "N/A"
+      ],
+      [
+        "Jan 2026",
+        0.0,
+        15400.0,
+        15400.0,
+        "N/A"
+      ],
+      [
+        "Feb 2026",
+        0.0,
+        0.0,
+        0.0,
+        "N/A"
+      ],
+      [
+        "Mar 2026",
+        0.0,
+        0.0,
+        0.0,
+        "N/A"
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 5 — sending 9 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 5 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 5 — Claude text:
+Here is the **Sales vs Purchases comparison for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+### 📊 Monthly Breakdown
+
+| Month | Sales | Purchases |
+|---|---|---|
+| Apr 2025 | ₹0.00 | ₹1,17,500.00 |
+| May 2025 | ₹0.00 | ₹18,750.00 |
+| Jun 2025 | ₹0.00 | ₹96,000.00 |
+| Jul 2025 | ₹0.00 | ₹12,300.00 |
+| Aug 2025 | ₹0.00 | ₹8,900.00 |
+| Sep 2025 | ₹0.00 | ₹54,000.00 |
+| Oct 2025 | ₹2,04,500.00 | ₹0.00 |
+| Nov 2025 | ₹0.00 | ₹1,35,000.00 |
+| Dec 2025 | ₹0.00 | ₹27,600.00 |
+| Jan 2026 | ₹0.00 | ₹15,400.00 |
+| Feb 2026 | ₹0.00 | ₹0.00 |
+| Mar 2026 | ₹0.00 | ₹0.00 |
+
+---
+
+### 📝 Summary
+
+| Metric | Amount |
+|---|---|
+| **Total Sales** | ₹2,04,500.00 |
+| **Total Purchases** | ₹4,85,450.00 |
+| **Difference (Sales – Purchases)** | **−₹2,80,950.00** |
+
+---
+
+### 🔍 Key Observations
+
+1. **Very Sparse Sales Activity** – Only **2 sales invoices** were recorded for the entire year, both in **October 2025** (₹94,000 + ₹1,10,500), totalling ₹2,04,500. No sales were recorded in any other month.
+
+2. **Purchases Exceed Sales Significantly** – Total purchases of ₹4,85,450 are more than **2.4× the total sales**, resulting in a net deficit of ₹2,80,950. This is a major concern and may indicate:
+   - Sales data is **incomplete or not fully recorded** in Tally.
+   - Inventory is being **built up** for future sales.
+   - Some sales may be booked under a different voucher type or ledger.
+
+3. **Highest Purchase Month** – November 2025 had the largest single purchase of ₹1,35,000 (laptop batch).
+
+4. **No Activity in Feb–Mar 2026** – Neither sales nor purchases have been recorded for the last two months of the financial year (which may still be in progress since today is 12-03-2026).
+
+> ⚠️ **Recommendation**: Please verify whether all sales invoices have been entered in Tally, as the current data shows a very significant imbalance between sales and purchases.
+backend.agents.query_agent | INFO | QueryAgent turn 5 — final answer (1858 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 5 — FINAL ANSWER:
+Here is the **Sales vs Purchases comparison for FY 2025-26 (April 2025 – March 2026)**:
+
+---
+
+### 📊 Monthly Breakdown
+
+| Month | Sales | Purchases |
+|---|---|---|
+| Apr 2025 | ₹0.00 | ₹1,17,500.00 |
+| May 2025 | ₹0.00 | ₹18,750.00 |
+| Jun 2025 | ₹0.00 | ₹96,000.00 |
+| Jul 2025 | ₹0.00 | ₹12,300.00 |
+| Aug 2025 | ₹0.00 | ₹8,900.00 |
+| Sep 2025 | ₹0.00 | ₹54,000.00 |
+| Oct 2025 | ₹2,04,500.00 | ₹0.00 |
+| Nov 2025 | ₹0.00 | ₹1,35,000.00 |
+| Dec 2025 | ₹0.00 | ₹27,600.00 |
+| Jan 2026 | ₹0.00 | ₹15,400.00 |
+| Feb 2026 | ₹0.00 | ₹0.00 |
+| Mar 2026 | ₹0.00 | ₹0.00 |
+
+---
+
+### 📝 Summary
+
+| Metric | Amount |
+|---|---|
+| **Total Sales** | ₹2,04,500.00 |
+| **Total Purchases** | ₹4,85,450.00 |
+| **Difference (Sales – Purchases)** | **−₹2,80,950.00** |
+
+---
+
+### 🔍 Key Observations
+
+1. **Very Sparse Sales Activity** – Only **2 sales invoices** were recorded for the entire year, both in **October 2025** (₹94,000 + ₹1,10,500), totalling ₹2,04,500. No sales were recorded in any other month.
+
+2. **Purchases Exceed Sales Significantly** – Total purchases of ₹4,85,450 are more than **2.4× the total sales**, resulting in a net deficit of ₹2,80,950. This is a major concern and may indicate:
+   - Sales data is **incomplete or not fully recorded** in Tally.
+   - Inventory is being **built up** for future sales.
+   - Some sales may be booked under a different voucher type or ledger.
+
+3. **Highest Purchase Month** – November 2025 had the largest single purchase of ₹1,35,000 (laptop batch).
+
+4. **No Activity in Feb–Mar 2026** – Neither sales nor purchases have been recorded for the last two months of the financial year (which may still be in progress since today is 12-03-2026).
+
+> ⚠️ **Recommendation**: Please verify whether all sales invoices have been entered in Tally, as the current data shows a very significant imbalance between sales and purchases.
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 7 tool call(s), 7 data set(s) (2 raw, 5 computed)
+backend.agents.orchestrator | INFO | Orchestrator — routing to AnalysisAgent (query_type=comparison)
+backend.agents.analysis_agent | INFO | AnalysisAgent start — query_type=comparison, query='Compare sales and purchases for April 2025 to March 2026'
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — stop_reason=tool_use
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — Claude text:
+I'll compute the overall totals for Sales and Purchases, then build the month-by-month comparison.
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — 2 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'compute_totals' with input:
+{
+  "records": [
+    {
+      "month": "Oct 2025",
+      "amount": 204500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 204500.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        204500.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'compute_totals' with input:
+{
+  "records": [
+    {
+      "month": "Apr 2025",
+      "amount": 117500.0
+    },
+    {
+      "month": "May 2025",
+      "amount": 18750.0
+    },
+    {
+      "month": "Jun 2025",
+      "amount": 96000.0
+    },
+    {
+      "month": "Jul 2025",
+      "amount": 12300.0
+    },
+    {
+      "month": "Aug 2025",
+      "amount": 8900.0
+    },
+    {
+      "month": "Sep 2025",
+      "amount": 54000.0
+    },
+    {
+      "month": "Nov 2025",
+      "amount": 135000.0
+    },
+    {
+      "month": "Dec 2025",
+      "amount": 27600.0
+    },
+    {
+      "month": "Jan 2026",
+      "amount": 15400.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 485450.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        485450.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — stop_reason=tool_use
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — Claude text:
+Now let me compute the overall Sales vs Purchases comparison and the month-by-month comparison simultaneously.
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — 2 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — calling 'compute_percentage_change' with input:
+{
+  "old_value": 485450.0,
+  "new_value": 204500.0,
+  "label": "Purchases vs Sales (FY 2025-26)"
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — tool 'compute_percentage_change' full result:
+{
+  "success": true,
+  "data": {
+    "label": "Purchases vs Sales (FY 2025-26)",
+    "old_value": 485450.0,
+    "new_value": 204500.0,
+    "absolute_change": -280950.0,
+    "percentage_change": -57.87413739829025,
+    "percentage_change_str": "-57.9%",
+    "direction": "decrease"
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — calling 'compute_period_comparison' with input:
+{
+  "period_a": [
+    {
+      "label": "Apr 2025",
+      "value": 0.0
+    },
+    {
+      "label": "May 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Jun 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Jul 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Aug 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Sep 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Oct 2025",
+      "value": 204500.0
+    },
+    {
+      "label": "Nov 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Dec 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Jan 2026",
+      "value": 0.0
+    },
+    {
+      "label": "Feb 2026",
+      "value": 0.0
+    },
+    {
+      "label": "Mar 2026",
+      "value": 0.0
+    }
+  ],
+  "period_b": [
+    {
+      "label": "Apr 2025",
+      "value": 117500.0
+    },
+    {
+      "label": "May 2025",
+      "value": 18750.0
+    },
+    {
+      "label": "Jun 2025",
+      "value": 96000.0
+    },
+    {
+      "label": "Jul 2025",
+      "value": 12300.0
+    },
+    {
+      "label": "Aug 2025",
+      "value": 8900.0
+    },
+    {
+      "label": "Sep 2025",
+      "value": 54000.0
+    },
+    {
+      "label": "Oct 2025",
+      "value": 0.0
+    },
+    {
+      "label": "Nov 2025",
+      "value": 135000.0
+    },
+    {
+      "label": "Dec 2025",
+      "value": 27600.0
+    },
+    {
+      "label": "Jan 2026",
+      "value": 15400.0
+    },
+    {
+      "label": "Feb 2026",
+      "value": 0.0
+    },
+    {
+      "label": "Mar 2026",
+      "value": 0.0
+    }
+  ],
+  "period_a_name": "Sales (FY 2025-26)",
+  "period_b_name": "Purchases (FY 2025-26)"
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — tool 'compute_period_comparison' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "label": "Apr 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 117500.0,
+        "change": 117500.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "May 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 18750.0,
+        "change": 18750.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Jun 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 96000.0,
+        "change": 96000.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Jul 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 12300.0,
+        "change": 12300.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Aug 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 8900.0,
+        "change": 8900.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Sep 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 54000.0,
+        "change": 54000.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Oct 2025",
+        "Sales (FY 2025-26)": 204500.0,
+        "Purchases (FY 2025-26)": 0.0,
+        "change": -204500.0,
+        "change_pct": "-100.0%"
+      },
+      {
+        "label": "Nov 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 135000.0,
+        "change": 135000.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Dec 2025",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 27600.0,
+        "change": 27600.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Jan 2026",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 15400.0,
+        "change": 15400.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Feb 2026",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 0.0,
+        "change": 0.0,
+        "change_pct": "N/A"
+      },
+      {
+        "label": "Mar 2026",
+        "Sales (FY 2025-26)": 0.0,
+        "Purchases (FY 2025-26)": 0.0,
+        "change": 0.0,
+        "change_pct": "N/A"
+      }
+    ],
+    "headers": [
+      "Item",
+      "Sales (FY 2025-26)",
+      "Purchases (FY 2025-26)",
+      "Change",
+      "Change %"
+    ],
+    "rows": [
+      [
+        "Apr 2025",
+        0.0,
+        117500.0,
+        117500.0,
+        "N/A"
+      ],
+      [
+        "May 2025",
+        0.0,
+        18750.0,
+        18750.0,
+        "N/A"
+      ],
+      [
+        "Jun 2025",
+        0.0,
+        96000.0,
+        96000.0,
+        "N/A"
+      ],
+      [
+        "Jul 2025",
+        0.0,
+        12300.0,
+        12300.0,
+        "N/A"
+      ],
+      [
+        "Aug 2025",
+        0.0,
+        8900.0,
+        8900.0,
+        "N/A"
+      ],
+      [
+        "Sep 2025",
+        0.0,
+        54000.0,
+        54000.0,
+        "N/A"
+      ],
+      [
+        "Oct 2025",
+        204500.0,
+        0.0,
+        -204500.0,
+        "-100.0%"
+      ],
+      [
+        "Nov 2025",
+        0.0,
+        135000.0,
+        135000.0,
+        "N/A"
+      ],
+      [
+        "Dec 2025",
+        0.0,
+        27600.0,
+        27600.0,
+        "N/A"
+      ],
+      [
+        "Jan 2026",
+        0.0,
+        15400.0,
+        15400.0,
+        "N/A"
+      ],
+      [
+        "Feb 2026",
+        0.0,
+        0.0,
+        0.0,
+        "N/A"
+      ],
+      [
+        "Mar 2026",
+        0.0,
+        0.0,
+        0.0,
+        "N/A"
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 3 — stop_reason=end_turn
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 3 — Claude text:
+---
+
+## 📊 Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+
+> All figures are **base values (excl. GST)** as recorded in Tally ledgers. Sales recorded under party ledgers; Purchases under **Purchase Account**.
+
+---
+
+### 🔢 Annual Summary
+
+| Metric | Amount |
+|---|---|
+| **Total Sales** | ₹2,04,500.00 |
+| **Total Purchases** | ₹4,85,450.00 |
+| **Difference (Sales − Purchases)** | **−₹2,80,950.00** |
+| **Sales as % of Purchases** | **42.1%** |
+
+Purchases exceed Sales by **₹2,80,950.00 (−57.9%)** for the full year — a significant imbalance suggesting the business is in a heavy stocking/procurement phase with limited sales activity so far.
+
+---
+
+### 📅 Month-by-Month Comparison
+
+| Month | Sales (FY 2025-26) | Purchases (FY 2025-26) | Surplus / (Deficit) |
+|---|---|---|---|
+| Apr 2025 | ₹0.00 | ₹1,17,500.00 | ₹1,17,500.00 |
+| May 2025 | ₹0.00 | ₹18,750.00 | ₹18,750.00 |
+| Jun 2025 | ₹0.00 | ₹96,000.00 | ₹96,000.00 |
+| Jul 2025 | ₹0.00 | ₹12,300.00 | ₹12,300.00 |
+| Aug 2025 | ₹0.00 | ₹8,900.00 | ₹8,900.00 |
+| Sep 2025 | ₹0.00 | ₹54,000.00 | ₹54,000.00 |
+| Oct 2025 | ₹2,04,500.00 | ₹0.00 | −₹2,04,500.00 |
+| Nov 2025 | ₹0.00 | ₹1,35,000.00 | ₹1,35,000.00 |
+| Dec 2025 | ₹0.00 | ₹27,600.00 | ₹27,600.00 |
+| Jan 2026 | ₹0.00 | ₹15,400.00 | ₹15,400.00 |
+| Feb 2026 | ₹0.00 | ₹0.00 | ₹0.00 |
+| Mar 2026 | ₹0.00 | ₹0.00 | ₹0.00 |
+| **Total** | **₹2,04,500.00** | **₹4,85,450.00** | **−₹2,80,950.00** |
+
+> ⚠️ **Data gaps noted:**
+> - **Sales**: Only **2 vouchers** recorded, both in **Oct 2025** (S001 & S002). No sales activity was found for Apr–Sep 2025, Nov 2025 – Mar 2026.
+> - **Purchases**: Recorded across **10 months** (Apr 2025 – Jan 2026). **No purchase transactions** for Feb 2026 and Mar 2026.
+
+---
+
+### 🏷️ Purchase Breakdown by Vendor
+
+| Voucher | Month | Vendor | Amount |
+|---|---|---|---|
+| P001 | Apr 2025 | TechnoVision Electronics | ₹75,000.00 |
+| P002 | Apr 2025 | Supreme Office Supplies | ₹42,500.00 |
+| P003 | May 2025 | Digital World Components | ₹18,750.00 |
+| P004 | Jun 2025 | Rajesh Electronics Wholesale | ₹96,000.00 |
+| P005 | Jul 2025 | TechnoVision Electronics | ₹12,300.00 |
+| P006 | Aug 2025 | Supreme Office Supplies | ₹8,900.00 |
+| P007 | Sep 2025 | Digital World Components | ₹54,000.00 |
+| P008 | Nov 2025 | Rajesh Electronics Wholesale | ₹1,35,000.00 |
+| P009 | Dec 2025 | TechnoVision Electronics | ₹27,600.00 |
+| P010 | Jan 2026 | Supreme Office Supplies | ₹15,400.00 |
+
+### 🏷️ Sales Breakdown by Party
+
+| Voucher | Month | Party | Amount |
+|---|---|---|---|
+| S001 | Oct 2025 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| S002 | Oct 2025 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+
+---
+
+## 💡 Key Insights
+
+- **Purchases (₹4,85,450) dwarf Sales (₹2,04,500)** — purchases are 2.37× higher than sales for FY 2025-26, indicating heavy inventory procurement with very limited revenue realisation so far.
+- **Sales are concentrated in a single month (Oct 2025)** — only 2 invoices across the entire year, which is unusually low and may suggest either a business in early operations or missing voucher entries for other months.
+- **No transactions at all in Feb 2026 & Mar 2026** — both sales and purchase ledgers show zero activity in the final two months of the fiscal year; this warrants verification in Tally.
+- **Largest purchase month is Nov 2025 (₹1,35,000)** — driven by a single bulk laptop batch order (P008) from Rajesh Electronics Wholesale, making it the peak procurement period.
+- **Gross margin cannot be computed meaningfully** — with purchases spread across 10 months but sales only in 1 month, matching cost-of-goods-sold to revenue is not possible without inventory/stock ledger data.
+
+Chart suggestion: grouped_bar
+Chart title: Monthly Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 3 — final answer (3755 chars)
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 3 — FINAL ANSWER:
+---
+
+## 📊 Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+
+> All figures are **base values (excl. GST)** as recorded in Tally ledgers. Sales recorded under party ledgers; Purchases under **Purchase Account**.
+
+---
+
+### 🔢 Annual Summary
+
+| Metric | Amount |
+|---|---|
+| **Total Sales** | ₹2,04,500.00 |
+| **Total Purchases** | ₹4,85,450.00 |
+| **Difference (Sales − Purchases)** | **−₹2,80,950.00** |
+| **Sales as % of Purchases** | **42.1%** |
+
+Purchases exceed Sales by **₹2,80,950.00 (−57.9%)** for the full year — a significant imbalance suggesting the business is in a heavy stocking/procurement phase with limited sales activity so far.
+
+---
+
+### 📅 Month-by-Month Comparison
+
+| Month | Sales (FY 2025-26) | Purchases (FY 2025-26) | Surplus / (Deficit) |
+|---|---|---|---|
+| Apr 2025 | ₹0.00 | ₹1,17,500.00 | ₹1,17,500.00 |
+| May 2025 | ₹0.00 | ₹18,750.00 | ₹18,750.00 |
+| Jun 2025 | ₹0.00 | ₹96,000.00 | ₹96,000.00 |
+| Jul 2025 | ₹0.00 | ₹12,300.00 | ₹12,300.00 |
+| Aug 2025 | ₹0.00 | ₹8,900.00 | ₹8,900.00 |
+| Sep 2025 | ₹0.00 | ₹54,000.00 | ₹54,000.00 |
+| Oct 2025 | ₹2,04,500.00 | ₹0.00 | −₹2,04,500.00 |
+| Nov 2025 | ₹0.00 | ₹1,35,000.00 | ₹1,35,000.00 |
+| Dec 2025 | ₹0.00 | ₹27,600.00 | ₹27,600.00 |
+| Jan 2026 | ₹0.00 | ₹15,400.00 | ₹15,400.00 |
+| Feb 2026 | ₹0.00 | ₹0.00 | ₹0.00 |
+| Mar 2026 | ₹0.00 | ₹0.00 | ₹0.00 |
+| **Total** | **₹2,04,500.00** | **₹4,85,450.00** | **−₹2,80,950.00** |
+
+> ⚠️ **Data gaps noted:**
+> - **Sales**: Only **2 vouchers** recorded, both in **Oct 2025** (S001 & S002). No sales activity was found for Apr–Sep 2025, Nov 2025 – Mar 2026.
+> - **Purchases**: Recorded across **10 months** (Apr 2025 – Jan 2026). **No purchase transactions** for Feb 2026 and Mar 2026.
+
+---
+
+### 🏷️ Purchase Breakdown by Vendor
+
+| Voucher | Month | Vendor | Amount |
+|---|---|---|---|
+| P001 | Apr 2025 | TechnoVision Electronics | ₹75,000.00 |
+| P002 | Apr 2025 | Supreme Office Supplies | ₹42,500.00 |
+| P003 | May 2025 | Digital World Components | ₹18,750.00 |
+| P004 | Jun 2025 | Rajesh Electronics Wholesale | ₹96,000.00 |
+| P005 | Jul 2025 | TechnoVision Electronics | ₹12,300.00 |
+| P006 | Aug 2025 | Supreme Office Supplies | ₹8,900.00 |
+| P007 | Sep 2025 | Digital World Components | ₹54,000.00 |
+| P008 | Nov 2025 | Rajesh Electronics Wholesale | ₹1,35,000.00 |
+| P009 | Dec 2025 | TechnoVision Electronics | ₹27,600.00 |
+| P010 | Jan 2026 | Supreme Office Supplies | ₹15,400.00 |
+
+### 🏷️ Sales Breakdown by Party
+
+| Voucher | Month | Party | Amount |
+|---|---|---|---|
+| S001 | Oct 2025 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| S002 | Oct 2025 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+
+---
+
+## 💡 Key Insights
+
+- **Purchases (₹4,85,450) dwarf Sales (₹2,04,500)** — purchases are 2.37× higher than sales for FY 2025-26, indicating heavy inventory procurement with very limited revenue realisation so far.
+- **Sales are concentrated in a single month (Oct 2025)** — only 2 invoices across the entire year, which is unusually low and may suggest either a business in early operations or missing voucher entries for other months.
+- **No transactions at all in Feb 2026 & Mar 2026** — both sales and purchase ledgers show zero activity in the final two months of the fiscal year; this warrants verification in Tally.
+- **Largest purchase month is Nov 2025 (₹1,35,000)** — driven by a single bulk laptop batch order (P008) from Rajesh Electronics Wholesale, making it the peak procurement period.
+- **Gross margin cannot be computed meaningfully** — with purchases spread across 10 months but sales only in 1 month, matching cost-of-goods-sold to revenue is not possible without inventory/stock ledger data.
+
+Chart suggestion: grouped_bar
+Chart title: Monthly Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+backend.agents.orchestrator | INFO | Orchestrator — AnalysisAgent returned 4 tool call(s), chart_suggestion=grouped_bar
+  [turn 1] query_type=comparison, message=---
+
+## 📊 Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+
+> All figures are **base values (e...
+
+================================================================================
+TEST: test_live_comparison
+QUERY: Compare sales and purchases for April 2025 to March 2026
+================================================================================
+  query_type: comparison
+  session_id: f96f85ac-532f-4a99-a703-b93cb596a558
+  message: ---
+
+## 📊 Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+
+> All figures are **base values (excl. GST)** as recorded in Tally ledgers. Sales recorded under party ledgers; Purchases under **Purchase Account**.
+
+---
+
+### 🔢 Annual Summary
+
+| Metric | Amount |
+|---|---|
+| **Total Sales** | ₹2,04,500.00 |
+| **Total Purchases** | ₹4,85,450.00 |
+| **Difference (Sales − Purchases)** | **−₹2,80,950.00** |
+| **Sales as % of Purchases** | **42.1%** |
+
+Purchases exceed Sales by **₹2,80,950.00 (−57.9%)** for the full year — a significant imbalance suggesting the business is in a heavy stocking/procurement phase with limited sales activity so far.
+
+---
+
+### 📅 Month-by-Month Comparison
+
+| Month | Sales (FY 2025-26) | Purchases (FY 2025-26) | Surplus / (Deficit) |
+|---|---|---|---|
+| Apr 2025 | ₹0.00 | ₹1,17,500.00 | ₹1,17,500.00 |
+| May 2025 | ₹0.00 | ₹18,750.00 | ₹18,750.00 |
+| Jun 2025 | ₹0.00 | ₹96,000.00 | ₹96,000.00 |
+| Jul 2025 | ₹0.00 | ₹12,300.00 | ₹12,300.00 |
+| Aug 2025 | ₹0.00 | ₹8,900.00 | ₹8,900.00 |
+| Sep 2025 | ₹0.00 | ₹54,000.00 | ₹54,000.00 |
+| Oct 2025 | ₹2,04,500.00 | ₹0.00 | −₹2,04,500.00 |
+| Nov 2025 | ₹0.00 | ₹1,35,000.00 | ₹1,35,000.00 |
+| Dec 2025 | ₹0.00 | ₹27,600.00 | ₹27,600.00 |
+| Jan 2026 | ₹0.00 | ₹15,400.00 | ₹15,400.00 |
+| Feb 2026 | ₹0.00 | ₹0.00 | ₹0.00 |
+| Mar 2026 | ₹0.00 | ₹0.00 | ₹0.00 |
+| **Total** | **₹2,04,500.00** | **₹4,85,450.00** | **−₹2,80,950.00** |
+
+> ⚠️ **Data gaps noted:**
+> - **Sales**: Only **2 vouchers** recorded, both in **Oct 2025** (S001 & S002). No sales activity was found for Apr–Sep 2025, Nov 2025 – Mar 2026.
+> - **Purchases**: Recorded across **10 months** (Apr 2025 – Jan 2026). **No purchase transactions** for Feb 2026 and Mar 2026.
+
+---
+
+### 🏷️ Purchase Breakdown by Vendor
+
+| Voucher | Month | Vendor | Amount |
+|---|---|---|---|
+| P001 | Apr 2025 | TechnoVision Electronics | ₹75,000.00 |
+| P002 | Apr 2025 | Supreme Office Supplies | ₹42,500.00 |
+| P003 | May 2025 | Digital World Components | ₹18,750.00 |
+| P004 | Jun 2025 | Rajesh Electronics Wholesale | ₹96,000.00 |
+| P005 | Jul 2025 | TechnoVision Electronics | ₹12,300.00 |
+| P006 | Aug 2025 | Supreme Office Supplies | ₹8,900.00 |
+| P007 | Sep 2025 | Digital World Components | ₹54,000.00 |
+| P008 | Nov 2025 | Rajesh Electronics Wholesale | ₹1,35,000.00 |
+| P009 | Dec 2025 | TechnoVision Electronics | ₹27,600.00 |
+| P010 | Jan 2026 | Supreme Office Supplies | ₹15,400.00 |
+
+### 🏷️ Sales Breakdown by Party
+
+| Voucher | Month | Party | Amount |
+|---|---|---|---|
+| S001 | Oct 2025 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| S002 | Oct 2025 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+
+---
+
+## 💡 Key Insights
+
+- **Purchases (₹4,85,450) dwarf Sales (₹2,04,500)** — purchases are 2.37× higher than sales for FY 2025-26, indicating heavy inventory procurement with very limited revenue realisation so far.
+- **Sales are concentrated in a single month (Oct 2025)** — only 2 invoices across the entire year, which is unusually low and may suggest either a business in early operations or missing voucher entries for other months.
+- **No transactions at all in Feb 2026 & Mar 2026** — both sales and purchase ledgers show zero activity in the final two months of the fiscal year; this warrants verification in Tally.
+- **Largest purchase month is Nov 2025 (₹1,35,000)** — driven by a single bulk laptop batch order (P008) from Rajesh Electronics Wholesale, making it the peak procurement period.
+- **Gross margin cannot be computed meaningfully** — with purchases spread across 10 months but sales only in 1 month, matching cost-of-goods-sold to revenue is not possible without inventory/stock ledger data.
+  data: 5 columns, 13 rows
+    headers: ['Item', 'Sales (FY 2025-26)', 'Purchases (FY 2025-26)', 'Change', 'Change %']
+    first row: ['Apr 2025', 0.0, 117500.0, 117500.0, 'N/A']
+    last row:  ['Total', 204500.0, 485450.0, 280950.0, '']
+  chart: type=None, title=Monthly Sales vs. Purchases — FY 2025-26 (Apr 2025 – Mar 2026)
+    chart data points: 12
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_clarification backend.agents.orchestrator | INFO | Orchestrator — classified 'Show me the balance' as query_type=clarification_needed, requires_chart=False
+
+================================================================================
+TEST: test_live_clarification
+QUERY: Show me the balance
+================================================================================
+  query_type: clarification_needed
+  session_id: 6cfe16cd-040b-4998-bd5c-c1220d0483bd
+  message: Which balance would you like to see? For example: cash balance, bank balance, trial balance, balance sheet, or balance of a specific account?
+  data: None
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_quarterly_comparison_q2_vs_q3 backend.agents.orchestrator | INFO | Orchestrator — classified 'Compare sales in Q2 vs Q3 for FY 2025-26' as query_type=comparison, requires_chart=True
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Compare sales in Q2 vs Q3 for FY 2025-26'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=3
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+I'll fetch the Sales Register for both Q2 (July–September 2025) and Q3 (October–December 2025) simultaneously!
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 2 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_sales_register' with input:
+{
+  "from_date": "01-07-2025",
+  "to_date": "30-09-2025"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_sales_register' full result:
+{
+  "success": true,
+  "data": []
+}
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_sales_register' with input:
+{
+  "from_date": "01-10-2025",
+  "to_date": "31-12-2025"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_sales_register' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "date": "20251001",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S001",
+      "party_name": "Apex Technologies Pvt Ltd",
+      "narration": "Invoice #S001 - Laptops and peripherals",
+      "ledger_entries": [
+        {
+          "ledger_name": "Apex Technologies Pvt Ltd",
+          "amount": -94000.0
+        }
+      ]
+    },
+    {
+      "date": "20251008",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S002",
+      "party_name": "Sunrise Electronics Mumbai",
+      "narration": "Invoice #S002 - Samsung products",
+      "ledger_entries": [
+        {
+          "ledger_name": "Sunrise Electronics Mumbai",
+          "amount": -110500.0
+        }
+      ]
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=3
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+Now let me compute the totals for both quarters.
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 2 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "quarter": "Q2 FY2025-26",
+      "amount": 0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 0.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        0.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "ledger_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    },
+    {
+      "ledger_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 204500.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        204500.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=tool_use, content_blocks=2
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — Claude text:
+Now let me compare the two quarters:
+backend.agents.query_agent | INFO | QueryAgent turn 3 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 3 — calling tool 'compute_period_comparison' with input:
+{
+  "period_a": [
+    {
+      "label": "Total Sales",
+      "value": 0
+    }
+  ],
+  "period_a_name": "Q2 FY 2025-26 (Jul\u2013Sep)",
+  "period_b": [
+    {
+      "label": "Total Sales",
+      "value": 204500
+    }
+  ],
+  "period_b_name": "Q3 FY 2025-26 (Oct\u2013Dec)"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — tool 'compute_period_comparison' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "label": "Total Sales",
+        "Q2 FY 2025-26 (Jul\u2013Sep)": 0.0,
+        "Q3 FY 2025-26 (Oct\u2013Dec)": 204500.0,
+        "change": 204500.0,
+        "change_pct": "N/A"
+      }
+    ],
+    "headers": [
+      "Item",
+      "Q2 FY 2025-26 (Jul\u2013Sep)",
+      "Q3 FY 2025-26 (Oct\u2013Dec)",
+      "Change",
+      "Change %"
+    ],
+    "rows": [
+      [
+        "Total Sales",
+        0.0,
+        204500.0,
+        204500.0,
+        "N/A"
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 4 — sending 7 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 4 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — Claude text:
+Here's the **Sales Comparison: Q2 vs Q3 FY 2025-26**:
+
+| Quarter | Period | Total Sales |
+|---|---|---|
+| Q2 FY 2025-26 | Jul – Sep 2025 | ₹0.00 |
+| Q3 FY 2025-26 | Oct – Dec 2025 | ₹2,04,500.00 |
+
+---
+
+### 🔍 Key Insights:
+
+- **Q2 (Jul–Sep 2025):** No sales vouchers were recorded — total sales stood at **₹0.00**.
+- **Q3 (Oct–Dec 2025):** Sales picked up with **2 invoices** totalling **₹2,04,500.00**:
+  - **Apex Technologies Pvt Ltd** — ₹94,000.00 (Laptops & peripherals)
+  - **Sunrise Electronics Mumbai** — ₹1,10,500.00 (Samsung products)
+- **Absolute Change:** +₹2,04,500.00
+- **Growth %:** N/A (base value is zero in Q2)
+
+> ⚠️ The absence of sales in Q2 could indicate that sales entries were not recorded in Tally for that period. You may want to verify if any vouchers were missed or entered under a different voucher type.
+backend.agents.query_agent | INFO | QueryAgent turn 4 — final answer (832 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — FINAL ANSWER:
+Here's the **Sales Comparison: Q2 vs Q3 FY 2025-26**:
+
+| Quarter | Period | Total Sales |
+|---|---|---|
+| Q2 FY 2025-26 | Jul – Sep 2025 | ₹0.00 |
+| Q3 FY 2025-26 | Oct – Dec 2025 | ₹2,04,500.00 |
+
+---
+
+### 🔍 Key Insights:
+
+- **Q2 (Jul–Sep 2025):** No sales vouchers were recorded — total sales stood at **₹0.00**.
+- **Q3 (Oct–Dec 2025):** Sales picked up with **2 invoices** totalling **₹2,04,500.00**:
+  - **Apex Technologies Pvt Ltd** — ₹94,000.00 (Laptops & peripherals)
+  - **Sunrise Electronics Mumbai** — ₹1,10,500.00 (Samsung products)
+- **Absolute Change:** +₹2,04,500.00
+- **Growth %:** N/A (base value is zero in Q2)
+
+> ⚠️ The absence of sales in Q2 could indicate that sales entries were not recorded in Tally for that period. You may want to verify if any vouchers were missed or entered under a different voucher type.
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 5 tool call(s), 5 data set(s) (2 raw, 3 computed)
+backend.agents.orchestrator | INFO | Orchestrator — routing to AnalysisAgent (query_type=comparison)
+backend.agents.analysis_agent | INFO | AnalysisAgent start — query_type=comparison, query='Compare sales in Q2 vs Q3 for FY 2025-26'
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — stop_reason=tool_use
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — Claude text:
+I'll compute the Q2 vs Q3 comparison using the tool, and also break down Q3 sales by customer for deeper insight.
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — 2 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'compute_period_comparison' with input:
+{
+  "period_a": [
+    {
+      "label": "Total Sales",
+      "value": 0.0
+    }
+  ],
+  "period_b": [
+    {
+      "label": "Total Sales",
+      "value": 204500.0
+    }
+  ],
+  "period_a_name": "Q2 FY 2025-26 (Jul\u2013Sep)",
+  "period_b_name": "Q3 FY 2025-26 (Oct\u2013Dec)"
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'compute_period_comparison' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "label": "Total Sales",
+        "Q2 FY 2025-26 (Jul\u2013Sep)": 0.0,
+        "Q3 FY 2025-26 (Oct\u2013Dec)": 204500.0,
+        "change": 204500.0,
+        "change_pct": "N/A"
+      }
+    ],
+    "headers": [
+      "Item",
+      "Q2 FY 2025-26 (Jul\u2013Sep)",
+      "Q3 FY 2025-26 (Oct\u2013Dec)",
+      "Change",
+      "Change %"
+    ],
+    "rows": [
+      [
+        "Total Sales",
+        0.0,
+        204500.0,
+        204500.0,
+        "N/A"
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'compute_totals' with input:
+{
+  "records": [
+    {
+      "ledger_name": "Apex Technologies Pvt Ltd",
+      "amount": -94000.0
+    },
+    {
+      "ledger_name": "Sunrise Electronics Mumbai",
+      "amount": -110500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ],
+  "group_by": "ledger_name"
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "ledger_name": "Apex Technologies Pvt Ltd",
+        "amount": -94000.0
+      },
+      {
+        "ledger_name": "Sunrise Electronics Mumbai",
+        "amount": -110500.0
+      }
+    ],
+    "headers": [
+      "ledger_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Apex Technologies Pvt Ltd",
+        -94000.0
+      ],
+      [
+        "Sunrise Electronics Mumbai",
+        -110500.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — stop_reason=end_turn
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — Claude text:
+Here is the full breakdown of your Q2 vs Q3 FY 2025-26 sales comparison.
+
+---
+
+## 📊 Sales Comparison: Q2 vs Q3 FY 2025-26
+
+| Item | Q2 FY 2025-26 (Jul–Sep) | Q3 FY 2025-26 (Oct–Dec) | Change | Change % |
+|---|---|---|---|---|
+| Total Sales | ₹0.00 | ₹2,04,500.00 | ₹2,04,500.00 | N/A |
+
+> ⚠️ **No sales transactions were recorded in Q2 (Jul–Sep 2025)**. The trend therefore starts from Q3 (Oct 2025). Percentage change is not applicable (N/A) as the base value is zero.
+
+---
+
+## 🛍️ Q3 FY 2025-26 — Sales Breakup by Customer (Base Value excl. GST)
+
+> Note: Amounts shown are **invoice base values (excl. GST)** as per Tally sign convention. Debit entries on party ledgers represent receivables raised.
+
+| Customer | Voucher | Date | Amount |
+|---|---|---|---|
+| Apex Technologies Pvt Ltd | S001 | 01-Oct-2025 | ₹94,000.00 |
+| Sunrise Electronics Mumbai | S002 | 08-Oct-2025 | ₹1,10,500.00 |
+| **Total** | | | **₹2,04,500.00** |
+
+---
+
+## 📝 Key Insights
+
+- **Q2 was completely blank** — Zero sales were recorded in Jul–Sep 2025. All Q3 sales activity began only in October 2025, so a percentage growth figure is not computable.
+- **Q3 total sales stand at ₹2,04,500**, driven by just 2 invoices across 2 customers in the first week of October alone.
+- **Sunrise Electronics Mumbai** is the larger contributor at ₹1,10,500 (54.0% of Q3 revenue), followed by **Apex Technologies Pvt Ltd** at ₹94,000 (46.0%).
+- **Only 2 invoices (S001, S002)** exist in the entire dataset — this may indicate early-stage data entry or a recently-activated Tally company. It is advisable to verify if all Q2 and Q3 vouchers have been fully entered.
+- **Revenue concentration risk**: Both invoices fall within the same 8-day window (Oct 1–8, 2025), suggesting no spread of sales across the full Q3 period yet.
+
+Chart suggestion: grouped_bar
+Chart title: Q2 vs Q3 FY 2025-26: Total Sales Comparison by Quarter
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — final answer (1884 chars)
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — FINAL ANSWER:
+Here is the full breakdown of your Q2 vs Q3 FY 2025-26 sales comparison.
+
+---
+
+## 📊 Sales Comparison: Q2 vs Q3 FY 2025-26
+
+| Item | Q2 FY 2025-26 (Jul–Sep) | Q3 FY 2025-26 (Oct–Dec) | Change | Change % |
+|---|---|---|---|---|
+| Total Sales | ₹0.00 | ₹2,04,500.00 | ₹2,04,500.00 | N/A |
+
+> ⚠️ **No sales transactions were recorded in Q2 (Jul–Sep 2025)**. The trend therefore starts from Q3 (Oct 2025). Percentage change is not applicable (N/A) as the base value is zero.
+
+---
+
+## 🛍️ Q3 FY 2025-26 — Sales Breakup by Customer (Base Value excl. GST)
+
+> Note: Amounts shown are **invoice base values (excl. GST)** as per Tally sign convention. Debit entries on party ledgers represent receivables raised.
+
+| Customer | Voucher | Date | Amount |
+|---|---|---|---|
+| Apex Technologies Pvt Ltd | S001 | 01-Oct-2025 | ₹94,000.00 |
+| Sunrise Electronics Mumbai | S002 | 08-Oct-2025 | ₹1,10,500.00 |
+| **Total** | | | **₹2,04,500.00** |
+
+---
+
+## 📝 Key Insights
+
+- **Q2 was completely blank** — Zero sales were recorded in Jul–Sep 2025. All Q3 sales activity began only in October 2025, so a percentage growth figure is not computable.
+- **Q3 total sales stand at ₹2,04,500**, driven by just 2 invoices across 2 customers in the first week of October alone.
+- **Sunrise Electronics Mumbai** is the larger contributor at ₹1,10,500 (54.0% of Q3 revenue), followed by **Apex Technologies Pvt Ltd** at ₹94,000 (46.0%).
+- **Only 2 invoices (S001, S002)** exist in the entire dataset — this may indicate early-stage data entry or a recently-activated Tally company. It is advisable to verify if all Q2 and Q3 vouchers have been fully entered.
+- **Revenue concentration risk**: Both invoices fall within the same 8-day window (Oct 1–8, 2025), suggesting no spread of sales across the full Q3 period yet.
+
+Chart suggestion: grouped_bar
+Chart title: Q2 vs Q3 FY 2025-26: Total Sales Comparison by Quarter
+backend.agents.orchestrator | INFO | Orchestrator — AnalysisAgent returned 2 tool call(s), chart_suggestion=grouped_bar
+  [turn 1] query_type=comparison, message=Here is the full breakdown of your Q2 vs Q3 FY 2025-26 sales comparison.
+
+---
+
+## 📊 Sales Comparison...
+
+================================================================================
+TEST: test_live_quarterly_comparison_q2_vs_q3
+QUERY: Compare sales in Q2 vs Q3 for FY 2025-26
+================================================================================
+  query_type: comparison
+  session_id: 16486519-5bd6-4ad7-8837-582a65ca7bc8
+  message: Here is the full breakdown of your Q2 vs Q3 FY 2025-26 sales comparison.
+
+---
+
+## 📊 Sales Comparison: Q2 vs Q3 FY 2025-26
+
+| Item | Q2 FY 2025-26 (Jul–Sep) | Q3 FY 2025-26 (Oct–Dec) | Change | Change % |
+|---|---|---|---|---|
+| Total Sales | ₹0.00 | ₹2,04,500.00 | ₹2,04,500.00 | N/A |
+
+> ⚠️ **No sales transactions were recorded in Q2 (Jul–Sep 2025)**. The trend therefore starts from Q3 (Oct 2025). Percentage change is not applicable (N/A) as the base value is zero.
+
+---
+
+## 🛍️ Q3 FY 2025-26 — Sales Breakup by Customer (Base Value excl. GST)
+
+> Note: Amounts shown are **invoice base values (excl. GST)** as per Tally sign convention. Debit entries on party ledgers represent receivables raised.
+
+| Customer | Voucher | Date | Amount |
+|---|---|---|---|
+| Apex Technologies Pvt Ltd | S001 | 01-Oct-2025 | ₹94,000.00 |
+| Sunrise Electronics Mumbai | S002 | 08-Oct-2025 | ₹1,10,500.00 |
+| **Total** | | | **₹2,04,500.00** |
+
+---
+
+## 📝 Key Insights
+
+- **Q2 was completely blank** — Zero sales were recorded in Jul–Sep 2025. All Q3 sales activity began only in October 2025, so a percentage growth figure is not computable.
+- **Q3 total sales stand at ₹2,04,500**, driven by just 2 invoices across 2 customers in the first week of October alone.
+- **Sunrise Electronics Mumbai** is the larger contributor at ₹1,10,500 (54.0% of Q3 revenue), followed by **Apex Technologies Pvt Ltd** at ₹94,000 (46.0%).
+- **Only 2 invoices (S001, S002)** exist in the entire dataset — this may indicate early-stage data entry or a recently-activated Tally company. It is advisable to verify if all Q2 and Q3 vouchers have been fully entered.
+- **Revenue concentration risk**: Both invoices fall within the same 8-day window (Oct 1–8, 2025), suggesting no spread of sales across the full Q3 period yet.
+  data: 5 columns, 1 rows
+    headers: ['Item', 'Q2 FY 2025-26 (Jul–Sep)', 'Q3 FY 2025-26 (Oct–Dec)', 'Change', 'Change %']
+    first row: ['Total Sales', 0.0, 204500.0, 204500.0, 'N/A']
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_this_month_resolution backend.agents.orchestrator | INFO | Orchestrator — classified 'Show P&L for this month' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Show P&L for this month'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'resolve_date_range' with input:
+{
+  "description": "this month"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'resolve_date_range' full result:
+{
+  "success": true,
+  "data": {
+    "from_date": "01-03-2026",
+    "to_date": "31-03-2026",
+    "description": "March 2026"
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'get_profit_and_loss' with input:
+{
+  "from_date": "01-03-2026",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'get_profit_and_loss' full result:
+{
+  "success": true,
+  "data": {
+    "report_name": "Profit and Loss",
+    "company": "",
+    "from_date": "2026-03-01",
+    "to_date": "2026-03-31",
+    "rows": [
+      {
+        "account_name": "Sales Accounts",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Cost of Sales :",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Opening Stock",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Add: Purchase Accounts",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Less: Closing Stock",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Indirect Expenses",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
+      }
+    ],
+    "raw_response": null
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — Claude text:
+The Profit & Loss statement for **March 2026** (01-03-2026 to 31-03-2026) has been fetched. However, all accounts — **Sales, Purchases, Opening/Closing Stock, and Indirect Expenses** — are showing **₹0.00** balances.
+
+This could mean:
+
+- **No transactions have been recorded yet** for March 2026 (since today is only 12-03-2026 and entries may not be up to date).
+- **Vouchers may be pending posting** in TallyPrime.
+- The active company in Tally may not have any data for this period.
+
+Would you like me to:
+1. **Check the Day Book** for March 2026 to see if any vouchers exist?
+2. **Show last month's P&L** (February 2026) instead?
+3. **List the companies loaded in Tally** to verify the correct company is active?
+backend.agents.query_agent | INFO | QueryAgent turn 3 — final answer (716 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — FINAL ANSWER:
+The Profit & Loss statement for **March 2026** (01-03-2026 to 31-03-2026) has been fetched. However, all accounts — **Sales, Purchases, Opening/Closing Stock, and Indirect Expenses** — are showing **₹0.00** balances.
+
+This could mean:
+
+- **No transactions have been recorded yet** for March 2026 (since today is only 12-03-2026 and entries may not be up to date).
+- **Vouchers may be pending posting** in TallyPrime.
+- The active company in Tally may not have any data for this period.
+
+Would you like me to:
+1. **Check the Day Book** for March 2026 to see if any vouchers exist?
+2. **Show last month's P&L** (February 2026) instead?
+3. **List the companies loaded in Tally** to verify the correct company is active?
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 2 tool call(s), 2 data set(s) (2 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=The Profit & Loss statement for **March 2026** (01-03-2026 to 31-03-2026) has been fetched. However,...
+
+================================================================================
+TEST: test_live_this_month_resolution
+QUERY: Show P&L for this month
+================================================================================
+  query_type: simple_lookup
+  session_id: c5199aac-7898-47a5-bd22-c7d021eef41f
+  message: The Profit & Loss statement for **March 2026** (01-03-2026 to 31-03-2026) has been fetched. However, all accounts — **Sales, Purchases, Opening/Closing Stock, and Indirect Expenses** — are showing **₹0.00** balances.
+
+This could mean:
+
+- **No transactions have been recorded yet** for March 2026 (since today is only 12-03-2026 and entries may not be up to date).
+- **Vouchers may be pending posting** in TallyPrime.
+- The active company in Tally may not have any data for this period.
+
+Would you like me to:
+1. **Check the Day Book** for March 2026 to see if any vouchers exist?
+2. **Show last month's P&L** (February 2026) instead?
+3. **List the companies loaded in Tally** to verify the correct company is active?
+  data: list with 2 items
+    first: {'from_date': '01-03-2026', 'to_date': '31-03-2026', 'description': 'March 2026', '_dataset_index': 0}
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_quick_action_cash_balance backend.agents.orchestrator | INFO | Orchestrator — classified 'Cash balance' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Cash balance'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=2
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+I'll fetch the current cash ledger transactions right away!
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'search_ledger' with input:
+{
+  "search_term": "cash"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'search_ledger' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "name": "Cash",
+      "parent_group": "Cash-in-Hand",
+      "closing_balance": -50000.0,
+      "opening_balance": -50000.0
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+The current **Cash** balance is:
+
+- **Ledger:** Cash
+- **Group:** Cash-in-Hand
+- **Closing Balance: ₹50,000.00** (Debit)
+
+> 💡 The amount is shown as negative in Tally's convention, which means it's a **debit balance** — i.e., cash held on hand. The actual cash available is **₹50,000.00**.
+backend.agents.query_agent | INFO | QueryAgent turn 2 — final answer (289 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — FINAL ANSWER:
+The current **Cash** balance is:
+
+- **Ledger:** Cash
+- **Group:** Cash-in-Hand
+- **Closing Balance: ₹50,000.00** (Debit)
+
+> 💡 The amount is shown as negative in Tally's convention, which means it's a **debit balance** — i.e., cash held on hand. The actual cash available is **₹50,000.00**.
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 1 tool call(s), 1 data set(s) (1 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=The current **Cash** balance is:
+
+- **Ledger:** Cash
+- **Group:** Cash-in-Hand
+- **Closing Balance: ...
+
+================================================================================
+TEST: test_live_quick_action_cash_balance
+QUERY: Cash balance
+================================================================================
+  query_type: simple_lookup
+  session_id: 1aa0636a-5ee9-4c15-bafe-89f38ffe6b9b
+  message: The current **Cash** balance is:
+
+- **Ledger:** Cash
+- **Group:** Cash-in-Hand
+- **Closing Balance: ₹50,000.00** (Debit)
+
+> 💡 The amount is shown as negative in Tally's convention, which means it's a **debit balance** — i.e., cash held on hand. The actual cash available is **₹50,000.00**.
+  data: list with 1 items
+    first: {'name': 'Cash', 'parent_group': 'Cash-in-Hand', 'closing_balance': -50000.0, 'opening_balance': -50000.0}
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_quick_action_top_10_customers backend.agents.orchestrator | INFO | Orchestrator — classified 'Top 10 customers' as query_type=top_n, requires_chart=True
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Top 10 customers'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=2
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+I'll fetch the outstanding receivables and sales data to identify the top 10 customers. Let me pull the sales register for the current FY to rank customers by revenue.
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_sales_register' with input:
+{
+  "from_date": "01-04-2025",
+  "to_date": "31-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_sales_register' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "date": "20251001",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S001",
+      "party_name": "Apex Technologies Pvt Ltd",
+      "narration": "Invoice #S001 - Laptops and peripherals",
+      "ledger_entries": [
+        {
+          "ledger_name": "Apex Technologies Pvt Ltd",
+          "amount": -94000.0
+        }
+      ]
+    },
+    {
+      "date": "20251008",
+      "month": "Oct 2025",
+      "voucher_type": "Sales",
+      "voucher_number": "S002",
+      "party_name": "Sunrise Electronics Mumbai",
+      "narration": "Invoice #S002 - Samsung products",
+      "ledger_entries": [
+        {
+          "ledger_name": "Sunrise Electronics Mumbai",
+          "amount": -110500.0
+        }
+      ]
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 2 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 2 — calling tool 'compute_totals' with input:
+{
+  "records": [
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    },
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ],
+  "group_by": "party_name"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": 94000.0
+      },
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": 110500.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Apex Technologies Pvt Ltd",
+        94000.0
+      ],
+      [
+        "Sunrise Electronics Mumbai",
+        110500.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 3 — sending 5 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 3 — stop_reason=tool_use, content_blocks=1
+backend.agents.query_agent | INFO | QueryAgent turn 3 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 3 — calling tool 'sort_by_field' with input:
+{
+  "records": [
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    },
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    }
+  ],
+  "field": "amount",
+  "label_field": "party_name",
+  "limit": 10,
+  "descending": true
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 3 — tool 'sort_by_field' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": 110500.0
+      },
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": 94000.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Sunrise Electronics Mumbai",
+        110500.0
+      ],
+      [
+        "Apex Technologies Pvt Ltd",
+        94000.0
+      ]
+    ]
+  }
+}
+backend.agents.query_agent | INFO | QueryAgent turn 4 — sending 7 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 4 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — Claude text:
+Here are the **Top 10 Customers by Sales — FY 2025-26**:
+
+Based on the sales data available in Tally, only **2 customers** have recorded sales transactions so far this financial year:
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+
+**Key Highlights:**
+- **Total Sales** across both customers: **₹2,04,500.00**
+- **Sunrise Electronics Mumbai** is the top customer, contributing ₹1,10,500.00 (~54% of total sales).
+- **Apex Technologies Pvt Ltd** follows with ₹94,000.00 (~46% of total sales).
+
+> 📌 Only 2 customers have sales entries recorded in the current FY (2025-26). If you expect more data, please verify that all vouchers are entered in TallyPrime. Would you like to drill down into any specific customer's transactions?
+backend.agents.query_agent | INFO | QueryAgent turn 4 — final answer (846 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 4 — FINAL ANSWER:
+Here are the **Top 10 Customers by Sales — FY 2025-26**:
+
+Based on the sales data available in Tally, only **2 customers** have recorded sales transactions so far this financial year:
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+
+**Key Highlights:**
+- **Total Sales** across both customers: **₹2,04,500.00**
+- **Sunrise Electronics Mumbai** is the top customer, contributing ₹1,10,500.00 (~54% of total sales).
+- **Apex Technologies Pvt Ltd** follows with ₹94,000.00 (~46% of total sales).
+
+> 📌 Only 2 customers have sales entries recorded in the current FY (2025-26). If you expect more data, please verify that all vouchers are entered in TallyPrime. Would you like to drill down into any specific customer's transactions?
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 3 tool call(s), 3 data set(s) (1 raw, 2 computed)
+backend.agents.orchestrator | INFO | Orchestrator — routing to AnalysisAgent (query_type=top_n)
+backend.agents.analysis_agent | INFO | AnalysisAgent start — query_type=top_n, query='Top 10 customers'
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — stop_reason=tool_use
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — Claude text:
+I need to sort these customers by their sales amount to get the Top 10 ranking. Note that the amounts are negative (debit sign convention in Tally for party ledgers in sales), so I'll sort and present the absolute values.
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — 2 tool call(s)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'sort_by_field' with input:
+{
+  "records": [
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    },
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    }
+  ],
+  "field": "amount",
+  "label_field": "party_name",
+  "limit": 10,
+  "descending": true
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'sort_by_field' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "party_name": "Sunrise Electronics Mumbai",
+        "amount": 110500.0
+      },
+      {
+        "party_name": "Apex Technologies Pvt Ltd",
+        "amount": 94000.0
+      }
+    ],
+    "headers": [
+      "party_name",
+      "amount"
+    ],
+    "rows": [
+      [
+        "Sunrise Electronics Mumbai",
+        110500.0
+      ],
+      [
+        "Apex Technologies Pvt Ltd",
+        94000.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 1 — calling 'compute_totals' with input:
+{
+  "records": [
+    {
+      "party_name": "Sunrise Electronics Mumbai",
+      "amount": 110500.0
+    },
+    {
+      "party_name": "Apex Technologies Pvt Ltd",
+      "amount": 94000.0
+    }
+  ],
+  "numeric_fields": [
+    "amount"
+  ]
+}
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 1 — tool 'compute_totals' full result:
+{
+  "success": true,
+  "data": {
+    "records": [
+      {
+        "amount": 204500.0
+      }
+    ],
+    "headers": [
+      "amount"
+    ],
+    "rows": [
+      [
+        204500.0
+      ]
+    ]
+  }
+}
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — stop_reason=end_turn
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — Claude text:
+**Sunrise Electronics Mumbai** is the #1 customer with ₹1,10,500.00 in sales, followed closely by Apex Technologies Pvt Ltd at ₹94,000.00. Only **2 customers** have been recorded in the dataset (Oct 2025), so the "Top 10" reflects all available data.
+
+---
+
+### 🏆 Top 10 Customers by Sales (Incl. GST)
+
+> *Note: Amounts represent invoice values as booked in Tally (Sales vouchers, Oct 2025). GST breakup not separately available in this dataset.*
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 🥇 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| **Total** | | **₹2,04,500.00** |
+
+---
+
+- **Sunrise Electronics Mumbai** is the top customer contributing ₹1,10,500.00 — approximately **54%** of total sales value.
+- **Apex Technologies Pvt Ltd** is the second customer at ₹94,000.00, accounting for the remaining **~46%** of sales.
+- Only **2 unique customers** appear in the data (both from Oct 2025), suggesting this dataset covers a very limited time window or the business is in early stages of data entry in TallyPrime.
+- The **total sales across both customers is ₹2,04,500.00**, all from October 2025 — no transactions exist for any other month in the fetched data.
+- The gap between the two customers is relatively narrow at ₹16,500.00 (~15%), indicating **fairly balanced revenue concentration** between the two.
+
+Chart suggestion: bar
+Chart title: Top Customers by Sales Value (Oct 2025)
+backend.agents.analysis_agent | INFO | AnalysisAgent turn 2 — final answer (1464 chars)
+backend.agents.analysis_agent | DEBUG | AnalysisAgent turn 2 — FINAL ANSWER:
+**Sunrise Electronics Mumbai** is the #1 customer with ₹1,10,500.00 in sales, followed closely by Apex Technologies Pvt Ltd at ₹94,000.00. Only **2 customers** have been recorded in the dataset (Oct 2025), so the "Top 10" reflects all available data.
+
+---
+
+### 🏆 Top 10 Customers by Sales (Incl. GST)
+
+> *Note: Amounts represent invoice values as booked in Tally (Sales vouchers, Oct 2025). GST breakup not separately available in this dataset.*
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 🥇 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| **Total** | | **₹2,04,500.00** |
+
+---
+
+- **Sunrise Electronics Mumbai** is the top customer contributing ₹1,10,500.00 — approximately **54%** of total sales value.
+- **Apex Technologies Pvt Ltd** is the second customer at ₹94,000.00, accounting for the remaining **~46%** of sales.
+- Only **2 unique customers** appear in the data (both from Oct 2025), suggesting this dataset covers a very limited time window or the business is in early stages of data entry in TallyPrime.
+- The **total sales across both customers is ₹2,04,500.00**, all from October 2025 — no transactions exist for any other month in the fetched data.
+- The gap between the two customers is relatively narrow at ₹16,500.00 (~15%), indicating **fairly balanced revenue concentration** between the two.
+
+Chart suggestion: bar
+Chart title: Top Customers by Sales Value (Oct 2025)
+backend.agents.orchestrator | INFO | Orchestrator — AnalysisAgent returned 2 tool call(s), chart_suggestion=bar
+  [turn 1] query_type=top_n, message=**Sunrise Electronics Mumbai** is the #1 customer with ₹1,10,500.00 in sales, followed closely by Ap...
+
+================================================================================
+TEST: test_live_quick_action_top_10_customers
+QUERY: Top 10 customers
+================================================================================
+  query_type: top_n
+  session_id: 2148925f-9305-48bc-b70c-f291758b5816
+  message: **Sunrise Electronics Mumbai** is the #1 customer with ₹1,10,500.00 in sales, followed closely by Apex Technologies Pvt Ltd at ₹94,000.00. Only **2 customers** have been recorded in the dataset (Oct 2025), so the "Top 10" reflects all available data.
+
+---
+
+### 🏆 Top 10 Customers by Sales (Incl. GST)
+
+> *Note: Amounts represent invoice values as booked in Tally (Sales vouchers, Oct 2025). GST breakup not separately available in this dataset.*
+
+| Rank | Customer | Sales Amount |
+|------|----------|-------------|
+| 🥇 1 | Sunrise Electronics Mumbai | ₹1,10,500.00 |
+| 2 | Apex Technologies Pvt Ltd | ₹94,000.00 |
+| **Total** | | **₹2,04,500.00** |
+
+---
+
+- **Sunrise Electronics Mumbai** is the top customer contributing ₹1,10,500.00 — approximately **54%** of total sales value.
+- **Apex Technologies Pvt Ltd** is the second customer at ₹94,000.00, accounting for the remaining **~46%** of sales.
+- Only **2 unique customers** appear in the data (both from Oct 2025), suggesting this dataset covers a very limited time window or the business is in early stages of data entry in TallyPrime.
+- The **total sales across both customers is ₹2,04,500.00**, all from October 2025 — no transactions exist for any other month in the fetched data.
+- The gap between the two customers is relatively narrow at ₹16,500.00 (~15%), indicating **fairly balanced revenue concentration** between the two.
+  data: 2 columns, 3 rows
+    headers: ['party_name', 'amount']
+    first row: ['Sunrise Electronics Mumbai', 110500.0]
+    last row:  ['Total', 204500.0]
+  chart: type=None, title=Top Customers by Sales Value (Oct 2025)
+    chart data points: 2
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_quick_action_stock_summary backend.agents.orchestrator | INFO | Orchestrator — classified 'Stock summary' as query_type=simple_lookup, requires_chart=False
+backend.agents.orchestrator | INFO | Orchestrator — routing to QueryAgent
+backend.agents.query_agent | INFO | QueryAgent start — query='Stock summary'
+backend.agents.query_agent | INFO | QueryAgent turn 1 — sending 1 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 1 — stop_reason=tool_use, content_blocks=2
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — Claude text:
+Let me fetch the current stock summary from TallyPrime.
+backend.agents.query_agent | INFO | QueryAgent turn 1 — 1 tool call(s) requested
+backend.agents.query_agent | INFO | QueryAgent turn 1 — calling tool 'get_stock_summary' with input:
+{
+  "as_on_date": "12-03-2026"
+}
+backend.agents.query_agent | DEBUG | QueryAgent turn 1 — tool 'get_stock_summary' full result:
+{
+  "success": true,
+  "data": [
+    {
+      "name": "Data Cleaning and Matching Application Software",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -1.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "IT Project Technical Consulting",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -2.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "IT Project Technical Consulting(WITHOUT GST)",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -154.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "Smartbike Software Development Technical Services",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -3.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    },
+    {
+      "name": "Website Design and App Development",
+      "parent_group": "",
+      "base_units": "NOS",
+      "closing_quantity": -2.0,
+      "closing_rate": 0.0,
+      "closing_value": 0.0
+    }
+  ]
+}
+backend.agents.query_agent | INFO | QueryAgent turn 2 — sending 3 messages to Claude
+backend.agents.query_agent | INFO | QueryAgent turn 2 — stop_reason=end_turn, content_blocks=1
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — Claude text:
+Here is the **Stock Summary as on 12-03-2026**:
+
+The inventory consists of **5 service/software items** (billed in NOS — Numbers), all with a **closing value of ₹0.00**. The negative closing quantities indicate that these items have been sold/consumed more than they were received (service-type stock items typically don't carry physical inventory value). Here's a breakdown:
+
+1. **Data Cleaning and Matching Application Software** — Qty: -1 NOS | Value: ₹0.00
+2. **IT Project Technical Consulting** — Qty: -2 NOS | Value: ₹0.00
+3. **IT Project Technical Consulting (WITHOUT GST)** — Qty: -154 NOS | Value: ₹0.00
+4. **Smartbike Software Development Technical Services** — Qty: -3 NOS | Value: ₹0.00
+5. **Website Design and App Development** — Qty: -2 NOS | Value: ₹0.00
+
+### Key Observations:
+- **All items are service-based** (IT consulting, software development, website/app development) — no physical goods.
+- **No closing stock value** is recorded, which is typical for service companies where stock items are used only for invoicing purposes.
+- **IT Project Technical Consulting (WITHOUT GST)** has the highest usage volume at **-154 NOS**.
+
+Would you like to drill deeper into any specific item or see the sales register for these services?
+backend.agents.query_agent | INFO | QueryAgent turn 2 — final answer (1246 chars)
+backend.agents.query_agent | DEBUG | QueryAgent turn 2 — FINAL ANSWER:
+Here is the **Stock Summary as on 12-03-2026**:
+
+The inventory consists of **5 service/software items** (billed in NOS — Numbers), all with a **closing value of ₹0.00**. The negative closing quantities indicate that these items have been sold/consumed more than they were received (service-type stock items typically don't carry physical inventory value). Here's a breakdown:
+
+1. **Data Cleaning and Matching Application Software** — Qty: -1 NOS | Value: ₹0.00
+2. **IT Project Technical Consulting** — Qty: -2 NOS | Value: ₹0.00
+3. **IT Project Technical Consulting (WITHOUT GST)** — Qty: -154 NOS | Value: ₹0.00
+4. **Smartbike Software Development Technical Services** — Qty: -3 NOS | Value: ₹0.00
+5. **Website Design and App Development** — Qty: -2 NOS | Value: ₹0.00
+
+### Key Observations:
+- **All items are service-based** (IT consulting, software development, website/app development) — no physical goods.
+- **No closing stock value** is recorded, which is typical for service companies where stock items are used only for invoicing purposes.
+- **IT Project Technical Consulting (WITHOUT GST)** has the highest usage volume at **-154 NOS**.
+
+Would you like to drill deeper into any specific item or see the sales register for these services?
+backend.agents.orchestrator | INFO | Orchestrator — QueryAgent returned 1 tool call(s), 1 data set(s) (1 raw, 0 computed)
+  [turn 1] query_type=simple_lookup, message=Here is the **Stock Summary as on 12-03-2026**:
+
+The inventory consists of **5 service/software item...
+
+================================================================================
+TEST: test_live_quick_action_stock_summary
+QUERY: Stock summary
+================================================================================
+  query_type: simple_lookup
+  session_id: bae8ea64-a6c2-47ea-95d6-89787a680605
+  message: Here is the **Stock Summary as on 12-03-2026**:
+
+The inventory consists of **5 service/software items** (billed in NOS — Numbers), all with a **closing value of ₹0.00**. The negative closing quantities indicate that these items have been sold/consumed more than they were received (service-type stock items typically don't carry physical inventory value). Here's a breakdown:
+
+1. **Data Cleaning and Matching Application Software** — Qty: -1 NOS | Value: ₹0.00
+2. **IT Project Technical Consulting** — Qty: -2 NOS | Value: ₹0.00
+3. **IT Project Technical Consulting (WITHOUT GST)** — Qty: -154 NOS | Value: ₹0.00
+4. **Smartbike Software Development Technical Services** — Qty: -3 NOS | Value: ₹0.00
+5. **Website Design and App Development** — Qty: -2 NOS | Value: ₹0.00
+
+### Key Observations:
+- **All items are service-based** (IT consulting, software development, website/app development) — no physical goods.
+- **No closing stock value** is recorded, which is typical for service companies where stock items are used only for invoicing purposes.
+- **IT Project Technical Consulting (WITHOUT GST)** has the highest usage volume at **-154 NOS**.
+
+Would you like to drill deeper into any specific item or see the sales register for these services?
+  data: list with 5 items
+    first: {'name': 'Data Cleaning and Matching Application Software', 'parent_group': '', 'base_units': 'NOS', 'closing_quantity': -1.0, 'closing_rate': 0.0, 'closing_value': 0.0}
+  chart: None
+================================================================================
+
+PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_date_validation_iso_autofix PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_date_validation_garbage_rejected PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_date_validation_full_fy_sales_register PASSED
+tests/e2e_live/test_live_pipeline.py::test_live_ledger_vouchers_date_filter PASSED
+
+======================== 19 passed in 342.72s (0:05:42) ========================

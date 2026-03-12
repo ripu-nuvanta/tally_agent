@@ -154,7 +154,7 @@ VITE_API_URL (default: http://localhost:8000)
 - **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle. 43 tests.
 - **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. 12 tests.
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var OR `--tally-mode mock`. In mock mode, uses built-in mock handler (no real Tally needed, still needs Claude API key). 19 tests.
-- **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 7 scenarios, 44 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`.
+- **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 8 scenarios, 49 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`. Mock mode: `--tally-mode mock` auto-selects `*_mock.yaml` scenario variants when available.
 - **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 111 tests.
 - **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) = 39 tests. **IMPORTANT: After running Playwright tests, always visually inspect the eval-visual screenshots** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/eval-visual.spec.ts/` before reporting pass/fail. Check for: blank space, content cutoff, header leaking into screenshots, missing text/tables/charts. A test suite reporting "39 passed" is NOT sufficient — screenshots must be visually verified.
 - **Playwright screenshot regeneration**: Always delete `frontend/tests/playwright/__screenshots__/` before running `--update-snapshots`. Playwright's pixel-diff threshold can silently keep stale screenshots that don't reflect code changes (e.g., updated button text, new header layout).
@@ -175,5 +175,7 @@ VITE_API_URL (default: http://localhost:8000)
 2. **Agent Orchestrator & Tools** ✅ — tool definitions, query_agent with Claude tool-calling loop, orchestrator routing
 3. **FastAPI Backend** ✅ — main app, chat/health/companies/reports endpoints
 4. **React Frontend** ✅ — chat UI with inline charts and tables
-5. **Eval Framework** ✅ — two-phase eval (collect via Playwright → judge via LLM → HTML report), 4 scenarios, 27 turns
-6. **Advanced Features** — conversation memory, cached ledger list, GST reports, ~~date-relative parsing~~ ✅, export, WhatsApp
+5. **Eval Framework** ✅ — two-phase eval (collect via Playwright → judge via LLM → HTML report), 8 scenarios, 49 turns
+6. **Mock Tally & Demo Mode** ✅ — built-in mock handler, demo toggle, e2e_live mock mode
+7. **Enriched Mock Data** 🔜 — Plan: `docs/plans/2026-03-12-enriched-mock-tally.md`. Fixture generator from seed data, date-aware mock handler, mock eval scenarios, format parity tests
+8. **Advanced Features** — conversation memory, cached ledger list, GST reports, ~~date-relative parsing~~ ✅, export, WhatsApp

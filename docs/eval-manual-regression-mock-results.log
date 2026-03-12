@@ -1,0 +1,96 @@
+Running 1 scenario(s): manual_test_regression
+Run directory: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109
+Loaded mock golden data from /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/golden/mock_golden.json
+
+============================================================
+Scenario: manual_test_regression
+============================================================
+Tally mode set to: mock
+  Turn 1/5: P&L last month...
+    Done (15.2s) — table=False, chart=False
+  Turn 2/5: show me sales trend over 25-26 FY...
+    Done (38.9s) — table=True, chart=True
+  Turn 3/5: compare Q2 and Q3 results...
+    Done (32.3s) — table=True, chart=False
+  Turn 4/5: Top 10 customers...
+    Done (33.8s) — table=True, chart=True
+  Turn 5/5: month-wise trend for hcode...
+    Clarification detected, following up: month-wise trend for hcode for the current financial year Ap...
+    Done (46.5s) — table=True, chart=True
+Transcript saved: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109/transcripts/manual_test_regression_20260312_215359.json
+
+Collection complete. Results in /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109
+Judge model: claude-opus-4-6
+Run directory: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109
+Found 1 transcript(s)
+
+============================================================
+Judging: manual_test_regression_20260312_215359.json
+============================================================
+Tally mode: mock
+  Judging turn 1/5...
+Traceback (most recent call last):
+  File "/Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/judge.py", line 368, in <module>
+    asyncio.run(main())
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/asyncio/runners.py", line 194, in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/asyncio/runners.py", line 118, in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/asyncio/base_events.py", line 687, in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+  File "/Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/judge.py", line 360, in main
+    scores = await judge_transcript(client, model, transcript, scenario)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/judge.py", line 209, in judge_transcript
+    text_scores = await judge_turn_text(
+                  ^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/judge.py", line 86, in judge_turn_text
+    response = await client.messages.create(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/resources/messages/messages.py", line 2165, in create
+    return await self._post(
+           ^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/_base_client.py", line 1920, in post
+    return await self.request(cast_to, opts, stream=stream, stream_cls=stream_cls)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/_base_client.py", line 1614, in request
+    return await self._request(
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/_base_client.py", line 1645, in _request
+    request = self._build_request(options, retries_taken=retries_taken)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/_base_client.py", line 487, in _build_request
+    headers = self._build_headers(options, retries_taken=retries_taken)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/_base_client.py", line 428, in _build_headers
+    self._validate_headers(headers_dict, custom_headers)
+  File "/Users/ripu/miniforge3/envs/py312/lib/python3.12/site-packages/anthropic/_client.py", line 406, in _validate_headers
+    raise TypeError(
+TypeError: "Could not resolve authentication method. Expected either api_key or auth_token to be set. Or for one of the `X-Api-Key` or `Authorization` headers to be explicitly omitted"
+Judge model: claude-opus-4-6
+Run directory: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109
+Found 1 transcript(s)
+
+============================================================
+Judging: manual_test_regression_20260312_215359.json
+============================================================
+Tally mode: mock
+  Judging turn 1/5...
+    Scores: factual=2, quality=4, coherence=5, chart=-
+  Judging turn 2/5...
+    Scores: factual=5, quality=5, coherence=4, chart=4
+  Judging turn 3/5...
+    Scores: factual=2, quality=4, coherence=1, chart=-
+  Judging turn 4/5...
+    Scores: factual=5, quality=5, coherence=5, chart=5
+  Judging turn 5/5...
+    Scores: factual=3, quality=4, coherence=4, chart=3
+Scores saved: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109/scores.json
+
+Judging complete. 1 scenario(s) scored.
+Run directory: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109
+Loaded scores for 1 scenario(s)
+Report generated: /Users/ripu/work/nuvanta_repos/tally_agent/tests/eval/results/run_20260312_215109/report.html
