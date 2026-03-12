@@ -3,6 +3,8 @@
 import pytest
 from unittest.mock import AsyncMock, patch
 
+from httpx import ASGITransport, AsyncClient
+
 from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseError
 from tests.mocks.mock_claude_api import (
     make_classification_response,
@@ -536,42 +538,54 @@ async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
 
 
 class TestChatPipelineMockTally:
-    """E2E tests running the full pipeline with mock Tally mode."""
+    """E2E tests running the full pipeline with mock Tally mode.
 
-    @pytest.fixture(autouse=True)
-    async def setup_mock_mode(self, e2e_client):
-        """Switch to mock mode before tests, restore after."""
-        client, _, _ = e2e_client
+    Uses a self-contained fixture (no aiohttp_server dependency) since
+    mock mode doesn't need a real HTTP mock Tally server.
+    """
+
+    @pytest.fixture
+    async def mock_client(self):
+        """Create an async test client with mock Tally mode enabled."""
         from backend.main import app
-        app.state.tally_client.mock_mode = True
-        yield
-        app.state.tally_client.mock_mode = False
+        from backend.tally_bridge.client import TallyClient
+        from backend.agents.context import SessionStore
+
+        tally_client = TallyClient()
+        tally_client.mock_mode = True
+        app.state.tally_client = tally_client
+        app.state.session_store = SessionStore()
+
+        async with AsyncClient(
+            transport=ASGITransport(app=app), base_url="http://test"
+        ) as ac:
+            yield ac
+
+        tally_client.mock_mode = False
+        await tally_client.close()
 
     @pytest.mark.asyncio
-    async def test_health_in_mock_mode(self, e2e_client):
-        client, _, _ = e2e_client
-        resp = await client.get("/api/health")
+    async def test_health_in_mock_mode(self, mock_client):
+        resp = await mock_client.get("/api/health")
         assert resp.status_code == 200
         body = resp.json()
         assert body["tally_connected"] is True
         assert body["mode"] == "mock"
 
     @pytest.mark.asyncio
-    async def test_companies_in_mock_mode(self, e2e_client):
-        client, _, _ = e2e_client
-        resp = await client.get("/api/companies")
+    async def test_companies_in_mock_mode(self, mock_client):
+        resp = await mock_client.get("/api/companies")
         assert resp.status_code == 200
         companies = resp.json()["companies"]
         assert len(companies) >= 1
 
     @pytest.mark.asyncio
-    async def test_tally_mode_toggle_endpoint(self, e2e_client):
-        client, _, _ = e2e_client
+    async def test_tally_mode_toggle_endpoint(self, mock_client):
         # GET mode
-        resp = await client.get("/api/tally-mode")
-        assert resp.json()["mode"] == "mock"  # set by fixture
+        resp = await mock_client.get("/api/tally-mode")
+        assert resp.json()["mode"] == "mock"
         # Toggle to live and back
-        resp = await client.post("/api/tally-mode", json={"mode": "live"})
+        resp = await mock_client.post("/api/tally-mode", json={"mode": "live"})
         assert resp.json()["mode"] == "live"
-        resp = await client.post("/api/tally-mode", json={"mode": "mock"})
+        resp = await mock_client.post("/api/tally-mode", json={"mode": "mock"})
         assert resp.json()["mode"] == "mock"
