@@ -25,7 +25,7 @@ REPORT_FIXTURES: dict[str, str] = {
     "Stock Summary": "stock_summary.xml",
     "DayBookVchs": "day_book.xml",
     "SalesVchs": "sales_register.xml",
-    "PurchaseVchs": "sales_register.xml",
+    "PurchaseVchs": "purchase_register.xml",
     "LedgerVchs": "day_book.xml",
 }
 
