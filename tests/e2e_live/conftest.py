@@ -1,7 +1,7 @@
 """Fixtures for live E2E tests against real Tally + real Claude API.
 
-Gated by RUN_LIVE_TESTS=1 environment variable.
-Requires ANTHROPIC_API_KEY and a reachable Tally instance.
+Gated by RUN_LIVE_TESTS=1 environment variable (or --tally-mode mock).
+Requires ANTHROPIC_API_KEY and a reachable Tally instance (live mode).
 """
 
 import logging
@@ -28,12 +28,18 @@ def pytest_configure(config):
 def pytest_addoption(parser):
     parser.addoption("--host", default=os.environ.get("TALLY_HOST", "localhost"))
     parser.addoption("--port", type=int, default=int(os.environ.get("TALLY_PORT", "9000")))
+    parser.addoption("--tally-mode", default="live", choices=["live", "mock"],
+                     help="Tally mode: live (real Tally) or mock (built-in handler)")
 
 
-pytestmark = pytest.mark.skipif(
-    not os.environ.get("RUN_LIVE_TESTS"),
-    reason="RUN_LIVE_TESTS not set — skipping live E2E tests",
-)
+def pytest_collection_modifyitems(config, items):
+    """Skip tests unless RUN_LIVE_TESTS is set or --tally-mode mock is used."""
+    tally_mode = config.getoption("--tally-mode", "live")
+    if tally_mode == "mock" or os.environ.get("RUN_LIVE_TESTS"):
+        return  # Don't skip
+    skip_marker = pytest.mark.skip(reason="RUN_LIVE_TESTS not set and --tally-mode is not mock")
+    for item in items:
+        item.add_marker(skip_marker)
 
 
 @pytest.fixture(scope="session")
@@ -46,13 +52,21 @@ def tally_port(request):
     return request.config.getoption("--port")
 
 
+@pytest.fixture(scope="session")
+def tally_mode(request):
+    return request.config.getoption("--tally-mode")
+
+
 @pytest.fixture
-async def tally_client(tally_host, tally_port):
-    """Real TallyClient connected to a live Tally instance."""
+async def tally_client(tally_host, tally_port, tally_mode):
+    """TallyClient — real or mock depending on --tally-mode flag."""
     client = TallyClient(host=tally_host, port=tally_port)
-    healthy = await client.health_check()
-    if not healthy:
-        pytest.skip(f"Tally unreachable at {tally_host}:{tally_port}")
+    if tally_mode == "mock":
+        client.mock_mode = True
+    else:
+        healthy = await client.health_check()
+        if not healthy:
+            pytest.skip(f"Tally unreachable at {tally_host}:{tally_port}")
     yield client
     await client.close()
 
