@@ -35,7 +35,7 @@ async def test_greeting_returns_canned_response(e2e_client):
 
 @pytest.mark.asyncio
 async def test_simple_lookup_trial_balance(e2e_client):
-    """Simple lookup -> classify -> query agent (tool call) -> text response."""
+    """Simple lookup -> classify -> query agent (tool call) -> analysis agent -> response."""
     client, set_responses, mock_clients = e2e_client
 
     set_responses(
@@ -44,11 +44,15 @@ async def test_simple_lookup_trial_balance(e2e_client):
             make_tool_call_response("get_trial_balance", {"from_date": "01-04-2025", "to_date": "31-03-2026"}),
             make_text_response("Here is the trial balance for FY 2025-26."),
         ],
+        analysis_agent_responses=[
+            make_text_response("Here is the trial balance for FY 2025-26."),
+        ],
     )
 
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
     ):
         response = await client.post("/api/chat", json={"message": "Show trial balance"})
 
@@ -142,11 +146,12 @@ async def test_multi_dataset_response_does_not_500(e2e_client):
 
     Regression test: ChatResponse.data typed as dict|None caused a 500 when
     the orchestrator passed a list[dict] from multiple tool results.
+    Now all queries with data route through analysis agent.
     """
     client, set_responses, mock_clients = e2e_client
 
     # simple_lookup with two sequential tool calls -> two datasets in tool_results.
-    # With no analysis agent, orchestrator sets final_data = all_datasets (list[dict]).
+    # Analysis agent processes both datasets and returns merged result.
     set_responses(
         orchestrator_responses=[make_classification_response("simple_lookup")],
         query_agent_responses=[
@@ -162,11 +167,15 @@ async def test_multi_dataset_response_does_not_500(e2e_client):
             ),
             make_text_response("Here is the P&L for both halves of the financial year."),
         ],
+        analysis_agent_responses=[
+            make_text_response("Here is the P&L comparison for H1 and H2."),
+        ],
     )
 
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
     ):
         response = await client.post(
             "/api/chat",
@@ -177,9 +186,6 @@ async def test_multi_dataset_response_does_not_500(e2e_client):
     data = response.json()
     assert data["message"]
     assert data["session_id"]
-    # data should be a list of dicts (multiple datasets), not a single dict
-    assert isinstance(data["data"], list), f"Expected list but got {type(data['data'])}"
-    assert len(data["data"]) == 2
 
 
 @pytest.mark.asyncio

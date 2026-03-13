@@ -134,11 +134,11 @@ class Orchestrator:
             len(tool_results), len(all_data), len(raw_tally_data), len(computed_data),
         )
 
-        # --- Analysis Agent (for comparison/trend/top_n/aggregation) ---
+        # --- Analysis Agent (for all query types that have data) ---
         message = agent_result["message"]
         data = raw_data
 
-        if query_type in _ANALYSIS_TYPES and (raw_tally_data or computed_data):
+        if raw_tally_data or computed_data:
             logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
             analysis_result = await self.analysis_agent.execute(
                 raw_tally_data, computed_data, user_message, query_type,

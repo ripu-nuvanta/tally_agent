@@ -92,7 +92,7 @@ class TestOrchestratorClassification:
 
     @pytest.mark.asyncio
     async def test_simple_lookup_routes_to_query_agent(self):
-        """simple_lookup classification -> routes to query_agent.execute."""
+        """simple_lookup classification -> routes to query_agent then analysis_agent."""
         from backend.agents.orchestrator import Orchestrator
 
         mock_client = MagicMock()
@@ -112,10 +112,15 @@ class TestOrchestratorClassification:
 
             orch = Orchestrator()
 
-            # Patch the query_agent.execute method
-            with patch.object(
-                orch.query_agent, "execute", new_callable=AsyncMock
-            ) as mock_execute:
+            # Patch both query_agent and analysis_agent
+            with (
+                patch.object(
+                    orch.query_agent, "execute", new_callable=AsyncMock
+                ) as mock_execute,
+                patch.object(
+                    orch.analysis_agent, "execute", new_callable=AsyncMock
+                ) as mock_analysis,
+            ):
                 mock_execute.return_value = {
                     "message": "The trial balance shows debits of ₹50,00,000.",
                     "tool_results": [
@@ -129,6 +134,12 @@ class TestOrchestratorClassification:
                         }
                     ],
                 }
+                mock_analysis.return_value = {
+                    "message": "The trial balance shows debits of ₹50,00,000.",
+                    "data": {"report_name": "Trial Balance", "entries": []},
+                    "tool_results": [],
+                    "chart_suggestion": "table_only",
+                }
 
                 result = await orch.process_query(
                     "Show trial balance", mock_client, session
@@ -137,6 +148,7 @@ class TestOrchestratorClassification:
                 mock_execute.assert_awaited_once_with(
                     "Show trial balance", mock_client, session
                 )
+                mock_analysis.assert_awaited_once()
 
         assert result["query_type"] == "simple_lookup"
         assert result["message"] == "The trial balance shows debits of ₹50,00,000."
@@ -325,8 +337,8 @@ class TestOrchestratorAnalysisRouting:
         assert result["chart"]["chart_type"] == "grouped_bar"
 
     @pytest.mark.asyncio
-    async def test_simple_lookup_skips_analysis_agent(self):
-        """simple_lookup -> QueryAgent only, no AnalysisAgent."""
+    async def test_simple_lookup_routes_to_analysis_agent(self):
+        """simple_lookup with data -> QueryAgent then AnalysisAgent."""
         from backend.agents.orchestrator import Orchestrator
 
         mock_client = MagicMock()
@@ -360,11 +372,17 @@ class TestOrchestratorAnalysisRouting:
                         }
                     ],
                 }
+                mock_analysis.return_value = {
+                    "message": "Trial balance shows...",
+                    "data": {"entries": []},
+                    "tool_results": [],
+                    "chart_suggestion": "table_only",
+                }
 
                 result = await orch.process_query("Show trial balance", mock_client, session)
 
                 mock_query.assert_awaited_once()
-                mock_analysis.assert_not_awaited()
+                mock_analysis.assert_awaited_once()
 
         assert result["query_type"] == "simple_lookup"
         assert result["chart"] is None
@@ -711,8 +729,8 @@ class TestOrchestratorMultipleData:
 
 class TestOrchestratorMultiDataset:
     @pytest.mark.asyncio
-    async def test_multiple_datasets_passed_when_no_analysis(self):
-        """When query_type is simple_lookup but multiple tool results exist, pass all."""
+    async def test_multiple_datasets_passed_to_analysis(self):
+        """When simple_lookup has multiple tool results, analysis agent processes them."""
         from backend.agents.orchestrator import Orchestrator
 
         mock_client = MagicMock()
@@ -733,17 +751,29 @@ class TestOrchestratorMultiDataset:
             ],
         }
 
+        analysis_result = {
+            "message": "Here are both reports analysed",
+            "data": {"headers": ["Name", "Period"], "rows": [["Q1", "H1"], ["Q2", "H2"]]},
+            "tool_results": [],
+            "chart_suggestion": "table_only",
+        }
+
         with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
             mock_claude.messages.create = AsyncMock(
                 return_value=_make_classification_response(classification)
             )
             orch = Orchestrator()
-            with patch.object(orch.query_agent, "execute", new_callable=AsyncMock, return_value=agent_result):
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock, return_value=agent_result),
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock, return_value=analysis_result) as mock_analysis,
+            ):
                 result = await orch.process_query("Show both reports", mock_client, session)
 
-        # Both datasets should be passed
-        assert isinstance(result["data"], list)
-        assert len(result["data"]) == 2
+        # Analysis agent should have been called with the data
+        mock_analysis.assert_awaited_once()
+        # Analysis result's data should be used
+        assert isinstance(result["data"], dict)
+        assert result["data"]["headers"] == ["Name", "Period"]
 
     @pytest.mark.asyncio
     async def test_analysis_result_data_used_over_raw(self):
