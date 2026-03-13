@@ -1,31 +1,41 @@
 """In-process mock Tally handler.
 
 Returns fixture XML data for Bharat Traders Pvt Ltd demo company.
-Pattern-matches report names in XML request body and returns
-corresponding fixture files. This is the single canonical mock
-implementation — tests/mocks/mock_tally_server.py delegates to this.
-"""
+For TYPE=Data reports (P&L, TB), parses SVTODATE from the request
+and computes cumulative figures from voucher data — matching real
+Tally's behavior of returning cumulative from FY start.
 
+For TYPE=Collection (vouchers), returns the full fixture dataset.
+Python-side date filtering handles range selection.
+"""
+import re
+import xml.etree.ElementTree as ET
 from functools import lru_cache
 from pathlib import Path
 
 FIXTURES_DIR = Path(__file__).resolve().parent.parent.parent / "tests" / "fixtures"
 
-# Same mapping as tests/mocks/mock_tally_server.py — kept in sync
-REPORT_FIXTURES: dict[str, str] = {
+# Reports that return full fixture regardless of dates
+STATIC_FIXTURES: dict[str, str] = {
     "List of Companies": "company_list.xml",
-    "Trial Balance": "trial_balance.xml",
     "CustomLedgerList": "ledger_list.xml",
-    "Profit and Loss": "profit_and_loss.xml",
+    "Trial Balance": "trial_balance.xml",
     "Balance Sheet": "balance_sheet.xml",
     "Bills Receivable": "bills_receivable.xml",
-    "Bills Payable": "bills_receivable.xml",  # Intentional: demo company uses same fixture format for both receivable and payable
+    "Bills Payable": "bills_payable.xml",
     "Stock Summary": "stock_summary.xml",
+}
+
+# Voucher collections — return full data, Python filters by date
+VOUCHER_FIXTURES: dict[str, str] = {
     "DayBookVchs": "day_book.xml",
     "SalesVchs": "sales_register.xml",
     "PurchaseVchs": "purchase_register.xml",
     "LedgerVchs": "day_book.xml",
 }
+
+# Date-aware reports — computed from voucher data
+DATE_AWARE_REPORTS = {"Profit and Loss"}
 
 _ERROR_RESPONSE = (
     "<ENVELOPE><BODY><DATA>Unknown request</DATA></BODY></ENVELOPE>"
@@ -45,9 +55,44 @@ def _load_fixture(filename: str) -> str:
     return path.read_text()
 
 
+def _extract_svtodate(xml_body: str) -> str | None:
+    """Extract SVTODATE value from request XML. Returns YYYYMMDD or None."""
+    match = re.search(r"<SVTODATE>(\d{2})-(\d{2})-(\d{4})</SVTODATE>", xml_body)
+    if match:
+        dd, mm, yyyy = match.groups()
+        return f"{yyyy}{mm}{dd}"
+    return None
+
+
+def _generate_cumulative_pnl(up_to_yyyymmdd: str | None) -> str:
+    """Generate P&L XML with cumulative figures up to the given date."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "generate_fixtures",
+        FIXTURES_DIR / "generate_fixtures.py",
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod.generate_profit_and_loss(up_to_date=up_to_yyyymmdd)
+
+
 def mock_tally_request(xml_body: str) -> str:
     """Process an XML request and return mock fixture response."""
-    for report_name, fixture_file in REPORT_FIXTURES.items():
+    # Check date-aware reports first
+    for report_name in DATE_AWARE_REPORTS:
+        if report_name in xml_body:
+            svtodate = _extract_svtodate(xml_body)
+            if report_name == "Profit and Loss":
+                return _generate_cumulative_pnl(svtodate)
+
+    # Static fixtures
+    for report_name, fixture_file in STATIC_FIXTURES.items():
         if report_name in xml_body:
             return _load_fixture(fixture_file)
+
+    # Voucher collections
+    for report_name, fixture_file in VOUCHER_FIXTURES.items():
+        if report_name in xml_body:
+            return _load_fixture(fixture_file)
+
     return _ERROR_RESPONSE

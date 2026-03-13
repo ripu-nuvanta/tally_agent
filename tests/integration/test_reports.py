@@ -50,10 +50,10 @@ async def test_bills_receivable(mock_tally):
 
 @pytest.mark.asyncio
 async def test_bills_payable(mock_tally):
-    # mock_handler maps Bills Payable → bills_receivable.xml (same fixture format)
+    # mock_handler maps Bills Payable → bills_payable.xml (5 outstanding payables)
     bills = await bills_payable(mock_tally, "31-03-2026")
-    assert len(bills) == 6
-    assert any(b.party_name == "Apex Technologies Pvt Ltd" for b in bills)
+    assert len(bills) == 5
+    assert any(b.party_name == "Samsung India Electronics" for b in bills)
 
 
 @pytest.mark.asyncio
