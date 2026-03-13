@@ -1,0 +1,18 @@
+name: "Stock Reorder Analysis (Mock)"
+description: "Single-turn test for stock reorder query — validates classifier routes inventory queries correctly and AnalysisAgent computes days-of-cover from closing stock + sales data."
+tags: [stock, inventory, reorder, classifier, code_execution, mock]
+
+turns:
+  - query: "Which items are running low on stock based on last 6 months of sales? Show average monthly consumption, current stock level, and flag items with less than 2 months of stock remaining."
+    expect:
+      query_type: aggregation
+      has_data: true
+      has_chart: false
+      checks:
+        - "Response is NOT a clarification question — it contains actual stock analysis data"
+        - "Shows each stock item with average monthly sales quantity"
+        - "Current stock levels reflect closing balances (not opening)"
+        - "Days of stock remaining is calculated as (current stock / average monthly sales) * 30"
+        - "Items are flagged or sorted by urgency (lowest days remaining first)"
+        - "Items with zero or negative stock are flagged as critical"
+        - "Uses table_only chart suggestion (no bar/line chart for multi-column text+numeric data)"
