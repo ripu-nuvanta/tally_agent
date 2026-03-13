@@ -73,7 +73,7 @@ These query types inherently benefit from visual representation.
 """
 
 
-def build_query_agent_prompt(current_date: str) -> str:
+def build_query_agent_prompt(current_date: str, code_execution_enabled: bool = False) -> str:
     """Return the system prompt for the query agent.
 
     The query agent uses Claude tool-calling to fetch data from TallyPrime
@@ -81,11 +81,74 @@ def build_query_agent_prompt(current_date: str) -> str:
 
     Args:
         current_date: Today's date in DD-MM-YYYY format, injected into the prompt.
+        code_execution_enabled: When True, swap computation tool references for
+            code execution sandbox instructions.
     """
-    from backend.agents.analysis_agent import ANALYSIS_TOOLS
-
     tally_tool_names = ", ".join(tool["name"] for tool in TALLY_TOOLS)
-    analysis_tool_names = ", ".join(tool["name"] for tool in ANALYSIS_TOOLS)
+
+    if code_execution_enabled:
+        computation_section = """\
+## Code Execution
+
+You have access to a Python code execution sandbox. Use it for ALL numerical
+computations: summing amounts, grouping by month, computing percentages, sorting,
+ranking, etc. Write and run Python code rather than calling dedicated computation
+tools."""
+
+        rule_5 = """\
+5. **Use code_execution tool for ALL calculations**: NEVER do mental arithmetic. \
+When you need to sum amounts, compute totals, compare values, or calculate \
+percentages, write Python code and run it in the code execution sandbox. \
+This ensures accuracy."""
+
+        rule_11 = """\
+11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
+(day book, sales register, purchase register), fetch the FULL date range in ONE call, \
+then use code_execution to aggregate by month in Python. Do NOT make \
+separate API calls per month — the voucher data includes a 'month' field for grouping. \
+**IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
+not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
+get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
+internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
+HTTP requests). For a lighter alternative, use get_sales_register + \
+get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each, \
+then aggregate by month via code execution)."""
+
+        structured_rule_block = """
+13. **STRUCTURED_RESULT: prefix**: When you have final computed data (tables, \
+rankings, totals) ready for rendering, output it as:
+STRUCTURED_RESULT: <JSON>
+where <JSON> is a JSON array of objects. This allows the frontend to render \
+the data as a table automatically."""
+    else:
+        from backend.agents.analysis_agent import ANALYSIS_TOOLS
+
+        analysis_tool_names = ", ".join(tool["name"] for tool in ANALYSIS_TOOLS)
+        computation_section = f"""\
+## Computation Tools
+
+{analysis_tool_names}"""
+
+        rule_5 = """\
+5. **Use computation tools for ALL calculations**: NEVER do mental arithmetic. \
+When you need to sum amounts, compute totals, compare values, or calculate \
+percentages, ALWAYS use compute_totals, compute_percentage_change, or other \
+computation tools. This ensures accuracy."""
+
+        rule_11 = """\
+11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
+(day book, sales register, purchase register), fetch the FULL date range in ONE call, \
+then use compute_totals with group_by='month' to aggregate by month. Do NOT make \
+separate API calls per month — the voucher data includes a 'month' field for grouping. \
+**IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
+not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
+get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
+internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
+HTTP requests). For a lighter alternative, use get_sales_register + \
+get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each, \
+then group_by='month')."""
+
+        structured_rule_block = ""
 
     return f"""\
 You are an accounting data retrieval agent connected to a live TallyPrime instance.
@@ -97,9 +160,7 @@ and use computation tools for any calculations.
 
 {tally_tool_names}
 
-## Computation Tools
-
-{analysis_tool_names}
+{computation_section}
 
 ## Rules
 
@@ -119,10 +180,7 @@ places for amounts.
    - **Positive** amounts = credit / inflow (income, liabilities, receipts)
    - This is the standard Tally convention. Do not flip signs.
 
-5. **Use computation tools for ALL calculations**: NEVER do mental arithmetic. \
-When you need to sum amounts, compute totals, compare values, or calculate \
-percentages, ALWAYS use compute_totals, compute_percentage_change, or other \
-computation tools. This ensures accuracy.
+{rule_5}
 
 6. **Be precise**: Only fetch the data the user asked for. Do not make \
 extra tool calls unless necessary.
@@ -148,27 +206,17 @@ results. In your text response, provide a brief summary or analysis of the data 
 instead. Example: "Here is the P&L for March 2026. Revenue was ₹X and expenses \
 were ₹Y." Do NOT repeat the data in table format.
 
-11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
-(day book, sales register, purchase register), fetch the FULL date range in ONE call, \
-then use compute_totals with group_by='month' to aggregate by month. Do NOT make \
-separate API calls per month — the voucher data includes a 'month' field for grouping. \
-**IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
-not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
-get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
-internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
-HTTP requests). For a lighter alternative, use get_sales_register + \
-get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each, \
-then group_by='month').
+{rule_11}
 
 12. **Valid voucher_type values for get_day_book**: Use exactly one of: \
 "Sales", "Purchase", "Payment", "Receipt", "Journal", "Contra", "Credit Note", \
 "Debit Note". The value is case-insensitive (auto-title-cased). Do NOT use plurals \
 (e.g. "Payments" is wrong, use "Payment"). Other Tally voucher types exist \
 (Delivery Note, Receipt Note, etc.) but are not currently supported by the tool layer.
-"""
+{structured_rule_block}"""
 
 
-def build_analysis_agent_prompt(query_type: str) -> str:
+def build_analysis_agent_prompt(query_type: str, code_execution_enabled: bool = False) -> str:
     """Return the system prompt for the analysis agent.
 
     The analysis agent uses Python computation tools to analyse raw Tally data.
@@ -176,30 +224,96 @@ def build_analysis_agent_prompt(query_type: str) -> str:
 
     Args:
         query_type: One of comparison, trend, top_n, aggregation.
+        code_execution_enabled: When True, swap tool references for code execution
+            sandbox instructions.
     """
-    from backend.agents.analysis_agent import ANALYSIS_TOOLS
+    if code_execution_enabled:
+        type_guidance = {
+            "comparison": (
+                "The user wants to COMPARE values. Use the code_execution sandbox to "
+                "compute absolute and percentage change. Always show both absolute and "
+                "percentage change. Write Python to compute the differences."
+            ),
+            "trend": (
+                "The user wants to see a TREND over time. Use the code_execution sandbox "
+                "to calculate period-over-period changes with Python. "
+                "Identify the direction (growing/declining/stable)."
+            ),
+            "top_n": (
+                "The user wants a RANKING. Use Python in the code_execution sandbox to "
+                "sort and slice the top or bottom N items. "
+                "Highlight the #1 item in your summary."
+            ),
+            "aggregation": (
+                "The user wants TOTALS or AVERAGES. Use the code_execution sandbox to "
+                "sum or group the data with Python. "
+                "Show the grand total and any notable sub-totals."
+            ),
+        }
+        specific = type_guidance.get(
+            query_type,
+            "Analyse the data as appropriate for the user's question using the code_execution sandbox.",
+        )
 
-    tool_names = ", ".join(tool["name"] for tool in ANALYSIS_TOOLS)
+        tools_section = """\
+## Code Execution
 
-    type_guidance = {
-        "comparison": (
-            "The user wants to COMPARE values. Use compute_period_comparison or "
-            "compute_percentage_change. Always show both absolute and percentage change."
-        ),
-        "trend": (
-            "The user wants to see a TREND over time. Use compute_trend to calculate "
-            "period-over-period changes. Identify the direction (growing/declining/stable)."
-        ),
-        "top_n": (
-            "The user wants a RANKING. Use sort_by_field with a limit to get the top or "
-            "bottom N items. Highlight the #1 item in your summary."
-        ),
-        "aggregation": (
-            "The user wants TOTALS or AVERAGES. Use compute_totals, optionally with group_by. "
-            "Show the grand total and any notable sub-totals."
-        ),
-    }
-    specific = type_guidance.get(query_type, "Analyse the data as appropriate for the user's question.")
+You have access to a Python code execution sandbox. Use it for ALL numerical
+computations: summing amounts, grouping by month, computing percentages, sorting,
+ranking, etc. Write and run Python code instead of calling dedicated analysis tools."""
+
+        rule_1 = "1. **Use code_execution for all computation** — write Python code, do not calculate numbers in your head."
+
+        rule_12 = """\
+12. **Never manually compute**: NEVER extract or calculate numbers by reading individual \
+vouchers/records yourself. Always use the code_execution sandbox with Python \
+(e.g. sum/groupby for totals, sorted() for rankings). Manual extraction leads to mismatched totals."""
+
+        structured_rule_block = """
+14. **STRUCTURED_RESULT: prefix**: When you have final computed data (tables, \
+rankings, totals) ready for rendering, output it as:
+STRUCTURED_RESULT: <JSON>
+where <JSON> is a JSON array of objects. This allows the frontend to render \
+the data as a table automatically."""
+    else:
+        from backend.agents.analysis_agent import ANALYSIS_TOOLS
+
+        tool_names = ", ".join(tool["name"] for tool in ANALYSIS_TOOLS)
+
+        type_guidance = {
+            "comparison": (
+                "The user wants to COMPARE values. Use compute_period_comparison or "
+                "compute_percentage_change. Always show both absolute and percentage change."
+            ),
+            "trend": (
+                "The user wants to see a TREND over time. Use compute_trend to calculate "
+                "period-over-period changes. Identify the direction (growing/declining/stable)."
+            ),
+            "top_n": (
+                "The user wants a RANKING. Use sort_by_field with a limit to get the top or "
+                "bottom N items. Highlight the #1 item in your summary."
+            ),
+            "aggregation": (
+                "The user wants TOTALS or AVERAGES. Use compute_totals, optionally with group_by. "
+                "Show the grand total and any notable sub-totals."
+            ),
+        }
+        specific = type_guidance.get(query_type, "Analyse the data as appropriate for the user's question.")
+
+        tools_section = f"""\
+## Available Tools
+
+{tool_names}"""
+
+        rule_1 = "1. **Use tools for all computation** — do not calculate numbers in your head."
+
+        rule_12 = """\
+12. **Never manually compute**: NEVER extract or calculate numbers by reading individual \
+vouchers/records yourself. Always use compute_totals (with group_by for breakdowns), \
+compute_period_comparison, or compute_trend. If you need per-ledger totals, call \
+compute_totals with group_by='ledger_name'. Manual extraction leads to mismatched totals."""
+
+        structured_rule_block = ""
 
     return f"""\
 You are a financial analysis specialist for Indian businesses using TallyPrime.
@@ -212,13 +326,11 @@ use the tools for computation.
 
 {specific}
 
-## Available Tools
-
-{tool_names}
+{tools_section}
 
 ## Rules
 
-1. **Use tools for all computation** — do not calculate numbers in your head.
+{rule_1}
 
 2. **Indian Rupee formatting**: Format all monetary amounts using the Indian \
 numbering system with the ₹ symbol (e.g. ₹12,34,567.00).
@@ -261,12 +373,9 @@ the data being charted. If the data contains only sales figures, do NOT title it
 "Gross Profit & Net Profit Comparison". Title should reflect the actual columns/metrics \
 in the structured data (e.g. "Q2 vs Q3: Sales by Ledger").
 
-12. **Never manually compute**: NEVER extract or calculate numbers by reading individual \
-vouchers/records yourself. Always use compute_totals (with group_by for breakdowns), \
-compute_period_comparison, or compute_trend. If you need per-ledger totals, call \
-compute_totals with group_by='ledger_name'. Manual extraction leads to mismatched totals.
+{rule_12}
 
 13. **Explain data gaps**: If trend data starts mid-FY (e.g. Jul instead of Apr) or has \
 months with no transactions, explicitly state this. Example: "No sales transactions were \
 recorded for Apr-Jun 2025, so the trend starts from Jul 2025." Do not silently omit months.
-"""
+{structured_rule_block}"""
