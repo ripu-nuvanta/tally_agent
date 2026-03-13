@@ -1,5 +1,9 @@
 # Tally Bridge Gap Closure — Implementation Plan
 
+> **Status: COMPLETE** — All 9 gaps (H1-H4, M1-M5) implemented and merged to master.
+> 8 commits, 670 backend tests (up from 641), 6 new tools (12→18).
+> Code review: `docs/code-review-phase11.md` | Test coverage: 95%
+
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Close the high and medium priority gaps identified in `docs/tally-bridge-gap-analysis.md` — adding 6 new tools, fixing 1 model, updating 2 tool descriptions, fixing 1 prompt, and wiring up inventory allocation data in vouchers.
@@ -53,7 +57,7 @@ These are low-risk text-only changes. **Get these reviewed before implementation
 **Files:**
 - Modify: `backend/agents/prompts.py:151-154` (Rule 11)
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_prompts.py — add to existing file or create
@@ -66,12 +70,12 @@ def test_query_prompt_warns_pnl_not_groupable_by_month():
     assert "cannot be grouped by month" in prompt.lower()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_prompts.py::test_query_prompt_warns_pnl_not_groupable_by_month -v`
 Expected: FAIL — current Rule 11 does not mention P&L limitation
 
-- [ ] **Step 3: Update Rule 11 in prompts.py**
+- [x]**Step 3: Update Rule 11 in prompts.py**
 
 Replace the current Rule 11 (lines 151-154) with:
 
@@ -89,12 +93,12 @@ get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one ca
 then group_by='month').
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_prompts.py::test_query_prompt_warns_pnl_not_groupable_by_month -v`
 Expected: PASS
 
-- [ ] **Step 5: Write test for voucher_type guidance**
+- [x]**Step 5: Write test for voucher_type guidance**
 
 ```python
 def test_query_prompt_lists_valid_voucher_types():
@@ -103,7 +107,7 @@ def test_query_prompt_lists_valid_voucher_types():
         assert vtype in prompt
 ```
 
-- [ ] **Step 6: Add voucher_type valid values to prompt**
+- [x]**Step 6: Add voucher_type valid values to prompt**
 
 Add after Rule 11 in `build_query_agent_prompt`:
 
@@ -115,12 +119,12 @@ Add after Rule 11 in `build_query_agent_prompt`:
 (Delivery Note, Receipt Note, etc.) but are not currently supported by the tool layer.
 ```
 
-- [ ] **Step 7: Run all prompt tests**
+- [x]**Step 7: Run all prompt tests**
 
 Run: `pytest tests/unit/test_prompts.py -v`
 Expected: All PASS
 
-- [ ] **Step 8: Commit**
+- [x]**Step 8: Commit**
 
 ```bash
 git add backend/agents/prompts.py tests/unit/test_prompts.py
@@ -139,7 +143,7 @@ git commit -m "fix: clarify P&L month-trend limitation and valid voucher_type va
 - Modify: `backend/tally_bridge/queries/reports.py:181-211` (pass due_date/overdue_days through)
 - Modify: `backend/agents/tools.py:145-178` (tool descriptions)
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_models.py — add
@@ -161,12 +165,12 @@ def test_outstanding_bill_overdue_days_default_none():
     assert bill.overdue_days is None
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_models.py::test_outstanding_bill_has_overdue_days -v`
 Expected: FAIL — `overdue_days` not a field on `OutstandingBill`
 
-- [ ] **Step 3: Add overdue_days field**
+- [x]**Step 3: Add overdue_days field**
 
 In `backend/tally_bridge/models.py`, modify `OutstandingBill`:
 
@@ -181,12 +185,12 @@ class OutstandingBill(BaseModel):
     overdue_days: int | None = None
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_models.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Update bills handler to pass overdue_days through**
+- [x]**Step 5: Update bills handler to pass overdue_days through**
 
 The parser (`parse_bills` in `response_parser.py`) already extracts `overdue_days` as a string. The handler in `tools.py` converts to `OutstandingBill` model which now accepts it. But we need to convert the string to int.
 
@@ -215,7 +219,7 @@ def _parse_overdue_days(text: str) -> int | None:
         return None
 ```
 
-- [ ] **Step 6: Write parser test for overdue_days conversion**
+- [x]**Step 6: Write parser test for overdue_days conversion**
 
 ```python
 # tests/unit/test_response_parser.py — add
@@ -231,12 +235,12 @@ def test_parse_bills_includes_overdue_days():
     assert bills[0]["due_date"] == "15-11-2025"
 ```
 
-- [ ] **Step 7: Run parser tests**
+- [x]**Step 7: Run parser tests**
 
 Run: `pytest tests/unit/test_response_parser.py -v`
 Expected: PASS
 
-- [ ] **Step 8: Fix reports.py to pass due_date and overdue_days through**
+- [x]**Step 8: Fix reports.py to pass due_date and overdue_days through**
 
 Currently `bills_receivable()` and `bills_payable()` in `backend/tally_bridge/queries/reports.py`
 explicitly construct `OutstandingBill` with only 5 fields, dropping `due_date` and `overdue_days`.
@@ -258,7 +262,7 @@ return [
 ]
 ```
 
-- [ ] **Step 9: Write integration test for full chain (XML → query → model)**
+- [x]**Step 9: Write integration test for full chain (XML → query → model)**
 
 ```python
 # tests/unit/test_reports_query.py — add or create
@@ -279,7 +283,7 @@ async def test_bills_receivable_passes_overdue_days():
     assert bills[0].due_date is not None
 ```
 
-- [ ] **Step 10: Update receivable/payable tool descriptions (M4)**
+- [x]**Step 10: Update receivable/payable tool descriptions (M4)**
 
 In `backend/agents/tools.py`, update both tool descriptions:
 
@@ -291,12 +295,12 @@ In `backend/agents/tools.py`, update both tool descriptions:
 "description": "Fetch all outstanding payable bills from TallyPrime as on a date. Returns party name, bill number, bill date, due date, overdue days, amount, and pending amount.",
 ```
 
-- [ ] **Step 11: Run all unit tests**
+- [x]**Step 11: Run all unit tests**
 
 Run: `pytest tests/unit/ -v`
 Expected: All PASS
 
-- [ ] **Step 12: Commit**
+- [x]**Step 12: Commit**
 
 ```bash
 git add backend/tally_bridge/models.py backend/tally_bridge/response_parser.py backend/tally_bridge/queries/reports.py backend/agents/tools.py tests/unit/
@@ -308,7 +312,7 @@ git commit -m "feat: add overdue_days to OutstandingBill, fix reports.py passthr
 **Files:**
 - Modify: `backend/tally_bridge/models.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_models.py — add
@@ -328,12 +332,12 @@ def test_account_group_model():
     assert group.parent == "Revenue"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_models.py::test_stock_item_model -v`
 Expected: FAIL — `StockItem` not defined
 
-- [ ] **Step 3: Add models**
+- [x]**Step 3: Add models**
 
 In `backend/tally_bridge/models.py`, add:
 
@@ -352,12 +356,12 @@ class AccountGroup(BaseModel):
     parent: str = ""
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_models.py -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x]**Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/models.py tests/unit/test_models.py
@@ -369,7 +373,7 @@ git commit -m "feat: add StockItem and AccountGroup Pydantic models"
 **Files:**
 - Modify: `backend/tally_bridge/response_parser.py`
 
-- [ ] **Step 1: Write failing test for parse_stock_items**
+- [x]**Step 1: Write failing test for parse_stock_items**
 
 ```python
 # tests/unit/test_response_parser.py — add
@@ -396,12 +400,12 @@ def test_parse_stock_items_extracts_fields():
     assert items[0]["closing_value"] == 380000.0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_response_parser.py::test_parse_stock_items_extracts_fields -v`
 Expected: FAIL — `parse_stock_items` not defined
 
-- [ ] **Step 3: Implement parse_stock_items**
+- [x]**Step 3: Implement parse_stock_items**
 
 In `backend/tally_bridge/response_parser.py`, add:
 
@@ -451,12 +455,12 @@ def parse_stock_items(raw_xml: str) -> list[dict]:
     return items
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_response_parser.py::test_parse_stock_items_extracts_fields -v`
 Expected: PASS
 
-- [ ] **Step 5: Write failing test for parse_groups**
+- [x]**Step 5: Write failing test for parse_groups**
 
 ```python
 def test_parse_groups_extracts_fields():
@@ -476,7 +480,7 @@ def test_parse_groups_extracts_fields():
     assert groups[0]["parent"] == "Revenue"
 ```
 
-- [ ] **Step 6: Implement parse_groups**
+- [x]**Step 6: Implement parse_groups**
 
 In `backend/tally_bridge/response_parser.py`, add:
 
@@ -496,12 +500,12 @@ def parse_groups(raw_xml: str) -> list[dict]:
     return groups
 ```
 
-- [ ] **Step 7: Run all parser tests**
+- [x]**Step 7: Run all parser tests**
 
 Run: `pytest tests/unit/test_response_parser.py -v`
 Expected: All PASS
 
-- [ ] **Step 8: Commit**
+- [x]**Step 8: Commit**
 
 ```bash
 git add backend/tally_bridge/response_parser.py tests/unit/test_response_parser.py
@@ -519,7 +523,7 @@ This is the highest-value change — it unblocks all item-level sales/purchase a
 **Files:**
 - Modify: `backend/tally_bridge/request_builder.py:56-61`
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_request_builder.py — add
@@ -540,12 +544,12 @@ def test_ledger_vouchers_includes_inventory_entries():
     assert "AllInventoryEntries" in xml
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x]**Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_request_builder.py::test_voucher_native_methods_include_inventory_entries -v`
 Expected: FAIL — `AllInventoryEntries` not in voucher fields
 
-- [ ] **Step 3: Add AllInventoryEntries to _voucher_native_methods()**
+- [x]**Step 3: Add AllInventoryEntries to _voucher_native_methods()**
 
 In `backend/tally_bridge/request_builder.py`, modify `_voucher_native_methods()`:
 
@@ -559,12 +563,12 @@ def _voucher_native_methods() -> str:
     return "\n".join(f"<NATIVEMETHOD>{f}</NATIVEMETHOD>" for f in fields)
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x]**Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_request_builder.py -v`
 Expected: All PASS
 
-- [ ] **Step 5: Commit**
+- [x]**Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/request_builder.py tests/unit/test_request_builder.py
@@ -576,7 +580,7 @@ git commit -m "feat: add AllInventoryEntries to voucher TDL queries (H2 part 1)"
 **Files:**
 - Modify: `backend/tally_bridge/response_parser.py:280-317`
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_response_parser.py — add
@@ -618,12 +622,12 @@ def test_parse_vouchers_extracts_inventory_entries():
     assert v["inventory_entries"][0]["amount"] == -90000.0
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_response_parser.py::test_parse_vouchers_extracts_inventory_entries -v`
 Expected: FAIL — `inventory_entries` key missing from voucher dict
 
-- [ ] **Step 3: Add inventory entry parsing to parse_vouchers()**
+- [x]**Step 3: Add inventory entry parsing to parse_vouchers()**
 
 In `backend/tally_bridge/response_parser.py`, inside the `for v in root.iter("VOUCHER"):` loop, after the `ledger_entries` block (before the ghost voucher check), add:
 
@@ -662,12 +666,12 @@ In `backend/tally_bridge/response_parser.py`, inside the `for v in root.iter("VO
 
 And add `"inventory_entries": inventory_entries,` to the vouchers.append() dict.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_response_parser.py::test_parse_vouchers_extracts_inventory_entries -v`
 Expected: PASS
 
-- [ ] **Step 5: Write backwards-compatibility test for vouchers without inventory entries**
+- [x]**Step 5: Write backwards-compatibility test for vouchers without inventory entries**
 
 ```python
 def test_parse_vouchers_without_inventory_entries_returns_empty_list():
@@ -691,12 +695,12 @@ def test_parse_vouchers_without_inventory_entries_returns_empty_list():
     assert vouchers[0]["inventory_entries"] == []
 ```
 
-- [ ] **Step 6: Run full unit test suite to check for regressions**
+- [x]**Step 6: Run full unit test suite to check for regressions**
 
 Run: `pytest tests/unit/ -v`
 Expected: All PASS — existing voucher tests should not break because `inventory_entries` is a new additive field
 
-- [ ] **Step 7: Commit**
+- [x]**Step 7: Commit**
 
 ```bash
 git add backend/tally_bridge/response_parser.py tests/unit/test_response_parser.py
@@ -708,7 +712,7 @@ git commit -m "feat: parse AllInventoryEntries in voucher responses (H2 part 2)"
 **Files:**
 - Modify: `tests/fixtures/generate_fixtures.py`
 
-- [ ] **Step 1: Update generate_fixtures.py to include inventory entries in sales/purchase vouchers**
+- [x]**Step 1: Update generate_fixtures.py to include inventory entries in sales/purchase vouchers**
 
 In the `generate_sales_register()` function, add `ALLINVENTORYENTRIES.LIST` elements for each item in each sales invoice. The data is already available in `SALES_INVOICES` — each tuple has `[(item, qty, rate)]`.
 
@@ -739,11 +743,11 @@ def _inventory_entries_xml(items: list[tuple], voucher_type: str) -> str:
 
 Then in each `<VOUCHER>` element for sales and purchase, insert the inventory entries XML after the `ALLLEDGERENTRIES.LIST` elements.
 
-- [ ] **Step 2: Regenerate fixtures**
+- [x]**Step 2: Regenerate fixtures**
 
 Run: `cd /Users/ripu/work/nuvanta_repos/tally_agent && python tests/fixtures/generate_fixtures.py`
 
-- [ ] **Step 3: Verify fixtures contain inventory entries**
+- [x]**Step 3: Verify fixtures contain inventory entries**
 
 ```bash
 grep -c "ALLINVENTORYENTRIES" tests/fixtures/sales_register.xml
@@ -752,12 +756,12 @@ grep -c "ALLINVENTORYENTRIES" tests/fixtures/day_book.xml
 ```
 Expected: Non-zero counts for sales and purchase registers
 
-- [ ] **Step 4: Run integration tests to verify mock still works**
+- [x]**Step 4: Run integration tests to verify mock still works**
 
 Run: `pytest tests/integration/ -v`
 Expected: All PASS
 
-- [ ] **Step 5: Commit**
+- [x]**Step 5: Commit**
 
 ```bash
 git add tests/fixtures/generate_fixtures.py tests/fixtures/sales_register.xml tests/fixtures/purchase_register.xml tests/fixtures/day_book.xml
@@ -773,7 +777,7 @@ git commit -m "feat: add inventory allocation entries to mock voucher fixtures (
 **Files:**
 - Modify: `backend/tally_bridge/queries/masters.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_masters_query.py — add or create
@@ -795,12 +799,12 @@ async def test_list_stock_items_returns_stock_item_list():
     assert items[0].parent_group == "Electronics"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_masters_query.py::test_list_stock_items_returns_stock_item_list -v`
 Expected: FAIL — `list_stock_items` not defined
 
-- [ ] **Step 3: Implement list_stock_items**
+- [x]**Step 3: Implement list_stock_items**
 
 In `backend/tally_bridge/queries/masters.py`, add:
 
@@ -819,12 +823,12 @@ async def list_stock_items(client: TallyClient) -> list[StockItem]:
     return [StockItem(**row) for row in parsed]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_masters_query.py::test_list_stock_items_returns_stock_item_list -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x]**Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/queries/masters.py tests/unit/test_masters_query.py
@@ -836,7 +840,7 @@ git commit -m "feat: add list_stock_items query function (H1 part 1)"
 **Files:**
 - Modify: `backend/tally_bridge/queries/masters.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_masters_query.py — add
@@ -853,12 +857,12 @@ async def test_list_groups_returns_group_list():
     assert groups[0].parent == "Revenue"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_masters_query.py::test_list_groups_returns_group_list -v`
 Expected: FAIL
 
-- [ ] **Step 3: Implement list_groups**
+- [x]**Step 3: Implement list_groups**
 
 ```python
 async def list_groups(client: TallyClient) -> list[AccountGroup]:
@@ -871,12 +875,12 @@ async def list_groups(client: TallyClient) -> list[AccountGroup]:
     return [AccountGroup(**row) for row in parsed]
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_masters_query.py -v`
 Expected: All PASS
 
-- [ ] **Step 5: Commit**
+- [x]**Step 5: Commit**
 
 ```bash
 git add backend/tally_bridge/queries/masters.py tests/unit/test_masters_query.py
@@ -888,7 +892,7 @@ git commit -m "feat: add list_groups query function (M3 part 1)"
 **Files:**
 - Modify: `backend/agents/tools.py`
 
-- [ ] **Step 1: Write failing tests for new tools**
+- [x]**Step 1: Write failing tests for new tools**
 
 ```python
 # tests/unit/test_tools.py — add
@@ -911,12 +915,12 @@ def test_new_tools_have_handlers():
         assert name in TOOL_HANDLERS, f"Missing handler for {name}"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x]**Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_tools.py::test_list_stock_items_tool_exists -v`
 Expected: FAIL
 
-- [ ] **Step 3: Add tool schemas**
+- [x]**Step 3: Add tool schemas**
 
 In `backend/agents/tools.py`, add to `TALLY_TOOLS` list:
 
@@ -950,7 +954,7 @@ In `backend/agents/tools.py`, add to `TALLY_TOOLS` list:
     },
 ```
 
-- [ ] **Step 4: Add handler functions**
+- [x]**Step 4: Add handler functions**
 
 ```python
 async def _handle_list_all_ledgers(client: TallyClient, **kwargs: Any) -> Any:
@@ -968,7 +972,7 @@ async def _handle_list_account_groups(client: TallyClient, **kwargs: Any) -> Any
     return [g.model_dump(mode="json") for g in result]
 ```
 
-- [ ] **Step 5: Add to TOOL_HANDLERS dict**
+- [x]**Step 5: Add to TOOL_HANDLERS dict**
 
 ```python
 "list_all_ledgers": _handle_list_all_ledgers,
@@ -976,7 +980,7 @@ async def _handle_list_account_groups(client: TallyClient, **kwargs: Any) -> Any
 "list_account_groups": _handle_list_account_groups,
 ```
 
-- [ ] **Step 6: Update EXPECTED_TOOL_NAMES and count assertion in test_tools.py**
+- [x]**Step 6: Update EXPECTED_TOOL_NAMES and count assertion in test_tools.py**
 
 The existing test at `tests/unit/test_tools.py:15-28` has `EXPECTED_TOOL_NAMES` (12 items) and
 line 88 asserts `len(TALLY_TOOLS) == 12`. These MUST be updated or the test suite will break.
@@ -984,12 +988,12 @@ line 88 asserts `len(TALLY_TOOLS) == 12`. These MUST be updated or the test suit
 Add `"list_all_ledgers"`, `"list_stock_items"`, `"list_account_groups"` to `EXPECTED_TOOL_NAMES`.
 Update the count assertion to match the new total (will be 15 after this task, 18 after Task 12+13).
 
-- [ ] **Step 7: Run tests to verify they pass**
+- [x]**Step 7: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_tools.py -v`
 Expected: All PASS
 
-- [ ] **Step 8: Commit**
+- [x]**Step 8: Commit**
 
 ```bash
 git add backend/agents/tools.py tests/unit/test_tools.py
@@ -1005,7 +1009,7 @@ git commit -m "feat: add list_all_ledgers, list_stock_items, list_account_groups
 **Files:**
 - Modify: `backend/agents/tools.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x]**Step 1: Write the failing test**
 
 ```python
 # tests/unit/test_tools.py — add
@@ -1018,12 +1022,12 @@ def test_receipt_register_tool_exists():
     assert "get_receipt_register" in names
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x]**Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_tools.py::test_payment_register_tool_exists -v`
 Expected: FAIL
 
-- [ ] **Step 3: Add tool schemas**
+- [x]**Step 3: Add tool schemas**
 
 In `backend/agents/tools.py`, add to `TALLY_TOOLS`:
 
@@ -1074,7 +1078,7 @@ In `backend/agents/tools.py`, add to `TALLY_TOOLS`:
     },
 ```
 
-- [ ] **Step 4: Add handler functions**
+- [x]**Step 4: Add handler functions**
 
 These reuse the day_book query with a fixed voucher_type:
 
@@ -1091,24 +1095,24 @@ async def _handle_receipt_register(client: TallyClient, **kwargs: Any) -> Any:
     )
 ```
 
-- [ ] **Step 5: Add to TOOL_HANDLERS**
+- [x]**Step 5: Add to TOOL_HANDLERS**
 
 ```python
 "get_payment_register": _handle_payment_register,
 "get_receipt_register": _handle_receipt_register,
 ```
 
-- [ ] **Step 6: Update EXPECTED_TOOL_NAMES, DATE_RANGE_TOOLS, and count assertion**
+- [x]**Step 6: Update EXPECTED_TOOL_NAMES, DATE_RANGE_TOOLS, and count assertion**
 
 Add `"get_payment_register"` and `"get_receipt_register"` to `EXPECTED_TOOL_NAMES` and
 `DATE_RANGE_TOOLS` in `tests/unit/test_tools.py`. Update the count assertion to 17.
 
-- [ ] **Step 7: Run tests**
+- [x]**Step 7: Run tests**
 
 Run: `pytest tests/unit/test_tools.py -v`
 Expected: All PASS
 
-- [ ] **Step 8: Commit**
+- [x]**Step 8: Commit**
 
 ```bash
 git add backend/agents/tools.py tests/unit/test_tools.py
@@ -1123,7 +1127,7 @@ git commit -m "feat: add dedicated get_payment_register and get_receipt_register
 - Modify: `backend/tally_bridge/queries/reports.py`
 - Modify: `backend/agents/tools.py`
 
-- [ ] **Step 1: Write failing test for request builder**
+- [x]**Step 1: Write failing test for request builder**
 
 ```python
 # tests/unit/test_request_builder.py — add
@@ -1134,24 +1138,24 @@ def test_build_cash_flow_has_report_id():
     assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x]**Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_request_builder.py::test_build_cash_flow_has_report_id -v`
 Expected: FAIL
 
-- [ ] **Step 3: Add build_cash_flow to request_builder.py**
+- [x]**Step 3: Add build_cash_flow to request_builder.py**
 
 ```python
 def build_cash_flow(from_date: str, to_date: str, company: str | None = None) -> str:
     return _wrap_report_envelope("Cash Flow", from_date, to_date, company)
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x]**Step 4: Run test to verify it passes**
 
 Run: `pytest tests/unit/test_request_builder.py::test_build_cash_flow_has_report_id -v`
 Expected: PASS
 
-- [ ] **Step 5: Write failing test for parser**
+- [x]**Step 5: Write failing test for parser**
 
 The Cash Flow report from Tally uses the same alternating sibling structure as P&L (DSPACCNAME + DSPACCINFO or similar). We reuse `parse_trial_balance` structure since cash flow has the same DSPACCNAME/DSPACCINFO pattern.
 
@@ -1167,7 +1171,7 @@ def test_parse_cash_flow_extracts_rows():
     assert rows[0]["account_name"] == "Cash from Operating Activities"
 ```
 
-- [ ] **Step 6: Implement parse_cash_flow**
+- [x]**Step 6: Implement parse_cash_flow**
 
 ```python
 def parse_cash_flow(raw_xml: str) -> list[dict]:
@@ -1180,7 +1184,7 @@ def parse_cash_flow(raw_xml: str) -> list[dict]:
     return parse_trial_balance(raw_xml)
 ```
 
-- [ ] **Step 7: Add query function in reports.py**
+- [x]**Step 7: Add query function in reports.py**
 
 ```python
 async def cash_flow(
@@ -1210,7 +1214,7 @@ from backend.tally_bridge.request_builder import build_cash_flow
 from backend.tally_bridge.response_parser import parse_cash_flow
 ```
 
-- [ ] **Step 8: Add tool schema and handler**
+- [x]**Step 8: Add tool schema and handler**
 
 Tool schema:
 ```python
@@ -1249,17 +1253,17 @@ async def _handle_cash_flow(client: TallyClient, **kwargs: Any) -> Any:
 
 Add to TOOL_HANDLERS: `"get_cash_flow": _handle_cash_flow,`
 
-- [ ] **Step 9: Update EXPECTED_TOOL_NAMES, DATE_RANGE_TOOLS, and count assertion**
+- [x]**Step 9: Update EXPECTED_TOOL_NAMES, DATE_RANGE_TOOLS, and count assertion**
 
 Add `"get_cash_flow"` to `EXPECTED_TOOL_NAMES` and `DATE_RANGE_TOOLS` in `tests/unit/test_tools.py`.
 Update the count assertion to **18** (final total).
 
-- [ ] **Step 10: Run all tests**
+- [x]**Step 10: Run all tests**
 
 Run: `pytest tests/unit/ -v`
 Expected: All PASS
 
-- [ ] **Step 11: Commit**
+- [x]**Step 11: Commit**
 
 ```bash
 git add backend/tally_bridge/request_builder.py backend/tally_bridge/response_parser.py backend/tally_bridge/queries/reports.py backend/agents/tools.py tests/unit/
@@ -1276,7 +1280,7 @@ git commit -m "feat: add Cash Flow Statement tool (M2)"
 - Modify: `tests/fixtures/generate_fixtures.py`
 - Modify: `backend/tally_bridge/mock_handler.py`
 
-- [ ] **Step 1: Add generate_stock_items_list() to generate_fixtures.py**
+- [x]**Step 1: Add generate_stock_items_list() to generate_fixtures.py**
 
 Note: This uses opening values from STOCK_ITEMS (not computed closing values like
 `generate_stock_summary()` does). This is acceptable because TYPE=Collection master
@@ -1306,7 +1310,7 @@ def generate_stock_items_list() -> str:
 
 Call it in `main()` and write to `stock_items_list.xml`.
 
-- [ ] **Step 2: Add generate_groups_list() to generate_fixtures.py**
+- [x]**Step 2: Add generate_groups_list() to generate_fixtures.py**
 
 ```python
 # Unique groups from LEDGERS + stock groups
@@ -1349,11 +1353,11 @@ def generate_groups_list() -> str:
 
 Call it in `main()` and write to `groups_list.xml`.
 
-- [ ] **Step 3: Regenerate all fixtures**
+- [x]**Step 3: Regenerate all fixtures**
 
 Run: `cd /Users/ripu/work/nuvanta_repos/tally_agent && python tests/fixtures/generate_fixtures.py`
 
-- [ ] **Step 4: Add mock handler entries**
+- [x]**Step 4: Add mock handler entries**
 
 In `backend/tally_bridge/mock_handler.py`, add to `STATIC_FIXTURES`:
 
@@ -1372,7 +1376,7 @@ Or alternatively, handle Cash Flow in `DATE_AWARE_REPORTS` and add a generation 
 
 Add `"Cash Flow"` to `STATIC_FIXTURES` with a `cash_flow.xml` fixture generated from fixture data.
 
-- [ ] **Step 5: Generate cash_flow.xml fixture**
+- [x]**Step 5: Generate cash_flow.xml fixture**
 
 Add `generate_cash_flow()` to `generate_fixtures.py`:
 
@@ -1389,12 +1393,12 @@ def generate_cash_flow() -> str:
 </ENVELOPE>"""
 ```
 
-- [ ] **Step 6: Run regeneration and integration tests**
+- [x]**Step 6: Run regeneration and integration tests**
 
 Run: `python tests/fixtures/generate_fixtures.py && pytest tests/integration/ -v`
 Expected: All PASS
 
-- [ ] **Step 7: Commit**
+- [x]**Step 7: Commit**
 
 ```bash
 git add tests/fixtures/ backend/tally_bridge/mock_handler.py
@@ -1403,21 +1407,21 @@ git commit -m "feat: add mock fixtures for stock items, groups, cash flow, and i
 
 ### Task 15: Run full test suite and fix regressions
 
-- [ ] **Step 1: Run full backend tests**
+- [x]**Step 1: Run full backend tests**
 
 Run: `ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/ --ignore=tests/eval/`
 Expected: All tests PASS (641+ tests)
 
-- [ ] **Step 2: Run frontend tests**
+- [x]**Step 2: Run frontend tests**
 
 Run: `cd frontend && npm test`
 Expected: 111 tests PASS (frontend unchanged)
 
-- [ ] **Step 3: Fix any regressions**
+- [x]**Step 3: Fix any regressions**
 
 If any tests fail due to the new `inventory_entries` field in voucher dicts, update assertions in affected tests to account for the new field.
 
-- [ ] **Step 4: Final commit (if regressions were found)**
+- [x]**Step 4: Final commit (if regressions were found)**
 
 Stage only the specific files that were fixed — never use `git add -A` (risks staging
 `.env`, `.DS_Store`, or other unintended files).
@@ -1464,3 +1468,27 @@ I3 abs() quantity (documented design decision), I4 Cash Flow format assumption (
 I5 EXPECTED_TOOL_NAMES count (fixed: update steps in Tasks 11, 12, 13), I6 UOM hardcoding
 (fixed: _ITEM_UOM lookup), S1 TDD ordering (fixed: test before implementation), S3 backwards-compat
 test (added), S4 opening vs closing values (noted in docstring).
+
+---
+
+## Post-Implementation Notes
+
+### Eval Coverage Gaps
+The following new tools are NOT yet covered by mock eval scenarios:
+- `list_stock_items` — no eval turn exercises this tool
+- `list_account_groups` — no eval turn exercises this tool
+- `get_cash_flow` — existing cash flow turns use day_book filtering, not the dedicated tool
+- `get_payment_register` / `get_receipt_register` — no dedicated eval turns
+
+**Action**: New eval turns being added to `financial_deep_dive_mock.yaml` to close these gaps.
+
+### Code Review Findings (from `docs/code-review-phase11.md`)
+- **I1/I2**: XML-escaping missing in fixture generator for stock item names (test-only, low risk)
+- **S1**: Cash flow parser delegates to trial_balance parser — needs live Tally validation
+- **S2**: Quantity/rate parsing logic duplicated across 3 parser functions
+- **S3**: Master list tools lack optional `company` parameter
+
+### Test Coverage
+- Overall: 95% (1764 statements, 91 missed)
+- New modules fully covered: models.py (100%), prompts.py (100%)
+- Lower coverage areas: masters.py (82%), reports.py (85%) — error paths
