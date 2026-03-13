@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     SESSION_TTL_MINUTES: int = 60
     TALLY_MODE: str = "live"  # "live" or "mock"
+    CODE_EXECUTION_ENABLED: bool = True  # kill switch: False reverts to analysis tools
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
