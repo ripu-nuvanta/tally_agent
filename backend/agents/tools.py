@@ -293,6 +293,72 @@ TALLY_TOOLS: list[dict[str, Any]] = [
             "required": [],
         },
     },
+    {
+        "name": "get_payment_register",
+        "description": "Fetch all Payment vouchers from TallyPrime for a date range. Returns payment entries with payee, bank/cash account, amount, and narration.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_date": {
+                    "type": "string",
+                    "description": "Start date in DD-MM-YYYY format",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "End date in DD-MM-YYYY format",
+                },
+                "company": {
+                    "type": "string",
+                    "description": "Company name in Tally. Optional — uses active company if omitted.",
+                },
+            },
+            "required": ["from_date", "to_date"],
+        },
+    },
+    {
+        "name": "get_receipt_register",
+        "description": "Fetch all Receipt vouchers from TallyPrime for a date range. Returns receipt entries with payer, bank/cash account, amount, and narration.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_date": {
+                    "type": "string",
+                    "description": "Start date in DD-MM-YYYY format",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "End date in DD-MM-YYYY format",
+                },
+                "company": {
+                    "type": "string",
+                    "description": "Company name in Tally. Optional — uses active company if omitted.",
+                },
+            },
+            "required": ["from_date", "to_date"],
+        },
+    },
+    {
+        "name": "get_cash_flow",
+        "description": "Fetch the Cash Flow Statement from TallyPrime for a date range. Returns cash flows from operating, investing, and financing activities.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "from_date": {
+                    "type": "string",
+                    "description": "Start date in DD-MM-YYYY format",
+                },
+                "to_date": {
+                    "type": "string",
+                    "description": "End date in DD-MM-YYYY format",
+                },
+                "company": {
+                    "type": "string",
+                    "description": "Company name in Tally. Optional — uses active company if omitted.",
+                },
+            },
+            "required": ["from_date", "to_date"],
+        },
+    },
 ]
 
 
@@ -416,6 +482,25 @@ async def _handle_list_account_groups(client: TallyClient, **kwargs: Any) -> Any
     return [g.model_dump(mode="json") for g in result]
 
 
+async def _handle_payment_register(client: TallyClient, **kwargs: Any) -> Any:
+    return await vouchers.day_book(
+        client, kwargs["from_date"], kwargs["to_date"], "Payment", kwargs.get("company")
+    )
+
+
+async def _handle_receipt_register(client: TallyClient, **kwargs: Any) -> Any:
+    return await vouchers.day_book(
+        client, kwargs["from_date"], kwargs["to_date"], "Receipt", kwargs.get("company")
+    )
+
+
+async def _handle_cash_flow(client: TallyClient, **kwargs: Any) -> Any:
+    result = await reports.cash_flow(
+        client, kwargs["from_date"], kwargs["to_date"], kwargs.get("company")
+    )
+    return result.model_dump(mode="json")
+
+
 # ---------------------------------------------------------------------------
 # TOOL_HANDLERS — maps tool name to its async handler
 # ---------------------------------------------------------------------------
@@ -436,6 +521,9 @@ TOOL_HANDLERS: dict[str, Any] = {
     "list_all_ledgers": _handle_list_all_ledgers,
     "list_stock_items": _handle_list_stock_items,
     "list_account_groups": _handle_list_account_groups,
+    "get_payment_register": _handle_payment_register,
+    "get_receipt_register": _handle_receipt_register,
+    "get_cash_flow": _handle_cash_flow,
 }
 
 

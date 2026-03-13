@@ -179,6 +179,9 @@ def build_stock_summary(as_on_date: str, stock_group: str | None = None, company
     extra = f"<SVSTOCKGROUP>{xml_escape(stock_group)}</SVSTOCKGROUP>" if stock_group else ""
     return _wrap_report_envelope("Stock Summary", as_on_date, as_on_date, company, extra)
 
+def build_cash_flow(from_date: str, to_date: str, company: str | None = None) -> str:
+    return _wrap_report_envelope("Cash Flow", from_date, to_date, company)
+
 
 # --- Voucher Queries ---
 

@@ -412,3 +412,13 @@ def parse_groups(raw_xml: str) -> list[dict]:
             "parent": _get_text(group, "PARENT"),
         })
     return groups
+
+
+def parse_cash_flow(raw_xml: str) -> list[dict]:
+    """Parse Cash Flow report — assumed same sibling-pair structure as Trial Balance.
+
+    TODO: Validate against live Tally instance. The actual Cash Flow XML structure
+    may differ from Trial Balance. This is a separate function (not just an alias)
+    so it can be adjusted independently after live testing.
+    """
+    return parse_trial_balance(raw_xml)

@@ -3,6 +3,7 @@ from backend.tally_bridge.request_builder import (
     build_trial_balance, build_profit_and_loss, build_balance_sheet,
     build_bills_receivable, build_bills_payable, build_stock_summary,
     build_day_book, build_ledger_vouchers, build_sales_register, build_purchase_register,
+    build_cash_flow,
 )
 
 
@@ -264,3 +265,10 @@ class TestFullFYDateRange:
     def test_balance_sheet_single_date(self):
         xml = build_balance_sheet("31-03-2026")
         assert "<SVTODATE>31-03-2026</SVTODATE>" in xml
+
+
+def test_build_cash_flow_has_report_id():
+    from backend.tally_bridge.request_builder import build_cash_flow
+    xml = build_cash_flow("01-04-2025", "31-03-2026")
+    assert "Cash Flow" in xml
+    assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in xml

@@ -14,6 +14,7 @@ from backend.tally_bridge.request_builder import (
     build_bills_receivable,
     build_bills_payable,
     build_stock_summary,
+    build_cash_flow,
 )
 from backend.tally_bridge.response_parser import (
     detect_error,
@@ -22,6 +23,7 @@ from backend.tally_bridge.response_parser import (
     parse_balance_sheet as _parse_bs,
     parse_bills,
     parse_stock_summary as _parse_stock,
+    parse_cash_flow as _parse_cash_flow,
 )
 from backend.tally_bridge.exceptions import TallyResponseError
 from backend.utils.date_utils import get_fy_start, format_for_tally
@@ -224,3 +226,24 @@ async def stock_summary(
     if error:
         raise TallyResponseError(error)
     return _parse_stock(raw)
+
+
+async def cash_flow(
+    client: TallyClient,
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+) -> ReportResponse:
+    """Fetch Cash Flow statement."""
+    raw = await client.post_xml(build_cash_flow(from_date, to_date, company))
+    error = detect_error(raw)
+    if error:
+        raise TallyResponseError(error)
+    rows = _parse_cash_flow(raw)
+    return ReportResponse(
+        report_name="Cash Flow",
+        company=company or "",
+        from_date=datetime.strptime(from_date, "%d-%m-%Y").date(),
+        to_date=datetime.strptime(to_date, "%d-%m-%Y").date(),
+        rows=rows,
+    )

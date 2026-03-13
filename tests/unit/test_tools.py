@@ -28,6 +28,9 @@ EXPECTED_TOOL_NAMES = [
     "list_all_ledgers",
     "list_stock_items",
     "list_account_groups",
+    "get_payment_register",
+    "get_receipt_register",
+    "get_cash_flow",
 ]
 
 # Tools that use from_date + to_date
@@ -38,6 +41,9 @@ DATE_RANGE_TOOLS = [
     "get_day_book",
     "get_sales_register",
     "get_purchase_register",
+    "get_payment_register",
+    "get_receipt_register",
+    "get_cash_flow",
 ]
 
 # Tools that use as_on_date
@@ -84,11 +90,11 @@ class TestToolSchemas:
         assert len(names) == len(set(names)), "Duplicate tool names detected"
 
     def test_expected_tools_exist(self):
-        """All 15 expected tool names must be present."""
+        """All 18 expected tool names must be present."""
         actual_names = {t["name"] for t in TALLY_TOOLS}
         for name in EXPECTED_TOOL_NAMES:
             assert name in actual_names, f"Expected tool {name!r} not found"
-        assert len(TALLY_TOOLS) == 15
+        assert len(TALLY_TOOLS) == 18
 
     def test_list_stock_items_tool_exists(self):
         names = [t["name"] for t in TALLY_TOOLS]
@@ -101,6 +107,14 @@ class TestToolSchemas:
     def test_list_account_groups_tool_exists(self):
         names = [t["name"] for t in TALLY_TOOLS]
         assert "list_account_groups" in names
+
+    def test_payment_register_tool_exists(self):
+        names = [t["name"] for t in TALLY_TOOLS]
+        assert "get_payment_register" in names
+
+    def test_receipt_register_tool_exists(self):
+        names = [t["name"] for t in TALLY_TOOLS]
+        assert "get_receipt_register" in names
 
     def test_new_tools_have_handlers(self):
         for name in ["list_stock_items", "list_all_ledgers", "list_account_groups"]:

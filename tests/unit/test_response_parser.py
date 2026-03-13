@@ -3,7 +3,7 @@ import pytest
 from backend.tally_bridge.response_parser import (
     parse_amount, parse_trial_balance, parse_ledger_list, detect_error,
     parse_profit_and_loss, parse_balance_sheet, parse_stock_summary,
-    parse_bills, sanitize_xml, parse_stock_items, parse_groups,
+    parse_bills, sanitize_xml, parse_stock_items, parse_groups, parse_cash_flow,
 )
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
@@ -718,3 +718,15 @@ class TestParseVouchersInventoryEntries:
         vouchers = parse_vouchers(xml)
         assert len(vouchers) == 1
         assert vouchers[0]["inventory_entries"] == []
+
+
+# ---------------------------------------------------------------------------
+# parse_cash_flow
+# ---------------------------------------------------------------------------
+def test_parse_cash_flow_extracts_rows():
+    """Cash Flow report uses same sibling-pair structure as Trial Balance."""
+    xml = """<ENVELOPE><DSPACCNAME><DSPDISPNAME>Cash from Operating Activities</DSPDISPNAME></DSPACCNAME>
+    <DSPACCINFO><DSPCLDRAMT><DSPCLDRAMTA>150000</DSPCLDRAMTA></DSPCLDRAMT><DSPCLCRAMT><DSPCLCRAMTA>0</DSPCLCRAMTA></DSPCLCRAMT></DSPACCINFO></ENVELOPE>"""
+    rows = parse_cash_flow(xml)
+    assert len(rows) == 1
+    assert rows[0]["account_name"] == "Cash from Operating Activities"
