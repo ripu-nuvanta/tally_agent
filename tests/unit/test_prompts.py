@@ -116,6 +116,17 @@ class TestQueryAgentPrompt:
         assert "15-06-2025" in prompt
         assert "06-03-2026" not in prompt
 
+    def test_query_prompt_warns_pnl_not_groupable_by_month(self):
+        """Rule 11 must warn that get_profit_and_loss returns per-account rows, not per-voucher."""
+        prompt = build_query_agent_prompt("13-03-2026")
+        assert "get_profit_and_loss" in prompt
+        assert "cannot be grouped by month" in prompt.lower()
+
+    def test_query_prompt_lists_valid_voucher_types(self):
+        prompt = build_query_agent_prompt("13-03-2026")
+        for vtype in ["Sales", "Purchase", "Payment", "Receipt", "Journal", "Contra", "Credit Note", "Debit Note"]:
+            assert vtype in prompt
+
 
 # ---------------------------------------------------------------------------
 # TestAnalysisAgentPrompt

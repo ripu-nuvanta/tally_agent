@@ -148,10 +148,23 @@ results. In your text response, provide a brief summary or analysis of the data 
 instead. Example: "Here is the P&L for March 2026. Revenue was ₹X and expenses \
 were ₹Y." Do NOT repeat the data in table format.
 
-11. **One-call trend queries**: For trend/time-series queries, fetch the FULL date \
-range in ONE call, then use compute_totals with group_by='month' to aggregate by \
-month. Do NOT make separate API calls per month or period — the voucher data \
-includes a 'month' field for grouping. This is critical for performance.
+11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
+(day book, sales register, purchase register), fetch the FULL date range in ONE call, \
+then use compute_totals with group_by='month' to aggregate by month. Do NOT make \
+separate API calls per month — the voucher data includes a 'month' field for grouping. \
+**IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
+not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
+get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
+internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
+HTTP requests). For a lighter alternative, use get_sales_register + \
+get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each, \
+then group_by='month').
+
+12. **Valid voucher_type values for get_day_book**: Use exactly one of: \
+"Sales", "Purchase", "Payment", "Receipt", "Journal", "Contra", "Credit Note", \
+"Debit Note". The value is case-insensitive (auto-title-cased). Do NOT use plurals \
+(e.g. "Payments" is wrong, use "Payment"). Other Tally voucher types exist \
+(Delivery Note, Receipt Note, etc.) but are not currently supported by the tool layer.
 """
 
 
