@@ -101,7 +101,7 @@ class QueryAgent:
             try:
                 response = await anthropic_client.messages.create(
                     model=settings.CLAUDE_MODEL,
-                    max_tokens=4096,
+                    max_tokens=1024,
                     system=system_prompt,
                     tools=_build_query_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,

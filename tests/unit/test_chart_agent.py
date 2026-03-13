@@ -418,6 +418,70 @@ def test_trim_trailing_zeros_keeps_mid_zeros():
     assert trimmed[1][0] == "Jun 2025"  # mid-zero kept
     assert trimmed[2][0] == "Jul 2025"
 
+class TestNonNumericColumnFiltering:
+    """ChartAgent should skip non-numeric columns (text, status) from y_keys."""
+
+    def test_identify_numeric_columns_filters_text(self):
+        from backend.agents.chart_agent import _identify_numeric_columns
+        headers = ["Item", "Closing Stock", "Total Sold", "Days of Cover", "Status"]
+        rows = [
+            ["Samsung Monitor", 20, 23, 141.7, "Watch"],
+            ["HP Laptop", 10, 10, 163.0, "OK"],
+            ["Dell Desktop", 8, 8, 163.0, "OK"],
+        ]
+        numeric_cols = _identify_numeric_columns(headers, rows)
+        assert "Item" not in numeric_cols
+        assert "Status" not in numeric_cols
+        assert "Closing Stock" in numeric_cols
+        assert "Days of Cover" in numeric_cols
+
+    def test_build_config_uses_only_numeric_y_keys(self):
+        from backend.agents.chart_agent import _build_config
+        headers = ["Rank", "Item", "Stock", "Days of Cover", "Status"]
+        rows = [
+            [1, "Monitor", 20, 141.7, "Watch"],
+            [2, "Laptop", 10, 163.0, "OK"],
+        ]
+        config = _build_config("bar", headers, rows)
+        assert "Item" not in config["y_keys"]
+        assert "Status" not in config["y_keys"]
+        assert "Stock" in config["y_keys"]
+        assert "Days of Cover" in config["y_keys"]
+
+    def test_chart_agent_returns_none_when_no_numeric_columns(self):
+        from backend.agents.chart_agent import ChartAgent
+        agent = ChartAgent()
+        data = {
+            "data": {
+                "headers": ["Name", "Category", "Status"],
+                "rows": [["A", "Cat1", "OK"], ["B", "Cat2", "Watch"]],
+            },
+            "chart_suggestion": "bar",
+        }
+        result = agent.execute(data, "top_n", True)
+        assert result is None
+
+    def test_chart_agent_mixed_columns_charts_only_numeric(self):
+        from backend.agents.chart_agent import ChartAgent
+        agent = ChartAgent()
+        data = {
+            "data": {
+                "headers": ["Item", "Closing Stock", "Total Sold", "Avg Sales/Month", "Days of Cover", "Status"],
+                "rows": [
+                    ["Samsung Monitor", 20, 23, 4.2, 141.7, "Watch"],
+                    ["HP Laptop", 10, 10, 1.8, 163.0, "OK"],
+                    ["Dell Desktop", 8, 8, 1.5, 163.0, "OK"],
+                ],
+            },
+            "chart_suggestion": "bar",
+        }
+        result = agent.execute(data, "top_n", True)
+        assert result is not None
+        assert "Item" not in result["config"]["y_keys"]
+        assert "Status" not in result["config"]["y_keys"]
+        assert "Days of Cover" in result["config"]["y_keys"]
+
+
 def test_trim_trailing_zeros_also_trims_leading():
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]

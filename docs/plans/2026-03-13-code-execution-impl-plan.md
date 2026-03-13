@@ -1335,7 +1335,7 @@ git commit -m "docs: mark code execution tool design as implemented"
 
 ## Post-Implementation Notes
 
-**Status**: All 9 tasks COMPLETE. 11 commits (d5bcfbe..3dc3a90).
+**Status**: All 9 tasks COMPLETE. 13 commits (d5bcfbe..839e064).
 
 ### Additional work beyond plan:
 - **Code review fixes** (commit 17de8d2): Guarded empty tool_result_entries in QueryAgent, fixed STRUCTURED_RESULT prompt format to match parser expectations
@@ -1343,8 +1343,26 @@ git commit -m "docs: mark code execution tool design as implemented"
 - **New eval scenario**: code_execution_validation.yaml (5 turns, computation-heavy) + code_execution_validation_mock.yaml (5 turns, includes stock reorder)
 - **e2e_live trimmed**: 19→12 tests (removed 7 covered by eval scenarios)
 
+### Post-Implementation Bugs Found & Fixed
+
+**Commit 56cbba9** — Fix code_execution tool format + pydantic upgrade:
+1. **Missing `name` field**: CODE_EXECUTION_TOOL dict in both query_agent.py and analysis_agent.py lacked `name: "code_execution"` — API rejected the tool definition
+2. **Pydantic serialization crash**: `by_alias: NoneType` error when anthropic SDK 0.84.0 tried to serialize models. Fixed by upgrading pydantic 2.10.6 → 2.12.5
+3. **AnalysisAgent truncation**: max_tokens 4096 insufficient with code_execution overhead (sandbox output inflates response). Increased to 16384
+
+**Commit 839e064** — QueryAgent data-fetch only + chart pipeline fix:
+4. **Architecture change (Option C1)**: Removed code_execution and analysis tools from QueryAgent entirely. QueryAgent is now data-fetch only (TALLY_TOOLS + DATE_TOOLS). AnalysisAgent is sole computation authority for ALL query types. Orchestrator routes all queries with data to AnalysisAgent.
+5. **STRUCTURED_RESULT not reaching ChartAgent**: Added `_extract_structured_from_text()` fallback to parse STRUCTURED_RESULT from assistant text when code_execution stdout doesn't contain it. Also strips STRUCTURED_RESULT prefix from user-facing messages.
+6. **Robust STRUCTURED_RESULT parsing**: `extract_structured_from_code_execution()` now searches ALL stdout lines (not just reversed), adds warning logs on parse failures
+7. **Classifier over-routing to clarification_needed**: Added data-availability rule to classifier prompt — assume data exists in Tally, only use clarification_needed for genuinely ambiguous queries
+8. **Eval timeout**: Increased 120s → 180s to accommodate code_execution latency
+
+### Eval Results (run_20260313_205515, mock mode)
+- manual_test_regression_mock: 5/5 turns, all tables rendered, avg factual=4.6, quality=5.0, coherence=5.0
+- code_execution_validation_mock: 5/5 turns, 3 tables, turn 3 timeout (180s), turn 5 clarification instead of computation
+
 ### Test counts:
-- Backend: 700 (unit + integration + e2e)
+- Backend: 699 (unit + integration + e2e) — removed 1 QueryAgent code_exec test
 - Frontend: 111 Vitest + 39 Playwright
 - e2e_live: 12 (gated by RUN_LIVE_TESTS=1)
 - Eval: 13 scenarios (8 base + 5 mock), 78 turns

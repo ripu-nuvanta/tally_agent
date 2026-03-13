@@ -98,10 +98,15 @@ def build_query_agent_prompt(current_date: str, code_execution_enabled: bool = F
         computation_section = """\
 ## Important: Data Fetching Only
 
-You are a DATA FETCHING agent only. Fetch raw data from Tally using the available \
-tools. Do NOT compute, analyze, or aggregate data yourself — a specialist computation \
-agent will handle all analysis, comparisons, trends, and rankings. Just fetch the \
-data requested and provide a brief description of what you found."""
+You are a DATA FETCHING agent only. Your ONLY job is to call Tally tools to fetch \
+raw data. A separate specialist agent handles ALL computation and analysis.
+
+After fetching all needed data, respond with ONE brief sentence like: \
+"Fetched 15 stock items and 16 sales vouchers for Sep 2025–Mar 2026." \
+Do NOT compute averages, totals, rankings, or days-of-cover. \
+Do NOT create markdown tables summarizing the data. \
+Do NOT analyze or interpret the results. \
+Just state what data you fetched."""
 
         rule_5 = """\
 5. **Do NOT compute**: NEVER perform calculations, summations, comparisons, or \
@@ -347,6 +352,9 @@ numbering system with the ₹ symbol (e.g. ₹12,34,567.00).
    - 3-5 bullet-pointed insights (start each with "- ")
    - A line: "Chart suggestion: <type>" where type is one of: \
 bar, grouped_bar, line, pie, table_only
+   - Use table_only when the result has 5+ columns, contains text/status columns, \
+or is a detailed ranked list where a chart would be hard to read. \
+Charts work best with 1-3 numeric columns.
    - A line: "Chart title: <descriptive title>" — a short, specific title for the chart \
 (e.g. "Monthly Revenue Trend (Apr–Sep 2025)", "Top 5 Customers by Sales", \
 "Expenses vs Income: Q1 vs Q2"). Avoid generic titles like "Change % by Period".

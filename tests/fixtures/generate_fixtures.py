@@ -832,20 +832,31 @@ def _last_purchase_date_for_party(party: str) -> str:
 
 
 def generate_stock_items_list() -> str:
-    """Generate CustomStockItemList fixture from STOCK_ITEMS opening data.
+    """Generate CustomStockItemList fixture with computed closing balances.
 
-    Note: Uses opening values (not computed closing). TYPE=Collection master
-    queries return static item attributes, not date-dependent balances.
+    Computes closing_qty = opening - sold + purchased, matching the approach
+    used by generate_stock_summary(). Real Tally's TYPE=Collection StockItem
+    returns current closing balances via NATIVEMETHOD:ClosingBalance.
     """
     items_xml = []
     for name, group, uom, _sell_rate, open_qty, open_rate, open_value in STOCK_ITEMS:
+        sold_qty = sum(
+            qty for _, _, _, items, _, _ in SALES_INVOICES
+            for item_name, qty, _ in items if item_name == name
+        )
+        bought_qty = sum(
+            qty for _, _, _, items, _, _ in PURCHASE_INVOICES
+            for item_name, qty, _ in items if item_name == name
+        )
+        closing_qty = open_qty - sold_qty + bought_qty
+        closing_val = closing_qty * open_rate
         items_xml.append(f"""<STOCKITEM NAME="{name}">
 <NAME>{name}</NAME>
 <PARENT>{group}</PARENT>
 <BASEUNITS>{uom}</BASEUNITS>
-<CLOSINGBALANCE>{open_qty} {uom}</CLOSINGBALANCE>
+<CLOSINGBALANCE>{closing_qty} {uom}</CLOSINGBALANCE>
 <CLOSINGRATE>{open_rate}/{uom}</CLOSINGRATE>
-<CLOSINGVALUE>{open_value:.2f}</CLOSINGVALUE>
+<CLOSINGVALUE>{closing_val:.2f}</CLOSINGVALUE>
 </STOCKITEM>""")
     return f"""<ENVELOPE><BODY><DATA><COLLECTION>
 {"".join(items_xml)}

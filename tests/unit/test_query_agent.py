@@ -515,6 +515,31 @@ class TestQueryAgentBuildTools:
         assert "sort_by_field" not in tool_names
         assert "code_execution_20260120" not in tool_types
 
+    def test_max_tokens_is_1024(self):
+        """QueryAgent should limit output to 1024 tokens to prevent computation waste."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+        from backend.agents.query_agent import QueryAgent
+
+        agent = QueryAgent()
+        session = SessionContext("test-max-tokens")
+
+        mock_response = MagicMock()
+        mock_response.stop_reason = "end_turn"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Fetched data."
+        mock_response.content = [text_block]
+
+        mock_client = MagicMock()
+
+        with patch("backend.agents.query_agent.anthropic_client") as mock_anthropic:
+            mock_anthropic.messages.create = AsyncMock(return_value=mock_response)
+            asyncio.run(agent.execute("test query", mock_client, session))
+
+            call_kwargs = mock_anthropic.messages.create.call_args
+            assert call_kwargs.kwargs.get("max_tokens") == 1024
+
     def test_build_query_tools_disabled_data_fetch_only(self):
         """When code_execution_enabled=False, tool list still has Tally + Date tools only (no analysis)."""
         from backend.agents.query_agent import _build_query_tools

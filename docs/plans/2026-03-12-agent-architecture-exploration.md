@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-12
 **Extracted from**: [`2026-03-09-eval-regression-fixes.md`](2026-03-09-eval-regression-fixes.md) (Phase 4 section)
-**Status**: FUTURE — not yet started
+**Status**: PARTIALLY IMPLEMENTED — Option C1 implemented (commit 839e064)
 
 ---
 
@@ -38,12 +38,13 @@ QueryAgent and AnalysisAgent have overlapping tool sets — `_ALL_QUERY_TOOLS` i
 
 **Design options:**
 
-**C1: Remove ANALYSIS_TOOLS from QueryAgent entirely**
+**C1: Remove ANALYSIS_TOOLS from QueryAgent entirely** — IMPLEMENTED (commit 839e064)
 - QueryAgent = data fetching only (TALLY_TOOLS + DATE_TOOLS)
 - AnalysisAgent = sole computation authority
 - Pros: Clean separation, no conflicts, ~50% fewer tool calls
 - Cons: Simple queries (e.g. "what is cash balance?") that don't route to AnalysisAgent lose computation ability. Currently QueryAgent handles `simple_lookup` and `aggregation` types without AnalysisAgent.
 - Risk: Breaking change — needs careful testing of all query types
+- **Resolution**: Orchestrator now routes ALL queries with data to AnalysisAgent (not just _ANALYSIS_TYPES), so simple queries also get computation. Eval results confirm no regression.
 
 **C2: Orchestrator passes "data-fetch-only" flag to QueryAgent**
 - When Orchestrator knows query will route to AnalysisAgent (comparison/trend/top_n), it tells QueryAgent to skip computation
@@ -78,9 +79,17 @@ Phase 8b implemented Option C4 (streaming handover with computed-data flag) via 
 
 Option C1 (remove ANALYSIS_TOOLS from QueryAgent) is now the best path forward. Since AnalysisAgent produces richer analysis anyway, letting QueryAgent focus on data-only fetching avoids the tagging complexity. Simple queries (`simple_lookup`) that don't route to AnalysisAgent would need a lightweight computation pass — either route them to AnalysisAgent too, or keep a minimal subset of tools for QueryAgent.
 
+### Implementation (2026-03-13, commit 839e064)
+
+Option C1 was implemented as part of Phase 12 post-implementation fixes:
+- QueryAgent stripped of all analysis tools and code_execution — now uses TALLY_TOOLS + DATE_TOOLS only, prompt says "DATA FETCHING agent only"
+- AnalysisAgent is sole computation authority with code_execution tool (when enabled) or ANALYSIS_TOOLS (when disabled)
+- Orchestrator routes ALL queries with fetched data to AnalysisAgent (not just comparison/trend/top_n types)
+- Eval results (mock mode): avg factual=4.6, quality=5.0, coherence=5.0 — no regression from the architecture change
+
 ### Priority Assessment
 
-**Medium**. Current eval scores are strong (avg 4.4 factual, 4.8 quality, 4.25 chart). The double computation costs ~5-6 extra tool calls (~$0.01-0.02 per query) and ~10-15s latency. Worth optimizing but not blocking.
+**RESOLVED**. Option C1 implemented. Double computation eliminated.
 
 ---
 

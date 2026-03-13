@@ -65,7 +65,11 @@ class ChartAgent:
         # Prefer analysis agent's suggested title over auto-generated one
         title = data.get("chart_title") or _generate_title(query_type, headers)
         chart_data = _format_chart_data(chart_type, headers, rows)
-        config = _build_config(chart_type, headers)
+        config = _build_config(chart_type, headers, rows)
+
+        # No numeric columns to chart → skip
+        if not config["y_keys"]:
+            return None
 
         # Override to composed chart when secondary axis data is present
         if config.get("secondary_y_keys"):
@@ -204,10 +208,48 @@ def _format_pie_data(headers: list[str], rows: list[list]) -> list[dict[str, Any
     return data
 
 
-def _build_config(chart_type: str, headers: list[str]) -> dict[str, Any]:
+def _identify_numeric_columns(headers: list[str], rows: list[list]) -> set[str]:
+    """Identify columns where >50% of values are numeric.
+
+    Skips the first column (label/x-axis). Returns set of header names
+    that should be used as y-axis values.
+    """
+    if not rows or len(headers) < 2:
+        return set(headers[1:])
+
+    numeric_headers = set()
+    for col_idx in range(1, len(headers)):
+        header = headers[col_idx]
+        if header in _EXCLUDED_CHART_COLUMNS or header == "Change %":
+            continue
+        numeric_count = 0
+        total = 0
+        for row in rows:
+            if col_idx < len(row):
+                total += 1
+                val = row[col_idx]
+                if isinstance(val, (int, float)):
+                    numeric_count += 1
+                elif isinstance(val, str):
+                    cleaned = val.replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
+                    try:
+                        float(cleaned)
+                        numeric_count += 1
+                    except ValueError:
+                        pass
+        if total > 0 and numeric_count / total > 0.5:
+            numeric_headers.add(header)
+    return numeric_headers
+
+
+def _build_config(chart_type: str, headers: list[str], rows: list[list] | None = None) -> dict[str, Any]:
     """Build Recharts config with axis labels and colors."""
     x_key = "label"
-    y_keys = [h for h in headers[1:] if h not in _EXCLUDED_CHART_COLUMNS and h != "Change %"]
+    if rows is not None:
+        numeric_cols = _identify_numeric_columns(headers, rows)
+        y_keys = [h for h in headers[1:] if h in numeric_cols]
+    else:
+        y_keys = [h for h in headers[1:] if h not in _EXCLUDED_CHART_COLUMNS and h != "Change %"]
 
     # Detect secondary axis data (Change % column)
     secondary_y_keys = [h for h in headers[1:] if h == "Change %"]
