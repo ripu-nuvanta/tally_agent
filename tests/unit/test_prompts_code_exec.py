@@ -2,13 +2,14 @@
 
 
 class TestQueryAgentPromptCodeExec:
-    def test_code_exec_enabled_replaces_computation_section(self):
+    def test_code_exec_enabled_data_fetch_only_prompt(self):
         from backend.agents.prompts import build_query_agent_prompt
         prompt = build_query_agent_prompt("13-03-2026", code_execution_enabled=True)
-        assert "## Code Execution" in prompt
-        assert "## Computation Tools" not in prompt
-        assert "compute_totals" not in prompt
-        assert "STRUCTURED_RESULT:" in prompt
+        assert "DATA FETCHING agent only" in prompt
+        assert "specialist computation agent" in prompt
+        assert "## Code Execution" not in prompt
+        assert "code_execution tool for ALL calculations" not in prompt
+        assert "STRUCTURED_RESULT:" not in prompt
 
     def test_code_exec_disabled_keeps_computation_tools(self):
         from backend.agents.prompts import build_query_agent_prompt
@@ -20,13 +21,13 @@ class TestQueryAgentPromptCodeExec:
     def test_code_exec_enabled_updates_rule_5(self):
         from backend.agents.prompts import build_query_agent_prompt
         prompt = build_query_agent_prompt("13-03-2026", code_execution_enabled=True)
-        assert "code_execution tool for ALL calculations" in prompt
-        assert "NEVER do mental arithmetic" in prompt
+        assert "Do NOT compute" in prompt
+        assert "specialist computation agent will handle" in prompt
 
     def test_code_exec_enabled_updates_rule_11(self):
         from backend.agents.prompts import build_query_agent_prompt
         prompt = build_query_agent_prompt("13-03-2026", code_execution_enabled=True)
-        assert "code_execution to aggregate" in prompt
+        assert "code_execution to aggregate" not in prompt
         assert "compute_totals with group_by" not in prompt
 
 

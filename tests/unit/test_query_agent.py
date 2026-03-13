@@ -497,14 +497,13 @@ class TestQueryAgentAPIError:
 
 
 # ---------------------------------------------------------------------------
-# Tests: Code Execution Tool support
+# Tests: _build_query_tools always returns data-fetch tools only
 # ---------------------------------------------------------------------------
 
 
-class TestQueryAgentCodeExecution:
-    @pytest.mark.asyncio
-    async def test_code_exec_enabled_uses_code_execution_tool(self):
-        """When CODE_EXECUTION_ENABLED=True, tool list includes code_execution, excludes analysis tools."""
+class TestQueryAgentBuildTools:
+    def test_build_query_tools_enabled_data_fetch_only(self):
+        """When code_execution_enabled=True, tool list has Tally + Date tools only (no analysis, no code_execution)."""
         from backend.agents.query_agent import _build_query_tools
 
         tools = _build_query_tools(code_execution_enabled=True)
@@ -514,55 +513,16 @@ class TestQueryAgentCodeExecution:
         assert "resolve_date_range" in tool_names
         assert "compute_totals" not in tool_names
         assert "sort_by_field" not in tool_names
-        assert "code_execution_20260120" in tool_types
+        assert "code_execution_20260120" not in tool_types
 
-    @pytest.mark.asyncio
-    async def test_code_exec_disabled_uses_analysis_tools(self):
-        """When CODE_EXECUTION_ENABLED=False, tool list includes analysis tools, excludes code_execution."""
+    def test_build_query_tools_disabled_data_fetch_only(self):
+        """When code_execution_enabled=False, tool list still has Tally + Date tools only (no analysis)."""
         from backend.agents.query_agent import _build_query_tools
 
         tools = _build_query_tools(code_execution_enabled=False)
         tool_names = [t["name"] for t in tools if "name" in t]
         tool_types = [t.get("type", "") for t in tools]
-        assert "compute_totals" in tool_names
+        assert "get_trial_balance" in tool_names
+        assert "resolve_date_range" in tool_names
+        assert "compute_totals" not in tool_names
         assert "code_execution_20260120" not in tool_types
-
-    @pytest.mark.asyncio
-    async def test_code_exec_response_captures_structured_output(self):
-        """When response has code_execution_tool_result with STRUCTURED_RESULT, capture it."""
-        from backend.agents.query_agent import QueryAgent
-
-        mock_client = MagicMock()
-        session = SessionContext()
-
-        # Turn 1: tool_use for get_stock_summary
-        tool_response = _make_tool_call_response("get_stock_summary", {"as_on_date": "13-03-2026"})
-        # Turn 2: end_turn with code execution results (server-resolved inline)
-        final_response = MagicMock()
-        final_response.stop_reason = "end_turn"
-        text_block = MagicMock(type="text", text="Stock analysis complete.")
-        server_tool = MagicMock(type="server_tool_use")
-        server_tool.input = {"code": "print('hello')"}
-        code_result = MagicMock(type="code_execution_tool_result")
-        code_result.stdout = 'STRUCTURED_RESULT:{"headers":["Item","Days"],"rows":[["A",100]]}\n'
-        code_result.stderr = ""
-        code_result.return_code = 0
-        final_response.content = [text_block, server_tool, code_result]
-
-        with (
-            patch("backend.agents.query_agent.anthropic_client") as mock_claude,
-            patch("backend.agents.query_agent.execute_tool", new_callable=AsyncMock) as mock_exec,
-            patch("backend.agents.query_agent.settings") as mock_settings,
-        ):
-            mock_settings.CLAUDE_MODEL = "test-model"
-            mock_settings.CODE_EXECUTION_ENABLED = True
-            mock_claude.messages.create = AsyncMock(side_effect=[tool_response, final_response])
-            mock_exec.return_value = {"success": True, "data": [{"name": "Item A", "qty": 10}]}
-
-            agent = QueryAgent()
-            result = await agent.execute("stock analysis", mock_client, session)
-
-        assert result["message"] == "Stock analysis complete."
-        code_exec_results = [r for r in result["tool_results"] if r["tool_name"] == "code_execution"]
-        assert len(code_exec_results) == 1
-        assert code_exec_results[0]["result"]["data"]["headers"] == ["Item", "Days"]

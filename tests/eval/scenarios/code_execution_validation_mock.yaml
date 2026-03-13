@@ -48,7 +48,7 @@ turns:
         - "Average is computed as total sales divided by number of months with data"
         - "Amounts formatted in Indian Rupee notation"
 
-  - query: "Which items are running low on stock based on last 6 months of sales? Show average monthly sales, current stock, and days of stock remaining for each item."
+  - query: "Which items are running low on stock based on last 6 months of sales? Show average monthly consumption, current stock level, and flag items with less than 2 months of stock remaining."
     expect:
       query_type: aggregation
       has_data: true

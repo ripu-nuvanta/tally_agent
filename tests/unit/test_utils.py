@@ -190,13 +190,14 @@ class TestExtractStructuredFromCodeExecution:
         response.content = [MagicMock(type="text"), MagicMock(type="tool_use")]
         assert extract_structured_from_code_execution(response) is None
 
-    def test_searches_from_last_line_backwards(self):
+    def test_returns_first_valid_structured_result(self):
+        """When multiple STRUCTURED_RESULT lines exist, return the first valid one."""
         block = MagicMock(type="code_execution_tool_result")
-        block.stdout = 'STRUCTURED_RESULT:{"headers":["Old"],"rows":[]}\nmore output\nSTRUCTURED_RESULT:{"headers":["New"],"rows":[["x",1]]}\n'
+        block.stdout = 'STRUCTURED_RESULT:{"headers":["First"],"rows":[]}\nmore output\nSTRUCTURED_RESULT:{"headers":["Second"],"rows":[["x",1]]}\n'
         response = MagicMock()
         response.content = [block]
         result = extract_structured_from_code_execution(response)
-        assert result["headers"] == ["New"]
+        assert result["headers"] == ["First"]
 
     def test_empty_stdout(self):
         block = MagicMock(type="code_execution_tool_result")

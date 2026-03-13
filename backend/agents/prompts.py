@@ -33,7 +33,15 @@ following query types:
 - **top_n**: Ranking or top/bottom items (e.g. "Top 5 customers by sales", "Least profitable products").
 - **aggregation**: Summarising or totalling data (e.g. "Total sales this year", "Average monthly expense").
 - **greeting**: A greeting or non-accounting message (e.g. "Hi", "Hello", "Thanks").
-- **clarification_needed**: The query is ambiguous or missing information needed to fetch data.
+- **clarification_needed**: The query is genuinely ambiguous about WHAT the user wants.
+
+## Data Availability Rule
+
+Always assume the requested data is available in Tally. Do NOT classify a query as
+clarification_needed just because you are unsure whether the data exists — classify it
+based on the query's analytical intent (simple_lookup, comparison, trend, top_n,
+aggregation). Only use clarification_needed when the user's question is genuinely
+ambiguous about WHAT they want, not about whether the data is available.
 
 ## Date Rules — Indian Financial Year
 
@@ -77,50 +85,41 @@ def build_query_agent_prompt(current_date: str, code_execution_enabled: bool = F
     """Return the system prompt for the query agent.
 
     The query agent uses Claude tool-calling to fetch data from TallyPrime
-    via the Tally Bridge layer, and computation tools for accurate calculations.
+    via the Tally Bridge layer.
 
     Args:
         current_date: Today's date in DD-MM-YYYY format, injected into the prompt.
-        code_execution_enabled: When True, swap computation tool references for
-            code execution sandbox instructions.
+        code_execution_enabled: When True, instruct the agent to be data-fetch only
+            (a specialist computation agent handles analysis).
     """
     tally_tool_names = ", ".join(tool["name"] for tool in TALLY_TOOLS)
 
     if code_execution_enabled:
         computation_section = """\
-## Code Execution
+## Important: Data Fetching Only
 
-You have access to a Python code execution sandbox. Use it for ALL numerical
-computations: summing amounts, grouping by month, computing percentages, sorting,
-ranking, etc. Write and run Python code rather than calling dedicated computation
-tools."""
+You are a DATA FETCHING agent only. Fetch raw data from Tally using the available \
+tools. Do NOT compute, analyze, or aggregate data yourself — a specialist computation \
+agent will handle all analysis, comparisons, trends, and rankings. Just fetch the \
+data requested and provide a brief description of what you found."""
 
         rule_5 = """\
-5. **Use code_execution tool for ALL calculations**: NEVER do mental arithmetic. \
-When you need to sum amounts, compute totals, compare values, or calculate \
-percentages, write Python code and run it in the code execution sandbox. \
-This ensures accuracy."""
+5. **Do NOT compute**: NEVER perform calculations, summations, comparisons, or \
+rankings yourself. A specialist computation agent will handle all analysis. \
+Your job is to fetch the raw data accurately."""
 
         rule_11 = """\
 11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
-(day book, sales register, purchase register), fetch the FULL date range in ONE call, \
-then use code_execution to aggregate by month in Python. Do NOT make \
-separate API calls per month — the voucher data includes a 'month' field for grouping. \
+(day book, sales register, purchase register), fetch the FULL date range in ONE call. \
+Do NOT make separate API calls per month — the voucher data includes a 'month' field. \
 **IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
 not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
 get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
 internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
 HTTP requests). For a lighter alternative, use get_sales_register + \
-get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each, \
-then aggregate by month via code execution)."""
+get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each)."""
 
-        structured_rule_block = """
-13. **Structured output**: When your code_execution computes a result table, ALWAYS \
-print the final structured data on the LAST line of stdout using this exact format:
-STRUCTURED_RESULT:{"headers": ["Col1", "Col2"], "rows": [["val1", 123], ["val2", 456]]}
-Headers must be strings. Row values: use numbers for numeric data (not strings). \
-You may print other text (debug, intermediate steps) before this line — only the \
-STRUCTURED_RESULT line is captured for table/chart rendering."""
+        structured_rule_block = ""
     else:
         from backend.agents.analysis_agent import ANALYSIS_TOOLS
 
@@ -154,8 +153,7 @@ then group_by='month')."""
     return f"""\
 You are an accounting data retrieval agent connected to a live TallyPrime instance.
 Today's date is {current_date}.
-Your job is to fetch the requested data by calling the appropriate Tally tools,
-and use computation tools for any calculations.
+Your job is to fetch the requested data by calling the appropriate Tally tools.
 
 ## Data Fetching Tools
 

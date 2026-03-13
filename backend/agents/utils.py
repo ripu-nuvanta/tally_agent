@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 STRUCTURED_RESULT_PREFIX = "STRUCTURED_RESULT:"
 
@@ -56,16 +59,26 @@ def extract_code_execution_results(response: Any) -> list[dict[str, Any]]:
 
 
 def extract_structured_from_code_execution(response: Any) -> dict[str, Any] | None:
-    """Extract {headers, rows} from code_execution stdout if present."""
+    """Extract {headers, rows} from code_execution stdout if present.
+
+    Searches ALL lines in stdout (not just the last) to handle cases
+    where Claude prints debug output after the STRUCTURED_RESULT line.
+    """
+    found_code_exec = False
     for block in response.content:
         if block.type == "code_execution_tool_result":
+            found_code_exec = True
             stdout = getattr(block, "stdout", "")
-            for line in reversed(stdout.strip().splitlines()):
-                if line.startswith(STRUCTURED_RESULT_PREFIX):
+            for line in stdout.splitlines():
+                stripped = line.strip()
+                if stripped.startswith(STRUCTURED_RESULT_PREFIX):
                     try:
-                        data = json.loads(line[len(STRUCTURED_RESULT_PREFIX):])
+                        data = json.loads(stripped[len(STRUCTURED_RESULT_PREFIX):])
                         if isinstance(data, dict) and "headers" in data and "rows" in data:
                             return data
-                    except json.JSONDecodeError:
-                        pass
+                        logger.warning("STRUCTURED_RESULT parsed but missing headers/rows: %s", list(data.keys()) if isinstance(data, dict) else type(data).__name__)
+                    except json.JSONDecodeError as exc:
+                        logger.warning("STRUCTURED_RESULT JSON parse error: %s — line: %s", exc, stripped[:200])
+    if found_code_exec:
+        logger.warning("code_execution ran but no valid STRUCTURED_RESULT found in stdout")
     return None

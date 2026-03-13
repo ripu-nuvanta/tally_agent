@@ -524,6 +524,20 @@ class AnalysisAgent:
                 final_text = extract_text(response)
                 logger.info("AnalysisAgent turn %d — final answer (%d chars)", turn, len(final_text))
                 logger.debug("AnalysisAgent turn %d — FINAL ANSWER:\n%s", turn, final_text)
+
+                # Fallback: parse STRUCTURED_RESULT from text if code_execution stdout missed it
+                if settings.CODE_EXECUTION_ENABLED and not (last_table_data and last_table_data.get("headers")):
+                    text_structured = _extract_structured_from_text(final_text)
+                    if text_structured:
+                        last_table_data = text_structured
+                        if query_type == "top_n":
+                            ranked_table_data = last_table_data
+                        elif query_type == "trend":
+                            trend_table_data = last_table_data
+                        elif query_type == "comparison":
+                            comparison_table_data = last_table_data
+                        logger.info("AnalysisAgent turn %d — captured STRUCTURED_RESULT from text fallback", turn)
+
                 # For top_n, prefer the ranked (sort_by_field) data over aggregate totals
                 preferred_data = (
                     trend_table_data if (query_type == "trend" and trend_table_data)
@@ -641,10 +655,26 @@ def _ensure_totals_row(headers: list[str], rows: list[list], query_type: str) ->
     return rows + [totals]
 
 
+def _extract_structured_from_text(text: str) -> dict | None:
+    """Fallback: extract STRUCTURED_RESULT from text when code_execution stdout missed it."""
+    from backend.agents.utils import STRUCTURED_RESULT_PREFIX
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith(STRUCTURED_RESULT_PREFIX):
+            try:
+                data = json.loads(stripped[len(STRUCTURED_RESULT_PREFIX):])
+                if isinstance(data, dict) and "headers" in data and "rows" in data:
+                    return {"headers": data["headers"], "rows": data["rows"]}
+            except json.JSONDecodeError:
+                pass
+    return None
+
+
 def _strip_chart_metadata(text: str) -> str:
-    """Remove Chart suggestion/Chart title lines from message text — internal directives only."""
+    """Remove Chart suggestion/Chart title/STRUCTURED_RESULT lines from message text."""
     text = re.sub(r'\n*\**\s*(?:chart[_\s]suggestion|suggested chart)\s*:\s*.*', '', text, flags=re.IGNORECASE)
     text = re.sub(r'\n*\**\s*chart[_\s]title\s*:\s*.*', '', text, flags=re.IGNORECASE)
+    text = re.sub(r'\n*STRUCTURED_RESULT:\{.*\}', '', text)
     return text.strip()
 
 
