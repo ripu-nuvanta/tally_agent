@@ -20,6 +20,8 @@ def build_orchestrator_prompt(current_date: str) -> str:
     Args:
         current_date: Today's date in DD-MM-YYYY format, injected into the prompt.
     """
+    tally_tool_names = ", ".join(tool["name"] for tool in TALLY_TOOLS)
+
     return f"""\
 You are an accounting query classifier for a TallyPrime AI assistant.
 Today's date is {current_date}.
@@ -35,6 +37,12 @@ following query types:
 - **greeting**: A greeting or non-accounting message (e.g. "Hi", "Hello", "Thanks").
 - **clarification_needed**: The query is genuinely ambiguous about WHAT the user wants.
 
+## Available Data Sources
+
+The following Tally data-fetching tools are available: {tally_tool_names}
+
+If a query can be answered using any of these tools, classify it by analytical intent — do NOT use clarification_needed.
+
 ## Data Availability Rule
 
 Always assume the requested data is available in Tally. Do NOT classify a query as
@@ -42,6 +50,8 @@ clarification_needed just because you are unsure whether the data exists — cla
 based on the query's analytical intent (simple_lookup, comparison, trend, top_n,
 aggregation). Only use clarification_needed when the user's question is genuinely
 ambiguous about WHAT they want, not about whether the data is available.
+For example, stock/inventory queries should be classified as aggregation or top_n —
+inventory data IS available via list_stock_items and get_stock_summary.
 
 ## Date Rules — Indian Financial Year
 

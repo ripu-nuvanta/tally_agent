@@ -996,6 +996,23 @@ class TestClassifierSessionContext:
 # ---------------------------------------------------------------------------
 
 
+class TestOrchestratorPromptContainsToolNames:
+    def test_classifier_prompt_contains_tally_tool_names(self):
+        """The orchestrator classifier prompt should list available Tally tool names."""
+        from backend.agents.prompts import build_orchestrator_prompt
+        from backend.agents.tools import TALLY_TOOLS
+
+        prompt = build_orchestrator_prompt("13-03-2026")
+
+        for tool in TALLY_TOOLS:
+            assert tool["name"] in prompt, f"Tool {tool['name']} not found in classifier prompt"
+
+        # Also verify the "Available Data Sources" section exists
+        assert "Available Data Sources" in prompt
+        assert "list_stock_items" in prompt
+        assert "get_stock_summary" in prompt
+
+
 class TestSeparateToolResults:
     def test_separate_raw_and_computed_data(self):
         """Orchestrator should separate raw Tally data from pre-computed results."""

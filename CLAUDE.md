@@ -58,7 +58,9 @@ PYTHONPATH=. uv run python scripts/test_agent_live.py --host <TALLY_IP> --port 9
 # Seed test data into Tally
 python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000
 
-# Eval framework (needs backend + frontend running)
+# Eval framework & Playwright tests — PREREQUISITE: backend AND frontend must be running:
+#   Terminal 1: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+#   Terminal 2: cd frontend && npm run dev   (Vite dev server on port 5173)
 # ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
 # Results auto-saved to tests/eval/results/ (transcripts, screenshots, scores, report)
 PYTHONPATH=. python tests/eval/collect.py --scenario all --frontend-url http://localhost:5173 2>&1 | tee docs/eval-collect.log
@@ -86,6 +88,7 @@ npm run build                        # Production build
 npm test                             # Vitest unit tests (111 tests)
 npm run test:watch                   # Vitest in watch mode
 npm run test:playwright              # Playwright visual tests (39 tests: responsive + eval-visual × 3 viewports)
+                                     # PREREQUISITE: backend must be running (uvicorn on port 8000)
 
 # IMPORTANT: To force-regenerate Playwright screenshots, DELETE the __screenshots__
 # directory first. Playwright's pixel-diff threshold can hide stale content.
