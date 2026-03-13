@@ -45,7 +45,7 @@ _DATE_TOOL_NAMES = {t["name"] for t in DATE_TOOLS}
 _ALL_QUERY_TOOLS = TALLY_TOOLS + ANALYSIS_TOOLS + DATE_TOOLS
 
 # Server-managed code execution tool (resolved inline by the API, no client dispatch).
-CODE_EXECUTION_TOOL = {"type": "code_execution_20260120"}
+CODE_EXECUTION_TOOL = {"type": "code_execution_20260120", "name": "code_execution"}
 
 
 def _build_query_tools(code_execution_enabled: bool) -> list:

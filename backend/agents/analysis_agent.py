@@ -186,7 +186,7 @@ ANALYSIS_TOOLS: list[dict[str, Any]] = [
 ]
 
 
-CODE_EXECUTION_TOOL = {"type": "code_execution_20260120"}
+CODE_EXECUTION_TOOL = {"type": "code_execution_20260120", "name": "code_execution"}
 
 
 def _build_analysis_tools(code_execution_enabled: bool) -> list:
@@ -468,7 +468,7 @@ class AnalysisAgent:
             try:
                 response = await anthropic_client.messages.create(
                     model=settings.CLAUDE_MODEL,
-                    max_tokens=4096,
+                    max_tokens=16384,
                     system=system_prompt,
                     tools=_build_analysis_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,
