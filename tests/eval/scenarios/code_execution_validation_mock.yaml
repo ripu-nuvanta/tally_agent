@@ -1,0 +1,61 @@
+name: "Code Execution Validation (Mock)"
+description: "Computation-heavy queries exercising code execution tool against mock Tally data. Includes stock reorder analysis that requires deterministic math."
+tags: [code_execution, computation, percentages, derived_metrics, stock_reorder, mock]
+
+turns:
+  - query: "What percentage of total expenses does each expense ledger represent? Show as a table."
+    expect:
+      query_type: aggregation
+      has_data: true
+      has_chart: false
+      checks:
+        - "Response includes a table with expense ledgers and their percentage of total"
+        - "Percentages are computed correctly and sum to approximately 100%"
+        - "Amounts are formatted in Indian Rupee notation with ₹ symbol"
+
+  - query: "Compare monthly P&L margins for Q3 vs Q4 — calculate revenue minus expenses as percentage of revenue for each month"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      chart_type: [grouped_bar, bar]
+      checks:
+        - "Shows margin percentages for each month in Q3 and Q4"
+        - "Margins are calculated as (revenue - expenses) / revenue * 100"
+        - "Both absolute amounts and percentages are shown"
+        - "Chart visualizes the comparison across months"
+
+  - query: "Show top 5 ledgers by absolute change in balance between Q3 and Q4"
+    expect:
+      query_type: top_n
+      has_data: true
+      has_chart: true
+      chart_type: [bar]
+      checks:
+        - "Shows exactly 5 ledgers ranked by absolute change"
+        - "Change amounts are computed as Q4 minus Q3 balance"
+        - "Both Q3 and Q4 balances shown alongside the change"
+
+  - query: "What is the average monthly sales amount for this FY and which months are above or below average?"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [bar, line]
+      checks:
+        - "Shows monthly sales amounts with an average line or indicator"
+        - "Correctly identifies which months are above and below average"
+        - "Average is computed as total sales divided by number of months with data"
+        - "Amounts formatted in Indian Rupee notation"
+
+  - query: "Which items are running low on stock based on last 6 months of sales? Show average monthly sales, current stock, and days of stock remaining for each item."
+    expect:
+      query_type: aggregation
+      has_data: true
+      has_chart: false
+      checks:
+        - "Shows each stock item with average monthly sales quantity"
+        - "Days of stock remaining is calculated as (current stock / average monthly sales) * 30"
+        - "Items are sorted by urgency (lowest days remaining first)"
+        - "Arithmetic is correct — e.g. 12 units stock / 1.2 avg monthly sales = 300 days, not 55 days"
+        - "Identifies items that need reordering (e.g. less than 60 days of stock)"

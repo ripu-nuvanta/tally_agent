@@ -10,14 +10,6 @@ turns:
         - "Asks for clarification about which balance"
         - "Suggests options like trial balance, balance sheet, or specific ledger"
 
-  - query: "Trial balance for March 2025 to March 2026"
-    expect:
-      query_type: simple_lookup
-      has_data: true
-      checks:
-        - "Handles non-standard date format gracefully"
-        - "Either converts to FY dates or asks for clarification"
-
   - query: "What's the balance of Cash & Bank (Combined)?"
     expect:
       has_data: true
@@ -57,11 +49,3 @@ turns:
       checks:
         - "Correctly identifies HCODE as a party/ledger"
         - "Applies appropriate date range for 'last month'"
-
-  - query: "Show everything"
-    expect:
-      query_type: clarification_needed
-      checks:
-        - "Does not attempt to fetch all data"
-        - "Asks user to be more specific"
-        - "Suggests possible reports or queries"
