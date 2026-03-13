@@ -1,7 +1,7 @@
 # Code Execution Tool Integration — Design Spec
 
 **Date**: 2026-03-13
-**Status**: Draft
+**Status**: Implemented
 **Motivation**: LLM does mental arithmetic on fetched Tally data and gets it wrong (e.g. stock coverage: 12 units / 2.2 avg monthly sales = "55 days" instead of ~164 days). Moving all computation to Claude's server-side code execution sandbox eliminates this class of errors.
 
 ## Problem
