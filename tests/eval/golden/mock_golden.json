@@ -1,72 +1,84 @@
 {
   "trial_balance": {
     "report_name": "Trial Balance",
-    "company": "",
-    "from_date": null,
-    "to_date": null,
+    "company": "Bharat Traders Pvt Ltd",
+    "from_date": "01-04-2025",
+    "to_date": "31-03-2026",
     "rows": [
       {
         "account_name": "Capital Account",
         "debit_amount": 0.0,
-        "credit_amount": 100000.0,
-        "closing_balance": 100000.0
+        "credit_amount": 750000.0,
+        "closing_balance": 750000.0
       },
       {
         "account_name": "Current Liabilities",
-        "debit_amount": -279384.87,
-        "credit_amount": 55856.21,
-        "closing_balance": -223528.66
+        "debit_amount": 0.0,
+        "credit_amount": 1391300.0,
+        "closing_balance": 1391300.0
+      },
+      {
+        "account_name": "Loans (Liability)",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
       },
       {
         "account_name": "Fixed Assets",
-        "debit_amount": -208496.0,
+        "debit_amount": 0.0,
         "credit_amount": 0.0,
-        "closing_balance": -208496.0
+        "closing_balance": 0.0
       },
       {
         "account_name": "Current Assets",
-        "debit_amount": -1048846.53,
+        "debit_amount": -334650.0,
         "credit_amount": 0.0,
-        "closing_balance": -1048846.53
+        "closing_balance": -334650.0
       },
       {
         "account_name": "Sales Accounts",
         "debit_amount": 0.0,
-        "credit_amount": 3764350.0,
-        "closing_balance": 3764350.0
+        "credit_amount": 2057650.0,
+        "closing_balance": 2057650.0
       },
       {
         "account_name": "Purchase Accounts",
-        "debit_amount": -32181.61,
+        "debit_amount": -2521300.0,
         "credit_amount": 0.0,
-        "closing_balance": -32181.61
+        "closing_balance": -2521300.0
+      },
+      {
+        "account_name": "Direct Expenses",
+        "debit_amount": 0.0,
+        "credit_amount": 0.0,
+        "closing_balance": 0.0
       },
       {
         "account_name": "Indirect Expenses",
-        "debit_amount": -2351297.74,
-        "credit_amount": 0.54,
-        "closing_balance": -2351297.2
+        "debit_amount": -1343000.0,
+        "credit_amount": 0.0,
+        "closing_balance": -1343000.0
       }
     ],
-    "raw_response": null
+    "raw_response": ""
   },
   "profit_and_loss": {
     "report_name": "Profit and Loss",
-    "company": "",
-    "from_date": null,
-    "to_date": null,
+    "company": "Bharat Traders Pvt Ltd",
+    "from_date": "01-04-2025",
+    "to_date": "31-03-2026",
     "rows": [
       {
         "account_name": "Sales Accounts",
         "debit_amount": 0.0,
-        "credit_amount": 3764350.0,
-        "closing_balance": 3764350.0
+        "credit_amount": 2057650.0,
+        "closing_balance": 2057650.0
       },
       {
         "account_name": "Cost of Sales :",
-        "debit_amount": -32181.61,
+        "debit_amount": -2521300.0,
         "credit_amount": 0.0,
-        "closing_balance": -32181.61
+        "closing_balance": -2521300.0
       },
       {
         "account_name": "Opening Stock",
@@ -76,9 +88,9 @@
       },
       {
         "account_name": "Add: Purchase Accounts",
-        "debit_amount": -32181.61,
+        "debit_amount": -2521300.0,
         "credit_amount": 0.0,
-        "closing_balance": -32181.61
+        "closing_balance": -2521300.0
       },
       {
         "account_name": "Less: Closing Stock",
@@ -87,25 +99,31 @@
         "closing_balance": 0.0
       },
       {
-        "account_name": "Indirect Expenses",
-        "debit_amount": -2351297.2,
+        "account_name": "Direct Expenses",
+        "debit_amount": 0.0,
         "credit_amount": 0.0,
-        "closing_balance": -2351297.2
+        "closing_balance": 0.0
+      },
+      {
+        "account_name": "Indirect Expenses",
+        "debit_amount": -1343000.0,
+        "credit_amount": 0.0,
+        "closing_balance": -1343000.0
       }
     ],
-    "raw_response": null
+    "raw_response": ""
   },
   "balance_sheet": {
     "report_name": "Balance Sheet",
-    "company": "",
-    "from_date": null,
-    "to_date": null,
+    "company": "Bharat Traders Pvt Ltd",
+    "from_date": "01-04-2025",
+    "to_date": "31-03-2026",
     "rows": [
       {
         "account_name": "Capital Account",
         "debit_amount": 0.0,
-        "credit_amount": 100000.0,
-        "closing_balance": 100000.0
+        "credit_amount": 750000.0,
+        "closing_balance": 750000.0
       },
       {
         "account_name": "Loans (Liability)",
@@ -115,9 +133,9 @@
       },
       {
         "account_name": "Current Liabilities",
-        "debit_amount": -223528.66,
-        "credit_amount": 0.0,
-        "closing_balance": -223528.66
+        "debit_amount": 0.0,
+        "credit_amount": 1391300.0,
+        "closing_balance": 1391300.0
       },
       {
         "account_name": "Suspense A/c",
@@ -127,83 +145,215 @@
       },
       {
         "account_name": "Profit & Loss A/c",
-        "debit_amount": 0.0,
-        "credit_amount": 1380871.19,
-        "closing_balance": 1380871.19
+        "debit_amount": -1806650.0,
+        "credit_amount": 0.0,
+        "closing_balance": -1806650.0
       },
       {
         "account_name": "Fixed Assets",
-        "debit_amount": -208496.0,
+        "debit_amount": 0.0,
         "credit_amount": 0.0,
-        "closing_balance": -208496.0
+        "closing_balance": 0.0
       },
       {
         "account_name": "Current Assets",
-        "debit_amount": -1048846.53,
+        "debit_amount": -334650.0,
         "credit_amount": 0.0,
-        "closing_balance": -1048846.53
+        "closing_balance": -334650.0
       }
     ],
-    "raw_response": null
+    "raw_response": ""
   },
-  "bills_receivable": [
-    {
-      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
-      "bill_number": "#1",
-      "bill_date": "2025-07-02",
-      "due_date": null,
-      "amount": 200000.0,
-      "pending_amount": 200000.0
-    },
-    {
-      "party_name": "HCODE TECHNOLOGIES PRIVATE LIMITED",
-      "bill_number": "#4",
-      "bill_date": "2025-08-02",
-      "due_date": null,
-      "amount": 200000.0,
-      "pending_amount": 200000.0
-    }
-  ],
-  "stock_summary": [
-    {
-      "name": "Data Cleaning and Matching Application Software",
-      "parent_group": "",
-      "base_units": "NOS",
-      "closing_quantity": -1.0,
-      "closing_rate": 0.0,
-      "closing_value": 0.0
-    },
-    {
-      "name": "IT Project Technical Consulting",
-      "parent_group": "",
-      "base_units": "NOS",
-      "closing_quantity": -2.0,
-      "closing_rate": 0.0,
-      "closing_value": 0.0
-    },
-    {
-      "name": "IT Project Technical Consulting(WITHOUT GST)",
-      "parent_group": "",
-      "base_units": "NOS",
-      "closing_quantity": -154.0,
-      "closing_rate": 0.0,
-      "closing_value": 0.0
-    },
-    {
-      "name": "Smartbike Software Development Technical Services",
-      "parent_group": "",
-      "base_units": "NOS",
-      "closing_quantity": -3.0,
-      "closing_rate": 0.0,
-      "closing_value": 0.0
-    },
-    {
-      "name": "Website Design and App Development",
-      "parent_group": "",
-      "base_units": "NOS",
-      "closing_quantity": -2.0,
-      "closing_rate": 0.0,
-      "closing_value": 0.0
-    }
-  ]
+  "bills_receivable": {
+    "report_name": "Bills Receivable",
+    "company": "Bharat Traders Pvt Ltd",
+    "from_date": "01-04-2025",
+    "to_date": "31-03-2026",
+    "rows": [
+      {
+        "bill_number": "Apex Technologies Pv",
+        "party_name": "Apex Technologies Pvt Ltd",
+        "bill_date": "15-Feb-26",
+        "amount": 55000.0,
+        "pending_amount": 55000.0,
+        "due_date": "15-Feb-26",
+        "overdue_days": "30"
+      },
+      {
+        "bill_number": "Sunrise Electronics",
+        "party_name": "Sunrise Electronics Mumbai",
+        "bill_date": "15-Dec-25",
+        "amount": 141000.0,
+        "pending_amount": 141000.0,
+        "due_date": "15-Dec-25",
+        "overdue_days": "30"
+      },
+      {
+        "bill_number": "Global IT Solutions",
+        "party_name": "Global IT Solutions",
+        "bill_date": "1-Mar-26",
+        "amount": 316000.0,
+        "pending_amount": 316000.0,
+        "due_date": "1-Mar-26",
+        "overdue_days": "30"
+      },
+      {
+        "bill_number": "Sharma & Sons Trader",
+        "party_name": "Sharma & Sons Traders",
+        "bill_date": "28-Dec-25",
+        "amount": 14250.0,
+        "pending_amount": 14250.0,
+        "due_date": "28-Dec-25",
+        "overdue_days": "30"
+      },
+      {
+        "bill_number": "Rajesh Computers",
+        "party_name": "Rajesh Computers",
+        "bill_date": "20-Jan-26",
+        "amount": 139400.0,
+        "pending_amount": 139400.0,
+        "due_date": "20-Jan-26",
+        "overdue_days": "30"
+      },
+      {
+        "bill_number": "Eastern Digital Hub",
+        "party_name": "Eastern Digital Hub",
+        "bill_date": "5-Feb-26",
+        "amount": 159000.0,
+        "pending_amount": 159000.0,
+        "due_date": "5-Feb-26",
+        "overdue_days": "30"
+      }
+    ],
+    "raw_response": ""
+  },
+  "stock_summary": {
+    "report_name": "Stock Summary",
+    "company": "Bharat Traders Pvt Ltd",
+    "from_date": "01-04-2025",
+    "to_date": "31-03-2026",
+    "rows": [
+      {
+        "name": "Samsung 24 inch Monitor",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 42.0,
+        "closing_rate": 0.0,
+        "closing_value": 462000.0
+      },
+      {
+        "name": "HP Laptop 15s",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 25.0,
+        "closing_rate": 0.0,
+        "closing_value": 950000.0
+      },
+      {
+        "name": "Samsung Galaxy Tab A8",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 38.0,
+        "closing_rate": 0.0,
+        "closing_value": 513000.0
+      },
+      {
+        "name": "Dell Desktop Optiplex",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 0.0,
+        "closing_rate": 0.0,
+        "closing_value": 0.0
+      },
+      {
+        "name": "Lenovo Ideapad Slim 3",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": -1.0,
+        "closing_rate": 0.0,
+        "closing_value": -36000.0
+      },
+      {
+        "name": "Logitech Wireless Mouse",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 295.0,
+        "closing_rate": 0.0,
+        "closing_value": 162250.0
+      },
+      {
+        "name": "Logitech Keyboard K380",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 115.0,
+        "closing_rate": 0.0,
+        "closing_value": 207000.0
+      },
+      {
+        "name": "HP DeskJet Printer 2723",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 21.0,
+        "closing_rate": 0.0,
+        "closing_value": 88200.0
+      },
+      {
+        "name": "TP-Link WiFi Router AC750",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 12.0,
+        "closing_rate": 0.0,
+        "closing_value": 15600.0
+      },
+      {
+        "name": "USB-C Hub 7-in-1",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 72.0,
+        "closing_rate": 0.0,
+        "closing_value": 68400.0
+      },
+      {
+        "name": "A4 Paper Ream 500 sheets",
+        "parent_group": "",
+        "base_units": "Pcs",
+        "closing_quantity": 550.0,
+        "closing_rate": 0.0,
+        "closing_value": 154000.0
+      },
+      {
+        "name": "Whiteboard Marker Set",
+        "parent_group": "",
+        "base_units": "Pcs",
+        "closing_quantity": 120.0,
+        "closing_rate": 0.0,
+        "closing_value": 21600.0
+      },
+      {
+        "name": "Stapler Heavy Duty",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 65.0,
+        "closing_rate": 0.0,
+        "closing_value": 20800.0
+      },
+      {
+        "name": "Box File Pack of 10",
+        "parent_group": "",
+        "base_units": "Pcs",
+        "closing_quantity": 80.0,
+        "closing_rate": 0.0,
+        "closing_value": 33600.0
+      },
+      {
+        "name": "Pen Drive 32GB",
+        "parent_group": "",
+        "base_units": "Nos",
+        "closing_quantity": 10.0,
+        "closing_rate": 0.0,
+        "closing_value": 2800.0
+      }
+    ],
+    "raw_response": ""
+  }
 }

@@ -253,11 +253,14 @@ def generate_ledger_list() -> str:
     lines = ["<ENVELOPE>", "<BODY>", "<DATA>", "<COLLECTION>"]
     for name, parent, opening in LEDGERS:
         closing = balances.get(name, opening)
-        closing_str = f"{closing:,.2f}" if closing != 0 else ""
-        opening_str = f"{opening:,.2f}" if opening != 0 else ""
+        closing_str = f"{closing:.2f}" if closing != 0 else ""
+        opening_str = f"{opening:.2f}" if opening != 0 else ""
+        # Escape XML special characters in name and parent
+        safe_name = name.replace("&", "&amp;")
+        safe_parent = parent.replace("&", "&amp;")
         lines.append(f"""<LEDGER>
-<NAME>{name}</NAME>
-<PARENT>{parent}</PARENT>
+<NAME>{safe_name}</NAME>
+<PARENT>{safe_parent}</PARENT>
 <CLOSINGBALANCE>{closing_str}</CLOSINGBALANCE>
 <OPENINGBALANCE>{opening_str}</OPENINGBALANCE>
 </LEDGER>""")
@@ -275,12 +278,18 @@ def _purchase_ledger_for_item(item_name: str) -> str:
     return "Purchase - Office Supplies" if item_name in OFFICE_SUPPLY_ITEMS else "Purchase - Electronics"
 
 
+def _xml_escape(text: str) -> str:
+    """Escape XML special characters in text content."""
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
 def _build_sales_voucher(vnum, date_str, party, items, total, narration) -> str:
     """Build a single sales voucher XML block."""
     ledger_entries = []
+    safe_party = _xml_escape(party)
     # Party entry (debit = negative in Tally for sales)
     ledger_entries.append(f"""<ALLLEDGERENTRIES.LIST>
-<LEDGERNAME>{party}</LEDGERNAME>
+<LEDGERNAME>{safe_party}</LEDGERNAME>
 <AMOUNT TYPE="Amount">-{total:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>""")
     # Sales ledger entries (credit = positive)
@@ -296,7 +305,7 @@ def _build_sales_voucher(vnum, date_str, party, items, total, narration) -> str:
 <DATE TYPE="Date">{date_str}</DATE>
 <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
 <VOUCHERNUMBER>{vnum}</VOUCHERNUMBER>
-<PARTYLEDGERNAME TYPE="String">{party}</PARTYLEDGERNAME>
+<PARTYLEDGERNAME TYPE="String">{safe_party}</PARTYLEDGERNAME>
 <NARRATION>{narration}</NARRATION>
 {"".join(ledger_entries)}
 </VOUCHER>"""
@@ -305,6 +314,7 @@ def _build_sales_voucher(vnum, date_str, party, items, total, narration) -> str:
 def _build_purchase_voucher(vnum, date_str, party, items, total, narration) -> str:
     """Build a single purchase voucher XML block."""
     ledger_entries = []
+    safe_party = _xml_escape(party)
     # Purchase ledger entries (debit = positive for purchases)
     for item_name, qty, rate in items:
         amt = qty * rate
@@ -315,7 +325,7 @@ def _build_purchase_voucher(vnum, date_str, party, items, total, narration) -> s
 </ALLLEDGERENTRIES.LIST>""")
     # Party entry (credit = negative for supplier)
     ledger_entries.append(f"""<ALLLEDGERENTRIES.LIST>
-<LEDGERNAME>{party}</LEDGERNAME>
+<LEDGERNAME>{safe_party}</LEDGERNAME>
 <AMOUNT TYPE="Amount">-{total:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>""")
 
@@ -323,7 +333,7 @@ def _build_purchase_voucher(vnum, date_str, party, items, total, narration) -> s
 <DATE TYPE="Date">{date_str}</DATE>
 <VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
 <VOUCHERNUMBER>{vnum}</VOUCHERNUMBER>
-<PARTYLEDGERNAME TYPE="String">{party}</PARTYLEDGERNAME>
+<PARTYLEDGERNAME TYPE="String">{safe_party}</PARTYLEDGERNAME>
 <NARRATION>{narration}</NARRATION>
 {"".join(ledger_entries)}
 </VOUCHER>"""
@@ -331,18 +341,20 @@ def _build_purchase_voucher(vnum, date_str, party, items, total, narration) -> s
 
 def _build_payment_voucher(vnum, date_str, payee, bank, amount, narration) -> str:
     """Build a single payment voucher XML block."""
+    safe_payee = _xml_escape(payee)
+    safe_bank = _xml_escape(bank)
     return f"""<VOUCHER VCHTYPE="Payment">
 <DATE TYPE="Date">{date_str}</DATE>
 <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
 <VOUCHERNUMBER>{vnum}</VOUCHERNUMBER>
-<PARTYLEDGERNAME TYPE="String">{payee}</PARTYLEDGERNAME>
+<PARTYLEDGERNAME TYPE="String">{safe_payee}</PARTYLEDGERNAME>
 <NARRATION>{narration}</NARRATION>
 <ALLLEDGERENTRIES.LIST>
-<LEDGERNAME>{payee}</LEDGERNAME>
+<LEDGERNAME>{safe_payee}</LEDGERNAME>
 <AMOUNT TYPE="Amount">-{amount:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>
 <ALLLEDGERENTRIES.LIST>
-<LEDGERNAME>{bank}</LEDGERNAME>
+<LEDGERNAME>{safe_bank}</LEDGERNAME>
 <AMOUNT TYPE="Amount">{amount:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>
 </VOUCHER>"""
@@ -350,18 +362,20 @@ def _build_payment_voucher(vnum, date_str, payee, bank, amount, narration) -> st
 
 def _build_receipt_voucher(vnum, date_str, party, bank, amount, narration) -> str:
     """Build a single receipt voucher XML block."""
+    safe_party = _xml_escape(party)
+    safe_bank = _xml_escape(bank)
     return f"""<VOUCHER VCHTYPE="Receipt">
 <DATE TYPE="Date">{date_str}</DATE>
 <VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>
 <VOUCHERNUMBER>{vnum}</VOUCHERNUMBER>
-<PARTYLEDGERNAME TYPE="String">{party}</PARTYLEDGERNAME>
+<PARTYLEDGERNAME TYPE="String">{safe_party}</PARTYLEDGERNAME>
 <NARRATION>{narration}</NARRATION>
 <ALLLEDGERENTRIES.LIST>
-<LEDGERNAME>{bank}</LEDGERNAME>
+<LEDGERNAME>{safe_bank}</LEDGERNAME>
 <AMOUNT TYPE="Amount">-{amount:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>
 <ALLLEDGERENTRIES.LIST>
-<LEDGERNAME>{party}</LEDGERNAME>
+<LEDGERNAME>{safe_party}</LEDGERNAME>
 <AMOUNT TYPE="Amount">{amount:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>
 </VOUCHER>"""
@@ -670,7 +684,7 @@ def generate_balance_sheet() -> str:
         ("Loans (Liability)", 0),
         ("Current Liabilities", group_totals.get("Current Liabilities", 0)),
         ("Suspense A/c", 0),
-        ("Profit & Loss A/c", net_profit),
+        ("Profit &amp; Loss A/c", net_profit),
         ("Fixed Assets", 0),
         ("Current Assets", group_totals.get("Current Assets", 0)),
     ]
@@ -712,10 +726,12 @@ def generate_bills_receivable() -> str:
             continue
         # Use last invoice date as bill date
         last_date = _last_invoice_date_for_party(party)
+        safe_party = _xml_escape(party)
+        safe_ref = _xml_escape(party[:20])
         lines.append(f"""<BILLFIXED>
 <BILLDATE>{last_date}</BILLDATE>
-<BILLREF>{party[:20]}</BILLREF>
-<BILLPARTY>{party}</BILLPARTY>
+<BILLREF>{safe_ref}</BILLREF>
+<BILLPARTY>{safe_party}</BILLPARTY>
 </BILLFIXED>
 <BILLCL>-{amount:.2f}</BILLCL>
 <BILLDUE>{last_date}</BILLDUE>
@@ -731,10 +747,12 @@ def generate_bills_payable() -> str:
         if amount <= 0:
             continue
         last_date = _last_purchase_date_for_party(party)
+        safe_party = _xml_escape(party)
+        safe_ref = _xml_escape(party[:20])
         lines.append(f"""<BILLFIXED>
 <BILLDATE>{last_date}</BILLDATE>
-<BILLREF>{party[:20]}</BILLREF>
-<BILLPARTY>{party}</BILLPARTY>
+<BILLREF>{safe_ref}</BILLREF>
+<BILLPARTY>{safe_party}</BILLPARTY>
 </BILLFIXED>
 <BILLCL>{amount:.2f}</BILLCL>
 <BILLDUE>{last_date}</BILLDUE>

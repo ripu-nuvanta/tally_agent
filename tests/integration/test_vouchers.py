@@ -21,21 +21,21 @@ async def mock_tally(aiohttp_server):
 @pytest.mark.asyncio
 async def test_day_book(mock_tally):
     vouchers = await day_book(mock_tally, "01-10-2025", "31-10-2025")
-    assert len(vouchers) == 2
-    assert vouchers[0]["voucher_type"] == "Sales"
+    assert len(vouchers) == 8
+    assert any(v["voucher_type"] == "Sales" for v in vouchers)
 
 
 @pytest.mark.asyncio
 async def test_sales_register(mock_tally):
     vouchers = await sales_register(mock_tally, "01-10-2025", "31-10-2025")
-    assert len(vouchers) == 2
+    assert len(vouchers) == 5
     assert all(v["voucher_type"] == "Sales" for v in vouchers)
 
 
 @pytest.mark.asyncio
 async def test_purchase_register(mock_tally):
     vouchers = await purchase_register(mock_tally, "01-04-2025", "31-03-2026")
-    assert len(vouchers) == 10
+    assert len(vouchers) == 8
     assert all(v["voucher_type"] == "Purchase" for v in vouchers)
 
 

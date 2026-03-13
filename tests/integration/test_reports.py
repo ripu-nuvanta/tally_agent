@@ -24,7 +24,7 @@ async def mock_tally(aiohttp_server):
 async def test_trial_balance(mock_tally):
     result = await trial_balance(mock_tally, "01-04-2025", "31-03-2026")
     assert result.report_name == "Trial Balance"
-    assert len(result.rows) == 7
+    assert len(result.rows) == 9
 
 
 @pytest.mark.asyncio
@@ -43,23 +43,22 @@ async def test_balance_sheet(mock_tally):
 @pytest.mark.asyncio
 async def test_bills_receivable(mock_tally):
     bills = await bills_receivable(mock_tally, "31-03-2026")
-    assert len(bills) == 2
-    assert bills[0].party_name == "HCODE TECHNOLOGIES PRIVATE LIMITED"
-    assert bills[0].amount == 200000.0
-    assert bills[0].bill_number == "#1"
+    assert len(bills) == 6
+    assert any(b.party_name == "Apex Technologies Pvt Ltd" for b in bills)
+    assert any(b.amount == 55000.0 for b in bills)
 
 
 @pytest.mark.asyncio
 async def test_bills_payable(mock_tally):
+    # mock_handler maps Bills Payable → bills_receivable.xml (same fixture format)
     bills = await bills_payable(mock_tally, "31-03-2026")
-    assert len(bills) == 2
-    assert bills[0].bill_number == "#1"
-    assert bills[0].amount == 200000.0
+    assert len(bills) == 6
+    assert any(b.party_name == "Apex Technologies Pvt Ltd" for b in bills)
 
 
 @pytest.mark.asyncio
 async def test_stock_summary(mock_tally):
     items = await stock_summary(mock_tally, "31-03-2026")
-    assert len(items) == 5
-    assert items[0]["name"] == "Data Cleaning and Matching Application Software"
-    assert items[0]["closing_quantity"] == -1.0
+    assert len(items) == 15
+    assert items[0]["name"] == "Samsung 24 inch Monitor"
+    assert items[0]["closing_quantity"] == 42.0

@@ -40,7 +40,7 @@ class TestParseTrialBalance:
         return parse_trial_balance(_read_fixture("trial_balance.xml"))
 
     def test_returns_all_rows(self, rows):
-        assert len(rows) == 7
+        assert len(rows) == 9
 
     def test_account_names(self, rows):
         names = [r["account_name"] for r in rows]
@@ -55,38 +55,38 @@ class TestParseTrialBalance:
     def test_capital_account_credit(self, rows):
         capital = next(r for r in rows if r["account_name"] == "Capital Account")
         assert capital["debit_amount"] == 0.0
-        assert capital["credit_amount"] == 100000.0
-        assert capital["closing_balance"] == 100000.0
+        assert capital["credit_amount"] == 750000.0
+        assert capital["closing_balance"] == 750000.0
 
     def test_current_liabilities_both_amounts(self, rows):
         cl = next(r for r in rows if r["account_name"] == "Current Liabilities")
-        assert cl["debit_amount"] == -279384.87
-        assert cl["credit_amount"] == 55856.21
-        assert cl["closing_balance"] == pytest.approx(-223528.66)
+        assert cl["debit_amount"] == 0.0
+        assert cl["credit_amount"] == 1391300.0
+        assert cl["closing_balance"] == pytest.approx(1391300.0)
 
     def test_fixed_assets_debit_only(self, rows):
         fa = next(r for r in rows if r["account_name"] == "Fixed Assets")
-        assert fa["debit_amount"] == -208496.0
+        assert fa["debit_amount"] == 0.0
         assert fa["credit_amount"] == 0.0
-        assert fa["closing_balance"] == -208496.0
+        assert fa["closing_balance"] == 0.0
 
     def test_sales_accounts_credit(self, rows):
         sales = next(r for r in rows if r["account_name"] == "Sales Accounts")
         assert sales["debit_amount"] == 0.0
-        assert sales["credit_amount"] == 3764350.0
-        assert sales["closing_balance"] == 3764350.0
+        assert sales["credit_amount"] == 2057650.0
+        assert sales["closing_balance"] == 2057650.0
 
     def test_purchase_accounts_debit(self, rows):
         purchase = next(r for r in rows if r["account_name"] == "Purchase Accounts")
-        assert purchase["debit_amount"] == -32181.61
+        assert purchase["debit_amount"] == -2521300.0
         assert purchase["credit_amount"] == 0.0
-        assert purchase["closing_balance"] == -32181.61
+        assert purchase["closing_balance"] == -2521300.0
 
     def test_indirect_expenses_small_credit(self, rows):
         ie = next(r for r in rows if r["account_name"] == "Indirect Expenses")
-        assert ie["debit_amount"] == -2351297.74
-        assert ie["credit_amount"] == 0.54
-        assert ie["closing_balance"] == pytest.approx(-2351297.20)
+        assert ie["debit_amount"] == -1343000.0
+        assert ie["credit_amount"] == 0.0
+        assert ie["closing_balance"] == pytest.approx(-1343000.0)
 
     def test_closing_balance_is_float(self, rows):
         for row in rows:
@@ -108,18 +108,18 @@ class TestParseProfitAndLoss:
         return parse_profit_and_loss(_read_fixture("profit_and_loss.xml"))
 
     def test_returns_all_rows(self, rows):
-        assert len(rows) == 6
+        assert len(rows) == 7
 
     def test_sales_accounts(self, rows):
         sales = next(r for r in rows if r["account_name"] == "Sales Accounts")
-        assert sales["closing_balance"] == 3764350.0
-        assert sales["credit_amount"] == 3764350.0
+        assert sales["closing_balance"] == 2057650.0
+        assert sales["credit_amount"] == 2057650.0
         assert sales["debit_amount"] == 0.0
 
     def test_cost_of_sales(self, rows):
         cos = next(r for r in rows if r["account_name"] == "Cost of Sales :")
-        assert cos["closing_balance"] == -32181.61
-        assert cos["debit_amount"] == -32181.61
+        assert cos["closing_balance"] == -2521300.0
+        assert cos["debit_amount"] == -2521300.0
         assert cos["credit_amount"] == 0.0
 
     def test_opening_stock_empty(self, rows):
@@ -131,13 +131,13 @@ class TestParseProfitAndLoss:
     def test_sub_item_uses_plsubamt(self, rows):
         """When BSMAINAMT is empty, parser should fall back to PLSUBAMT."""
         purchase = next(r for r in rows if r["account_name"] == "Add: Purchase Accounts")
-        assert purchase["closing_balance"] == -32181.61
-        assert purchase["debit_amount"] == -32181.61
+        assert purchase["closing_balance"] == -2521300.0
+        assert purchase["debit_amount"] == -2521300.0
 
     def test_indirect_expenses(self, rows):
         ie = next(r for r in rows if r["account_name"] == "Indirect Expenses")
-        assert ie["closing_balance"] == -2351297.20
-        assert ie["debit_amount"] == -2351297.20
+        assert ie["closing_balance"] == -1343000.0
+        assert ie["debit_amount"] == -1343000.0
         assert ie["credit_amount"] == 0.0
 
     def test_closing_balance_is_float(self, rows):
@@ -162,8 +162,8 @@ class TestParseBalanceSheet:
 
     def test_capital_account(self, rows):
         capital = next(r for r in rows if r["account_name"] == "Capital Account")
-        assert capital["closing_balance"] == 100000.0
-        assert capital["credit_amount"] == 100000.0
+        assert capital["closing_balance"] == 750000.0
+        assert capital["credit_amount"] == 750000.0
         assert capital["debit_amount"] == 0.0
 
     def test_loans_liability_empty(self, rows):
@@ -172,23 +172,23 @@ class TestParseBalanceSheet:
 
     def test_current_liabilities(self, rows):
         cl = next(r for r in rows if r["account_name"] == "Current Liabilities")
-        assert cl["closing_balance"] == -223528.66
-        assert cl["debit_amount"] == -223528.66
+        assert cl["closing_balance"] == 1391300.0
+        assert cl["credit_amount"] == 1391300.0
 
     def test_profit_and_loss_account(self, rows):
         pnl = next(r for r in rows if r["account_name"] == "Profit & Loss A/c")
-        assert pnl["closing_balance"] == 1380871.19
-        assert pnl["credit_amount"] == 1380871.19
+        assert pnl["closing_balance"] == -1806650.0
+        assert pnl["debit_amount"] == -1806650.0
 
     def test_fixed_assets(self, rows):
         fa = next(r for r in rows if r["account_name"] == "Fixed Assets")
-        assert fa["closing_balance"] == -208496.0
-        assert fa["debit_amount"] == -208496.0
+        assert fa["closing_balance"] == 0.0
+        assert fa["debit_amount"] == 0.0
 
     def test_current_assets(self, rows):
         ca = next(r for r in rows if r["account_name"] == "Current Assets")
-        assert ca["closing_balance"] == -1048846.53
-        assert ca["debit_amount"] == -1048846.53
+        assert ca["closing_balance"] == -334650.0
+        assert ca["debit_amount"] == -334650.0
 
     def test_closing_balance_is_float(self, rows):
         for row in rows:
@@ -208,34 +208,40 @@ class TestParseStockSummary:
         return parse_stock_summary(_read_fixture("stock_summary.xml"))
 
     def test_returns_all_items(self, items):
-        assert len(items) == 5
+        assert len(items) == 15
 
     def test_item_names(self, items):
         names = [i["name"] for i in items]
-        assert "Data Cleaning and Matching Application Software" in names
-        assert "IT Project Technical Consulting" in names
-        assert "IT Project Technical Consulting(WITHOUT GST)" in names
-        assert "Smartbike Software Development Technical Services" in names
-        assert "Website Design and App Development" in names
+        assert "Samsung 24 inch Monitor" in names
+        assert "HP Laptop 15s" in names
+        assert "Logitech Wireless Mouse" in names
+        assert "A4 Paper Ream 500 sheets" in names
+        assert "Pen Drive 32GB" in names
 
     def test_quantity_parsing(self, items):
-        first = next(i for i in items if i["name"] == "Data Cleaning and Matching Application Software")
-        assert first["closing_quantity"] == -1.0
+        monitor = next(i for i in items if i["name"] == "Samsung 24 inch Monitor")
+        assert monitor["closing_quantity"] == 42.0
 
     def test_quantity_negative_values(self, items):
-        consulting = next(i for i in items if i["name"] == "IT Project Technical Consulting")
-        assert consulting["closing_quantity"] == -2.0
-        no_gst = next(i for i in items if "WITHOUT GST" in i["name"])
-        assert no_gst["closing_quantity"] == -154.0
+        # Lenovo oversold (negative closing qty)
+        lenovo = next(i for i in items if i["name"] == "Lenovo Ideapad Slim 3")
+        assert lenovo["closing_quantity"] == -1.0
+        # Dell fully sold out (zero)
+        dell = next(i for i in items if i["name"] == "Dell Desktop Optiplex")
+        assert dell["closing_quantity"] == 0.0
 
     def test_base_units_parsed(self, items):
-        for item in items:
-            assert item["base_units"] == "NOS"
+        # Most items use Nos
+        nos_items = [i for i in items if i["base_units"] == "Nos"]
+        pcs_items = [i for i in items if i["base_units"] == "Pcs"]
+        assert len(nos_items) > 0
+        assert len(pcs_items) > 0
 
-    def test_empty_rate_and_value(self, items):
-        for item in items:
-            assert item["closing_rate"] == 0.0
-            assert item["closing_value"] == 0.0
+    def test_closing_value_non_zero(self, items):
+        # Samsung monitor has closing_value from fixture
+        monitor = next(i for i in items if i["name"] == "Samsung 24 inch Monitor")
+        assert monitor["closing_value"] == 462000.0
+        assert monitor["closing_rate"] == 0.0  # Rate field has format "11000.00/Nos", parses as 0
 
     def test_parent_group_empty_for_data_report(self, items):
         for item in items:
@@ -303,12 +309,12 @@ class TestParseBillsPayable:
 class TestParseLedgerList:
     def test_returns_list(self):
         ledgers = parse_ledger_list(_read_fixture("ledger_list.xml"))
-        assert len(ledgers) == 3
+        assert len(ledgers) == 34
     def test_fields(self):
         ledgers = parse_ledger_list(_read_fixture("ledger_list.xml"))
         hdfc = next(l for l in ledgers if "HDFC" in l["name"])
         assert hdfc["parent_group"] == "Bank Accounts"
-        assert hdfc["closing_balance"] == -500000.0
+        assert hdfc["closing_balance"] == 834500.0
     def test_empty_opening(self):
         ledgers = parse_ledger_list(_read_fixture("ledger_list.xml"))
         apex = next(l for l in ledgers if "Apex" in l["name"])

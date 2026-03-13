@@ -23,7 +23,7 @@ async def test_list_companies(mock_tally):
 @pytest.mark.asyncio
 async def test_list_ledgers(mock_tally):
     ledgers = await list_ledgers(mock_tally)
-    assert len(ledgers) == 3
+    assert len(ledgers) == 34
     assert any(l.name == "Cash" for l in ledgers)
 
 

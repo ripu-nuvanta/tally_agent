@@ -94,7 +94,7 @@ async def test_trial_balance_report(async_client):
     body = resp.json()
     assert "headers" in body
     assert "rows" in body
-    assert len(body["rows"]) == 7
+    assert len(body["rows"]) == 9
     # First row should be Capital Account
     flat_values = [str(v) for row in body["rows"] for v in row]
     assert any("Capital Account" in v for v in flat_values)
@@ -126,7 +126,7 @@ async def test_day_book_report(async_client):
     body = resp.json()
     assert "headers" in body
     assert "rows" in body
-    assert len(body["rows"]) == 2
+    assert len(body["rows"]) == 8
     flat_values = [str(v) for row in body["rows"] for v in row]
     assert any("S001" in v for v in flat_values)
     assert any("PMT001" in v for v in flat_values)
@@ -142,9 +142,9 @@ async def test_bills_receivable_report(async_client):
     body = resp.json()
     assert "headers" in body
     assert "rows" in body
-    assert len(body["rows"]) == 2
+    assert len(body["rows"]) == 6
     flat_values = [str(v) for row in body["rows"] for v in row]
-    assert any("HCODE" in v for v in flat_values)
+    assert any("Apex Technologies" in v for v in flat_values)
 
 
 async def test_invalid_report_returns_400(async_client):
