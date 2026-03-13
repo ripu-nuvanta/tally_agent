@@ -26,6 +26,17 @@ def parse_amount(text: str | None) -> float:
         return 0.0
 
 
+def _parse_overdue_days(text: str) -> int | None:
+    """Parse overdue days from Tally — handles '45', '-10', '45 Days', etc."""
+    if not text or not text.strip():
+        return None
+    num_str = text.strip().split()[0]
+    try:
+        return int(num_str)
+    except ValueError:
+        return None
+
+
 def detect_error(raw_xml: str) -> str | None:
     try:
         root = ET.fromstring(sanitize_xml(raw_xml))
@@ -201,7 +212,7 @@ def parse_bills(raw_xml: str) -> list[dict]:
                 "amount": amount,
                 "pending_amount": amount,
                 "due_date": due_date,
-                "overdue_days": overdue_days,
+                "overdue_days": _parse_overdue_days(overdue_days),
             })
         i += 1
     return bills

@@ -143,7 +143,7 @@ TALLY_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_outstanding_receivables",
-        "description": "Fetch all outstanding receivable bills from TallyPrime as on a date. Returns party name, bill number, date, amount, and pending amount.",
+        "description": "Fetch all outstanding receivable bills from TallyPrime as on a date. Returns party name, bill number, bill date, due date, overdue days, amount, and pending amount.",
         "input_schema": {
             "type": "object",
             "properties": {
@@ -161,7 +161,7 @@ TALLY_TOOLS: list[dict[str, Any]] = [
     },
     {
         "name": "get_outstanding_payables",
-        "description": "Fetch all outstanding payable bills from TallyPrime as on a date. Returns party name, bill number, date, amount, and pending amount.",
+        "description": "Fetch all outstanding payable bills from TallyPrime as on a date. Returns party name, bill number, bill date, due date, overdue days, amount, and pending amount.",
         "input_schema": {
             "type": "object",
             "properties": {

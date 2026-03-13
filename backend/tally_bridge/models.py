@@ -48,3 +48,4 @@ class OutstandingBill(BaseModel):
     due_date: date | None = None
     amount: float
     pending_amount: float
+    overdue_days: int | None = None

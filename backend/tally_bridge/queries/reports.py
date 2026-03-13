@@ -183,8 +183,10 @@ async def bills_receivable(
             party_name=b["party_name"],
             bill_number=b["bill_number"],
             bill_date=_parse_tally_date(b["bill_date"]) or date.today(),
+            due_date=_parse_tally_date(b.get("due_date", "")),
             amount=b["amount"],
             pending_amount=b["pending_amount"],
+            overdue_days=b.get("overdue_days"),
         )
         for b in parsed
     ]
@@ -204,8 +206,10 @@ async def bills_payable(
             party_name=b["party_name"],
             bill_number=b["bill_number"],
             bill_date=_parse_tally_date(b["bill_date"]) or date.today(),
+            due_date=_parse_tally_date(b.get("due_date", "")),
             amount=b["amount"],
             pending_amount=b["pending_amount"],
+            overdue_days=b.get("overdue_days"),
         )
         for b in parsed
     ]

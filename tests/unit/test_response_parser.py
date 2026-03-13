@@ -270,7 +270,7 @@ class TestParseBillsReceivable:
         assert first["amount"] == 200000.0
         assert first["bill_date"] == "2-Jul-25"
         assert first["due_date"] == "2-Jul-25"
-        assert first["overdue_days"] == "272"
+        assert first["overdue_days"] == 272
 
     def test_smartbike_bill(self, bills):
         sb = next(b for b in bills if b["party_name"] == "SMARTBIKE MOBILITY PRIVATE LIMITED" and b["bill_number"] == "7")
@@ -300,7 +300,18 @@ class TestParseBillsPayable:
         assert bill["party_name"] == "Anthropic, PBC"
         assert bill["amount"] == 2096.86
         assert bill["due_date"] == "26-Sep-25"
-        assert bill["overdue_days"] == "186"
+        assert bill["overdue_days"] == 186
+
+
+def test_parse_bills_includes_overdue_days():
+    xml = """<ENVELOPE><BODY><DATA><TALLYMESSAGE>
+    <BILLFIXED><BILLREF>INV001</BILLREF><BILLPARTY>Test Co</BILLPARTY><BILLDATE>20251001</BILLDATE></BILLFIXED>
+    <BILLCL>50000</BILLCL><BILLDUE>15-11-2025</BILLDUE><BILLOVERDUE>45</BILLOVERDUE>
+    </TALLYMESSAGE></DATA></BODY></ENVELOPE>"""
+    bills = parse_bills(xml)
+    assert len(bills) == 1
+    assert bills[0]["overdue_days"] == 45
+    assert bills[0]["due_date"] == "15-11-2025"
 
 
 # ---------------------------------------------------------------------------

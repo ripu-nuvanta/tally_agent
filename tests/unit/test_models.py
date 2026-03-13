@@ -39,3 +39,17 @@ def test_outstanding_bill():
     b = OutstandingBill(party_name="Apex Technologies Pvt Ltd", bill_number="S001", bill_date=date(2025, 10, 1), amount=94000.0, pending_amount=40000.0)
     assert b.due_date is None
     assert b.pending_amount == 40000.0
+
+def test_outstanding_bill_has_overdue_days():
+    bill = OutstandingBill(
+        party_name="Test", bill_number="B001", bill_date=date(2025, 10, 1),
+        amount=10000, pending_amount=10000, overdue_days=45,
+    )
+    assert bill.overdue_days == 45
+
+def test_outstanding_bill_overdue_days_default_none():
+    bill = OutstandingBill(
+        party_name="Test", bill_number="B001", bill_date=date(2025, 10, 1),
+        amount=10000, pending_amount=10000,
+    )
+    assert bill.overdue_days is None
