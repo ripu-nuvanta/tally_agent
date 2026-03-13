@@ -266,6 +266,33 @@ TALLY_TOOLS: list[dict[str, Any]] = [
             "required": [],
         },
     },
+    {
+        "name": "list_all_ledgers",
+        "description": "List all ledger accounts in TallyPrime. Returns every ledger with its name, parent group, opening balance, and closing balance. Use this to discover all available ledger names or for top-N-by-balance queries.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "list_stock_items",
+        "description": "List all stock/inventory items in TallyPrime with their stock group, unit of measure (UOM), closing quantity, rate, and value. Use this instead of get_stock_summary when you need stock group or UOM information.",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
+    {
+        "name": "list_account_groups",
+        "description": "List all account groups in TallyPrime with their parent group. Returns the full chart of accounts group hierarchy (e.g. Sales Accounts → Revenue, Bank Accounts → Current Assets).",
+        "input_schema": {
+            "type": "object",
+            "properties": {},
+            "required": [],
+        },
+    },
 ]
 
 
@@ -374,6 +401,21 @@ async def _handle_list_companies(client: TallyClient, **kwargs: Any) -> Any:
     return [c.model_dump(mode="json") for c in result]
 
 
+async def _handle_list_all_ledgers(client: TallyClient, **kwargs: Any) -> Any:
+    result = await masters.list_ledgers(client)
+    return [l.model_dump(mode="json") for l in result]
+
+
+async def _handle_list_stock_items(client: TallyClient, **kwargs: Any) -> Any:
+    result = await masters.list_stock_items(client)
+    return [s.model_dump(mode="json") for s in result]
+
+
+async def _handle_list_account_groups(client: TallyClient, **kwargs: Any) -> Any:
+    result = await masters.list_groups(client)
+    return [g.model_dump(mode="json") for g in result]
+
+
 # ---------------------------------------------------------------------------
 # TOOL_HANDLERS — maps tool name to its async handler
 # ---------------------------------------------------------------------------
@@ -391,6 +433,9 @@ TOOL_HANDLERS: dict[str, Any] = {
     "get_purchase_register": _handle_purchase_register,
     "search_ledger": _handle_search_ledger,
     "list_companies": _handle_list_companies,
+    "list_all_ledgers": _handle_list_all_ledgers,
+    "list_stock_items": _handle_list_stock_items,
+    "list_account_groups": _handle_list_account_groups,
 }
 
 

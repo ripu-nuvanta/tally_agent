@@ -25,6 +25,9 @@ EXPECTED_TOOL_NAMES = [
     "get_purchase_register",
     "search_ledger",
     "list_companies",
+    "list_all_ledgers",
+    "list_stock_items",
+    "list_account_groups",
 ]
 
 # Tools that use from_date + to_date
@@ -81,11 +84,27 @@ class TestToolSchemas:
         assert len(names) == len(set(names)), "Duplicate tool names detected"
 
     def test_expected_tools_exist(self):
-        """All 12 expected tool names must be present."""
+        """All 15 expected tool names must be present."""
         actual_names = {t["name"] for t in TALLY_TOOLS}
         for name in EXPECTED_TOOL_NAMES:
             assert name in actual_names, f"Expected tool {name!r} not found"
-        assert len(TALLY_TOOLS) == 12
+        assert len(TALLY_TOOLS) == 15
+
+    def test_list_stock_items_tool_exists(self):
+        names = [t["name"] for t in TALLY_TOOLS]
+        assert "list_stock_items" in names
+
+    def test_list_all_ledgers_tool_exists(self):
+        names = [t["name"] for t in TALLY_TOOLS]
+        assert "list_all_ledgers" in names
+
+    def test_list_account_groups_tool_exists(self):
+        names = [t["name"] for t in TALLY_TOOLS]
+        assert "list_account_groups" in names
+
+    def test_new_tools_have_handlers(self):
+        for name in ["list_stock_items", "list_all_ledgers", "list_account_groups"]:
+            assert name in TOOL_HANDLERS, f"Missing handler for {name}"
 
     def test_date_tools_require_dates(self):
         """Date-range tools must require from_date and to_date."""
