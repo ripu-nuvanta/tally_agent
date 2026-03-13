@@ -680,3 +680,60 @@ async def test_comparison_table_data_tracker_prefers_period_comparison():
     data_rows = [r for r in data["rows"] if r[0] != "Total"]
     assert len(data_rows) == 2
     assert result["chart_suggestion"] == "grouped_bar"
+
+
+# ---------------------------------------------------------------------------
+# Task 7: Code Execution support in AnalysisAgent
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisAgentCodeExecution:
+    def test_build_analysis_tools_code_exec_enabled(self):
+        from backend.agents.analysis_agent import _build_analysis_tools
+        tools = _build_analysis_tools(code_execution_enabled=True)
+        tool_types = [t.get("type", "") for t in tools]
+        assert "code_execution_20260120" in tool_types
+        tool_names = [t.get("name", "") for t in tools if "name" in t]
+        assert "compute_totals" not in tool_names
+
+    def test_build_analysis_tools_code_exec_disabled(self):
+        from backend.agents.analysis_agent import _build_analysis_tools
+        tools = _build_analysis_tools(code_execution_enabled=False)
+        tool_names = [t["name"] for t in tools]
+        assert "compute_totals" in tool_names
+
+    @pytest.mark.asyncio
+    async def test_code_exec_captures_structured_table_data(self):
+        """AnalysisAgent captures STRUCTURED_RESULT from code execution as table data."""
+        from backend.agents.analysis_agent import AnalysisAgent
+
+        response = MagicMock()
+        response.stop_reason = "end_turn"
+        text_block = MagicMock(type="text")
+        text_block.text = "Top 5 items by sales.\n- Item A leads\nChart suggestion: bar\nChart title: Top Items"
+        server_tool = MagicMock(type="server_tool_use")
+        server_tool.input = {"code": "import json; print('STRUCTURED_RESULT:' + json.dumps({'headers':['Item','Sales'],'rows':[['A',100],['B',50]]}))"}
+        code_result = MagicMock(type="code_execution_tool_result")
+        code_result.stdout = 'STRUCTURED_RESULT:{"headers":["Item","Sales"],"rows":[["A",100],["B",50]]}\n'
+        code_result.stderr = ""
+        code_result.return_code = 0
+        response.content = [text_block, server_tool, code_result]
+
+        with (
+            patch("backend.agents.analysis_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.analysis_agent.settings") as mock_settings,
+        ):
+            mock_settings.CLAUDE_MODEL = "test-model"
+            mock_settings.CODE_EXECUTION_ENABLED = True
+            mock_claude.messages.create = AsyncMock(return_value=response)
+
+            agent = AnalysisAgent()
+            result = await agent.execute(
+                raw_data=[{"item": "A", "amount": 100}],
+                computed_data=None,
+                user_query="top 5 items",
+                query_type="top_n",
+            )
+
+        assert result["data"]["headers"] == ["Item", "Sales"]
+        assert result["data"]["rows"][0] == ["A", 100]

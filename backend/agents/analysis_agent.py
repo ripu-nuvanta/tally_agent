@@ -24,7 +24,13 @@ logger = logging.getLogger(__name__)
 
 from backend.config import settings
 from backend.agents.prompts import build_analysis_agent_prompt
-from backend.agents.utils import extract_text, find_all_tool_use_blocks
+from backend.agents.utils import (
+    extract_text,
+    find_all_tool_use_blocks,
+    find_custom_tool_use_blocks,
+    extract_code_execution_results,
+    extract_structured_from_code_execution,
+)
 
 # Module-level client — tests patch this object.
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -178,6 +184,16 @@ ANALYSIS_TOOLS: list[dict[str, Any]] = [
         },
     },
 ]
+
+
+CODE_EXECUTION_TOOL = {"type": "code_execution_20260120"}
+
+
+def _build_analysis_tools(code_execution_enabled: bool) -> list:
+    """Build tool list based on code execution config."""
+    if code_execution_enabled:
+        return [CODE_EXECUTION_TOOL]
+    return ANALYSIS_TOOLS
 
 
 # ---------------------------------------------------------------------------
@@ -413,7 +429,7 @@ class AnalysisAgent:
                 "tool_results": list[dict],
             }
         """
-        system_prompt = build_analysis_agent_prompt(query_type)
+        system_prompt = build_analysis_agent_prompt(query_type, code_execution_enabled=settings.CODE_EXECUTION_ENABLED)
 
         parts = [
             f"User query: {user_query}\n\n"
@@ -454,7 +470,7 @@ class AnalysisAgent:
                     model=settings.CLAUDE_MODEL,
                     max_tokens=4096,
                     system=system_prompt,
-                    tools=ANALYSIS_TOOLS,
+                    tools=_build_analysis_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,
                 )
             except anthropic.APIError as exc:
@@ -482,6 +498,27 @@ class AnalysisAgent:
                 if block.type == "text" and block.text.strip():
                     logger.debug("AnalysisAgent turn %d — Claude text:\n%s", turn, block.text)
 
+            if settings.CODE_EXECUTION_ENABLED:
+                for cer in extract_code_execution_results(response):
+                    if cer["type"] == "code_written":
+                        logger.info("AnalysisAgent turn %d — code_execution code:\n%s", turn, cer["code"])
+                    elif cer["type"] == "code_result":
+                        logger.info("AnalysisAgent turn %d — code_execution stdout:\n%s", turn, cer["stdout"])
+                        if cer.get("stderr"):
+                            logger.warning("AnalysisAgent turn %d — code_execution stderr:\n%s", turn, cer["stderr"])
+
+            # Capture structured output from code execution
+            if settings.CODE_EXECUTION_ENABLED:
+                structured = extract_structured_from_code_execution(response)
+                if structured and "headers" in structured and "rows" in structured:
+                    last_table_data = {"headers": structured["headers"], "rows": structured["rows"]}
+                    if query_type == "top_n":
+                        ranked_table_data = last_table_data
+                    elif query_type == "trend":
+                        trend_table_data = last_table_data
+                    elif query_type == "comparison":
+                        comparison_table_data = last_table_data
+
             # ---- End turn: Claude produced a final text answer ----
             if response.stop_reason != "tool_use":
                 final_text = extract_text(response)
@@ -499,7 +536,10 @@ class AnalysisAgent:
                 return _build_result(final_text, preferred_data, tool_results_log)
 
             # ---- Tool use: execute all requested analysis tools ----
-            tool_blocks = find_all_tool_use_blocks(response)
+            if settings.CODE_EXECUTION_ENABLED:
+                tool_blocks = find_custom_tool_use_blocks(response)
+            else:
+                tool_blocks = find_all_tool_use_blocks(response)
             logger.info("AnalysisAgent turn %d — %d tool call(s)", turn, len(tool_blocks))
 
             tool_result_entries = []
@@ -544,10 +584,8 @@ class AnalysisAgent:
             tool_call_count += len(tool_blocks)
 
             messages.append({"role": "assistant", "content": response.content})
-            messages.append({
-                "role": "user",
-                "content": tool_result_entries,
-            })
+            if tool_result_entries:
+                messages.append({"role": "user", "content": tool_result_entries})
 
             if tool_call_count >= self.max_tool_calls:
                 preferred_data = (
