@@ -283,6 +283,28 @@ def _xml_escape(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
 
+# Build UOM lookup from STOCK_ITEMS: {item_name: uom}
+_ITEM_UOM = {name: uom for name, _group, uom, *_ in STOCK_ITEMS}
+
+
+def _inventory_entries_xml(items: list[tuple], voucher_type: str) -> str:
+    """Generate ALLINVENTORYENTRIES.LIST XML for a list of (item_name, qty, rate) tuples."""
+    entries = []
+    for item_name, qty, rate in items:
+        uom = _ITEM_UOM.get(item_name, "Nos")
+        amount = qty * rate
+        # Sales = negative amount (outgoing stock), Purchase = positive
+        if voucher_type == "Sales":
+            amount = -amount
+        entries.append(f"""<ALLINVENTORYENTRIES.LIST>
+<STOCKITEMNAME>{item_name}</STOCKITEMNAME>
+<ACTUALQTY>{qty} {uom}</ACTUALQTY>
+<RATE>{rate}/{uom}</RATE>
+<AMOUNT>{amount:.2f}</AMOUNT>
+</ALLINVENTORYENTRIES.LIST>""")
+    return "\n".join(entries)
+
+
 def _build_sales_voucher(vnum, date_str, party, items, total, narration) -> str:
     """Build a single sales voucher XML block."""
     ledger_entries = []
@@ -308,6 +330,7 @@ def _build_sales_voucher(vnum, date_str, party, items, total, narration) -> str:
 <PARTYLEDGERNAME TYPE="String">{safe_party}</PARTYLEDGERNAME>
 <NARRATION>{narration}</NARRATION>
 {"".join(ledger_entries)}
+{_inventory_entries_xml(items, "Sales")}
 </VOUCHER>"""
 
 
@@ -336,6 +359,7 @@ def _build_purchase_voucher(vnum, date_str, party, items, total, narration) -> s
 <PARTYLEDGERNAME TYPE="String">{safe_party}</PARTYLEDGERNAME>
 <NARRATION>{narration}</NARRATION>
 {"".join(ledger_entries)}
+{_inventory_entries_xml(items, "Purchase")}
 </VOUCHER>"""
 
 
