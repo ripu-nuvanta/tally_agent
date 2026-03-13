@@ -58,3 +58,48 @@ turns:
         - "Uses the same ledger from the previous turn"
         - "Percentage calculation is mathematically correct"
         - "References the total from turn 3"
+
+  - query: "List all stock items with their current quantities and values"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Lists stock items from multiple groups (Electronics, Peripherals, Office Supplies)"
+        - "Shows quantity with unit of measurement (UOM)"
+        - "Shows closing value with Indian rupee formatting"
+
+  - query: "Show me the chart of accounts group hierarchy"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Shows account groups with parent-child relationships"
+        - "Includes major groups like Assets, Liabilities, Income, Expenses"
+        - "Indicates parent group for each sub-group"
+
+  - query: "Show the cash flow statement for FY 2025-26"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Breaks down cash flow into operating, investing, and financing activities"
+        - "Shows net cash from each activity section"
+        - "Uses Indian rupee formatting for amounts"
+
+  - query: "Show all payments made in January 2026"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Lists payment vouchers for January 2026"
+        - "Shows payee names and payment amounts"
+        - "Shows voucher dates within January 2026"
+
+  - query: "Show all receipts received in January 2026"
+    expect:
+      query_type: simple_lookup
+      has_data: true
+      checks:
+        - "Lists receipt vouchers for January 2026"
+        - "Shows party names and receipt amounts"
+        - "Shows voucher dates within January 2026"
