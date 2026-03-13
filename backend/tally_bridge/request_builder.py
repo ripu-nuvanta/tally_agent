@@ -57,7 +57,8 @@ def _voucher_native_methods() -> str:
     """Return NATIVEMETHOD elements for the specific voucher fields we need.
     Using * fetches ALL fields and can overload Tally with large datasets.
     """
-    fields = ["Date", "VoucherTypeName", "VoucherNumber", "PartyLedgerName", "Narration", "AllLedgerEntries"]
+    fields = ["Date", "VoucherTypeName", "VoucherNumber", "PartyLedgerName",
+              "Narration", "AllLedgerEntries", "AllInventoryEntries"]
     return "\n".join(f"<NATIVEMETHOD>{f}</NATIVEMETHOD>" for f in fields)
 
 

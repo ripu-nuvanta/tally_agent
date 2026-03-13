@@ -311,6 +311,33 @@ def parse_vouchers(raw_xml: str, from_date: str | None = None, to_date: str | No
                 "ledger_name": _get_text(entry, "LEDGERNAME"),
                 "amount": parse_amount(_get_text(entry, "AMOUNT")),
             })
+        inventory_entries = []
+        for inv_entry in v.findall("ALLINVENTORYENTRIES.LIST"):
+            item_name = _get_text(inv_entry, "STOCKITEMNAME")
+            if not item_name:
+                continue
+            # Parse quantity: "2 Nos" → 2.0
+            qty_text = _get_text(inv_entry, "ACTUALQTY")
+            qty = 0.0
+            if qty_text:
+                parts = qty_text.split()
+                if parts:
+                    try:
+                        qty = abs(float(parts[0].replace(",", "")))
+                    except ValueError:
+                        pass
+            # Parse rate: "45000/Nos" → 45000.0
+            rate_text = _get_text(inv_entry, "RATE")
+            rate = 0.0
+            if rate_text:
+                rate_num = rate_text.split("/")[0].strip()
+                rate = parse_amount(rate_num)
+            inventory_entries.append({
+                "item_name": item_name,
+                "quantity": qty,
+                "rate": rate,
+                "amount": parse_amount(_get_text(inv_entry, "AMOUNT")),
+            })
         # Skip ghost/empty vouchers that Tally TDL sometimes emits
         if not date_str and not voucher_type and not voucher_number:
             continue
@@ -322,6 +349,7 @@ def parse_vouchers(raw_xml: str, from_date: str | None = None, to_date: str | No
             "party_name": party,
             "narration": narration,
             "ledger_entries": ledger_entries,
+            "inventory_entries": inventory_entries,
         })
     if from_date and to_date:
         vouchers = _filter_vouchers_by_date(vouchers, from_date, to_date)

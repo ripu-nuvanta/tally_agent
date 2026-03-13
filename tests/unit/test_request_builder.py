@@ -6,6 +6,25 @@ from backend.tally_bridge.request_builder import (
 )
 
 
+# ---------------------------------------------------------------------------
+# H2: AllInventoryEntries in voucher collection queries
+# ---------------------------------------------------------------------------
+def test_voucher_native_methods_include_inventory_entries():
+    """All voucher collection queries must fetch AllInventoryEntries for item-level data."""
+    xml = build_day_book("01-10-2025", "31-10-2025")
+    assert "AllInventoryEntries" in xml
+
+
+def test_sales_register_includes_inventory_entries():
+    xml = build_sales_register("01-10-2025", "31-10-2025")
+    assert "AllInventoryEntries" in xml
+
+
+def test_ledger_vouchers_includes_inventory_entries():
+    xml = build_ledger_vouchers("Cash", "01-10-2025", "31-10-2025")
+    assert "AllInventoryEntries" in xml
+
+
 class TestMasterBuilders:
     def test_list_companies_has_envelope(self):
         xml = build_list_companies()

@@ -622,3 +622,99 @@ class TestParseGroups:
         </COLLECTION></DATA></BODY></ENVELOPE>"""
         groups = parse_groups(xml)
         assert groups == []
+
+
+# ---------------------------------------------------------------------------
+# H2: parse_vouchers — inventory_entries field
+# ---------------------------------------------------------------------------
+from backend.tally_bridge.response_parser import parse_vouchers
+
+
+class TestParseVouchersInventoryEntries:
+    def test_parse_vouchers_extracts_inventory_entries(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <VOUCHER>
+            <DATE>20251001</DATE>
+            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>S001</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Apex Technologies</PARTYLEDGERNAME>
+            <NARRATION>Test sale</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>Sales - Electronics</LEDGERNAME>
+                <AMOUNT>-94000</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+                <STOCKITEMNAME>HP Laptop 15s</STOCKITEMNAME>
+                <ACTUALQTY>2 Nos</ACTUALQTY>
+                <RATE>45000/Nos</RATE>
+                <AMOUNT>-90000</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+                <STOCKITEMNAME>Logitech Wireless Mouse</STOCKITEMNAME>
+                <ACTUALQTY>5 Nos</ACTUALQTY>
+                <RATE>800/Nos</RATE>
+                <AMOUNT>-4000</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+        </VOUCHER>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        vouchers = parse_vouchers(xml)
+        assert len(vouchers) == 1
+        v = vouchers[0]
+        assert "inventory_entries" in v
+        assert len(v["inventory_entries"]) == 2
+        assert v["inventory_entries"][0]["item_name"] == "HP Laptop 15s"
+        assert v["inventory_entries"][0]["quantity"] == 2.0
+        assert v["inventory_entries"][0]["rate"] == 45000.0
+        assert v["inventory_entries"][0]["amount"] == -90000.0
+
+    def test_parse_vouchers_second_inventory_entry(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <VOUCHER>
+            <DATE>20251001</DATE>
+            <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>S001</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Apex Technologies</PARTYLEDGERNAME>
+            <NARRATION>Test sale</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>Sales - Electronics</LEDGERNAME>
+                <AMOUNT>-94000</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+                <STOCKITEMNAME>HP Laptop 15s</STOCKITEMNAME>
+                <ACTUALQTY>2 Nos</ACTUALQTY>
+                <RATE>45000/Nos</RATE>
+                <AMOUNT>-90000</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+            <ALLINVENTORYENTRIES.LIST>
+                <STOCKITEMNAME>Logitech Wireless Mouse</STOCKITEMNAME>
+                <ACTUALQTY>5 Nos</ACTUALQTY>
+                <RATE>800/Nos</RATE>
+                <AMOUNT>-4000</AMOUNT>
+            </ALLINVENTORYENTRIES.LIST>
+        </VOUCHER>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        vouchers = parse_vouchers(xml)
+        v = vouchers[0]
+        assert v["inventory_entries"][1]["item_name"] == "Logitech Wireless Mouse"
+        assert v["inventory_entries"][1]["quantity"] == 5.0
+        assert v["inventory_entries"][1]["rate"] == 800.0
+        assert v["inventory_entries"][1]["amount"] == -4000.0
+
+    def test_parse_vouchers_without_inventory_entries_returns_empty_list(self):
+        """Vouchers without ALLINVENTORYENTRIES should have an empty inventory_entries list."""
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <VOUCHER>
+            <DATE>20251001</DATE>
+            <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+            <VOUCHERNUMBER>PMT001</VOUCHERNUMBER>
+            <PARTYLEDGERNAME>Rent</PARTYLEDGERNAME>
+            <NARRATION>Office rent</NARRATION>
+            <ALLLEDGERENTRIES.LIST>
+                <LEDGERNAME>Rent</LEDGERNAME>
+                <AMOUNT>-75000</AMOUNT>
+            </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        vouchers = parse_vouchers(xml)
+        assert len(vouchers) == 1
+        assert vouchers[0]["inventory_entries"] == []
