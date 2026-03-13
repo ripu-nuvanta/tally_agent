@@ -1,6 +1,6 @@
 # Code Execution Tool — Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Add Claude's built-in code execution tool to QueryAgent and AnalysisAgent so computation runs in Anthropic's server-side sandbox instead of LLM mental math.
 
@@ -19,13 +19,13 @@
 **Files:**
 - Modify: `pyproject.toml` (already declares `>=0.84.0`, just need `uv sync`)
 
-- [ ] **Step 1: Sync dependencies to install latest SDK**
+- [x] **Step 1: Sync dependencies to install latest SDK**
 
 ```bash
 uv sync --extra dev --extra langfuse
 ```
 
-- [ ] **Step 2: Verify SDK version and code execution types**
+- [x] **Step 2: Verify SDK version and code execution types**
 
 ```bash
 python -c "import anthropic; print(anthropic.__version__)"
@@ -34,7 +34,7 @@ python -c "from anthropic.types import ServerToolUseBlock, CodeExecutionToolResu
 
 Expected: Version >= 0.84.0, types import OK.
 
-- [ ] **Step 3: Run existing test suite to catch SDK breaking changes**
+- [x] **Step 3: Run existing test suite to catch SDK breaking changes**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v --tb=short 2>&1 | tail -20
@@ -42,7 +42,7 @@ ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v -
 
 Expected: All 820 tests pass. If failures, fix SDK compatibility issues before proceeding.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add pyproject.toml uv.lock
@@ -57,7 +57,7 @@ git commit -m "chore: sync anthropic SDK to >=0.84.0 for code execution support"
 - Modify: `backend/config.py:4-14`
 - Test: `tests/unit/test_config_code_exec.py` (new)
 
-- [ ] **Step 1: Write failing test**
+- [x] **Step 1: Write failing test**
 
 ```python
 # tests/unit/test_config_code_exec.py
@@ -82,7 +82,7 @@ class TestCodeExecutionConfig:
             assert s.CODE_EXECUTION_ENABLED is False
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/unit/test_config_code_exec.py -v
@@ -90,7 +90,7 @@ pytest tests/unit/test_config_code_exec.py -v
 
 Expected: FAIL — `Settings` has no attribute `CODE_EXECUTION_ENABLED`.
 
-- [ ] **Step 3: Add config field**
+- [x] **Step 3: Add config field**
 
 In `backend/config.py`, add after line 14 (`TALLY_MODE`):
 
@@ -98,7 +98,7 @@ In `backend/config.py`, add after line 14 (`TALLY_MODE`):
     CODE_EXECUTION_ENABLED: bool = True  # kill switch: False reverts to analysis tools
 ```
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 ```bash
 pytest tests/unit/test_config_code_exec.py -v
@@ -106,13 +106,13 @@ pytest tests/unit/test_config_code_exec.py -v
 
 Expected: 2 passed.
 
-- [ ] **Step 5: Run full unit tests to check no regressions**
+- [x] **Step 5: Run full unit tests to check no regressions**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/unit/ -v --tb=short 2>&1 | tail -5
 ```
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/config.py tests/unit/test_config_code_exec.py
@@ -127,7 +127,7 @@ git commit -m "feat: add CODE_EXECUTION_ENABLED config setting (default True)"
 - Modify: `backend/agents/utils.py:1-29`
 - Modify: `tests/unit/test_utils.py:1-68`
 
-- [ ] **Step 1: Write failing tests for `find_custom_tool_use_blocks`**
+- [x] **Step 1: Write failing tests for `find_custom_tool_use_blocks`**
 
 Append to `tests/unit/test_utils.py`:
 
@@ -160,7 +160,7 @@ class TestFindCustomToolUseBlocks:
         assert find_custom_tool_use_blocks(response) == [b1, b2]
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 ```bash
 pytest tests/unit/test_utils.py::TestFindCustomToolUseBlocks -v
@@ -168,7 +168,7 @@ pytest tests/unit/test_utils.py::TestFindCustomToolUseBlocks -v
 
 Expected: ImportError — `find_custom_tool_use_blocks` not found.
 
-- [ ] **Step 3: Implement `find_custom_tool_use_blocks`**
+- [x] **Step 3: Implement `find_custom_tool_use_blocks`**
 
 Add to `backend/agents/utils.py` after `find_all_tool_use_blocks`:
 
@@ -183,7 +183,7 @@ def find_custom_tool_use_blocks(response: Any) -> list[Any]:
     return [block for block in response.content if block.type == "tool_use"]
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 ```bash
 pytest tests/unit/test_utils.py::TestFindCustomToolUseBlocks -v
@@ -191,7 +191,7 @@ pytest tests/unit/test_utils.py::TestFindCustomToolUseBlocks -v
 
 Expected: 3 passed.
 
-- [ ] **Step 5: Write failing tests for `extract_code_execution_results`**
+- [x] **Step 5: Write failing tests for `extract_code_execution_results`**
 
 Append to `tests/unit/test_utils.py`:
 
@@ -259,7 +259,7 @@ class TestExtractCodeExecutionResults:
         assert results[1]["type"] == "code_result"
 ```
 
-- [ ] **Step 6: Run tests to verify they fail**
+- [x] **Step 6: Run tests to verify they fail**
 
 ```bash
 pytest tests/unit/test_utils.py::TestExtractCodeExecutionResults -v
@@ -267,7 +267,7 @@ pytest tests/unit/test_utils.py::TestExtractCodeExecutionResults -v
 
 Expected: ImportError — `extract_code_execution_results` not found.
 
-- [ ] **Step 7: Implement `extract_code_execution_results`**
+- [x] **Step 7: Implement `extract_code_execution_results`**
 
 Add to `backend/agents/utils.py`:
 
@@ -302,7 +302,7 @@ from typing import Any
 
 (Already imported — no change needed.)
 
-- [ ] **Step 8: Run tests to verify they pass**
+- [x] **Step 8: Run tests to verify they pass**
 
 ```bash
 pytest tests/unit/test_utils.py::TestExtractCodeExecutionResults -v
@@ -310,7 +310,7 @@ pytest tests/unit/test_utils.py::TestExtractCodeExecutionResults -v
 
 Expected: 5 passed.
 
-- [ ] **Step 9: Write failing tests for `extract_structured_from_code_execution`**
+- [x] **Step 9: Write failing tests for `extract_structured_from_code_execution`**
 
 Append to `tests/unit/test_utils.py`:
 
@@ -370,7 +370,7 @@ class TestExtractStructuredFromCodeExecution:
         assert extract_structured_from_code_execution(response) is None
 ```
 
-- [ ] **Step 10: Run tests to verify they fail**
+- [x] **Step 10: Run tests to verify they fail**
 
 ```bash
 pytest tests/unit/test_utils.py::TestExtractStructuredFromCodeExecution -v
@@ -378,7 +378,7 @@ pytest tests/unit/test_utils.py::TestExtractStructuredFromCodeExecution -v
 
 Expected: ImportError.
 
-- [ ] **Step 11: Implement `extract_structured_from_code_execution`**
+- [x] **Step 11: Implement `extract_structured_from_code_execution`**
 
 Add to `backend/agents/utils.py`:
 
@@ -409,7 +409,7 @@ def extract_structured_from_code_execution(response: Any) -> dict[str, Any] | No
     return None
 ```
 
-- [ ] **Step 12: Run tests to verify they pass**
+- [x] **Step 12: Run tests to verify they pass**
 
 ```bash
 pytest tests/unit/test_utils.py::TestExtractStructuredFromCodeExecution -v
@@ -417,7 +417,7 @@ pytest tests/unit/test_utils.py::TestExtractStructuredFromCodeExecution -v
 
 Expected: 7 passed.
 
-- [ ] **Step 13: Run all utils tests**
+- [x] **Step 13: Run all utils tests**
 
 ```bash
 pytest tests/unit/test_utils.py -v
@@ -425,7 +425,7 @@ pytest tests/unit/test_utils.py -v
 
 Expected: All tests pass (existing + new).
 
-- [ ] **Step 14: Commit**
+- [x] **Step 14: Commit**
 
 ```bash
 git add backend/agents/utils.py tests/unit/test_utils.py
@@ -442,7 +442,7 @@ git commit -m "feat: add code execution utils — find_custom_tool_use_blocks, e
 - Modify: `backend/agents/prompts.py:76-168`
 - Test: `tests/unit/test_prompts_code_exec.py` (new)
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 ```python
 # tests/unit/test_prompts_code_exec.py
@@ -504,7 +504,7 @@ class TestAnalysisAgentPromptCodeExec:
             assert "code_execution" in prompt.lower() or "python" in prompt.lower(), f"Failed for {qt}"
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 ```bash
 pytest tests/unit/test_prompts_code_exec.py -v
@@ -512,7 +512,7 @@ pytest tests/unit/test_prompts_code_exec.py -v
 
 Expected: TypeError — `build_query_agent_prompt()` doesn't accept `code_execution_enabled`.
 
-- [ ] **Step 3: Update `build_query_agent_prompt`**
+- [x] **Step 3: Update `build_query_agent_prompt`**
 
 Modify `backend/agents/prompts.py:76-168`. Add `code_execution_enabled` parameter with default `False` for backwards compatibility. When `True`, swap the computation section and rules:
 
@@ -660,7 +660,7 @@ were ₹Y." Do NOT repeat the data in table format.
 """
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 ```bash
 pytest tests/unit/test_prompts_code_exec.py::TestQueryAgentPromptCodeExec -v
@@ -668,7 +668,7 @@ pytest tests/unit/test_prompts_code_exec.py::TestQueryAgentPromptCodeExec -v
 
 Expected: 4 passed.
 
-- [ ] **Step 5: Update `build_analysis_agent_prompt`**
+- [x] **Step 5: Update `build_analysis_agent_prompt`**
 
 Modify `backend/agents/prompts.py:171-272`. Add `code_execution_enabled` parameter:
 
@@ -824,7 +824,7 @@ recorded for Apr-Jun 2025, so the trend starts from Jul 2025." Do not silently o
 """
 ```
 
-- [ ] **Step 6: Run analysis prompt tests**
+- [x] **Step 6: Run analysis prompt tests**
 
 ```bash
 pytest tests/unit/test_prompts_code_exec.py::TestAnalysisAgentPromptCodeExec -v
@@ -832,7 +832,7 @@ pytest tests/unit/test_prompts_code_exec.py::TestAnalysisAgentPromptCodeExec -v
 
 Expected: 3 passed.
 
-- [ ] **Step 7: Run all prompt tests + existing prompt tests**
+- [x] **Step 7: Run all prompt tests + existing prompt tests**
 
 ```bash
 pytest tests/unit/test_prompts_code_exec.py -v
@@ -841,7 +841,7 @@ ANTHROPIC_API_KEY=test-key pytest tests/unit/ -v --tb=short -q 2>&1 | tail -5
 
 Expected: All pass. Existing tests use the default `code_execution_enabled=False` so no breakage.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/agents/prompts.py tests/unit/test_prompts_code_exec.py
@@ -858,7 +858,7 @@ git commit -m "feat: conditional prompts for code execution — query and analys
 - Modify: `backend/agents/query_agent.py:1-196`
 - Test: `tests/unit/test_query_agent.py` (append)
 
-- [ ] **Step 1: Write failing test for code execution tool list**
+- [x] **Step 1: Write failing test for code execution tool list**
 
 Append to `tests/unit/test_query_agent.py`:
 
@@ -894,7 +894,7 @@ class TestQueryAgentCodeExecution:
         assert "code_execution_20260120" not in tool_types
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/unit/test_query_agent.py::TestQueryAgentCodeExecution -v
@@ -902,7 +902,7 @@ pytest tests/unit/test_query_agent.py::TestQueryAgentCodeExecution -v
 
 Expected: ImportError — `_build_query_tools` not found.
 
-- [ ] **Step 3: Implement QueryAgent changes**
+- [x] **Step 3: Implement QueryAgent changes**
 
 Modify `backend/agents/query_agent.py`. Key changes:
 
@@ -977,7 +977,7 @@ if tool_result_entries:
     messages.append({"role": "user", "content": tool_result_entries})
 ```
 
-- [ ] **Step 4: Run new tests**
+- [x] **Step 4: Run new tests**
 
 ```bash
 pytest tests/unit/test_query_agent.py::TestQueryAgentCodeExecution -v
@@ -985,7 +985,7 @@ pytest tests/unit/test_query_agent.py::TestQueryAgentCodeExecution -v
 
 Expected: 2 passed.
 
-- [ ] **Step 5: Write test for code execution response handling in tool loop**
+- [x] **Step 5: Write test for code execution response handling in tool loop**
 
 Append to `tests/unit/test_query_agent.py`:
 
@@ -1032,7 +1032,7 @@ Append to `tests/unit/test_query_agent.py`:
         assert code_exec_results[0]["result"]["data"]["headers"] == ["Item", "Days"]
 ```
 
-- [ ] **Step 6: Run test**
+- [x] **Step 6: Run test**
 
 ```bash
 pytest tests/unit/test_query_agent.py::TestQueryAgentCodeExecution::test_code_exec_response_captures_structured_output -v
@@ -1040,7 +1040,7 @@ pytest tests/unit/test_query_agent.py::TestQueryAgentCodeExecution::test_code_ex
 
 Expected: PASS (implementation from step 3 should handle this).
 
-- [ ] **Step 7: Run all query agent tests**
+- [x] **Step 7: Run all query agent tests**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/unit/test_query_agent.py -v
@@ -1048,7 +1048,7 @@ ANTHROPIC_API_KEY=test-key pytest tests/unit/test_query_agent.py -v
 
 Expected: All pass (existing + new).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/agents/query_agent.py tests/unit/test_query_agent.py
@@ -1062,7 +1062,7 @@ git commit -m "feat: add code execution support to QueryAgent tool loop"
 **Files:**
 - Modify: `backend/agents/orchestrator.py:246-249`
 
-- [ ] **Step 1: Add `"code_execution"` to `_COMPUTED_TOOL_NAMES`**
+- [x] **Step 1: Add `"code_execution"` to `_COMPUTED_TOOL_NAMES`**
 
 In `backend/agents/orchestrator.py`, change line 246-249:
 
@@ -1074,7 +1074,7 @@ _COMPUTED_TOOL_NAMES = {
 }
 ```
 
-- [ ] **Step 2: Run existing orchestrator tests**
+- [x] **Step 2: Run existing orchestrator tests**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/unit/test_orchestrator.py -v
@@ -1082,7 +1082,7 @@ ANTHROPIC_API_KEY=test-key pytest tests/unit/test_orchestrator.py -v
 
 Expected: All pass.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/agents/orchestrator.py
@@ -1099,7 +1099,7 @@ git commit -m "feat: add code_execution to computed tool names in orchestrator"
 - Modify: `backend/agents/analysis_agent.py:380-567`
 - Test: `tests/unit/test_analysis_agent.py` (append)
 
-- [ ] **Step 1: Write failing test for code execution tool list**
+- [x] **Step 1: Write failing test for code execution tool list**
 
 Append to `tests/unit/test_analysis_agent.py`:
 
@@ -1121,7 +1121,7 @@ class TestAnalysisAgentCodeExecution:
         assert "compute_totals" in tool_names
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 ```bash
 pytest tests/unit/test_analysis_agent.py::TestAnalysisAgentCodeExecution -v
@@ -1129,7 +1129,7 @@ pytest tests/unit/test_analysis_agent.py::TestAnalysisAgentCodeExecution -v
 
 Expected: ImportError — `_build_analysis_tools` not found.
 
-- [ ] **Step 3: Implement AnalysisAgent changes**
+- [x] **Step 3: Implement AnalysisAgent changes**
 
 Add to `backend/agents/analysis_agent.py`:
 
@@ -1201,7 +1201,7 @@ if tool_result_entries:
     messages.append({"role": "user", "content": tool_result_entries})
 ```
 
-- [ ] **Step 4: Run new tests**
+- [x] **Step 4: Run new tests**
 
 ```bash
 pytest tests/unit/test_analysis_agent.py::TestAnalysisAgentCodeExecution -v
@@ -1209,7 +1209,7 @@ pytest tests/unit/test_analysis_agent.py::TestAnalysisAgentCodeExecution -v
 
 Expected: 2 passed.
 
-- [ ] **Step 5: Write test for structured output capture in AnalysisAgent**
+- [x] **Step 5: Write test for structured output capture in AnalysisAgent**
 
 Append to `tests/unit/test_analysis_agent.py`:
 
@@ -1250,7 +1250,7 @@ Append to `tests/unit/test_analysis_agent.py`:
         assert result["data"]["rows"][0] == ["A", 100]
 ```
 
-- [ ] **Step 6: Run test**
+- [x] **Step 6: Run test**
 
 ```bash
 pytest tests/unit/test_analysis_agent.py::TestAnalysisAgentCodeExecution::test_code_exec_captures_structured_table_data -v
@@ -1258,7 +1258,7 @@ pytest tests/unit/test_analysis_agent.py::TestAnalysisAgentCodeExecution::test_c
 
 Expected: PASS.
 
-- [ ] **Step 7: Run all analysis agent tests**
+- [x] **Step 7: Run all analysis agent tests**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/unit/test_analysis_agent.py -v
@@ -1266,7 +1266,7 @@ ANTHROPIC_API_KEY=test-key pytest tests/unit/test_analysis_agent.py -v
 
 Expected: All pass (existing + new).
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/agents/analysis_agent.py tests/unit/test_analysis_agent.py
@@ -1281,7 +1281,7 @@ git commit -m "feat: add code execution support to AnalysisAgent tool loop"
 
 **Files:** None (verification only)
 
-- [ ] **Step 1: Run full backend tests**
+- [x] **Step 1: Run full backend tests**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v --tb=short 2>&1 | tail -20
@@ -1289,7 +1289,7 @@ ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v -
 
 Expected: All existing + new tests pass.
 
-- [ ] **Step 2: Run with CODE_EXECUTION_ENABLED=False (kill switch)**
+- [x] **Step 2: Run with CODE_EXECUTION_ENABLED=False (kill switch)**
 
 ```bash
 CODE_EXECUTION_ENABLED=false ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests/integration/ tests/e2e/ -v --tb=short 2>&1 | tail -20
@@ -1297,7 +1297,7 @@ CODE_EXECUTION_ENABLED=false ANTHROPIC_API_KEY=test-key pytest tests/unit/ tests
 
 Expected: All pass — identical behavior to before the changes.
 
-- [ ] **Step 3: Run frontend tests (should be unaffected)**
+- [x] **Step 3: Run frontend tests (should be unaffected)**
 
 ```bash
 cd frontend && npm test 2>&1 | tail -5
@@ -1305,7 +1305,7 @@ cd frontend && npm test 2>&1 | tail -5
 
 Expected: 111 tests pass.
 
-- [ ] **Step 4: Verify the server starts**
+- [x] **Step 4: Verify the server starts**
 
 ```bash
 timeout 5 uvicorn backend.main:app --host 0.0.0.0 --port 8000 2>&1 || true
@@ -1320,13 +1320,31 @@ Expected: Server starts without import errors.
 **Files:**
 - Modify: `docs/plans/2026-03-13-code-execution-tool-design.md:3`
 
-- [ ] **Step 1: Mark spec as implemented**
+- [x] **Step 1: Mark spec as implemented**
 
 Change line 3 from `**Status**: Draft` to `**Status**: Implemented`.
 
-- [ ] **Step 2: Final commit**
+- [x] **Step 2: Final commit**
 
 ```bash
 git add docs/plans/2026-03-13-code-execution-tool-design.md
 git commit -m "docs: mark code execution tool design as implemented"
 ```
+
+---
+
+## Post-Implementation Notes
+
+**Status**: All 9 tasks COMPLETE. 11 commits (d5bcfbe..3dc3a90).
+
+### Additional work beyond plan:
+- **Code review fixes** (commit 17de8d2): Guarded empty tool_result_entries in QueryAgent, fixed STRUCTURED_RESULT prompt format to match parser expectations
+- **Eval optimization**: Deleted mock_tally_validation (redundant), trimmed edge_case_gauntlet (8→6), trends_and_breakdowns (7→6), edge_case_gauntlet_mock (8→6), trends_and_breakdowns_mock (7→6)
+- **New eval scenario**: code_execution_validation.yaml (5 turns, computation-heavy) + code_execution_validation_mock.yaml (5 turns, includes stock reorder)
+- **e2e_live trimmed**: 19→12 tests (removed 7 covered by eval scenarios)
+
+### Test counts:
+- Backend: 700 (unit + integration + e2e)
+- Frontend: 111 Vitest + 39 Playwright
+- e2e_live: 12 (gated by RUN_LIVE_TESTS=1)
+- Eval: 13 scenarios (8 base + 5 mock), 78 turns
