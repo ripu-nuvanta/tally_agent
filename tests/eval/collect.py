@@ -33,8 +33,13 @@ FOLLOWUP_MAP = {
 }
 
 
-def load_scenario(name: str) -> dict:
-    """Load a scenario YAML file by name."""
+def load_scenario(name: str, tally_mode: str = "live") -> dict:
+    """Load a scenario YAML file by name. Prefers *_mock.yaml in mock mode."""
+    if tally_mode == "mock":
+        mock_path = SCENARIOS_DIR / f"{name}_mock.yaml"
+        if mock_path.exists():
+            print(f"  Using mock variant: {mock_path.name}")
+            return yaml.safe_load(mock_path.read_text())
     path = SCENARIOS_DIR / f"{name}.yaml"
     if not path.exists():
         raise FileNotFoundError(f"Scenario not found: {path}")
@@ -348,8 +353,11 @@ def save_transcript(scenario_name: str, transcript: dict, run_dir: Path | None =
 
 
 def list_scenarios() -> list[str]:
-    """List all available scenario names."""
-    return [p.stem for p in sorted(SCENARIOS_DIR.glob("*.yaml"))]
+    """List all available scenario names (excludes *_mock.yaml variants)."""
+    return [
+        p.stem for p in sorted(SCENARIOS_DIR.glob("*.yaml"))
+        if not p.stem.endswith("_mock")
+    ]
 
 
 async def main():
@@ -442,7 +450,7 @@ async def main():
         print(f"Scenario: {name}")
         print(f"{'='*60}")
 
-        scenario = load_scenario(name)
+        scenario = load_scenario(name, tally_mode=args.tally_mode)
         golden = live_golden if live_golden else load_golden(name)
 
         transcript = await collect_scenario(
