@@ -115,11 +115,12 @@ get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one ca
 then aggregate by month via code execution)."""
 
         structured_rule_block = """
-13. **STRUCTURED_RESULT: prefix**: When you have final computed data (tables, \
-rankings, totals) ready for rendering, output it as:
-STRUCTURED_RESULT: <JSON>
-where <JSON> is a JSON array of objects. This allows the frontend to render \
-the data as a table automatically."""
+13. **Structured output**: When your code_execution computes a result table, ALWAYS \
+print the final structured data on the LAST line of stdout using this exact format:
+STRUCTURED_RESULT:{"headers": ["Col1", "Col2"], "rows": [["val1", 123], ["val2", 456]]}
+Headers must be strings. Row values: use numbers for numeric data (not strings). \
+You may print other text (debug, intermediate steps) before this line — only the \
+STRUCTURED_RESULT line is captured for table/chart rendering."""
     else:
         from backend.agents.analysis_agent import ANALYSIS_TOOLS
 
@@ -270,11 +271,12 @@ vouchers/records yourself. Always use the code_execution sandbox with Python \
 (e.g. sum/groupby for totals, sorted() for rankings). Manual extraction leads to mismatched totals."""
 
         structured_rule_block = """
-14. **STRUCTURED_RESULT: prefix**: When you have final computed data (tables, \
-rankings, totals) ready for rendering, output it as:
-STRUCTURED_RESULT: <JSON>
-where <JSON> is a JSON array of objects. This allows the frontend to render \
-the data as a table automatically."""
+14. **Structured output**: When your code_execution computes a result table, ALWAYS \
+print the final structured data on the LAST line of stdout using this exact format:
+STRUCTURED_RESULT:{"headers": ["Col1", "Col2"], "rows": [["val1", 123], ["val2", 456]]}
+Headers must be strings. Row values: use numbers for numeric data (not strings). \
+You may print other text before this line — only the STRUCTURED_RESULT line is \
+captured for table/chart rendering."""
     else:
         from backend.agents.analysis_agent import ANALYSIS_TOOLS
 

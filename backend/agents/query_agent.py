@@ -216,12 +216,13 @@ class QueryAgent:
             messages.append({"role": "assistant", "content": response.content})
 
             # Append all tool results in a single user message
-            messages.append(
-                {
-                    "role": "user",
-                    "content": tool_result_entries,
-                }
-            )
+            if tool_result_entries:
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": tool_result_entries,
+                    }
+                )
 
             # ---- Safety valve ----
             if tool_call_count >= self.max_tool_calls:
