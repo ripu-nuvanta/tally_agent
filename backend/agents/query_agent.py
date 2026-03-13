@@ -24,7 +24,13 @@ from backend.config import settings
 from backend.agents.prompts import build_query_agent_prompt
 from backend.agents.tools import TALLY_TOOLS, execute_tool, DATE_TOOLS, execute_date_tool
 from backend.agents.analysis_agent import ANALYSIS_TOOLS, execute_analysis_tool
-from backend.agents.utils import extract_text, find_all_tool_use_blocks
+from backend.agents.utils import (
+    extract_text,
+    find_all_tool_use_blocks,
+    find_custom_tool_use_blocks,
+    extract_code_execution_results,
+    extract_structured_from_code_execution,
+)
 from backend.agents.context import SessionContext
 from backend.tally_bridge.client import TallyClient
 
@@ -35,7 +41,22 @@ _ANALYSIS_TOOL_NAMES = {t["name"] for t in ANALYSIS_TOOLS}
 _DATE_TOOL_NAMES = {t["name"] for t in DATE_TOOLS}
 
 # Combined tool list: Tally (data fetching) + Analysis (computation) + Date (resolution)
+# Keep for backwards compat — callers that import this directly still work.
 _ALL_QUERY_TOOLS = TALLY_TOOLS + ANALYSIS_TOOLS + DATE_TOOLS
+
+# Server-managed code execution tool (resolved inline by the API, no client dispatch).
+CODE_EXECUTION_TOOL = {"type": "code_execution_20260120"}
+
+
+def _build_query_tools(code_execution_enabled: bool) -> list:
+    """Build the tool list based on code execution config.
+
+    When code execution is enabled, ANALYSIS_TOOLS are excluded because Claude
+    uses the sandbox for computation instead.  DATE_TOOLS are always included.
+    """
+    if code_execution_enabled:
+        return TALLY_TOOLS + DATE_TOOLS + [CODE_EXECUTION_TOOL]
+    return TALLY_TOOLS + ANALYSIS_TOOLS + DATE_TOOLS
 
 # Module-level client — tests patch this object.
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
@@ -76,7 +97,7 @@ class QueryAgent:
         from datetime import date as date_cls
         from backend.utils.date_utils import format_for_tally
         current_date = format_for_tally(date_cls.today())
-        system_prompt = build_query_agent_prompt(current_date)
+        system_prompt = build_query_agent_prompt(current_date, code_execution_enabled=settings.CODE_EXECUTION_ENABLED)
 
         # Build messages from session history + new user query
         messages = session.get_messages()
@@ -97,7 +118,7 @@ class QueryAgent:
                     model=settings.CLAUDE_MODEL,
                     max_tokens=4096,
                     system=system_prompt,
-                    tools=_ALL_QUERY_TOOLS,
+                    tools=_build_query_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,
                 )
             except anthropic.APIError as exc:
@@ -117,6 +138,26 @@ class QueryAgent:
                 if block.type == "text" and block.text.strip():
                     logger.debug("QueryAgent turn %d — Claude text:\n%s", turn, block.text)
 
+            # Log code execution blocks (server-managed, resolved inline)
+            if settings.CODE_EXECUTION_ENABLED:
+                for cer in extract_code_execution_results(response):
+                    if cer["type"] == "code_written":
+                        logger.info("QueryAgent turn %d — code_execution code:\n%s", turn, cer["code"])
+                    elif cer["type"] == "code_result":
+                        logger.info("QueryAgent turn %d — code_execution stdout:\n%s", turn, cer["stdout"])
+                        if cer.get("stderr"):
+                            logger.warning("QueryAgent turn %d — code_execution stderr:\n%s", turn, cer["stderr"])
+
+            # Capture structured output from code execution (present on any turn, incl. end_turn)
+            if settings.CODE_EXECUTION_ENABLED:
+                structured = extract_structured_from_code_execution(response)
+                if structured:
+                    tool_results.append({
+                        "tool_name": "code_execution",
+                        "tool_input": {},
+                        "result": {"success": True, "data": structured},
+                    })
+
             # ---- End turn: Claude produced a final text answer ----
             if response.stop_reason != "tool_use":
                 final_text = extract_text(response)
@@ -127,7 +168,10 @@ class QueryAgent:
                 return {"message": final_text, "tool_results": tool_results}
 
             # ---- Tool use: execute all requested tools ----
-            tool_blocks = find_all_tool_use_blocks(response)
+            if settings.CODE_EXECUTION_ENABLED:
+                tool_blocks = find_custom_tool_use_blocks(response)
+            else:
+                tool_blocks = find_all_tool_use_blocks(response)
             logger.info("QueryAgent turn %d — %d tool call(s) requested", turn, len(tool_blocks))
 
             tool_result_entries = []
