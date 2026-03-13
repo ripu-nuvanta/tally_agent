@@ -42,10 +42,12 @@ ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/
 pytest --cov=backend --cov-report=html
 
 # Live E2E tests (needs real Tally + Claude API key, -s for stdout logging)
+# ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
 RUN_LIVE_TESTS=1 PYTHONPATH=. pytest tests/e2e_live/ -v -s --host <TALLY_IP> --port 9000 2>&1 | tee docs/e2e-live-results.log
 
 # E2E live tests in mock mode (no real Tally needed, still needs ANTHROPIC_API_KEY)
-PYTHONPATH=. pytest tests/e2e_live/ -v -s --tally-mode mock
+# ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
+PYTHONPATH=. pytest tests/e2e_live/ -v -s --tally-mode mock 2>&1 | tee docs/e2e-live-mock-results.log
 
 # Verify Tally connectivity
 python scripts/test_tally_connection.py
@@ -57,16 +59,19 @@ PYTHONPATH=. uv run python scripts/test_agent_live.py --host <TALLY_IP> --port 9
 python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000
 
 # Eval framework (needs backend + frontend running)
+# ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
 # Results auto-saved to tests/eval/results/ (transcripts, screenshots, scores, report)
-PYTHONPATH=. python tests/eval/collect.py --scenario all --frontend-url http://localhost:5173
-PYTHONPATH=. python tests/eval/judge.py               # uses ANTHROPIC_API_KEY from .env
+PYTHONPATH=. python tests/eval/collect.py --scenario all --frontend-url http://localhost:5173 2>&1 | tee docs/eval-collect.log
+ANTHROPIC_API_KEY=$(grep ANTHROPIC_API_KEY .env | cut -d= -f2) PYTHONPATH=. python tests/eval/judge.py 2>&1 | tee docs/eval-judge.log
 PYTHONPATH=. python tests/eval/report.py               # → tests/eval/results/report.html
 
 # Run single eval scenario
-PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173
+# ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
+PYTHONPATH=. python tests/eval/collect.py --scenario manual_test_regression --frontend-url http://localhost:5173 2>&1 | tee docs/eval-collect-manual.log
 
 # Eval via pytest (all-in-one)
-RUN_EVAL_TESTS=1 PYTHONPATH=. pytest tests/eval/test_eval.py -v -s
+# ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
+RUN_EVAL_TESTS=1 PYTHONPATH=. pytest tests/eval/test_eval.py -v -s 2>&1 | tee docs/eval-pytest.log
 
 # Generate golden fixtures from live Tally
 PYTHONPATH=. python tests/eval/generate_golden.py --host <TALLY_IP> --port 9000
