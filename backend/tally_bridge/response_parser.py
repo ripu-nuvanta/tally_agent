@@ -326,3 +326,61 @@ def parse_vouchers(raw_xml: str, from_date: str | None = None, to_date: str | No
     if from_date and to_date:
         vouchers = _filter_vouchers_by_date(vouchers, from_date, to_date)
     return vouchers
+
+
+def parse_stock_items(raw_xml: str) -> list[dict]:
+    """Parse CustomStockItemList collection response.
+
+    CLOSINGBALANCE format: "10.0000 Nos" (number + space + unit) in our fixtures.
+    Note: Real Tally TYPE=Collection may return just the numeric value without unit.
+    The BASEUNITS fallback handles this — if CLOSINGBALANCE has no unit suffix,
+    the unit comes from the dedicated BASEUNITS field.
+    CLOSINGRATE format: "38000.00/Nos" (number + slash + unit)
+    """
+    root = ET.fromstring(sanitize_xml(raw_xml))
+    items = []
+    for item in root.iter("STOCKITEM"):
+        name = _get_text(item, "NAME") or item.get("NAME", "")
+        if not name:
+            continue
+        cb_text = _get_text(item, "CLOSINGBALANCE")
+        qty = 0.0
+        unit = _get_text(item, "BASEUNITS")
+        if cb_text:
+            parts = cb_text.split()
+            if parts:
+                try:
+                    qty = float(parts[0].replace(",", ""))
+                except ValueError:
+                    pass
+                if len(parts) > 1 and not unit:
+                    unit = " ".join(parts[1:])
+        rate_text = _get_text(item, "CLOSINGRATE")
+        rate = 0.0
+        if rate_text:
+            rate_num = rate_text.split("/")[0].strip()
+            rate = parse_amount(rate_num)
+        items.append({
+            "name": name,
+            "parent_group": _get_text(item, "PARENT"),
+            "base_units": unit,
+            "closing_balance": qty,
+            "closing_rate": rate,
+            "closing_value": parse_amount(_get_text(item, "CLOSINGVALUE")),
+        })
+    return items
+
+
+def parse_groups(raw_xml: str) -> list[dict]:
+    """Parse CustomGroupList collection response."""
+    root = ET.fromstring(sanitize_xml(raw_xml))
+    groups = []
+    for group in root.iter("GROUP"):
+        name = _get_text(group, "NAME") or group.get("NAME", "")
+        if not name:
+            continue
+        groups.append({
+            "name": name,
+            "parent": _get_text(group, "PARENT"),
+        })
+    return groups

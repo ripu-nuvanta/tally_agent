@@ -3,7 +3,7 @@ import pytest
 from backend.tally_bridge.response_parser import (
     parse_amount, parse_trial_balance, parse_ledger_list, detect_error,
     parse_profit_and_loss, parse_balance_sheet, parse_stock_summary,
-    parse_bills, sanitize_xml,
+    parse_bills, sanitize_xml, parse_stock_items, parse_groups,
 )
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
@@ -546,3 +546,79 @@ class TestVoucherDateFiltering:
         result = parse_vouchers(xml, from_date="01-07-2025", to_date="31-07-2025")
         assert len(result) == 1
         assert result[0]["party_name"] == "InRange"
+
+
+# ---------------------------------------------------------------------------
+# parse_stock_items
+# ---------------------------------------------------------------------------
+class TestParseStockItems:
+    def test_parse_stock_items_extracts_fields(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <STOCKITEM NAME="HP Laptop 15s">
+            <NAME>HP Laptop 15s</NAME>
+            <PARENT>Electronics</PARENT>
+            <BASEUNITS>Nos</BASEUNITS>
+            <CLOSINGBALANCE>10.0000 Nos</CLOSINGBALANCE>
+            <CLOSINGRATE>38000.00/Nos</CLOSINGRATE>
+            <CLOSINGVALUE>380000.00</CLOSINGVALUE>
+        </STOCKITEM>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        items = parse_stock_items(xml)
+        assert len(items) == 1
+        assert items[0]["name"] == "HP Laptop 15s"
+        assert items[0]["parent_group"] == "Electronics"
+        assert items[0]["base_units"] == "Nos"
+        assert items[0]["closing_balance"] == 10.0
+        assert items[0]["closing_rate"] == 38000.0
+        assert items[0]["closing_value"] == 380000.0
+
+    def test_parse_stock_items_empty(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        items = parse_stock_items(xml)
+        assert items == []
+
+    def test_parse_stock_items_skips_nameless(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <STOCKITEM NAME="">
+            <NAME></NAME>
+        </STOCKITEM>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        items = parse_stock_items(xml)
+        assert items == []
+
+
+# ---------------------------------------------------------------------------
+# parse_groups
+# ---------------------------------------------------------------------------
+class TestParseGroups:
+    def test_parse_groups_extracts_fields(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <GROUP NAME="Sales Accounts">
+            <NAME>Sales Accounts</NAME>
+            <PARENT>Revenue</PARENT>
+        </GROUP>
+        <GROUP NAME="North Zone Debtors">
+            <NAME>North Zone Debtors</NAME>
+            <PARENT>Sundry Debtors</PARENT>
+        </GROUP>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        groups = parse_groups(xml)
+        assert len(groups) == 2
+        assert groups[0]["name"] == "Sales Accounts"
+        assert groups[0]["parent"] == "Revenue"
+
+    def test_parse_groups_empty(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        groups = parse_groups(xml)
+        assert groups == []
+
+    def test_parse_groups_skips_nameless(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <GROUP NAME="">
+            <NAME></NAME>
+        </GROUP>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        groups = parse_groups(xml)
+        assert groups == []

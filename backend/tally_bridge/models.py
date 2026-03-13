@@ -49,3 +49,17 @@ class OutstandingBill(BaseModel):
     amount: float
     pending_amount: float
     overdue_days: int | None = None
+
+
+class StockItem(BaseModel):
+    name: str
+    parent_group: str = ""
+    base_units: str = ""
+    closing_balance: float = 0.0
+    closing_rate: float = 0.0
+    closing_value: float = 0.0
+
+
+class AccountGroup(BaseModel):
+    name: str
+    parent: str = ""

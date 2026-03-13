@@ -1,5 +1,5 @@
 from datetime import date
-from backend.tally_bridge.models import (Company, Ledger, TrialBalanceRow, VoucherEntry, ReportResponse, OutstandingBill)
+from backend.tally_bridge.models import (Company, Ledger, TrialBalanceRow, VoucherEntry, ReportResponse, OutstandingBill, StockItem, AccountGroup)
 
 def test_company_minimal():
     c = Company(name="Bharat Traders Pvt Ltd")
@@ -53,3 +53,18 @@ def test_outstanding_bill_overdue_days_default_none():
         amount=10000, pending_amount=10000,
     )
     assert bill.overdue_days is None
+
+
+def test_stock_item_model():
+    item = StockItem(
+        name="HP Laptop 15s", parent_group="Electronics", base_units="Nos",
+        closing_balance=10.0, closing_rate=38000.0, closing_value=380000.0,
+    )
+    assert item.name == "HP Laptop 15s"
+    assert item.parent_group == "Electronics"
+
+
+def test_account_group_model():
+    group = AccountGroup(name="Sales Accounts", parent="Revenue")
+    assert group.name == "Sales Accounts"
+    assert group.parent == "Revenue"
