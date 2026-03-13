@@ -246,6 +246,7 @@ def _flatten_datasets(datasets: list) -> list[dict]:
 _COMPUTED_TOOL_NAMES = {
     "compute_totals", "compute_trend", "compute_period_comparison",
     "compute_percentage_change", "sort_by_field",
+    "code_execution",
 }
 
 
