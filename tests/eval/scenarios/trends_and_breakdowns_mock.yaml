@@ -1,0 +1,78 @@
+name: "Trends & Breakdowns (Mock)"
+description: "Mock-mode variant. Monthly cash flow, expense breakdowns, growth metrics"
+tags: [trends, stacked_bar, negative_values, growth, multi_series, mock]
+
+turns:
+  - query: "Show me monthly cash flow from October 2025 to March 2026"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [line, bar]
+      checks:
+        - "Shows both inflows and outflows or net cash flow"
+        - "Handles months with negative cash flow correctly"
+        - "X-axis shows months from Oct through Mar"
+
+  - query: "Break down expenses by category for each month"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [stacked_bar, grouped_bar, bar]
+      checks:
+        - "Shows multiple expense categories"
+        - "Each month has breakdown by category"
+        - "Chart has legend identifying each category"
+
+  - query: "What's the month-over-month growth in sales?"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: line
+      checks:
+        - "Shows percentage growth, not absolute amounts"
+        - "Handles first month correctly (no prior month for comparison)"
+        - "Line chart shows growth trend over time"
+
+  - query: "Show Q3 vs Q4 revenue and expenses"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      chart_type: [grouped_bar, bar]
+      checks:
+        - "Shows Q3 (Oct-Dec) and Q4 (Jan-Mar) with revenue and expenses"
+        - "Uses Indian FY quarter mapping"
+        - "Chart has two distinct series with legend"
+
+  - query: "Which months had negative cash flow?"
+    expect:
+      has_data: true
+      checks:
+        - "References cash flow data from turn 1"
+        - "Correctly identifies months where outflows exceeded inflows"
+        - "Does not confuse negative balance with negative cash flow"
+
+  - query: "Show purchase breakdown by vendor — top 10"
+    expect:
+      query_type: top_n
+      has_data: true
+      has_chart: true
+      chart_type: [bar, pie]
+      checks:
+        - "Shows exactly 10 or fewer vendors"
+        - "Sorted by purchase amount descending"
+        - "Chart labels are readable (not overlapping)"
+
+  - query: "Compare December expenses with January expenses — category-wise"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      chart_type: [grouped_bar, stacked_bar, bar]
+      checks:
+        - "Correctly identifies December 2025 and January 2026"
+        - "Shows category-level comparison between two months"
+        - "Chart clearly distinguishes the two months"

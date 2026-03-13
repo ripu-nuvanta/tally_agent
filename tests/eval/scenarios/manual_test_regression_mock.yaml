@@ -1,0 +1,54 @@
+name: "Manual Test Regression (Mock)"
+description: "Mock-mode variant. Uses parties and date ranges available in demo fixtures."
+tags: [regression, date_resolution, trends, comparison, mock]
+
+turns:
+  - query: "P&L last month"
+    expect:
+      has_data: true
+      checks:
+        - "Returns profit and loss data for the previous calendar month"
+        - "Date range is correct for last month (not full year)"
+        - "Income and expense categories shown"
+
+  - query: "show me sales trend over 25-26 FY"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      checks:
+        - "Shows monthly or periodic sales data for FY 2025-26"
+        - "Trend direction (growing/declining/stable) is mentioned"
+        - "Chart shows time-series data"
+        - "Total sales amount should be present as a summary row or in prose"
+
+  - query: "compare Q3 and Q4 results"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      checks:
+        - "Q3 maps to Oct-Dec 2025"
+        - "Q4 maps to Jan-Mar 2026"
+        - "Shows absolute and/or percentage difference"
+        - "Both quarters have distinct data"
+        - "Column totals should be present for each quarter"
+
+  - query: "Top 10 customers"
+    expect:
+      query_type: top_n
+      has_data: true
+      checks:
+        - "Lists up to 10 customers ranked by sales"
+        - "Amounts sorted in descending order"
+        - "Indian rupee formatting used"
+        - "Grand total of listed customers' sales should be present"
+
+  - query: "month-wise trend for Apex Technologies"
+    expect:
+      has_data: true
+      has_chart: true
+      checks:
+        - "Identifies Apex Technologies as a party/ledger"
+        - "Shows monthly breakdown of transactions or sales for Apex Technologies"
+        - "Chart shows time on X-axis with monthly data points"
