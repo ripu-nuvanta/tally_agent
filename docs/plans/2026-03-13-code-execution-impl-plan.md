@@ -1335,7 +1335,7 @@ git commit -m "docs: mark code execution tool design as implemented"
 
 ## Post-Implementation Notes
 
-**Status**: All 9 tasks COMPLETE. 13 commits (d5bcfbe..839e064).
+**Status**: All 9 tasks COMPLETE. 16 commits (d5bcfbe..b31a33a).
 
 ### Additional work beyond plan:
 - **Code review fixes** (commit 17de8d2): Guarded empty tool_result_entries in QueryAgent, fixed STRUCTURED_RESULT prompt format to match parser expectations
@@ -1357,12 +1357,29 @@ git commit -m "docs: mark code execution tool design as implemented"
 7. **Classifier over-routing to clarification_needed**: Added data-availability rule to classifier prompt — assume data exists in Tally, only use clarification_needed for genuinely ambiguous queries
 8. **Eval timeout**: Increased 120s → 180s to accommodate code_execution latency
 
-### Eval Results (run_20260313_205515, mock mode)
-- manual_test_regression_mock: 5/5 turns, all tables rendered, avg factual=4.6, quality=5.0, coherence=5.0
-- code_execution_validation_mock: 5/5 turns, 3 tables, turn 3 timeout (180s), turn 5 clarification instead of computation
+**Commit bd94f6a** — Chart numeric filtering + stock fixture + QueryAgent token limit:
+9. **ChartAgent numeric column filtering**: Added `_identify_numeric_columns()` to skip text/status columns from y_keys. Returns None when no numeric columns to chart.
+10. **Stock fixture closing balances**: `generate_stock_items_list()` now computes closing quantities (open - sold + purchased) matching `generate_stock_summary()` approach.
+11. **QueryAgent token waste**: max_tokens 4096→1024, stronger data-fetch-only prompt prevents 20s wasted computation.
+
+**Commit c31ae97** — Classifier tool awareness:
+12. **Classifier misrouting stock queries**: Added Tally tool names to orchestrator classifier prompt. Stock/inventory queries no longer misclassified as clarification_needed.
+
+**Commit b31a33a** — New eval scenario:
+13. **stock_reorder_mock.yaml**: Single-turn classifier regression test for stock reorder query.
+
+### Eval Results (run_20260313_223409 + 231027, mock mode)
+- manual_test_regression_mock: 5/5 turns, avg factual=4.4, quality=5.0, coherence=5.0, chart=4.3
+- code_execution_validation_mock: 4/5 turns (turn 5 failed — classifier bug, fixed in c31ae97)
+- stock_reorder_mock (post-fix): 1/1 turn, factual=4, quality=5, coherence=5, chart=4
+
+### Known Issue: Chart Rendering (next session)
+- Composed/secondary axis chart type exists but never triggers
+- Small and large scale values on same axis — charts hard to read
+- Stock reorder rendered chart but not meaningful (mixed numeric scales)
 
 ### Test counts:
-- Backend: 699 (unit + integration + e2e) — removed 1 QueryAgent code_exec test
+- Backend: 704 (565 unit + 120 integration + 19 e2e)
 - Frontend: 111 Vitest + 39 Playwright
 - e2e_live: 12 (gated by RUN_LIVE_TESTS=1)
-- Eval: 13 scenarios (8 base + 5 mock), 78 turns
+- Eval: 14 scenarios (8 base + 6 mock), 79 turns
