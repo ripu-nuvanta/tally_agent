@@ -24,6 +24,9 @@ STATIC_FIXTURES: dict[str, str] = {
     "Bills Receivable": "bills_receivable.xml",
     "Bills Payable": "bills_payable.xml",
     "Stock Summary": "stock_summary.xml",
+    "CustomStockItemList": "stock_items_list.xml",
+    "CustomGroupList": "groups_list.xml",
+    "Cash Flow": "cash_flow.xml",
 }
 
 # Voucher collections — return full data, Python filters by date

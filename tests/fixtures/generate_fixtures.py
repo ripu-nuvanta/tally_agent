@@ -764,6 +764,32 @@ def generate_bills_receivable() -> str:
     return "\n".join(lines)
 
 
+ACCOUNT_GROUPS = [
+    ("North Zone Debtors", "Sundry Debtors"),
+    ("South Zone Debtors", "Sundry Debtors"),
+    ("Sundry Debtors", "Current Assets"),
+    ("National Creditors", "Sundry Creditors"),
+    ("Local Creditors", "Sundry Creditors"),
+    ("Sundry Creditors", "Current Liabilities"),
+    ("Bank Accounts", "Current Assets"),
+    ("Cash-in-Hand", "Current Assets"),
+    ("Sales Accounts", "Revenue"),
+    ("Purchase Accounts", "Expenses"),
+    ("Indirect Expenses", "Expenses"),
+    ("Direct Expenses", "Expenses"),
+    ("Duties & Taxes", "Current Liabilities"),
+    ("Capital Account", "Capital Account"),
+    ("Current Assets", "Assets"),
+    ("Current Liabilities", "Liabilities"),
+    ("Revenue", "Income"),
+    ("Expenses", "Expenditure"),
+    ("Electronics", "Stock-in-Hand"),
+    ("Peripherals", "Stock-in-Hand"),
+    ("Office Supplies", "Stock-in-Hand"),
+    ("Stock-in-Hand", "Current Assets"),
+]
+
+
 def generate_bills_payable() -> str:
     """Generate bills_payable.xml from outstanding payables."""
     lines = ["<ENVELOPE>", "<BODY>", "<DATA>", "<TALLYMESSAGE>"]
@@ -805,6 +831,54 @@ def _last_purchase_date_for_party(party: str) -> str:
     return d.strftime("%-d-%b-%y")
 
 
+def generate_stock_items_list() -> str:
+    """Generate CustomStockItemList fixture from STOCK_ITEMS opening data.
+
+    Note: Uses opening values (not computed closing). TYPE=Collection master
+    queries return static item attributes, not date-dependent balances.
+    """
+    items_xml = []
+    for name, group, uom, _sell_rate, open_qty, open_rate, open_value in STOCK_ITEMS:
+        items_xml.append(f"""<STOCKITEM NAME="{name}">
+<NAME>{name}</NAME>
+<PARENT>{group}</PARENT>
+<BASEUNITS>{uom}</BASEUNITS>
+<CLOSINGBALANCE>{open_qty} {uom}</CLOSINGBALANCE>
+<CLOSINGRATE>{open_rate}/{uom}</CLOSINGRATE>
+<CLOSINGVALUE>{open_value:.2f}</CLOSINGVALUE>
+</STOCKITEM>""")
+    return f"""<ENVELOPE><BODY><DATA><COLLECTION>
+{"".join(items_xml)}
+</COLLECTION></DATA></BODY></ENVELOPE>"""
+
+
+def generate_groups_list() -> str:
+    """Generate CustomGroupList fixture."""
+    groups_xml = []
+    for name, parent in ACCOUNT_GROUPS:
+        safe_name = _xml_escape(name)
+        safe_parent = _xml_escape(parent)
+        groups_xml.append(f"""<GROUP NAME="{safe_name}">
+<NAME>{safe_name}</NAME>
+<PARENT>{safe_parent}</PARENT>
+</GROUP>""")
+    return f"""<ENVELOPE><BODY><DATA><COLLECTION>
+{"".join(groups_xml)}
+</COLLECTION></DATA></BODY></ENVELOPE>"""
+
+
+def generate_cash_flow() -> str:
+    """Generate a simple Cash Flow fixture using Trial Balance structure."""
+    return """<ENVELOPE>
+<DSPACCNAME><DSPDISPNAME>Cash from Operating Activities</DSPDISPNAME></DSPACCNAME>
+<DSPACCINFO><DSPCLDRAMT><DSPCLDRAMTA>-450000.00</DSPCLDRAMTA></DSPCLDRAMT><DSPCLCRAMT><DSPCLCRAMTA>0</DSPCLCRAMTA></DSPCLCRAMT></DSPACCINFO>
+<DSPACCNAME><DSPDISPNAME>Cash from Investing Activities</DSPDISPNAME></DSPACCNAME>
+<DSPACCINFO><DSPCLDRAMT><DSPCLDRAMTA>0</DSPCLDRAMTA></DSPCLDRAMT><DSPCLCRAMT><DSPCLCRAMTA>0</DSPCLCRAMTA></DSPCLCRAMT></DSPACCINFO>
+<DSPACCNAME><DSPDISPNAME>Cash from Financing Activities</DSPDISPNAME></DSPACCNAME>
+<DSPACCINFO><DSPCLDRAMT><DSPCLDRAMTA>0</DSPCLDRAMTA></DSPCLDRAMT><DSPCLCRAMT><DSPCLCRAMTA>750000.00</DSPCLCRAMTA></DSPCLCRAMT></DSPACCINFO>
+</ENVELOPE>"""
+
+
 # ╔═══════════════════════════════════════════════════════════════════╗
 # ║                           MAIN                                    ║
 # ╚═══════════════════════════════════════════════════════════════════╝
@@ -822,6 +896,9 @@ def main():
         "balance_sheet.xml": generate_balance_sheet(),
         "bills_receivable.xml": generate_bills_receivable(),
         "bills_payable.xml": generate_bills_payable(),
+        "stock_items_list.xml": generate_stock_items_list(),
+        "groups_list.xml": generate_groups_list(),
+        "cash_flow.xml": generate_cash_flow(),
     }
 
     for filename, content in files.items():

@@ -1,0 +1,69 @@
+<ENVELOPE><BODY><DATA><COLLECTION>
+<GROUP NAME="North Zone Debtors">
+<NAME>North Zone Debtors</NAME>
+<PARENT>Sundry Debtors</PARENT>
+</GROUP><GROUP NAME="South Zone Debtors">
+<NAME>South Zone Debtors</NAME>
+<PARENT>Sundry Debtors</PARENT>
+</GROUP><GROUP NAME="Sundry Debtors">
+<NAME>Sundry Debtors</NAME>
+<PARENT>Current Assets</PARENT>
+</GROUP><GROUP NAME="National Creditors">
+<NAME>National Creditors</NAME>
+<PARENT>Sundry Creditors</PARENT>
+</GROUP><GROUP NAME="Local Creditors">
+<NAME>Local Creditors</NAME>
+<PARENT>Sundry Creditors</PARENT>
+</GROUP><GROUP NAME="Sundry Creditors">
+<NAME>Sundry Creditors</NAME>
+<PARENT>Current Liabilities</PARENT>
+</GROUP><GROUP NAME="Bank Accounts">
+<NAME>Bank Accounts</NAME>
+<PARENT>Current Assets</PARENT>
+</GROUP><GROUP NAME="Cash-in-Hand">
+<NAME>Cash-in-Hand</NAME>
+<PARENT>Current Assets</PARENT>
+</GROUP><GROUP NAME="Sales Accounts">
+<NAME>Sales Accounts</NAME>
+<PARENT>Revenue</PARENT>
+</GROUP><GROUP NAME="Purchase Accounts">
+<NAME>Purchase Accounts</NAME>
+<PARENT>Expenses</PARENT>
+</GROUP><GROUP NAME="Indirect Expenses">
+<NAME>Indirect Expenses</NAME>
+<PARENT>Expenses</PARENT>
+</GROUP><GROUP NAME="Direct Expenses">
+<NAME>Direct Expenses</NAME>
+<PARENT>Expenses</PARENT>
+</GROUP><GROUP NAME="Duties &amp; Taxes">
+<NAME>Duties &amp; Taxes</NAME>
+<PARENT>Current Liabilities</PARENT>
+</GROUP><GROUP NAME="Capital Account">
+<NAME>Capital Account</NAME>
+<PARENT>Capital Account</PARENT>
+</GROUP><GROUP NAME="Current Assets">
+<NAME>Current Assets</NAME>
+<PARENT>Assets</PARENT>
+</GROUP><GROUP NAME="Current Liabilities">
+<NAME>Current Liabilities</NAME>
+<PARENT>Liabilities</PARENT>
+</GROUP><GROUP NAME="Revenue">
+<NAME>Revenue</NAME>
+<PARENT>Income</PARENT>
+</GROUP><GROUP NAME="Expenses">
+<NAME>Expenses</NAME>
+<PARENT>Expenditure</PARENT>
+</GROUP><GROUP NAME="Electronics">
+<NAME>Electronics</NAME>
+<PARENT>Stock-in-Hand</PARENT>
+</GROUP><GROUP NAME="Peripherals">
+<NAME>Peripherals</NAME>
+<PARENT>Stock-in-Hand</PARENT>
+</GROUP><GROUP NAME="Office Supplies">
+<NAME>Office Supplies</NAME>
+<PARENT>Stock-in-Hand</PARENT>
+</GROUP><GROUP NAME="Stock-in-Hand">
+<NAME>Stock-in-Hand</NAME>
+<PARENT>Current Assets</PARENT>
+</GROUP>
+</COLLECTION></DATA></BODY></ENVELOPE>
