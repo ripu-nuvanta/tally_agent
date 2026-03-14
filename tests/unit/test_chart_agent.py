@@ -13,6 +13,8 @@ from backend.agents.chart_agent import (
     _format_xy_data,
     _build_config,
     _EXCLUDED_CHART_COLUMNS,
+    _is_secondary_axis_column,
+    _is_excluded_column,
 )
 
 
@@ -497,6 +499,62 @@ class TestNonNumericColumnFiltering:
         assert "Item" not in result["config"]["y_keys"]
         assert "Status" not in result["config"]["y_keys"]
         assert "Days of Cover" in result["config"]["y_keys"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: Secondary axis detection — pattern-based
+# ---------------------------------------------------------------------------
+
+
+class TestSecondaryAxisDetection:
+    """Secondary axis should detect percentage columns beyond just 'Change %'."""
+
+    def test_detects_percentage_columns_as_secondary(self):
+        headers = ["Month", "Sales", "MoM %"]
+        rows = [["Jan", 100000, 5.2], ["Feb", 110000, 10.0]]
+        config = _build_config("line", headers, rows)
+        assert "MoM %" in config.get("secondary_y_keys", [])
+        assert "Sales" in config["y_keys"]
+        assert "MoM %" not in config["y_keys"]
+
+    def test_detects_vs_avg_percentage_as_secondary(self):
+        headers = ["Month", "Amount", "% vs Avg"]
+        rows = [["Jan", 100000, 15.3], ["Feb", 90000, -8.2]]
+        config = _build_config("bar", headers, rows)
+        assert "% vs Avg" in config.get("secondary_y_keys", [])
+        assert "Amount" in config["y_keys"]
+
+    def test_excludes_absolute_change_from_primary(self):
+        headers = ["Month", "Revenue", "MoM Change", "MoM %"]
+        rows = [["Jan", 500000, 0, 0], ["Feb", 550000, 50000, 10.0]]
+        config = _build_config("line", headers, rows)
+        assert "Revenue" in config["y_keys"]
+        assert "MoM Change" not in config["y_keys"]
+        assert "MoM %" in config.get("secondary_y_keys", [])
+
+    def test_standard_change_pct_still_works(self):
+        """Original 'Change %' header still detected as secondary."""
+        headers = ["Period", "Revenue", "Change", "Change %"]
+        rows = [["Jan", 1000, 200, 20.0], ["Feb", 1200, -100, -8.3]]
+        config = _build_config("line", headers, rows)
+        assert "Change %" in config.get("secondary_y_keys", [])
+        assert "Change" not in config["y_keys"]
+        assert "Revenue" in config["y_keys"]
+
+    def test_format_xy_data_includes_secondary_axis_columns(self):
+        """Secondary axis columns should be included in xy data even if not in numeric_cols."""
+        headers = ["Month", "Sales", "MoM %"]
+        rows = [["Jan", 100000, 5.2], ["Feb", 110000, 10.0]]
+        numeric_cols = {"Sales"}  # MoM % not in numeric_cols
+        result = _format_xy_data(headers, rows, numeric_cols)
+        assert "MoM %" in result[0]
+        assert result[0]["MoM %"] == 5.2
+
+    def test_generate_title_excludes_secondary_columns(self):
+        """Title should use primary value columns, not percentage columns."""
+        headers = ["Period", "Revenue", "MoM %"]
+        title = _generate_title("trend", headers)
+        assert title == "Trend Analysis: Revenue by Period"
 
 
 def test_trim_trailing_zeros_also_trims_leading():

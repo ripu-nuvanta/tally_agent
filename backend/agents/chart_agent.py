@@ -15,8 +15,29 @@ from typing import Any
 # Default color palette for Recharts
 DEFAULT_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4"]
 
-# Columns excluded from chart data points (absolute change is noise; Change % goes to secondary axis)
+# Columns excluded from chart data points (absolute change is noise; percentage cols go to secondary axis)
 _EXCLUDED_CHART_COLUMNS = {"Change"}
+
+
+def _is_secondary_axis_column(header: str) -> bool:
+    """Detect columns that belong on a secondary (percentage) axis."""
+    # Percentage columns → secondary axis
+    if "%" in header:
+        return True
+    return False
+
+
+def _is_excluded_column(header: str) -> bool:
+    """Detect columns that should be excluded from charts entirely."""
+    h = header.lower().strip()
+    if header in _EXCLUDED_CHART_COLUMNS:
+        return True
+    # Absolute change columns (not useful on same scale as primary values)
+    change_patterns = ("change", "delta", "difference", "variance")
+    # Only exclude if it looks like a change column but NOT a percentage
+    if "%" not in header and any(p in h for p in change_patterns):
+        return True
+    return False
 
 
 class ChartAgent:
@@ -154,7 +175,7 @@ def _generate_title(query_type: str, headers: list[str]) -> str:
         # Use first non-excluded numeric header for meaningful titles
         value_headers = [
             h for h in headers[1:]
-            if h not in _EXCLUDED_CHART_COLUMNS and h != "Change %"
+            if not _is_excluded_column(h) and not _is_secondary_axis_column(h)
         ]
         value_label = value_headers[0] if value_headers else headers[1]
         return f"{base}: {value_label} by {headers[0]}"
@@ -183,12 +204,13 @@ def _format_xy_data(
             continue
         point: dict[str, Any] = {"label": label}
         for i, header in enumerate(headers[1:], start=1):
-            if header in _EXCLUDED_CHART_COLUMNS:
+            if _is_excluded_column(header):
                 continue
             # When numeric_cols filter is active, skip non-numeric text columns.
-            # Always keep "Change %" — it is a secondary-axis value column even
-            # though _identify_numeric_columns() excludes it from primary y_keys.
-            if numeric_cols is not None and header not in numeric_cols and header != "Change %":
+            # Always keep secondary axis columns (e.g. "MoM %", "Change %") —
+            # they are value columns even though _identify_numeric_columns()
+            # excludes them from primary y_keys.
+            if numeric_cols is not None and header not in numeric_cols and not _is_secondary_axis_column(header):
                 continue
             if i < len(row):
                 point[header] = _to_numeric(row[i])
@@ -228,7 +250,7 @@ def _identify_numeric_columns(headers: list[str], rows: list[list]) -> set[str]:
     numeric_headers = set()
     for col_idx in range(1, len(headers)):
         header = headers[col_idx]
-        if header in _EXCLUDED_CHART_COLUMNS or header == "Change %":
+        if _is_excluded_column(header) or _is_secondary_axis_column(header):
             continue
         numeric_count = 0
         total = 0
@@ -257,10 +279,10 @@ def _build_config(chart_type: str, headers: list[str], rows: list[list] | None =
         numeric_cols = _identify_numeric_columns(headers, rows)
         y_keys = [h for h in headers[1:] if h in numeric_cols]
     else:
-        y_keys = [h for h in headers[1:] if h not in _EXCLUDED_CHART_COLUMNS and h != "Change %"]
+        y_keys = [h for h in headers[1:] if not _is_excluded_column(h) and not _is_secondary_axis_column(h)]
 
-    # Detect secondary axis data (Change % column)
-    secondary_y_keys = [h for h in headers[1:] if h == "Change %"]
+    # Detect secondary axis data (percentage columns)
+    secondary_y_keys = [h for h in headers[1:] if _is_secondary_axis_column(h)]
 
     # For numeric-only data, limit to actual value columns
     if chart_type == "pie":
