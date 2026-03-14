@@ -499,13 +499,18 @@ class AnalysisAgent:
                     logger.debug("AnalysisAgent turn %d — Claude text:\n%s", turn, block.text)
 
             if settings.CODE_EXECUTION_ENABLED:
-                for cer in extract_code_execution_results(response):
+                code_blocks = extract_code_execution_results(response)
+                for cer in code_blocks:
                     if cer["type"] == "code_written":
                         logger.info("AnalysisAgent turn %d — code_execution code:\n%s", turn, cer["code"])
                     elif cer["type"] == "code_result":
                         logger.info("AnalysisAgent turn %d — code_execution stdout:\n%s", turn, cer["stdout"])
                         if cer.get("stderr"):
                             logger.warning("AnalysisAgent turn %d — code_execution stderr:\n%s", turn, cer["stderr"])
+                if code_blocks:
+                    logger.info("AnalysisAgent — code_execution USED (%d block(s))", len(code_blocks))
+                else:
+                    logger.warning("AnalysisAgent — code_execution NOT USED (model skipped sandbox)")
 
             # Capture structured output from code execution
             if settings.CODE_EXECUTION_ENABLED:
@@ -518,6 +523,13 @@ class AnalysisAgent:
                         trend_table_data = last_table_data
                     elif query_type == "comparison":
                         comparison_table_data = last_table_data
+                if structured and "headers" in structured and "rows" in structured:
+                    logger.info(
+                        "AnalysisAgent — STRUCTURED_RESULT captured: %d headers, %d rows",
+                        len(structured.get("headers", [])), len(structured.get("rows", [])),
+                    )
+                else:
+                    logger.warning("AnalysisAgent — no STRUCTURED_RESULT captured")
 
             # ---- End turn: Claude produced a final text answer ----
             if response.stop_reason != "tool_use":

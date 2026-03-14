@@ -276,7 +276,12 @@ You have access to a Python code execution sandbox. Use it for ALL numerical
 computations: summing amounts, grouping by month, computing percentages, sorting,
 ranking, etc. Write and run Python code instead of calling dedicated analysis tools."""
 
-        rule_1 = "1. **Use code_execution for all computation** — write Python code, do not calculate numbers in your head."
+        rule_1 = (
+            "1. **Use code_execution for ALL computation** — CRITICAL: You MUST use the "
+            "code_execution sandbox for ALL computation, even simple arithmetic or comparisons. "
+            "NEVER compute values in your head or write results directly — always run Python code. "
+            "Without code_execution, charts cannot render."
+        )
 
         rule_12 = """\
 12. **Never manually compute**: NEVER extract or calculate numbers by reading individual \

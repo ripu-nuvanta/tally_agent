@@ -10,7 +10,7 @@ import type {
 const api = axios.create({
   baseURL: "/api",
   headers: { "Content-Type": "application/json" },
-  timeout: 120000,
+  timeout: 180000,
 });
 
 export async function sendChat(request: ChatRequest): Promise<ChatResponse> {
