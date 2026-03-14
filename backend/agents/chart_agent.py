@@ -95,6 +95,19 @@ class ChartAgent:
         # Prefer analysis agent's suggested title over auto-generated one
         title = data.get("chart_title") or _generate_title(query_type, headers)
         numeric_cols = _identify_numeric_columns(headers, rows)
+
+        # Force table_only if too many non-numeric columns (charts are unreadable)
+        non_label_headers = headers[1:]  # exclude first (label) column
+        non_numeric_count = sum(
+            1 for h in non_label_headers
+            if h not in numeric_cols
+            and not _is_secondary_axis_column(h)
+            and not _is_excluded_column(h)
+        )
+        if non_numeric_count >= 3:
+            logger.info("ChartAgent — %d non-numeric columns, forcing table_only", non_numeric_count)
+            return None
+
         chart_data = _format_chart_data(chart_type, headers, rows, numeric_cols)
         config = _build_config(chart_type, headers, rows)
 

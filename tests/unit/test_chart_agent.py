@@ -557,6 +557,79 @@ class TestSecondaryAxisDetection:
         assert title == "Trend Analysis: Revenue by Period"
 
 
+class TestTableOnlyOverride:
+    """ChartAgent should force table_only for wide tables with text columns."""
+
+    def test_force_table_only_when_many_non_numeric_columns(self):
+        """Tables with 3+ non-numeric columns should be table_only."""
+        agent = ChartAgent()
+        data = {
+            "data": {
+                "headers": ["Rank", "Item", "Group", "Stock", "Avg Sales", "Days", "Status"],
+                "rows": [
+                    [1, "Monitor", "Electronics", 20, 4.2, 141.7, "OK"],
+                    [2, "Laptop", "Electronics", 10, 1.8, 50.3, "Watch"],
+                    [3, "Desktop", "Electronics", 0, 1.3, 0, "Critical"],
+                ],
+            },
+            "chart_suggestion": "bar",
+        }
+        result = agent.execute(data, "top_n", True)
+        assert result is None  # table_only → None
+
+    def test_allows_chart_when_few_non_numeric_columns(self):
+        """Tables with 1-2 non-numeric columns (label + maybe one text) should chart."""
+        agent = ChartAgent()
+        data = {
+            "data": {
+                "headers": ["Customer", "Sales Amount"],
+                "rows": [
+                    ["Apex", 500000],
+                    ["Beta", 300000],
+                    ["Gamma", 200000],
+                ],
+            },
+            "chart_suggestion": "bar",
+        }
+        result = agent.execute(data, "top_n", True)
+        assert result is not None
+        assert result["chart_type"] == "bar"
+
+    def test_allows_chart_with_two_text_columns(self):
+        """Tables with exactly 2 non-numeric columns among non-label headers should still chart."""
+        agent = ChartAgent()
+        data = {
+            "data": {
+                "headers": ["Item", "Category", "Status", "Sales Amount"],
+                "rows": [
+                    ["Monitor", "Electronics", "OK", 500000],
+                    ["Laptop", "Electronics", "Watch", 300000],
+                    ["Printer", "Office", "OK", 200000],
+                ],
+            },
+            "chart_suggestion": "bar",
+        }
+        result = agent.execute(data, "top_n", True)
+        assert result is not None  # 2 text cols — under threshold
+
+    def test_excludes_secondary_axis_columns_from_non_numeric_count(self):
+        """Percentage columns on secondary axis should NOT count toward non-numeric."""
+        agent = ChartAgent()
+        data = {
+            "data": {
+                "headers": ["Month", "Revenue", "MoM %"],
+                "rows": [
+                    ["Jan", 500000, 5.2],
+                    ["Feb", 550000, 10.0],
+                    ["Mar", 600000, 9.1],
+                ],
+            },
+            "chart_suggestion": "line",
+        }
+        result = agent.execute(data, "trend", True)
+        assert result is not None  # MoM % is secondary axis, not a text column
+
+
 def test_trim_trailing_zeros_also_trims_leading():
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]
