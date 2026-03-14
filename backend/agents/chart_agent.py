@@ -248,7 +248,16 @@ def _format_xy_data(
 
 def _format_pie_data(headers: list[str], rows: list[list]) -> list[dict[str, Any]]:
     """Pie chart: label + value, max 7 slices (rest grouped as 'Others')."""
-    value_idx = min(1, len(headers) - 1)
+    # Find first numeric column by scanning rows (skip index 0 = label column)
+    value_idx = min(1, len(headers) - 1)  # default fallback
+    for col_idx in range(1, len(headers)):
+        for row in rows:
+            if col_idx < len(row) and _to_numeric(row[col_idx]) != 0.0:
+                value_idx = col_idx
+                break
+        else:
+            continue
+        break
     sorted_rows = sorted(rows, key=lambda r: abs(_to_numeric(r[value_idx]) if len(r) > value_idx else 0), reverse=True)
 
     data = []
@@ -354,7 +363,7 @@ def _to_numeric(val: Any) -> float:
     if isinstance(val, (int, float)):
         return float(val)
     if isinstance(val, str):
-        cleaned = val.replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
+        cleaned = val.replace("*", "").replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
         try:
             return float(cleaned)
         except ValueError:

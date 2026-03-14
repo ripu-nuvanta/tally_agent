@@ -289,12 +289,31 @@ vouchers/records yourself. Always use the code_execution sandbox with Python \
 (e.g. sum/groupby for totals, sorted() for rankings). Manual extraction leads to mismatched totals."""
 
         structured_rule_block = """
-14. **Structured output**: When your code_execution computes a result table, ALWAYS \
-print the final structured data on the LAST line of stdout using this exact format:
-STRUCTURED_RESULT:{"headers": ["Col1", "Col2"], "rows": [["val1", 123], ["val2", 456]]}
-Headers must be strings. Row values: use numbers for numeric data (not strings). \
-You may print other text before this line — only the STRUCTURED_RESULT line is \
-captured for table/chart rendering.
+14. **Structured output — CRITICAL for charts**: Your code_execution MUST print \
+a STRUCTURED_RESULT line as the LAST line of stdout. Without this, charts will \
+not render. Print markdown tables for readability AND the JSON line for data:
+
+Example:
+```python
+import json
+headers = ['Customer', 'Sales Amount (₹)', '% of Total']
+rows = [['Global IT Solutions', 708500, 34.4], ['Patel Enterprises', 377000, 18.3]]
+
+# 1. Print markdown for readability
+print('| ' + ' | '.join(headers) + ' |')
+print('|' + '|'.join(['---'] * len(headers)) + '|')
+for row in rows:
+    print('| ' + ' | '.join(str(v) for v in row) + ' |')
+
+# 2. ALWAYS print STRUCTURED_RESULT as LAST line (required for charts)
+print(f'STRUCTURED_RESULT:{json.dumps({"headers": headers, "rows": rows})}')
+```
+
+Rules:
+- Headers: strings. Row values: numbers for numeric data, strings for text.
+- STRUCTURED_RESULT MUST be the LAST line printed.
+- Do NOT wrap numbers in quotes — use 708500 not '₹7,08,500'.
+- Do NOT use bold (**) or formatting in STRUCTURED_RESULT values.
 
 15. **Standard column naming for charts**: Use these EXACT header names in \
 STRUCTURED_RESULT so the chart renderer can detect axes correctly:

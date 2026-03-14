@@ -900,3 +900,20 @@ class TestMarkdownTableFallbackIntegration:
 
         # STRUCTURED_RESULT should win
         assert result["data"]["headers"] == ["X", "Y"]
+
+
+def test_parse_markdown_table_strips_bold():
+    """Bold markers in markdown table cells should be stripped."""
+    from backend.agents.analysis_agent import _parse_markdown_table
+    text = '''
+| Metric | Q3 | Q4 | Change % |
+|---|---|---|---|
+| Revenue | ₹11,91,250 | ₹8,66,400 | **-27.3%** |
+| Gross Profit | **-₹4,83,350** | **+₹5,64,700** | **+216.8%** |
+'''
+    result = _parse_markdown_table(text)
+    assert result is not None
+    # Bold markers should be stripped
+    assert result["rows"][1][1] == "-₹4,83,350"
+    assert result["rows"][1][2] == "+₹5,64,700"
+    assert result["rows"][0][3] == "-27.3%"

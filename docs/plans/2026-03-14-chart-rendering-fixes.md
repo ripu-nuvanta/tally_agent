@@ -12,6 +12,27 @@
 - Eval scenario expanded: `stock_reorder_mock.yaml` → 7-turn chart rendering test
 - 3 new Playwright fixtures: stock_reorder_table_only, monthly_trend_dual_axis, top_customers_filtered
 
+### Phase 13b Fixes (from eval run 17 — 2026-03-14)
+
+Root cause investigation of stock_reorder_mock eval revealed 3 chart bugs + 2 robustness improvements:
+
+**Bug fixes:**
+- B1: `_format_pie_data` hardcoded `value_idx=1` → picks text column "Group" instead of numeric "Amount". Fixed to scan for first numeric column dynamically.
+- B2: `_to_numeric` didn't strip markdown bold markers (`**`). `float("**-483350**")` → 0.0. Added `.replace("*", "")`.
+- B3: Orchestrator auto-enabled charts for aggregation queries, ignoring user's "show as a table" intent. Added `_has_table_intent()` helper with 7 patterns.
+
+**Robustness:**
+- C1: `_parse_markdown_table` now strips `*` from headers and cells after parsing — defense in depth for bold markers.
+- C3: Strengthened Rule 14 in AnalysisAgent prompt with concrete Python example showing how to print BOTH markdown table AND STRUCTURED_RESULT JSON.
+
+**Tests:** 608 unit (up from 591 — +17 new tests)
+
+**Files modified:** `chart_agent.py`, `orchestrator.py`, `analysis_agent.py`, `prompts.py`, `test_chart_agent.py`, `test_orchestrator.py`, `test_analysis_agent.py`
+
+**Known remaining issues (for future phases):**
+- Turn 7 truncation: QueryAgent uses prior conversation data (0 tool calls), AnalysisAgent skipped, max_tokens=1024 truncates. See architecture exploration doc.
+- STRUCTURED_RESULT inconsistency: Model prints markdown but not JSON in 5/6 turns. Prompt improvement (C3) applied, needs eval validation.
+
 **Goal:** Fix 6 chart rendering bugs so ChartAgent produces correct, readable charts (or skips charts when table_only is appropriate).
 
 **Architecture:** All fixes are in `chart_agent.py` (rule-based, no API calls) and `prompts.py` (AnalysisAgent prompt guidance). The ChartAgent pipeline: `_select_chart_type()` → `_format_chart_data()` → `_build_config()`. Three data-flow bugs and one prompt improvement.

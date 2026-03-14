@@ -630,6 +630,30 @@ class TestTableOnlyOverride:
         assert result is not None  # MoM % is secondary axis, not a text column
 
 
+def test_format_pie_data_skips_text_columns():
+    """Pie chart picks first numeric column, not hardcoded index 1."""
+    from backend.agents.chart_agent import _format_pie_data
+    headers = ["Expense Ledger", "Group", "Amount (₹)", "% of Total"]
+    rows = [
+        ["Purchase - Electronics", "Purchase Accounts", "₹23,22,100.00", "60.1%"],
+        ["Salaries", "Indirect Expenses", "₹10,00,000.00", "25.9%"],
+        ["Rent", "Indirect Expenses", "₹3,00,000.00", "7.8%"],
+    ]
+    data = _format_pie_data(headers, rows)
+    assert data[0]["value"] > 0, f"Expected numeric value, got {data[0]['value']}"
+    assert data[0]["value"] == 2322100.0  # Amount column, not Group
+
+
+def test_to_numeric_strips_bold_markers():
+    """Bold markdown markers should not break numeric parsing."""
+    from backend.agents.chart_agent import _to_numeric
+    assert _to_numeric("**-₹4,83,350**") == -483350.0
+    assert _to_numeric("**+₹5,64,700**") == 564700.0
+    assert _to_numeric("**-27.3%**") == -27.3
+    assert _to_numeric("**+216.8%**") == 216.8
+    assert _to_numeric("**100.0%**") == 100.0
+
+
 def test_trim_trailing_zeros_also_trims_leading():
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]

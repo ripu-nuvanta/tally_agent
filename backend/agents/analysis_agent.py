@@ -732,7 +732,7 @@ def _parse_markdown_table(text: str) -> dict | None:
 
     # Parse header (first row)
     header_line = block[0]
-    headers = [cell.strip() for cell in header_line.split("|")[1:-1]]
+    headers = [cell.strip().replace("*", "") for cell in header_line.split("|")[1:-1]]
 
     # Verify separator (second row) — should look like |---|---|
     separator = block[1]
@@ -742,7 +742,7 @@ def _parse_markdown_table(text: str) -> dict | None:
     # Parse data rows
     rows: list[list[str]] = []
     for row_line in block[2:]:
-        cells = [cell.strip() for cell in row_line.split("|")[1:-1]]
+        cells = [cell.strip().replace("*", "") for cell in row_line.split("|")[1:-1]]
         # Pad or trim to match header count
         while len(cells) < len(headers):
             cells.append("")

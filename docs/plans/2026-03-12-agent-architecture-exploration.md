@@ -93,6 +93,66 @@ Option C1 was implemented as part of Phase 12 post-implementation fixes:
 
 ---
 
+## Future Architecture Explorations (from Phase 13b eval — 2026-03-14)
+
+### F1: Merge QueryAgent into AnalysisAgent
+
+**Problem identified in eval run 17 (Turn 7):** QueryAgent used prior conversation data (0 tool calls) to compute an answer, hitting max_tokens=1024. AnalysisAgent was skipped because `if raw_tally_data or computed_data:` was False. Result: truncated response, no chart, no structured data.
+
+**Root question:** Do we need QueryAgent at all? If AnalysisAgent had Tally tools + code_execution, it could fetch data AND compute in one agent, eliminating:
+- The handover gap (prior data not flowing to AnalysisAgent)
+- The routing condition that skips AnalysisAgent
+- Token waste from two-agent conversation histories
+
+**Risks:**
+- Larger tool set may confuse model (18 Tally tools + code_execution + analysis tools)
+- Session context grows faster with combined history
+- Need to validate with eval that single-agent doesn't regress accuracy
+
+**Alternative (incremental):** Keep both agents but route to AnalysisAgent unconditionally for _ANALYSIS_TYPES, even when 0 tool calls. Pass QueryAgent's text response as context. Lower risk but doesn't solve the root architecture question.
+
+### F2: Prior Conversation Data Flow
+
+Currently AnalysisAgent receives only raw_tally_data and computed_data from tool results. It does NOT receive:
+- Prior conversation context (previous turns' data)
+- QueryAgent's synthesized text when it used cached/conversation data
+- Session-level data cache
+
+**Options:**
+- A: Pass last N messages to AnalysisAgent (simple, but grows context)
+- B: Maintain a session-level data cache that both agents read (cleaner, more work)
+- C: Merge agents (F1 above) so conversation context is naturally shared
+
+### F3: Streaming Output
+
+Add SSE/WebSocket streaming for long-running queries (Turn 6 took 129.9s). User sees:
+- "Fetching data from Tally..." → "Analyzing..." → "Generating chart..." → final response
+- Requires frontend SSE handler + backend async generator
+
+### F4: XML-Tagged Structured Output
+
+Replace plain-text `STRUCTURED_RESULT:` prefix with XML tags for more robust parsing:
+```
+<Message>
+User-facing narrative and analysis text here...
+</Message>
+<STRUCTURED_RESULT>
+{"headers": [...], "rows": [...]}
+</STRUCTURED_RESULT>
+```
+
+**Benefits:**
+- XML tags are unambiguous (no risk of prefix appearing in normal text)
+- Can add more structured sections: `<ChartSuggestion>`, `<Insights>`, etc.
+- Claude models handle XML tags well in structured output
+- Eliminates markdown table parsing fallback entirely
+
+**Risks:**
+- Prompt change + parser change needed
+- Need to validate model compliance with XML tags via eval
+
+---
+
 ## Company Selector — End-to-End Implementation
 
 ### Current State

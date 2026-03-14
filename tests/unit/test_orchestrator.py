@@ -1096,3 +1096,161 @@ class TestAnalysisPromptColumnNamingRules:
         assert any(v in prompt for v in forbidden_variants), (
             "Prompt should list at least one forbidden column name variant"
         )
+
+
+# ---------------------------------------------------------------------------
+# Tests: _has_table_intent — Bug B3
+# ---------------------------------------------------------------------------
+
+
+class TestHasTableIntent:
+    """Bug B3: User saying 'show as a table' should suppress chart generation."""
+
+    def test_positive_show_as_a_table(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show sales as a table") is True
+
+    def test_positive_in_table_format(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show P&L in table format") is True
+
+    def test_positive_table_only(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Give me table only") is True
+
+    def test_positive_just_a_table(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("I want just a table") is True
+
+    def test_positive_only_table(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show only table please") is True
+
+    def test_positive_no_chart(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Sales report no chart") is True
+
+    def test_positive_case_insensitive(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show As A Table") is True
+        assert _has_table_intent("NO CHART please") is True
+
+    def test_negative_normal_query(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show me total sales") is False
+
+    def test_negative_show_me_the_data(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show me the data") is False
+
+    def test_negative_chart_request(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show sales as a bar chart") is False
+
+    def test_negative_empty_string(self):
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("") is False
+
+    def test_negative_table_word_alone(self):
+        """The word 'table' alone should NOT trigger table-only intent."""
+        from backend.agents.orchestrator import _has_table_intent
+        assert _has_table_intent("Show the balance sheet table") is False
+
+
+class TestTableIntentSuppressesChart:
+    """Integration: table-only intent should prevent chart agent from being called."""
+
+    @pytest.mark.asyncio
+    async def test_table_intent_suppresses_chart_for_aggregation(self):
+        """User saying 'as a table' on an aggregation query should NOT call chart agent."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "aggregation",
+            "requires_chart": True,
+            "reasoning": "User wants totals",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+            orch = Orchestrator()
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
+            ):
+                mock_query.return_value = {
+                    "message": "Total sales",
+                    "tool_results": [
+                        {"tool_name": "get_sales_register", "tool_input": {}, "result": {"success": True, "data": [{"party": "A", "amount": 100}]}},
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": "Total: ₹100",
+                    "data": [{"party": "A", "amount": 100}],
+                    "tool_results": [],
+                    "chart_suggestion": "bar",
+                }
+
+                result = await orch.process_query(
+                    "Show total sales as a table", mock_client, session
+                )
+
+                # Chart agent should NOT have been called
+                mock_chart.assert_not_called()
+
+        assert result["chart"] is None
+
+    @pytest.mark.asyncio
+    async def test_no_table_intent_still_auto_enables_chart(self):
+        """Normal aggregation query (no table intent) should still auto-enable chart."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "aggregation",
+            "requires_chart": False,
+            "reasoning": "User wants totals",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+            orch = Orchestrator()
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
+            ):
+                mock_query.return_value = {
+                    "message": "Total sales",
+                    "tool_results": [
+                        {"tool_name": "get_sales_register", "tool_input": {}, "result": {"success": True, "data": [{"party": "A", "amount": 100}]}},
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": "Total: ₹100",
+                    "data": [{"party": "A", "amount": 100}],
+                    "tool_results": [],
+                    "chart_suggestion": "bar",
+                }
+                mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
+
+                result = await orch.process_query(
+                    "Show total sales", mock_client, session
+                )
+
+                # Chart agent SHOULD have been called (auto-enable)
+                mock_chart.assert_called_once()
+
+        assert result["chart"] is not None

@@ -34,6 +34,18 @@ from backend.utils.date_utils import format_for_tally
 # Query types that require analysis post-processing
 _ANALYSIS_TYPES = {"comparison", "trend", "top_n", "aggregation"}
 
+# Patterns indicating user wants table-only output (no chart)
+_TABLE_INTENT_PATTERNS = (
+    "show as a table", "as a table", "in table format",
+    "table only", "just a table", "only table", "no chart",
+)
+
+
+def _has_table_intent(user_message: str) -> bool:
+    """Return True if the user message explicitly requests table-only output."""
+    lower = user_message.lower()
+    return any(p in lower for p in _TABLE_INTENT_PATTERNS)
+
 # Module-level client — tests patch this object.
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
 
@@ -80,8 +92,11 @@ class Orchestrator:
         query_type = classification.get("query_type", "simple_lookup")
         requires_chart = classification.get("requires_chart", False)
 
-        # Auto-enable chart for chart-worthy query types
-        if not requires_chart and query_type in ("trend", "comparison", "top_n", "aggregation"):
+        # Respect explicit table-only intent from user message
+        if _has_table_intent(user_message):
+            requires_chart = False
+            logger.info("Orchestrator — user requested table-only, suppressing chart")
+        elif not requires_chart and query_type in ("trend", "comparison", "top_n", "aggregation"):
             requires_chart = True
             logger.info("Orchestrator — auto-enabling chart for query_type=%s", query_type)
 
