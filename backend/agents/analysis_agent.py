@@ -523,12 +523,11 @@ class AnalysisAgent:
                         trend_table_data = last_table_data
                     elif query_type == "comparison":
                         comparison_table_data = last_table_data
-                if structured and "headers" in structured and "rows" in structured:
                     logger.info(
                         "AnalysisAgent — STRUCTURED_RESULT captured: %d headers, %d rows",
-                        len(structured.get("headers", [])), len(structured.get("rows", [])),
+                        len(structured["headers"]), len(structured["rows"]),
                     )
-                else:
+                elif response.stop_reason != "tool_use":
                     logger.warning("AnalysisAgent — no STRUCTURED_RESULT captured")
 
             # ---- End turn: Claude produced a final text answer ----
