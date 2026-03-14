@@ -10,7 +10,10 @@ Exports:
 
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # Default color palette for Recharts
 DEFAULT_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC4899", "#06B6D4"]
@@ -65,6 +68,7 @@ class ChartAgent:
 
         table_data = _extract_table_data(data)
         if not table_data or not table_data.get("rows"):
+            logger.info("ChartAgent — no table data, skipping chart")
             return None
 
         headers = table_data["headers"]
@@ -79,8 +83,13 @@ class ChartAgent:
         # Use analysis agent's suggestion if available, otherwise infer from query_type
         chart_suggestion = data.get("chart_suggestion", "")
         chart_type = _select_chart_type(chart_suggestion, query_type, rows)
+        logger.info(
+            "ChartAgent — suggestion=%r, query_type=%s, rows=%d, selected=%s",
+            chart_suggestion, query_type, len(rows), chart_type,
+        )
 
         if chart_type == "table_only":
+            logger.info("ChartAgent — table_only, returning None")
             return None
 
         # Prefer analysis agent's suggested title over auto-generated one
@@ -91,11 +100,17 @@ class ChartAgent:
 
         # No numeric columns to chart → skip
         if not config["y_keys"]:
+            logger.info("ChartAgent — no numeric y_keys, returning None")
             return None
 
         # Override to composed chart when secondary axis data is present
         if config.get("secondary_y_keys"):
             chart_type = "composed"
+
+        logger.info(
+            "ChartAgent — chart_type=%s, y_keys=%s, secondary=%s",
+            chart_type, config["y_keys"], config.get("secondary_y_keys", []),
+        )
 
         return {
             "chart_type": chart_type,
