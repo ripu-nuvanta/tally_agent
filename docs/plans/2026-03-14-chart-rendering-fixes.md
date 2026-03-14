@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Status:** COMPLETE (2026-03-14) — 15 commits (3b7c9cc..2fc5d0b), 731 BE + 116 FE + 48 PW = 895 tests
+**Status:** COMPLETE (2026-03-14) — 17 commits (3b7c9cc..5c9975f), 750 BE + 116 FE + 48 PW = 914 tests
 
 ### Post-Plan Fixes (from eval run)
 - FE axios timeout: 120s → 180s (`frontend/src/api/client.ts`)
@@ -25,7 +25,11 @@ Root cause investigation of stock_reorder_mock eval revealed 3 chart bugs + 2 ro
 - C1: `_parse_markdown_table` now strips `*` from headers and cells after parsing — defense in depth for bold markers.
 - C3: Strengthened Rule 14 in AnalysisAgent prompt with concrete Python example showing how to print BOTH markdown table AND STRUCTURED_RESULT JSON.
 
-**Tests:** 608 unit (up from 591 — +17 new tests)
+**Code review fixes (commit 5c9975f):**
+- `_identify_numeric_columns` also strips `*` for consistency with `_to_numeric`
+- `_format_pie_data` returns empty list when no numeric data found (prevents all-zero pie)
+
+**Tests:** 610 unit (up from 591 — +19 new tests)
 
 **Files modified:** `chart_agent.py`, `orchestrator.py`, `analysis_agent.py`, `prompts.py`, `test_chart_agent.py`, `test_orchestrator.py`, `test_analysis_agent.py`
 
