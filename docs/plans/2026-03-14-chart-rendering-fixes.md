@@ -1,6 +1,8 @@
 # Chart Rendering Fixes Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
+
+**Status:** COMPLETE (2026-03-14) — 8 commits (3b7c9cc..d17dd66), 720 BE + 116 FE + 48 PW = 884 tests
 
 **Goal:** Fix 6 chart rendering bugs so ChartAgent produces correct, readable charts (or skips charts when table_only is appropriate).
 
@@ -31,7 +33,7 @@
 - Modify: `backend/agents/chart_agent.py:106-118`
 - Test: `tests/unit/test_chart_agent.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # In tests/unit/test_chart_agent.py, in class TestSelectChartType:
@@ -44,12 +46,12 @@ def test_table_only_suggestion_is_honored(self):
     assert _select_chart_type("table_only", "aggregation", rows) == "table_only"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_chart_agent.py::TestSelectChartType::test_table_only_suggestion_is_honored -v`
 Expected: FAIL — returns `"grouped_bar"`, `"bar"`, `"pie"` instead of `"table_only"`
 
-- [ ] **Step 3: Update existing test that asserts the wrong behavior**
+- [x] **Step 3: Update existing test that asserts the wrong behavior**
 
 The existing `test_table_only_suggestion_defers_to_query_type` (line ~60) asserts the WRONG behavior. Delete or update it:
 
@@ -60,7 +62,7 @@ The existing `test_table_only_suggestion_defers_to_query_type` (line ~60) assert
 #     assert _select_chart_type("table_only", "comparison", rows) == "grouped_bar"
 ```
 
-- [ ] **Step 4: Fix `_select_chart_type()` to honor `table_only`**
+- [x] **Step 4: Fix `_select_chart_type()` to honor `table_only`**
 
 In `backend/agents/chart_agent.py`, change line 117 from:
 
@@ -78,12 +80,12 @@ to:
 
 This makes `table_only` a first-class suggestion that ChartAgent respects. The `execute()` method already handles `chart_type == "table_only"` by returning `None` (line 62-63).
 
-- [ ] **Step 5: Run tests to verify**
+- [x] **Step 5: Run tests to verify**
 
 Run: `pytest tests/unit/test_chart_agent.py -v --tb=short`
 Expected: All pass (new test passes, old test deleted)
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/agents/chart_agent.py tests/unit/test_chart_agent.py
@@ -100,7 +102,7 @@ git commit -m "fix: honor table_only chart suggestion instead of deferring to qu
 - Modify: `backend/agents/chart_agent.py:163-188` and line 67
 - Test: `tests/unit/test_chart_agent.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # In tests/unit/test_chart_agent.py, in class TestNonNumericColumnFiltering:
@@ -120,12 +122,12 @@ def test_format_xy_data_excludes_non_numeric_columns(self):
     assert result[1] == {"label": "Laptop", "Stock": 10.0, "Days": 50.3}
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_chart_agent.py::TestNonNumericColumnFiltering::test_format_xy_data_excludes_non_numeric_columns -v`
 Expected: FAIL — `_format_xy_data()` doesn't accept `numeric_cols` parameter
 
-- [ ] **Step 3: Add `numeric_cols` parameter to `_format_xy_data()`**
+- [x] **Step 3: Add `numeric_cols` parameter to `_format_xy_data()`**
 
 In `backend/agents/chart_agent.py`, change the function signature and filter logic:
 
@@ -151,7 +153,7 @@ def _format_xy_data(
     return data
 ```
 
-- [ ] **Step 4: Pass `numeric_cols` from `_format_chart_data()` and `execute()`**
+- [x] **Step 4: Pass `numeric_cols` from `_format_chart_data()` and `execute()`**
 
 Update `_format_chart_data()` to accept and pass `numeric_cols`:
 
@@ -173,12 +175,12 @@ Update `execute()` to compute `numeric_cols` once and pass it through. Around li
         config = _build_config(chart_type, headers, rows)
 ```
 
-- [ ] **Step 5: Run tests to verify**
+- [x] **Step 5: Run tests to verify**
 
 Run: `pytest tests/unit/test_chart_agent.py -v --tb=short`
 Expected: All pass. Existing `_format_xy_data` tests still pass because `numeric_cols=None` preserves old behavior.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/agents/chart_agent.py tests/unit/test_chart_agent.py
@@ -198,7 +200,7 @@ git commit -m "fix: filter text columns from chart data points in _format_xy_dat
 - Modify: `backend/agents/prompts.py` (structured_rule_block)
 - Test: `tests/unit/test_chart_agent.py`
 
-- [ ] **Step 1: Write the failing test for broader secondary axis detection**
+- [x] **Step 1: Write the failing test for broader secondary axis detection**
 
 ```python
 # In tests/unit/test_chart_agent.py, add new class:
@@ -230,12 +232,12 @@ class TestSecondaryAxisDetection:
         assert "MoM %" in config.get("secondary_y_keys", [])
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `pytest tests/unit/test_chart_agent.py::TestSecondaryAxisDetection -v`
 Expected: FAIL — `"MoM %"` not detected as secondary
 
-- [ ] **Step 3: Implement pattern-based detection**
+- [x] **Step 3: Implement pattern-based detection**
 
 Replace the hardcoded detection in `_build_config()` and `_identify_numeric_columns()`. Add a helper:
 
@@ -308,12 +310,12 @@ Update `_build_config()` secondary detection:
     secondary_y_keys = [h for h in headers[1:] if _is_secondary_axis_column(h)]
 ```
 
-- [ ] **Step 4: Run tests to verify**
+- [x] **Step 4: Run tests to verify**
 
 Run: `pytest tests/unit/test_chart_agent.py -v --tb=short`
 Expected: All pass including new secondary axis tests
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/agents/chart_agent.py tests/unit/test_chart_agent.py
@@ -329,7 +331,7 @@ git commit -m "fix: detect percentage/change columns for secondary axis and excl
 **Files:**
 - Modify: `backend/agents/chart_agent.py:1-10` and `execute()` method
 
-- [ ] **Step 1: Add logging to `execute()` method**
+- [x] **Step 1: Add logging to `execute()` method**
 
 Add import at top of file:
 
@@ -382,12 +384,12 @@ Add log lines in `execute()`:
         return { ... }
 ```
 
-- [ ] **Step 2: Run tests to verify nothing breaks**
+- [x] **Step 2: Run tests to verify nothing breaks**
 
 Run: `pytest tests/unit/test_chart_agent.py -v --tb=short`
 Expected: All pass (logging is side-effect only)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add backend/agents/chart_agent.py
@@ -406,7 +408,7 @@ git commit -m "feat: add logging to ChartAgent for chart pipeline debugging"
 - Modify: `backend/agents/prompts.py:286-292` (structured_rule_block, code_execution_enabled=True)
 - Test: `tests/unit/test_prompts.py` (or `tests/unit/test_analysis_agent.py`)
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # In tests/unit/test_orchestrator.py or a new test:
@@ -419,12 +421,12 @@ def test_analysis_prompt_contains_column_naming_rules():
     assert "column naming" in prompt.lower() or "standard column" in prompt.lower()
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_orchestrator.py::test_analysis_prompt_contains_column_naming_rules -v`
 Expected: FAIL — no column naming rules in current prompt
 
-- [ ] **Step 3: Update the structured_rule_block in prompts.py**
+- [x] **Step 3: Update the structured_rule_block in prompts.py**
 
 In `build_analysis_agent_prompt()`, update the `structured_rule_block` (code_execution_enabled=True branch, around line 286):
 
@@ -446,12 +448,12 @@ STRUCTURED_RESULT so the chart renderer can detect axes correctly:
    - Keep the first column as the label/category (e.g. "Month", "Item", "Ledger")."""
 ```
 
-- [ ] **Step 4: Run tests to verify**
+- [x] **Step 4: Run tests to verify**
 
 Run: `pytest tests/unit/ -v --tb=short -x`
 Expected: All pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/agents/prompts.py tests/unit/test_orchestrator.py
@@ -468,7 +470,7 @@ git commit -m "feat: add standard column naming rules to AnalysisAgent prompt fo
 - Modify: `backend/agents/chart_agent.py:106-139`
 - Test: `tests/unit/test_chart_agent.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 # In tests/unit/test_chart_agent.py:
@@ -512,12 +514,12 @@ class TestTableOnlyOverride:
         assert result["chart_type"] == "bar"
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `pytest tests/unit/test_chart_agent.py::TestTableOnlyOverride -v`
 Expected: FAIL — first test returns a chart instead of None
 
-- [ ] **Step 3: Add override logic in `execute()` method**
+- [x] **Step 3: Add override logic in `execute()` method**
 
 In `backend/agents/chart_agent.py`, add after computing `numeric_cols` but before `_format_chart_data`:
 
@@ -534,12 +536,12 @@ In `backend/agents/chart_agent.py`, add after computing `numeric_cols` but befor
         chart_data = _format_chart_data(chart_type, headers, rows, numeric_cols)
 ```
 
-- [ ] **Step 4: Run tests to verify**
+- [x] **Step 4: Run tests to verify**
 
 Run: `pytest tests/unit/test_chart_agent.py -v --tb=short`
 Expected: All pass
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/agents/chart_agent.py tests/unit/test_chart_agent.py
@@ -550,21 +552,21 @@ git commit -m "fix: force table_only when table has 3+ non-numeric columns"
 
 ## Final Verification
 
-- [ ] **Run all backend tests**
+- [x] **Run all backend tests**
 
 ```bash
 ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/ --tb=short 2>&1 | tail -5
 ```
 Expected: 704+ tests pass, 0 failures
 
-- [ ] **Run frontend tests**
+- [x] **Run frontend tests**
 
 ```bash
 cd frontend && npm test
 ```
 Expected: 111 tests pass
 
-- [ ] **Final commit (if any adjustments)**
+- [x] **Final commit (if any adjustments)**
 
 ```bash
 git log --oneline -6  # Verify 6 clean commits
