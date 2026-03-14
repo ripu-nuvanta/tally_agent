@@ -2,7 +2,15 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [x]`) syntax for tracking.
 
-**Status:** COMPLETE (2026-03-14) — 8 commits (3b7c9cc..d17dd66), 720 BE + 116 FE + 48 PW = 884 tests
+**Status:** COMPLETE (2026-03-14) — 15 commits (3b7c9cc..2fc5d0b), 731 BE + 116 FE + 48 PW = 895 tests
+
+### Post-Plan Fixes (from eval run)
+- FE axios timeout: 120s → 180s (`frontend/src/api/client.ts`)
+- Code execution logging: USED/NOT USED + STRUCTURED_RESULT captured/missing (`analysis_agent.py`)
+- Prompt compliance: CRITICAL rule for mandatory code_execution (`prompts.py`)
+- Markdown table parsing fallback: parses markdown tables when code_execution is skipped (`analysis_agent.py`)
+- Eval scenario expanded: `stock_reorder_mock.yaml` → 7-turn chart rendering test
+- 3 new Playwright fixtures: stock_reorder_table_only, monthly_trend_dual_axis, top_customers_filtered
 
 **Goal:** Fix 6 chart rendering bugs so ChartAgent produces correct, readable charts (or skips charts when table_only is appropriate).
 
