@@ -57,9 +57,12 @@ class TestSelectChartType:
         rows = [[i] for i in range(10)]
         assert _select_chart_type("pie", "aggregation", rows) == "pie"
 
-    def test_table_only_suggestion_defers_to_query_type(self):
+    def test_table_only_suggestion_is_honored(self):
+        """table_only suggestion should return table_only, not defer to query_type."""
         rows = [[1], [2], [3]]
-        assert _select_chart_type("table_only", "comparison", rows) == "grouped_bar"
+        assert _select_chart_type("table_only", "comparison", rows) == "table_only"
+        assert _select_chart_type("table_only", "top_n", rows) == "table_only"
+        assert _select_chart_type("table_only", "aggregation", rows) == "table_only"
 
 
 # ---------------------------------------------------------------------------

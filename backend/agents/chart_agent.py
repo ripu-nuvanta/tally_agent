@@ -114,7 +114,7 @@ def _select_chart_type(suggestion: str, query_type: str, rows: list) -> str:
     # If analysis agent gave a valid suggestion, prefer it
     # (pie charts handle >7 slices by grouping into "Others" in _format_pie_data)
     valid_types = {"bar", "grouped_bar", "line", "pie", "stacked_bar", "composed", "table_only"}
-    if suggestion in valid_types and suggestion != "table_only":
+    if suggestion in valid_types:
         return suggestion
 
     # Infer from query_type
