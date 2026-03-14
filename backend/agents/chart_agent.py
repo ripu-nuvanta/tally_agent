@@ -258,6 +258,9 @@ def _format_pie_data(headers: list[str], rows: list[list]) -> list[dict[str, Any
         else:
             continue
         break
+    # Verify selected column actually has numeric data; return empty if all text
+    if not any(_to_numeric(row[value_idx]) != 0.0 for row in rows if value_idx < len(row)):
+        return []
     sorted_rows = sorted(rows, key=lambda r: abs(_to_numeric(r[value_idx]) if len(r) > value_idx else 0), reverse=True)
 
     data = []
@@ -298,7 +301,7 @@ def _identify_numeric_columns(headers: list[str], rows: list[list]) -> set[str]:
                 if isinstance(val, (int, float)):
                     numeric_count += 1
                 elif isinstance(val, str):
-                    cleaned = val.replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
+                    cleaned = val.replace("*", "").replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
                     try:
                         float(cleaned)
                         numeric_count += 1

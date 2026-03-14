@@ -654,6 +654,31 @@ def test_to_numeric_strips_bold_markers():
     assert _to_numeric("**100.0%**") == 100.0
 
 
+def test_format_pie_data_all_text_returns_empty():
+    """Pie chart with no numeric columns returns empty list."""
+    from backend.agents.chart_agent import _format_pie_data
+    headers = ["Name", "Group", "Status"]
+    rows = [
+        ["Item A", "Electronics", "Active"],
+        ["Item B", "Office Supplies", "Inactive"],
+    ]
+    data = _format_pie_data(headers, rows)
+    assert data == []
+
+
+def test_identify_numeric_columns_strips_bold():
+    """_identify_numeric_columns should handle bold-marked values."""
+    from backend.agents.chart_agent import _identify_numeric_columns
+    headers = ["Metric", "Q3", "Q4"]
+    rows = [
+        ["Revenue", "**₹11,91,250**", "**₹8,66,400**"],
+        ["Expenses", "**₹6,62,000**", "**₹6,81,000**"],
+    ]
+    result = _identify_numeric_columns(headers, rows)
+    assert "Q3" in result
+    assert "Q4" in result
+
+
 def test_trim_trailing_zeros_also_trims_leading():
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]
