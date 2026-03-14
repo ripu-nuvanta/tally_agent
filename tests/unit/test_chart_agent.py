@@ -464,6 +464,20 @@ class TestNonNumericColumnFiltering:
         result = agent.execute(data, "top_n", True)
         assert result is None
 
+    def test_format_xy_data_excludes_non_numeric_columns(self):
+        """_format_xy_data should only include columns in the provided numeric set."""
+        from backend.agents.chart_agent import _format_xy_data
+        headers = ["Item", "Stock", "Status", "Days"]
+        rows = [
+            ["Monitor", 20, "OK", 141.7],
+            ["Laptop", 10, "Watch", 50.3],
+        ]
+        numeric_cols = {"Stock", "Days"}
+        result = _format_xy_data(headers, rows, numeric_cols)
+        assert result[0] == {"label": "Monitor", "Stock": 20.0, "Days": 141.7}
+        assert "Status" not in result[0]
+        assert result[1] == {"label": "Laptop", "Stock": 10.0, "Days": 50.3}
+
     def test_chart_agent_mixed_columns_charts_only_numeric(self):
         from backend.agents.chart_agent import ChartAgent
         agent = ChartAgent()

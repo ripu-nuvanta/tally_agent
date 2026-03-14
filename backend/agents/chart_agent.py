@@ -64,7 +64,8 @@ class ChartAgent:
 
         # Prefer analysis agent's suggested title over auto-generated one
         title = data.get("chart_title") or _generate_title(query_type, headers)
-        chart_data = _format_chart_data(chart_type, headers, rows)
+        numeric_cols = _identify_numeric_columns(headers, rows)
+        chart_data = _format_chart_data(chart_type, headers, rows, numeric_cols)
         config = _build_config(chart_type, headers, rows)
 
         # No numeric columns to chart → skip
@@ -161,17 +162,19 @@ def _generate_title(query_type: str, headers: list[str]) -> str:
 
 
 def _format_chart_data(
-    chart_type: str, headers: list[str], rows: list[list]
+    chart_type: str, headers: list[str], rows: list[list], numeric_cols: set[str] | None = None
 ) -> list[dict[str, Any]]:
     """Format rows into Recharts-compatible data points."""
     if chart_type == "pie":
         return _format_pie_data(headers, rows)
 
     # bar, grouped_bar, line, stacked_bar, composed — all use standard x/y format
-    return _format_xy_data(headers, rows)
+    return _format_xy_data(headers, rows, numeric_cols)
 
 
-def _format_xy_data(headers: list[str], rows: list[list]) -> list[dict[str, Any]]:
+def _format_xy_data(
+    headers: list[str], rows: list[list], numeric_cols: set[str] | None = None
+) -> list[dict[str, Any]]:
     """Standard label/value format for bar and line charts."""
     data = []
     for row in rows:
@@ -181,6 +184,11 @@ def _format_xy_data(headers: list[str], rows: list[list]) -> list[dict[str, Any]
         point: dict[str, Any] = {"label": label}
         for i, header in enumerate(headers[1:], start=1):
             if header in _EXCLUDED_CHART_COLUMNS:
+                continue
+            # When numeric_cols filter is active, skip non-numeric text columns.
+            # Always keep "Change %" — it is a secondary-axis value column even
+            # though _identify_numeric_columns() excludes it from primary y_keys.
+            if numeric_cols is not None and header not in numeric_cols and header != "Change %":
                 continue
             if i < len(row):
                 point[header] = _to_numeric(row[i])
