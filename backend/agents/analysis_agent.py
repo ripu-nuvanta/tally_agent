@@ -550,6 +550,22 @@ class AnalysisAgent:
                             comparison_table_data = last_table_data
                         logger.info("AnalysisAgent turn %d — captured STRUCTURED_RESULT from text fallback", turn)
 
+                # Fallback: parse markdown tables from text when no structured data found
+                if not (last_table_data and last_table_data.get("headers")):
+                    md_table = _parse_markdown_table(final_text)
+                    if md_table:
+                        last_table_data = md_table
+                        if query_type == "top_n":
+                            ranked_table_data = last_table_data
+                        elif query_type == "trend":
+                            trend_table_data = last_table_data
+                        elif query_type == "comparison":
+                            comparison_table_data = last_table_data
+                        logger.info(
+                            "AnalysisAgent — parsed markdown table fallback: %d headers, %d rows",
+                            len(md_table["headers"]), len(md_table["rows"]),
+                        )
+
                 # For top_n, prefer the ranked (sort_by_field) data over aggregate totals
                 preferred_data = (
                     trend_table_data if (query_type == "trend" and trend_table_data)
@@ -680,6 +696,64 @@ def _extract_structured_from_text(text: str) -> dict | None:
             except json.JSONDecodeError:
                 pass
     return None
+
+
+def _parse_markdown_table(text: str) -> dict | None:
+    """Parse the last markdown table in text into {headers, rows} format.
+
+    When AnalysisAgent skips code_execution and writes results as markdown
+    tables in its text response, this function extracts the structured data
+    so ChartAgent can still render charts.
+
+    Returns {"headers": [...], "rows": [...]} or None if no table found.
+    """
+    lines = text.strip().split("\n")
+
+    # Find all table blocks (consecutive lines starting and ending with |)
+    table_blocks: list[list[str]] = []
+    current_block: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            current_block.append(stripped)
+        else:
+            if current_block:
+                table_blocks.append(current_block)
+                current_block = []
+    if current_block:
+        table_blocks.append(current_block)
+
+    if not table_blocks:
+        return None
+
+    # Use the last table block (most likely the final result)
+    block = table_blocks[-1]
+    if len(block) < 3:  # Need header + separator + at least 1 data row
+        return None
+
+    # Parse header (first row)
+    header_line = block[0]
+    headers = [cell.strip() for cell in header_line.split("|")[1:-1]]
+
+    # Verify separator (second row) — should look like |---|---|
+    separator = block[1]
+    if not re.match(r"^[\s|:\-]+$", separator):
+        return None
+
+    # Parse data rows
+    rows: list[list[str]] = []
+    for row_line in block[2:]:
+        cells = [cell.strip() for cell in row_line.split("|")[1:-1]]
+        # Pad or trim to match header count
+        while len(cells) < len(headers):
+            cells.append("")
+        cells = cells[: len(headers)]
+        rows.append(cells)
+
+    if not headers or not rows:
+        return None
+
+    return {"headers": headers, "rows": rows}
 
 
 def _strip_chart_metadata(text: str) -> str:

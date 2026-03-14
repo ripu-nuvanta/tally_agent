@@ -737,3 +737,166 @@ class TestAnalysisAgentCodeExecution:
 
         assert result["data"]["headers"] == ["Item", "Sales"]
         assert result["data"]["rows"][0] == ["A", 100]
+
+
+# ---------------------------------------------------------------------------
+# Tests: _parse_markdown_table fallback
+# ---------------------------------------------------------------------------
+
+from backend.agents.analysis_agent import _parse_markdown_table
+
+
+class TestParseMarkdownTable:
+    def test_parses_simple_table(self):
+        text = """Here are the results:
+
+| Month | Sales | Change % |
+|-------|-------|----------|
+| Oct | 5,00,000 | 10.0 |
+| Nov | 4,50,000 | -10.0 |
+"""
+        result = _parse_markdown_table(text)
+        assert result is not None
+        assert result["headers"] == ["Month", "Sales", "Change %"]
+        assert len(result["rows"]) == 2
+        assert result["rows"][0] == ["Oct", "5,00,000", "10.0"]
+
+    def test_uses_last_table_when_multiple(self):
+        text = """Summary:
+| Category | Total |
+|----------|-------|
+| Sales | 100 |
+
+Details:
+| Month | Amount | Growth |
+|-------|--------|--------|
+| Jan | 50 | 5% |
+| Feb | 50 | 0% |
+"""
+        result = _parse_markdown_table(text)
+        assert result["headers"] == ["Month", "Amount", "Growth"]
+        assert len(result["rows"]) == 2
+
+    def test_returns_none_for_no_table(self):
+        text = "No tables here, just text."
+        assert _parse_markdown_table(text) is None
+
+    def test_returns_none_for_incomplete_table(self):
+        text = "| Header |\n|--------|\n"  # no data rows
+        assert _parse_markdown_table(text) is None
+
+    def test_handles_total_row(self):
+        text = """| Ledger | Q3 | Q4 | Change |
+|--------|-----|-----|--------|
+| Sales | 10,00,000 | 12,00,000 | 2,00,000 |
+| Purchases | 5,00,000 | 6,00,000 | 1,00,000 |
+| Total | 15,00,000 | 18,00,000 | 3,00,000 |
+"""
+        result = _parse_markdown_table(text)
+        assert len(result["rows"]) == 3
+        assert result["rows"][2][0] == "Total"
+
+    def test_strips_whitespace_from_cells(self):
+        text = """|  Name  |  Amount  |
+|-------|----------|
+|  Alice  |  1000  |
+"""
+        result = _parse_markdown_table(text)
+        assert result["rows"][0] == ["Alice", "1000"]
+
+    def test_handles_alignment_separators(self):
+        """Separator with colons for alignment (e.g., |:---:|) should still parse."""
+        text = """| Name | Amount |
+|:-----|-------:|
+| Bob | 2000 |
+"""
+        result = _parse_markdown_table(text)
+        assert result is not None
+        assert result["headers"] == ["Name", "Amount"]
+        assert result["rows"][0] == ["Bob", "2000"]
+
+    def test_returns_none_for_empty_text(self):
+        assert _parse_markdown_table("") is None
+        assert _parse_markdown_table("   \n\n  ") is None
+
+    def test_pads_short_rows(self):
+        """Rows with fewer cells than headers should be padded."""
+        text = """| A | B | C |
+|---|---|---|
+| 1 | 2 |
+"""
+        result = _parse_markdown_table(text)
+        assert result is not None
+        # The row "| 1 | 2 |" splits to ["1", "2"], padded to ["1", "2", ""]
+        assert result["rows"][0] == ["1", "2", ""]
+
+
+class TestMarkdownTableFallbackIntegration:
+    """Test that the markdown table fallback fires in the AnalysisAgent loop."""
+
+    @pytest.mark.asyncio
+    async def test_markdown_fallback_captures_table_when_no_structured_result(self):
+        """When code_execution is disabled and no STRUCTURED_RESULT, markdown table is captured."""
+        agent = AnalysisAgent()
+
+        md_response = _make_text_response(
+            "Here is the monthly breakdown:\n\n"
+            "| Month | Sales | Change % |\n"
+            "|-------|-------|----------|\n"
+            "| Oct | 5,00,000 | 10.0 |\n"
+            "| Nov | 4,50,000 | -10.0 |\n\n"
+            "Chart suggestion: bar\n"
+            "Chart title: Monthly Sales"
+        )
+
+        with (
+            patch("backend.agents.analysis_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.analysis_agent.settings") as mock_settings,
+        ):
+            mock_settings.CLAUDE_MODEL = "test-model"
+            mock_settings.CODE_EXECUTION_ENABLED = False
+            mock_claude.messages.create = AsyncMock(return_value=md_response)
+
+            result = await agent.execute(
+                raw_data=[{"month": "Oct", "sales": 500000}],
+                computed_data=None,
+                user_query="monthly sales breakdown",
+                query_type="trend",
+            )
+
+        assert result["data"]["headers"] == ["Month", "Sales", "Change %"]
+        assert len(result["data"]["rows"]) >= 2
+        assert result["data"]["rows"][0][0] == "Oct"
+
+    @pytest.mark.asyncio
+    async def test_structured_result_preferred_over_markdown(self):
+        """STRUCTURED_RESULT text fallback takes priority over markdown table."""
+        agent = AnalysisAgent()
+
+        structured_json = json.dumps({"headers": ["X", "Y"], "rows": [["a", 1]]})
+        text_with_both = (
+            f"STRUCTURED_RESULT:{structured_json}\n\n"
+            "| Month | Sales |\n"
+            "|-------|-------|\n"
+            "| Oct | 500 |\n\n"
+            "Chart suggestion: bar"
+        )
+        response = _make_text_response(text_with_both)
+
+        with (
+            patch("backend.agents.analysis_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.analysis_agent.settings") as mock_settings,
+        ):
+            mock_settings.CLAUDE_MODEL = "test-model"
+            mock_settings.CODE_EXECUTION_ENABLED = True
+            mock_claude.messages.create = AsyncMock(return_value=response)
+
+            result = await agent.execute(
+                raw_data=[],
+                computed_data=None,
+                user_query="test",
+                query_type="aggregation",
+            )
+
+        # STRUCTURED_RESULT should win
+        assert result["data"]["headers"] == ["X", "Y"]
