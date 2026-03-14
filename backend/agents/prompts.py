@@ -289,7 +289,15 @@ print the final structured data on the LAST line of stdout using this exact form
 STRUCTURED_RESULT:{"headers": ["Col1", "Col2"], "rows": [["val1", 123], ["val2", 456]]}
 Headers must be strings. Row values: use numbers for numeric data (not strings). \
 You may print other text before this line — only the STRUCTURED_RESULT line is \
-captured for table/chart rendering."""
+captured for table/chart rendering.
+
+15. **Standard column naming for charts**: Use these EXACT header names in \
+STRUCTURED_RESULT so the chart renderer can detect axes correctly:
+   - Period-over-period absolute delta → "Change"
+   - Period-over-period percentage delta → "Change %"
+   - Do NOT use "MoM Change", "Abs Change", "MoM %", "% vs Avg", or other variations.
+   - For status/flag columns (e.g. "Above"/"Below"), use the header "Status".
+   - Keep the first column as the label/category (e.g. "Month", "Item", "Ledger")."""
     else:
         from backend.agents.analysis_agent import ANALYSIS_TOOLS
 

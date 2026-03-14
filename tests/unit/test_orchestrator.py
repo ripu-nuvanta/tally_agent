@@ -1050,3 +1050,49 @@ class TestSeparateToolResults:
         raw, computed = _separate_tool_results(tool_results)
         assert len(raw) == 1
         assert raw[0] == [{"Account": "Sales", "Amount": 100}]
+
+
+# ---------------------------------------------------------------------------
+# Tests: AnalysisAgent prompt column naming rules
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisPromptColumnNamingRules:
+    def test_analysis_prompt_contains_column_naming_rules(self):
+        """AnalysisAgent prompt (code_execution=True) must include standard column naming rules."""
+        from backend.agents.prompts import build_analysis_agent_prompt
+
+        prompt = build_analysis_agent_prompt("trend", code_execution_enabled=True)
+
+        assert "Change" in prompt and "Change %" in prompt
+        assert "STRUCTURED_RESULT" in prompt
+        assert "column naming" in prompt.lower() or "standard column" in prompt.lower()
+
+    def test_analysis_prompt_column_rules_present_for_all_query_types(self):
+        """Column naming rules should appear for all query types when code_execution=True."""
+        from backend.agents.prompts import build_analysis_agent_prompt
+
+        for query_type in ("comparison", "trend", "top_n", "aggregation"):
+            prompt = build_analysis_agent_prompt(query_type, code_execution_enabled=True)
+            assert "column naming" in prompt.lower() or "standard column" in prompt.lower(), (
+                f"Column naming rules missing for query_type={query_type}"
+            )
+
+    def test_analysis_prompt_column_rules_absent_when_code_exec_disabled(self):
+        """Column naming rules in the code-exec block should not appear when code_execution=False."""
+        from backend.agents.prompts import build_analysis_agent_prompt
+
+        prompt = build_analysis_agent_prompt("trend", code_execution_enabled=False)
+        # The standard column names rule is only needed when code_execution generates columns
+        assert "standard column" not in prompt.lower() or "column naming" not in prompt.lower()
+
+    def test_analysis_prompt_forbids_non_standard_column_names(self):
+        """Prompt should explicitly forbid common non-standard column name variations."""
+        from backend.agents.prompts import build_analysis_agent_prompt
+
+        prompt = build_analysis_agent_prompt("comparison", code_execution_enabled=True)
+        # At least some of the forbidden aliases must be mentioned
+        forbidden_variants = ["MoM Change", "Abs Change", "MoM %", "% vs Avg"]
+        assert any(v in prompt for v in forbidden_variants), (
+            "Prompt should list at least one forbidden column name variant"
+        )
