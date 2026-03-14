@@ -44,8 +44,8 @@ turns:
         - "If composed chart: percentage on secondary axis, amounts on primary"
         - "Change % or growth % column uses standardized naming"
 
-  # Turn 4: grouped_bar — quarterly comparison (multi-series)
-  - query: "Compare Q3 and Q4 revenue and expenses"
+  # Turn 4: grouped_bar — quarterly sales comparison (multi-series)
+  - query: "Compare Q3 and Q4 sales — show monthly sales for each quarter side by side"
     expect:
       query_type: comparison
       has_data: true
@@ -53,7 +53,7 @@ turns:
       chart_type: [grouped_bar, bar]
       checks:
         - "Q3 maps to Oct-Dec 2025, Q4 maps to Jan-Mar 2026"
-        - "Shows both revenue and expense figures for each quarter"
+        - "Shows monthly sales figures for each quarter"
         - "Chart has two distinct series (Q3 and Q4) with legend"
         - "Absolute and/or percentage difference mentioned"
 
