@@ -1,8 +1,9 @@
-name: "Stock Reorder Analysis (Mock)"
-description: "Single-turn test for stock reorder query — validates classifier routes inventory queries correctly and AnalysisAgent computes days-of-cover from closing stock + sales data."
-tags: [stock, inventory, reorder, classifier, code_execution, mock]
+name: "Chart Rendering Scenarios (Mock)"
+description: "Comprehensive chart rendering test — validates table_only override, numeric column filtering, secondary axis detection, and all chart types (bar, line, grouped_bar, composed). Each turn is independent."
+tags: [chart, table_only, secondary_axis, bar, line, grouped_bar, composed, code_execution, mock]
 
 turns:
+  # Turn 1: table_only — stock reorder (3+ non-numeric columns → no chart)
   - query: "Which items are running low on stock based on last 6 months of sales? Show average monthly consumption, current stock level, and flag items with less than 2 months of stock remaining."
     expect:
       query_type: aggregation
@@ -15,4 +16,81 @@ turns:
         - "Days of stock remaining is calculated as (current stock / average monthly sales) * 30"
         - "Items are flagged or sorted by urgency (lowest days remaining first)"
         - "Items with zero or negative stock are flagged as critical"
-        - "Uses table_only chart suggestion (no bar/line chart for multi-column text+numeric data)"
+        - "No chart rendered — table has too many text columns for meaningful visualization"
+
+  # Turn 2: bar chart — top N ranking (single numeric column)
+  - query: "Top 10 customers by sales amount"
+    expect:
+      query_type: top_n
+      has_data: true
+      has_chart: true
+      chart_type: [bar]
+      checks:
+        - "Lists customers ranked by sales amount in descending order"
+        - "Amounts use Indian rupee formatting"
+        - "Bar chart shows only numeric sales amounts — no text columns in chart data"
+        - "Chart labels are customer names on x-axis"
+
+  # Turn 3: line/composed — monthly trend with Change % (secondary axis)
+  - query: "What's the month-over-month growth in sales for this FY?"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [line, composed, bar]
+      checks:
+        - "Shows percentage growth, not just absolute amounts"
+        - "Handles first month correctly (no prior month for comparison)"
+        - "If composed chart: percentage on secondary axis, amounts on primary"
+        - "Change % or growth % column uses standardized naming"
+
+  # Turn 4: grouped_bar — quarterly comparison (multi-series)
+  - query: "Compare Q3 and Q4 revenue and expenses"
+    expect:
+      query_type: comparison
+      has_data: true
+      has_chart: true
+      chart_type: [grouped_bar, bar]
+      checks:
+        - "Q3 maps to Oct-Dec 2025, Q4 maps to Jan-Mar 2026"
+        - "Shows both revenue and expense figures for each quarter"
+        - "Chart has two distinct series (Q3 and Q4) with legend"
+        - "Absolute and/or percentage difference mentioned"
+
+  # Turn 5: table_only — expense percentage breakdown (explicit table request)
+  - query: "What percentage of total expenses does each expense ledger represent? Show as a table."
+    expect:
+      query_type: aggregation
+      has_data: true
+      has_chart: false
+      checks:
+        - "Response includes a table with expense ledgers and their percentage of total"
+        - "Percentages are computed correctly and sum to approximately 100%"
+        - "Amounts are formatted in Indian Rupee notation"
+        - "No chart — user explicitly requested table format"
+
+  # Turn 6: bar — top ledgers by computed change (code_execution + numeric filtering)
+  - query: "Show top 5 ledgers by absolute change in balance between Q3 and Q4"
+    expect:
+      query_type: top_n
+      has_data: true
+      has_chart: true
+      chart_type: [bar]
+      checks:
+        - "Shows exactly 5 ledgers ranked by absolute change"
+        - "Change amounts are computed as Q4 minus Q3 balance"
+        - "Chart shows only numeric columns — text columns like ledger names excluded from chart data"
+        - "Uses 'Change' as standard column name (not 'Abs Change' or 'Delta')"
+
+  # Turn 7: composed — monthly sales with average comparison (dual scale)
+  - query: "What is the average monthly sales amount for this FY and which months are above or below average?"
+    expect:
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [bar, line, composed]
+      checks:
+        - "Shows monthly sales amounts with average indicator"
+        - "Correctly identifies which months are above and below average"
+        - "Average is computed as total sales divided by number of months with data"
+        - "If table has Status column (Above/Below), it is not included in chart data"
