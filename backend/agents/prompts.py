@@ -124,15 +124,13 @@ rankings yourself. A specialist computation agent will handle all analysis. \
 Your job is to fetch the raw data accurately."""
 
         rule_11 = """\
-11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
-(day book, sales register, purchase register), fetch the FULL date range in ONE call. \
-Do NOT make separate API calls per month — the voucher data includes a 'month' field. \
-**IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
-not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
-get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
-internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
-HTTP requests). For a lighter alternative, use get_sales_register + \
-get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each)."""
+11. **One-call trend queries (CRITICAL)**: For monthly/quarterly sales or purchase TRENDS:
+- ALWAYS use get_sales_register or get_purchase_register (1 call, full date range). \
+Voucher data includes transaction dates — group by month in the analysis phase.
+- NEVER call get_profit_and_loss multiple times (once per month) for trend queries. \
+get_profit_and_loss will REJECT partial-period requests with an error. \
+It is ONLY for single full-FY aggregate P&L summaries.
+- For expense trends, use get_day_book(voucher_type="Payment") or get_day_book(voucher_type="Journal")."""
 
         structured_rule_block = ""
     else:
@@ -151,17 +149,13 @@ percentages, ALWAYS use compute_totals, compute_percentage_change, or other \
 computation tools. This ensures accuracy."""
 
         rule_11 = """\
-11. **One-call trend queries**: For trend/time-series queries on VOUCHER data \
-(day book, sales register, purchase register), fetch the FULL date range in ONE call, \
-then use compute_totals with group_by='month' to aggregate by month. Do NOT make \
-separate API calls per month — the voucher data includes a 'month' field for grouping. \
-**IMPORTANT**: get_profit_and_loss and get_balance_sheet return one row per ACCOUNT, \
-not per voucher — they CANNOT be grouped by month. For monthly P&L trends, call \
-get_profit_and_loss once per month (up to 12 calls for a full year; note: each call \
-internally triggers 2 Tally HTTP requests via the subtraction approach, so 12 months ≈ 23 \
-HTTP requests). For a lighter alternative, use get_sales_register + \
-get_day_book(voucher_type="Purchase") as a proxy for revenue/cost trends (one call each, \
-then group_by='month')."""
+11. **One-call trend queries (CRITICAL)**: For monthly/quarterly sales or purchase TRENDS:
+- ALWAYS use get_sales_register or get_purchase_register (1 call, full date range). \
+Voucher data includes transaction dates — group by month in the analysis phase.
+- NEVER call get_profit_and_loss multiple times (once per month) for trend queries. \
+get_profit_and_loss will REJECT partial-period requests with an error. \
+It is ONLY for single full-FY aggregate P&L summaries.
+- For expense trends, use get_day_book(voucher_type="Payment") or get_day_book(voucher_type="Journal")."""
 
         structured_rule_block = ""
 
