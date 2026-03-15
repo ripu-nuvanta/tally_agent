@@ -202,18 +202,24 @@ async def collect_scenario(
         # Give extra time for CompanySelector to populate
         await page.wait_for_timeout(2000)
 
-        # Set tally mode via frontend toggle if mock
-        if tally_mode == "mock":
-            toggle = page.get_by_test_id("demo-mode-toggle")
-            label = page.get_by_test_id("tally-status-label")
-            current_label = await label.inner_text()
-            if current_label != "Demo":
-                await toggle.click()
-                # Toggle triggers page reload — wait for page to reload and settle
-                await page.wait_for_load_state("networkidle", timeout=10000)
-                await page.wait_for_selector("textarea", timeout=30000)
-                await page.wait_for_timeout(2000)
+        # Set tally mode via frontend toggle
+        toggle = page.get_by_test_id("demo-mode-toggle")
+        label = page.get_by_test_id("tally-status-label")
+        current_label = await label.inner_text()
+        if tally_mode == "mock" and current_label != "Demo":
+            await toggle.click()
+            await page.wait_for_load_state("networkidle", timeout=10000)
+            await page.wait_for_selector("textarea", timeout=30000)
+            await page.wait_for_timeout(2000)
             print("Tally mode set to: mock")
+        elif tally_mode == "live" and current_label == "Demo":
+            await toggle.click()
+            await page.wait_for_load_state("networkidle", timeout=10000)
+            await page.wait_for_selector("textarea", timeout=30000)
+            await page.wait_for_timeout(2000)
+            print("Tally mode set to: live")
+        else:
+            print(f"Tally mode already: {tally_mode}")
 
         for turn_idx, turn_def in enumerate(scenario["turns"]):
             query = turn_def["query"]

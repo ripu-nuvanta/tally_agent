@@ -1,9 +1,20 @@
 # Phase 15: Architecture Bug Fixes — Unconditional AnalysisAgent & Context Window
 
 **Date**: 2026-03-15
-**Status**: PLANNING
+**Status**: COMPLETE — commits d788cc5 (impl), eval verified run 22
 **Depends on**: Phase 14 (session context for AnalysisAgent — commit 651f705)
-**Eval Runs**: run_20260315_182422 (mock), run_20260315_182613 (mock run 2)
+**Eval Runs**: run_20260315_182422 (mock pre-fix), run_20260315_182613 (mock pre-fix run 2), run_20260315_203851 (mock post-fix), run_20260315_204641 (live post-fix)
+
+### Post-fix Eval Results (arch_bug_regression_mock, run 22)
+| Turn | Query | Mock F/Q/C/Ch | Live F/Q/C/Ch |
+|------|-------|---------------|---------------|
+| 1 | MoM growth | 5/5/5/4 | 5/5/4/4 |
+| 2 | Avg monthly (follow-up) | 5/5/5/5 | 5/5/5/4 |
+
+Bug 1 confirmed fixed: Turn 2 went from 1/1/3/— (run 21) to 5/5/5/5.
+
+### Additional fix: Eval collector tally mode toggle
+collect.py only toggled to mock mode but never back to live — if a prior run left backend in mock, "live" runs stayed in mock. Fixed to explicitly toggle both directions.
 
 ---
 
