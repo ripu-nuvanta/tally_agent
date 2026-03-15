@@ -329,6 +329,7 @@ class TestOrchestratorAnalysisRouting:
                     [],
                     "Compare Q1 vs Q2 sales",
                     "comparison",
+                    session=session,
                 )
 
         assert result["query_type"] == "comparison"
@@ -1254,3 +1255,64 @@ class TestTableIntentSuppressesChart:
                 mock_chart.assert_called_once()
 
         assert result["chart"] is not None
+
+
+# ---------------------------------------------------------------------------
+# Phase 14: Orchestrator passes session to AnalysisAgent
+# ---------------------------------------------------------------------------
+
+
+class TestOrchestratorPassesSession:
+    @pytest.mark.asyncio
+    async def test_analysis_agent_receives_session(self):
+        """Orchestrator passes session kwarg to analysis_agent.execute()."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+        session.add_message("user", "Show me sales data")
+        session.add_message("assistant", "Here is the sales data.")
+
+        classification = {
+            "query_type": "aggregation",
+            "requires_chart": False,
+            "reasoning": "Total sales",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+            ):
+                mock_query.return_value = {
+                    "message": "Data fetched.",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_trial_balance",
+                            "tool_input": {},
+                            "result": {"success": True, "data": [{"account": "Sales", "amount": 500000}]},
+                        },
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": "Total sales: ₹5,00,000.",
+                    "data": {"headers": ["Account", "Amount"], "rows": [["Sales", 500000]]},
+                    "insights": [],
+                    "chart_suggestion": None,
+                    "tool_results": [],
+                }
+
+                await orch.process_query("What are total sales?", mock_client, session)
+
+                # Verify session was passed as kwarg
+                mock_analysis.assert_called_once()
+                call_kwargs = mock_analysis.call_args.kwargs
+                assert "session" in call_kwargs
+                assert call_kwargs["session"] is session

@@ -410,6 +410,7 @@ class AnalysisAgent:
         computed_data: list | None,
         user_query: str,
         query_type: str,
+        session: Any | None = None,
     ) -> dict[str, Any]:
         """Run the analysis loop.
 
@@ -450,6 +451,24 @@ class AnalysisAgent:
             "beyond what was pre-computed above.\n\n"
             f"{json.dumps(raw_data, default=str)}"
         )
+
+        # Inject prior conversation context if session provided
+        if session and session.messages:
+            from backend.config import settings as _settings
+            n = _settings.ANALYSIS_CONTEXT_MESSAGES
+            recent = session.messages[-n:]
+            ctx_lines = []
+            for msg in recent:
+                role = msg["role"].capitalize()
+                content = msg["content"][:500]
+                ctx_lines.append(f"{role}: {content}")
+            context_str = "\n\n".join(ctx_lines)
+            parts.insert(0,
+                "## Prior Conversation Context\n"
+                "These are recent messages from the conversation. If the user's current query "
+                "can be answered using data from a prior turn, reference that data.\n\n"
+                f"{context_str}\n\n"
+            )
 
         user_content = "".join(parts)
         messages: list[dict] = [{"role": "user", "content": user_content}]

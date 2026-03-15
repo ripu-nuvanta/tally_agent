@@ -157,6 +157,7 @@ class Orchestrator:
             logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
             analysis_result = await self.analysis_agent.execute(
                 raw_tally_data, computed_data, user_message, query_type,
+                session=session,
             )
             message = analysis_result["message"]
             data = analysis_result.get("data", raw_data)

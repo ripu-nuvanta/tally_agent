@@ -917,3 +917,60 @@ def test_parse_markdown_table_strips_bold():
     assert result["rows"][1][1] == "-₹4,83,350"
     assert result["rows"][1][2] == "+₹5,64,700"
     assert result["rows"][0][3] == "-27.3%"
+
+
+# ---------------------------------------------------------------------------
+# Phase 14: Session context injection
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisAgentSessionContext:
+    @pytest.mark.asyncio
+    async def test_execute_receives_session_context(self):
+        """AnalysisAgent.execute() includes prior session messages when session is provided."""
+        from backend.agents.context import SessionContext
+
+        session = SessionContext()
+        session.add_message("user", "Show monthly sales for this FY")
+        session.add_message("assistant", "Monthly sales: Jul ₹2,95,000 / Aug ₹3,00,000")
+
+        agent = AnalysisAgent()
+        captured = {}
+
+        async def mock_create(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _make_text_response("The average monthly sales is ₹4,16,483.")
+
+        with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(side_effect=mock_create)
+            result = await agent.execute(
+                raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
+                computed_data=None,
+                user_query="What is the average monthly sales?",
+                query_type="aggregation",
+                session=session,
+            )
+
+        assert "messages" in captured
+        user_content = captured["messages"][0]["content"]
+        assert "Prior Conversation Context" in user_content
+        assert "monthly sales" in user_content.lower()
+
+    @pytest.mark.asyncio
+    async def test_execute_works_without_session(self):
+        """AnalysisAgent.execute() still works when session is None (backward compat)."""
+        agent = AnalysisAgent()
+
+        with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_text_response("Total sales: ₹10,00,000.")
+            )
+            result = await agent.execute(
+                raw_data=[{"account_name": "Sales", "closing_balance": 1000000}],
+                computed_data=None,
+                user_query="What are total sales?",
+                query_type="aggregation",
+            )
+
+        assert "message" in result
+        assert "10,00,000" in result["message"]
