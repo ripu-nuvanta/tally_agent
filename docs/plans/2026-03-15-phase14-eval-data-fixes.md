@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Fix 3 root-cause issues from eval runs 17-18: Turn 7 stub response (AnalysisAgent skipped), Turn 3 incorrect monthly P&L data on live Tally (cumulative passed as monthly), and judge scoring without ground truth.
+**Goal:** Fix 3 root-cause issues from eval runs 17-18: Turn 7 stub response (AnalysisAgent skipped), Turn 3 incorrect monthly P&L data on live Tally (TYPE=Data P&L returns unreliable data for partial periods), and judge scoring without ground truth.
 
-**Architecture:** (A) Pass configurable session context to AnalysisAgent so it can reference prior-turn data. (B) Strengthen QueryAgent Rule 11 to be harder to ignore for monthly P&L trend queries. (C) Wire ground truth keys into eval scenarios (mock + live via generate_golden.py).
+**Architecture:** (A) Pass configurable session context to AnalysisAgent so it can reference prior-turn data. (B) Make `profit_and_loss_period()` raise an error for non-full-FY ranges, forcing QueryAgent to use voucher registers. Strengthen Rule 11 as belt-and-suspenders. (C) Wire ground truth keys into eval scenarios (mock + live via generate_golden.py).
 
 **Tech Stack:** Python, FastAPI, pytest, eval framework (collect/judge/report)
 
@@ -15,16 +15,24 @@
 | Issue | Turn | Root Cause | Fix |
 |-------|------|-----------|-----|
 | Stub response, no data | T7 (live) | QueryAgent reuses prior turn data without tool calls → `raw_tally_data` empty → AnalysisAgent skipped | Task 1: Pass session context to AnalysisAgent |
-| ₹49L cumulative as monthly | T3 (live) | QueryAgent ignored Rule 11, called `get_profit_and_loss` 12× instead of `get_sales_register`. Raw cumulative P&L data passed to AnalysisAgent which treated it as monthly values. QueryAgent's own text may have been correct, but AnalysisAgent re-interpreted the raw data. | Task 2: Strengthen Rule 11 + defense in depth |
+| ₹49L cumulative as monthly | T3 (live) | **Tally TYPE=Data P&L returns non-monotonic, unreliable data for partial periods.** The subtraction approach in `profit_and_loss_period()` produces garbage from garbage inputs. Even if QueryAgent followed Rule 11, the 12 P&L calls would still return wrong data. | Task 2: Error on partial-period P&L + strengthen Rule 11 |
 | Judge can't verify factual accuracy | All turns | Scenario YAMLs have no `ground_truth_key` → judge scores on internal consistency only | Task 3: Wire ground truth keys (mock + live) |
 
-## Key Discoveries
+## Key Discoveries (Updated after live Tally diagnostic — 2026-03-15)
 
-1. **`_handle_profit_and_loss` already calls `profit_and_loss_period()`** (subtraction is wired up in `tools.py:402-406`). The issue is NOT missing subtraction — it's that 12 raw P&L tool results get passed to AnalysisAgent which misinterprets them.
+1. **TYPE=Data P&L returns unreliable data for partial periods.** Tested cumulative P&L for each month-end (Apr→Mar) against live Tally. Values are non-monotonic and jump between ₹49,97,900 → 0 → ₹49,97,900 → ₹2,95,000 — impossible for genuine cumulative data. The subtraction approach was doomed from the start.
 
-2. **Rule 11 already exists** in `prompts.py:126-135` — it tells QueryAgent to prefer voucher registers for monthly trends. The model didn't follow it in Turn 3. Need to make it harder to ignore.
+2. **TYPE=Collection returns 0 for P&L ledgers.** Revenue/expense ledgers are nominal accounts that get auto-closed to "Profit & Loss A/c" at period end. ClosingBalance via Collection is always 0 by design. This is a dead end.
 
-3. **`tests/eval/generate_golden.py` exists** — can query live Tally to generate ground truth fixtures. Ground truth works for both mock and live scenarios.
+3. **Full-FY P&L is reliable.** Cumulative P&L to Mar 31 returns ₹49,97,900 for Sales — matches voucher-based total exactly. Only partial-period ranges are broken.
+
+4. **Voucher-based approach is the source of truth.** `get_sales_register` returns transaction-level data that sums correctly by month: Jul ₹2,95,000 / Aug ₹3,00,000 / Sep ₹6,00,000 / ... / Feb ₹12,33,550 / Total ₹49,97,900.
+
+5. **Rule 11 already exists** in `prompts.py:126-135` but model ignored it. Strengthening wording is belt-and-suspenders; the real fix is making the tool itself reject bad requests.
+
+6. **`tests/eval/generate_golden.py` exists** — can query live Tally to generate ground truth fixtures.
+
+7. **Diagnostic test script**: `test_scripts/test_pnl_period.py` (15 tests) with logs in `test_scripts/logs/` documents all findings.
 
 ---
 
@@ -177,16 +185,81 @@ Expected: All existing tests pass (session=None is the default, so no breakage)
 
 ---
 
-### Task 2: Strengthen Rule 11 for Monthly P&L Trends (T3 Fix)
+### Task 2: Error on Partial-Period P&L + Strengthen Rule 11 (T3 Fix)
 
 **Files:**
+- Modify: `backend/tally_bridge/queries/reports.py:89-155` (profit_and_loss_period)
 - Modify: `backend/agents/prompts.py` (Rule 11)
-- Modify: `backend/agents/analysis_agent.py` (add cumulative data warning)
+- Test: `tests/unit/test_reports.py`
 - Test: Existing unit tests should still pass
 
-The existing Rule 11 (`prompts.py:126-135`) already tells QueryAgent to prefer voucher registers for monthly trends. But the model ignored it in Turn 3 and made 12 P&L calls. Two reinforcements:
+**Root cause (confirmed via diagnostic):** Tally's TYPE=Data P&L API returns non-monotonic, unreliable values for partial-period date ranges. The subtraction approach in `profit_and_loss_period()` produces garbage from garbage inputs. Full-FY P&L (cumulative to Mar 31) works correctly. Voucher registers (`get_sales_register`, `get_purchase_register`) return accurate transaction-level data.
 
-#### Step 2.1: Strengthen Rule 11 wording
+**Fix strategy:** Two layers:
+1. **Hard guard**: `profit_and_loss_period()` raises `TallyResponseError` for non-full-FY ranges, with message directing agent to use voucher registers.
+2. **Soft guard**: Strengthen Rule 11 wording to reinforce voucher-based approach.
+
+#### Step 2.1: Write failing test — partial-period P&L raises error
+
+- [ ] **Write test in `tests/unit/test_reports.py`**
+
+```python
+@pytest.mark.asyncio
+async def test_profit_and_loss_period_non_full_fy_raises_error():
+    """profit_and_loss_period() raises TallyResponseError for non-full-FY ranges."""
+    from backend.tally_bridge.exceptions import TallyResponseError
+    from backend.tally_bridge.queries.reports import profit_and_loss_period
+
+    mock_client = AsyncMock()
+    with pytest.raises(TallyResponseError, match="unreliable"):
+        await profit_and_loss_period(mock_client, "01-07-2025", "31-07-2025")
+```
+
+- [ ] **Run test to verify it fails**
+
+Run: `pytest tests/unit/test_reports.py::test_profit_and_loss_period_non_full_fy_raises_error -v`
+Expected: FAIL — currently does subtraction instead of raising
+
+#### Step 2.2: Implement — Make profit_and_loss_period() reject partial periods
+
+- [ ] **Modify `profit_and_loss_period()` in `backend/tally_bridge/queries/reports.py`**
+
+Replace the subtraction branch with an error:
+
+```python
+async def profit_and_loss_period(
+    client: TallyClient, from_date: str, to_date: str, company: str | None = None
+) -> ReportResponse:
+    from_dt = _parse_tally_date_str(from_date)
+    fy_start = get_fy_start(from_dt)
+
+    # Full FY → fetch directly (reliable — cumulative to Mar 31 matches voucher totals)
+    if from_dt == fy_start:
+        return await profit_and_loss(client, from_date, to_date, company)
+
+    # Non-full-FY → Tally TYPE=Data P&L returns unreliable data for partial periods.
+    # Tested against live Tally: values are non-monotonic across date ranges.
+    # Direct the agent to use voucher registers instead.
+    raise TallyResponseError(
+        "P&L for partial periods is unreliable via Tally's XML API. "
+        "Use get_sales_register or get_purchase_register for monthly/quarterly "
+        "breakdowns — they return accurate transaction-level data."
+    )
+```
+
+- [ ] **Run test to verify it passes**
+
+Run: `pytest tests/unit/test_reports.py::test_profit_and_loss_period_non_full_fy_raises_error -v`
+Expected: PASS
+
+- [ ] **Run full unit test suite to check for breakage**
+
+Run: `pytest tests/unit/ -v --tb=short -q`
+Expected: All pass (update any tests that expected subtraction behavior)
+
+- [ ] **Commit**: `git commit -m "fix: reject partial-period P&L requests — Tally API returns unreliable data for non-full-FY ranges"`
+
+#### Step 2.3: Strengthen Rule 11 wording (belt-and-suspenders)
 
 - [ ] **Modify Rule 11 in `backend/agents/prompts.py`**
 
@@ -198,35 +271,15 @@ For monthly/quarterly sales or purchase TRENDS:
 - ALWAYS use get_sales_register or get_purchase_register (1 call, full date range).
   Voucher data includes transaction dates — group by month in the analysis phase.
 - NEVER call get_profit_and_loss multiple times (once per month) for trend queries.
-  P&L returns cumulative YTD figures, NOT monthly breakdowns. Calling it 12 times
-  wastes 24 HTTP requests and the raw cumulative data confuses downstream analysis.
-- get_profit_and_loss is ONLY for single-period aggregate P&L summaries.
+  get_profit_and_loss will REJECT partial-period requests with an error.
+  It is ONLY for single full-FY aggregate P&L summaries.
 - For expense trends, use get_day_book(voucher_type="Payment") or get_day_book(voucher_type="Journal").
 ```
 
 - [ ] **Run unit tests**: `pytest tests/unit/ -v --tb=short -q`
 Expected: All pass (prompt text change only)
 
-#### Step 2.2: Defense in depth — AnalysisAgent cumulative data detection
-
-- [ ] **Add warning in AnalysisAgent prompt (`build_analysis_agent_prompt()` in `prompts.py`)**
-
-Add a rule to the AnalysisAgent prompt:
-
-```
-Rule N — Cumulative P&L data detection
-If the raw data contains multiple P&L snapshots (one per month), the closing_balance
-values are likely CUMULATIVE from FY start, not monthly actuals. To get monthly values:
-  monthly_value = cumulative[month] - cumulative[month-1]
-Watch for: identical or monotonically increasing closing_balance across months (sign of
-cumulative data). If you see "Sales Accounts" with the same large value for consecutive
-months, it's cumulative — subtract to isolate each month.
-```
-
-- [ ] **Run unit tests**: `pytest tests/unit/ -v --tb=short -q`
-Expected: All pass
-
-- [ ] **Commit**: `git commit -m "fix: strengthen Rule 11 for monthly trends, add cumulative P&L detection to AnalysisAgent"`
+- [ ] **Commit**: `git commit -m "fix: strengthen Rule 11 — document that partial-period P&L is rejected"`
 
 ---
 
@@ -308,37 +361,19 @@ in the YAML will work for live runs too — `collect.py` loads golden data by sc
 
 ---
 
-### Task 4: Diagnostic Logging for P&L Subtraction (T3 Investigation)
+### Task 4: ~~Diagnostic Logging~~ — DONE (via test script)
 
-**Files:**
-- Modify: `backend/tally_bridge/queries/reports.py:113-155`
-- Test: Existing tests should still pass
+**Status:** COMPLETE — diagnostic investigation already performed in `test_scripts/test_pnl_period.py`.
 
-Add logging to `profit_and_loss_period()` to capture cumulative and prior values on next live run.
+The 15-test diagnostic script confirmed:
+- TYPE=Data P&L returns non-monotonic values for partial periods
+- TYPE=Collection returns 0 for all P&L ledgers (nominal accounts)
+- Full-FY P&L is reliable (₹49,97,900 matches voucher total)
+- Voucher-based monthly breakdown is accurate
 
-#### Step 4.1: Add logging
+Logs preserved in `test_scripts/logs/pnl_period_debug.log`.
 
-- [ ] **Modify `profit_and_loss_period()` in `backend/tally_bridge/queries/reports.py`**
-
-After fetching cumulative and prior P&L (lines 139-144), add:
-
-```python
-# Diagnostic: log subtraction inputs for top accounts
-for row in cumulative.rows[:3]:
-    name = row.get("account_name", "?")
-    cum_bal = row.get("closing_balance", 0)
-    prior_row = next((r for r in prior.rows if r.get("account_name") == name), {})
-    prior_bal = prior_row.get("closing_balance", 0)
-    logger.debug(
-        "P&L period subtraction: %s — cumulative=%.2f, prior=%.2f, period=%.2f",
-        name, cum_bal, prior_bal, cum_bal - prior_bal,
-    )
-```
-
-- [ ] **Run unit tests**: `pytest tests/unit/test_reports.py -v --tb=short -q`
-Expected: All pass
-
-- [ ] **Commit**: `git commit -m "fix: add diagnostic logging to P&L period subtraction"`
+No further diagnostic logging needed — Task 2 replaces the subtraction code path entirely.
 
 ---
 
