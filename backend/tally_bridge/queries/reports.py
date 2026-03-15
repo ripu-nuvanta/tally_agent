@@ -3,7 +3,7 @@ Query functions for Tally financial reports.
 """
 
 import logging
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.models import ReportResponse, OutstandingBill
@@ -86,72 +86,29 @@ def _parse_tally_date_str(date_str: str) -> date:
     return datetime.strptime(date_str.strip(), "%d-%m-%Y").date()
 
 
-def _subtract_pnl_rows(
-    cumulative_rows: list[dict], prior_rows: list[dict]
-) -> list[dict]:
-    """Subtract prior-period P&L rows from cumulative rows to get period-specific values.
-
-    Aligns rows by account_name. For each matching row, subtracts prior closing_balance
-    from cumulative closing_balance and recomputes debit/credit.
-    """
-    prior_map = {r["account_name"]: r["closing_balance"] for r in prior_rows}
-    result = []
-    for row in cumulative_rows:
-        name = row["account_name"]
-        cum_bal = row["closing_balance"]
-        prior_bal = prior_map.get(name, 0.0)
-        period_bal = cum_bal - prior_bal
-        result.append({
-            "account_name": name,
-            "debit_amount": period_bal if period_bal < 0 else 0.0,
-            "credit_amount": period_bal if period_bal > 0 else 0.0,
-            "closing_balance": period_bal,
-        })
-    return result
-
-
 async def profit_and_loss_period(
     client: TallyClient, from_date: str, to_date: str, company: str | None = None
 ) -> ReportResponse:
-    """Fetch period-specific Profit & Loss by subtracting cumulative figures.
+    """Fetch period-specific Profit & Loss.
 
-    Tally's P&L report (TYPE=Data) may return cumulative figures from the
-    Financial Year start, ignoring SVFROMDATE. This function works around
-    that by:
-    1. If from_date is already FY start (April 1), just fetch normally.
-    2. Otherwise, fetch two cumulative P&L reports (FY start→to_date and
-       FY start→day-before-from_date) and subtract to get period-specific data.
+    Tally's P&L report (TYPE=Data) returns unreliable data for partial
+    Financial Year periods.  Only full-FY requests (from_date == FY start)
+    are supported.  For monthly/quarterly breakdowns, callers should use
+    get_sales_register or get_purchase_register instead.
     """
     from_dt = _parse_tally_date_str(from_date)
     fy_start = get_fy_start(from_dt)
-    fy_start_str = format_for_tally(fy_start)
 
-    # If from_date is already FY start, no subtraction needed
+    # If from_date is already FY start, fetch directly
     if from_dt == fy_start:
         logger.debug("P&L period: from_date is FY start, fetching directly")
         return await profit_and_loss(client, from_date, to_date, company)
 
-    # Fetch cumulative P&L from FY start to to_date
-    logger.debug(
-        "P&L period: using subtraction approach (%s to %s via FY start %s)",
-        from_date, to_date, fy_start_str,
-    )
-    cumulative = await profit_and_loss(client, fy_start_str, to_date, company)
-
-    # Fetch cumulative P&L from FY start to the day before from_date
-    prior_end = from_dt - timedelta(days=1)
-    prior_end_str = format_for_tally(prior_end)
-    prior = await profit_and_loss(client, fy_start_str, prior_end_str, company)
-
-    # Subtract to get period-specific values
-    period_rows = _subtract_pnl_rows(cumulative.rows, prior.rows)
-
-    return ReportResponse(
-        report_name="Profit and Loss",
-        company=company or "",
-        from_date=from_dt,
-        to_date=_parse_tally_date_str(to_date),
-        rows=period_rows,
+    # Non-full-FY → Tally TYPE=Data P&L returns unreliable data for partial periods.
+    raise TallyResponseError(
+        "P&L for partial periods is unreliable via Tally's XML API. "
+        "Use get_sales_register or get_purchase_register for monthly/quarterly "
+        "breakdowns — they return accurate transaction-level data."
     )
 
 
