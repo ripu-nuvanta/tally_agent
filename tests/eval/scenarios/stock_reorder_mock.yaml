@@ -6,6 +6,7 @@ turns:
   # Turn 1: table_only — stock reorder (3+ non-numeric columns → no chart)
   - query: "Which items are running low on stock based on last 6 months of sales? Show average monthly consumption, current stock level, and flag items with less than 2 months of stock remaining."
     expect:
+      ground_truth_key: stock_summary
       query_type: aggregation
       has_data: true
       has_chart: false
@@ -34,6 +35,7 @@ turns:
   # Turn 3: line/composed — monthly trend with Change % (secondary axis)
   - query: "What's the month-over-month growth in sales for this FY?"
     expect:
+      ground_truth_key: profit_and_loss
       query_type: trend
       has_data: true
       has_chart: true
@@ -47,6 +49,7 @@ turns:
   # Turn 4: grouped_bar — quarterly comparison (multi-series)
   - query: "Compare Q3 and Q4 revenue and expenses"
     expect:
+      ground_truth_key: profit_and_loss
       query_type: comparison
       has_data: true
       has_chart: true
@@ -60,6 +63,7 @@ turns:
   # Turn 5: table_only — expense percentage breakdown (explicit table request)
   - query: "What percentage of total expenses does each expense ledger represent? Show as a table."
     expect:
+      ground_truth_key: profit_and_loss
       query_type: aggregation
       has_data: true
       has_chart: false
@@ -72,6 +76,7 @@ turns:
   # Turn 6: bar — top ledgers by computed change (code_execution + numeric filtering)
   - query: "Show top 5 ledgers by absolute change in balance between Q3 and Q4"
     expect:
+      ground_truth_key: trial_balance
       query_type: top_n
       has_data: true
       has_chart: true
@@ -85,6 +90,7 @@ turns:
   # Turn 7: composed — monthly sales with average comparison (dual scale)
   - query: "What is the average monthly sales amount for this FY and which months are above or below average?"
     expect:
+      ground_truth_key: profit_and_loss
       query_type: trend
       has_data: true
       has_chart: true
