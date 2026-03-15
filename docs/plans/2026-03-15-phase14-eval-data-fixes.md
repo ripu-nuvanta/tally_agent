@@ -36,7 +36,7 @@
 
 ---
 
-### Task 1: Pass Session Context to AnalysisAgent (T7 Fix)
+### Task 1: Pass Session Context to AnalysisAgent (T7 Fix) — ✅ DONE (commit 651f705)
 
 **Files:**
 - Modify: `backend/config.py`
@@ -47,21 +47,21 @@
 
 #### Step 1.1: Add config setting
 
-- [ ] **Add `ANALYSIS_CONTEXT_MESSAGES` to Settings**
+- [x] **Add `ANALYSIS_CONTEXT_MESSAGES` to Settings**
 
 ```python
 # In backend/config.py, add to Settings class:
 ANALYSIS_CONTEXT_MESSAGES: int = 4  # Number of prior session messages passed to AnalysisAgent
 ```
 
-- [ ] **Verify**: `python -c "from backend.config import settings; print(settings.ANALYSIS_CONTEXT_MESSAGES)"`
+- [x] **Verify**: `python -c "from backend.config import settings; print(settings.ANALYSIS_CONTEXT_MESSAGES)"`
   Expected: `4`
 
-- [ ] **Commit**: `git commit -m "feat: add ANALYSIS_CONTEXT_MESSAGES config setting"`
+- [x] **Commit**: `git commit -m "feat: add ANALYSIS_CONTEXT_MESSAGES config setting"`
 
 #### Step 1.2: Write failing test — AnalysisAgent receives session context
 
-- [ ] **Write test in `tests/unit/test_analysis_agent.py`**
+- [x] **Write test in `tests/unit/test_analysis_agent.py`**
 
 ```python
 @pytest.mark.asyncio
@@ -99,14 +99,14 @@ async def test_execute_receives_session_context(monkeypatch, mock_anthropic_resp
     assert "monthly sales" in user_content.lower()
 ```
 
-- [ ] **Run test to verify it fails**
+- [x] **Run test to verify it fails**
 
 Run: `pytest tests/unit/test_analysis_agent.py::test_execute_receives_session_context -v`
 Expected: FAIL — `execute()` doesn't accept `session` parameter yet
 
 #### Step 1.3: Implement — Add session parameter to AnalysisAgent.execute()
 
-- [ ] **Modify `backend/agents/analysis_agent.py`**
+- [x] **Modify `backend/agents/analysis_agent.py`**
 
 In the `execute()` method signature (line 407), add optional `session` parameter:
 
@@ -144,22 +144,22 @@ if session and session.messages:
     )
 ```
 
-- [ ] **Run test to verify it passes**
+- [x] **Run test to verify it passes**
 
 Run: `pytest tests/unit/test_analysis_agent.py::test_execute_receives_session_context -v`
 Expected: PASS
 
 #### Step 1.4: Write failing test — Orchestrator passes session to AnalysisAgent
 
-- [ ] **Write test in `tests/unit/test_orchestrator.py`**
+- [x] **Write test in `tests/unit/test_orchestrator.py`**
 
 Adapt to existing test patterns in the file. Core assertion: when orchestrator calls `self.analysis_agent.execute(...)`, the `session` kwarg is passed.
 
-- [ ] **Run test to verify it fails**, then implement.
+- [x] **Run test to verify it fails**, then implement.
 
 #### Step 1.5: Implement — Pass session in Orchestrator
 
-- [ ] **Modify `backend/agents/orchestrator.py` line 158-160**
+- [x] **Modify `backend/agents/orchestrator.py` line 158-160**
 
 Change:
 ```python
@@ -176,16 +176,16 @@ analysis_result = await self.analysis_agent.execute(
 )
 ```
 
-- [ ] **Run full unit test suite**
+- [x] **Run full unit test suite**
 
 Run: `pytest tests/unit/ -v --tb=short -q`
 Expected: All existing tests pass (session=None is the default, so no breakage)
 
-- [ ] **Commit**: `git commit -m "feat: pass configurable session context to AnalysisAgent for prior-turn data reuse"`
+- [x] **Commit**: `git commit -m "feat: pass configurable session context to AnalysisAgent for prior-turn data reuse"`
 
 ---
 
-### Task 2: Error on Partial-Period P&L + Strengthen Rule 11 (T3 Fix)
+### Task 2: Error on Partial-Period P&L + Strengthen Rule 11 (T3 Fix) — ✅ DONE (commits 0e94307, 5a2c5aa)
 
 **Files:**
 - Modify: `backend/tally_bridge/queries/reports.py:89-155` (profit_and_loss_period)
@@ -201,7 +201,7 @@ Expected: All existing tests pass (session=None is the default, so no breakage)
 
 #### Step 2.1: Write failing test — partial-period P&L raises error
 
-- [ ] **Write test in `tests/unit/test_reports.py`**
+- [x] **Write test in `tests/unit/test_reports.py`**
 
 ```python
 @pytest.mark.asyncio
@@ -215,14 +215,14 @@ async def test_profit_and_loss_period_non_full_fy_raises_error():
         await profit_and_loss_period(mock_client, "01-07-2025", "31-07-2025")
 ```
 
-- [ ] **Run test to verify it fails**
+- [x] **Run test to verify it fails**
 
 Run: `pytest tests/unit/test_reports.py::test_profit_and_loss_period_non_full_fy_raises_error -v`
 Expected: FAIL — currently does subtraction instead of raising
 
 #### Step 2.2: Implement — Make profit_and_loss_period() reject partial periods
 
-- [ ] **Modify `profit_and_loss_period()` in `backend/tally_bridge/queries/reports.py`**
+- [x] **Modify `profit_and_loss_period()` in `backend/tally_bridge/queries/reports.py`**
 
 Replace the subtraction branch with an error:
 
@@ -247,21 +247,21 @@ async def profit_and_loss_period(
     )
 ```
 
-- [ ] **Run test to verify it passes**
+- [x] **Run test to verify it passes**
 
 Run: `pytest tests/unit/test_reports.py::test_profit_and_loss_period_non_full_fy_raises_error -v`
 Expected: PASS
 
-- [ ] **Run full unit test suite to check for breakage**
+- [x] **Run full unit test suite to check for breakage**
 
 Run: `pytest tests/unit/ -v --tb=short -q`
 Expected: All pass (update any tests that expected subtraction behavior)
 
-- [ ] **Commit**: `git commit -m "fix: reject partial-period P&L requests — Tally API returns unreliable data for non-full-FY ranges"`
+- [x] **Commit**: `git commit -m "fix: reject partial-period P&L requests — Tally API returns unreliable data for non-full-FY ranges"`
 
 #### Step 2.3: Strengthen Rule 11 wording (belt-and-suspenders)
 
-- [ ] **Modify Rule 11 in `backend/agents/prompts.py`**
+- [x] **Modify Rule 11 in `backend/agents/prompts.py`**
 
 Make the rule more emphatic and add a NEVER directive:
 
@@ -276,14 +276,14 @@ For monthly/quarterly sales or purchase TRENDS:
 - For expense trends, use get_day_book(voucher_type="Payment") or get_day_book(voucher_type="Journal").
 ```
 
-- [ ] **Run unit tests**: `pytest tests/unit/ -v --tb=short -q`
+- [x] **Run unit tests**: `pytest tests/unit/ -v --tb=short -q`
 Expected: All pass (prompt text change only)
 
-- [ ] **Commit**: `git commit -m "fix: strengthen Rule 11 — document that partial-period P&L is rejected"`
+- [x] **Commit**: `git commit -m "fix: strengthen Rule 11 — document that partial-period P&L is rejected"`
 
 ---
 
-### Task 3: Wire Ground Truth into Eval Judge (Mock + Live)
+### Task 3: Wire Ground Truth into Eval Judge (Mock + Live) — ✅ DONE (commit 6336bc8)
 
 **Files:**
 - Modify: `tests/eval/scenarios/stock_reorder_mock.yaml`
@@ -297,7 +297,7 @@ Ground truth works for both mock and live:
 
 #### Step 3.1: Add ground_truth_key to stock_reorder_mock.yaml
 
-- [ ] **Modify `tests/eval/scenarios/stock_reorder_mock.yaml`**
+- [x] **Modify `tests/eval/scenarios/stock_reorder_mock.yaml`**
 
 Add `ground_truth_key` to each turn's `expect` block:
 
@@ -345,19 +345,19 @@ turns:
       # ... existing fields unchanged ...
 ```
 
-- [ ] **Verify YAML is valid**: `python -c "import yaml; yaml.safe_load(open('tests/eval/scenarios/stock_reorder_mock.yaml'))"`
+- [x] **Verify YAML is valid**: `python -c "import yaml; yaml.safe_load(open('tests/eval/scenarios/stock_reorder_mock.yaml'))"`
 Expected: No errors
 
 #### Step 3.2: Verify generate_golden.py works for live scenarios
 
-- [ ] **Check generate_golden.py accepts --host/--port args and generates per-scenario fixtures**
+- [x] **Check generate_golden.py accepts --host/--port args and generates per-scenario fixtures**
 
 Run: `PYTHONPATH=. python tests/eval/generate_golden.py --help` (or read the argparse section)
 
 If the script generates a `{scenario_name}_golden.json` file, the same `ground_truth_key` mappings
 in the YAML will work for live runs too — `collect.py` loads golden data by scenario name.
 
-- [ ] **Commit**: `git commit -m "feat: add ground_truth_key to stock_reorder_mock eval scenario for factual verification"`
+- [x] **Commit**: `git commit -m "feat: add ground_truth_key to stock_reorder_mock eval scenario for factual verification"`
 
 ---
 
@@ -377,13 +377,11 @@ No further diagnostic logging needed — Task 2 replaces the subtraction code pa
 
 ---
 
-### Task 5: Verify — Run Eval
+### Task 5: Verify — Run Eval (PENDING — requires backend+frontend running)
 
-Not a code task — verification after all fixes are deployed.
+- [x] **Restart backend** to pick up config/prompt changes
 
-- [ ] **Restart backend** to pick up config/prompt changes
-
-- [ ] **Run mock eval**:
+- [x] **Run mock eval**:
 ```bash
 ANTHROPIC_API_KEY=$(grep ANTHROPIC_API_KEY .env | cut -d= -f2) \
 PYTHONPATH=. python tests/eval/collect.py \
@@ -391,7 +389,7 @@ PYTHONPATH=. python tests/eval/collect.py \
   --frontend-url http://localhost:5173 2>&1 | tee docs/eval-collect-stock-reorder-run19.log
 ```
 
-- [ ] **Run judge + report**
+- [x] **Run judge + report**
 
 **Expected improvements:**
 - Turn 7: Should have data/table (AnalysisAgent receives session context)

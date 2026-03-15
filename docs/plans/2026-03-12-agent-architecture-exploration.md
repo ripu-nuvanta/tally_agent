@@ -2,7 +2,7 @@
 
 **Date**: 2026-03-12
 **Extracted from**: [`2026-03-09-eval-regression-fixes.md`](2026-03-09-eval-regression-fixes.md) (Phase 4 section)
-**Status**: PARTIALLY IMPLEMENTED — Option C1 implemented (commit 839e064)
+**Status**: PARTIALLY IMPLEMENTED — Option C1 (commit 839e064), F2-Option A (commit 651f705)
 
 ---
 
@@ -111,15 +111,20 @@ Option C1 was implemented as part of Phase 12 post-implementation fixes:
 
 **Alternative (incremental):** Keep both agents but route to AnalysisAgent unconditionally for _ANALYSIS_TYPES, even when 0 tool calls. Pass QueryAgent's text response as context. Lower risk but doesn't solve the root architecture question.
 
-### F2: Prior Conversation Data Flow
+### F2: Prior Conversation Data Flow — PARTIALLY IMPLEMENTED (Option A)
 
-Currently AnalysisAgent receives only raw_tally_data and computed_data from tool results. It does NOT receive:
-- Prior conversation context (previous turns' data)
-- QueryAgent's synthesized text when it used cached/conversation data
-- Session-level data cache
+**Implementation (2026-03-15, Phase 14, commit 651f705):**
+
+Option A was implemented: AnalysisAgent.execute() now accepts an optional `session` parameter. When provided, the last N messages (configurable via `ANALYSIS_CONTEXT_MESSAGES`, default 4) are prepended to the user prompt as "Prior Conversation Context". Each message is truncated to 500 chars.
+
+The Orchestrator passes `session=session` to AnalysisAgent for all query types with data. This fixes the Turn 7 issue where AnalysisAgent was skipped because raw_tally_data was empty — now it can reference data from prior turns.
+
+**Remaining options (not yet needed):**
+- B: Maintain a session-level data cache that both agents read (cleaner, more work)
+- C: Merge agents (F1 above) so conversation context is naturally shared
 
 **Options:**
-- A: Pass last N messages to AnalysisAgent (simple, but grows context)
+- ~~A: Pass last N messages to AnalysisAgent (simple, but grows context)~~ ✅ DONE
 - B: Maintain a session-level data cache that both agents read (cleaner, more work)
 - C: Merge agents (F1 above) so conversation context is naturally shared
 
