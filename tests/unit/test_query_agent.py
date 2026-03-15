@@ -515,8 +515,8 @@ class TestQueryAgentBuildTools:
         assert "sort_by_field" not in tool_names
         assert "code_execution_20260120" not in tool_types
 
-    def test_max_tokens_is_1024(self):
-        """QueryAgent should limit output to 1024 tokens to prevent computation waste."""
+    def test_max_tokens_is_2048(self):
+        """QueryAgent should limit output to 2048 tokens."""
         import asyncio
         from unittest.mock import AsyncMock, MagicMock, patch
         from backend.agents.query_agent import QueryAgent
@@ -538,7 +538,7 @@ class TestQueryAgentBuildTools:
             asyncio.run(agent.execute("test query", mock_client, session))
 
             call_kwargs = mock_anthropic.messages.create.call_args
-            assert call_kwargs.kwargs.get("max_tokens") == 1024
+            assert call_kwargs.kwargs.get("max_tokens") == 2048
 
     def test_build_query_tools_disabled_data_fetch_only(self):
         """When code_execution_enabled=False, tool list still has Tally + Date tools only (no analysis)."""
@@ -551,3 +551,42 @@ class TestQueryAgentBuildTools:
         assert "resolve_date_range" in tool_names
         assert "compute_totals" not in tool_names
         assert "code_execution_20260120" not in tool_types
+
+
+# ---------------------------------------------------------------------------
+# Tests: max_tokens truncation warning
+# ---------------------------------------------------------------------------
+
+
+class TestQueryAgentMaxTokensWarning:
+    @pytest.mark.asyncio
+    async def test_max_tokens_truncation_logs_warning(self, caplog):
+        """When stop_reason is 'max_tokens', a warning should be logged."""
+        import logging
+        from backend.agents.query_agent import QueryAgent
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        # Create a response with stop_reason="max_tokens"
+        msg = MagicMock()
+        msg.stop_reason = "max_tokens"
+        text_block = MagicMock()
+        text_block.type = "text"
+        text_block.text = "Truncated response..."
+        msg.content = [text_block]
+
+        with patch("backend.agents.query_agent.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(return_value=msg)
+
+            agent = QueryAgent()
+            with caplog.at_level(logging.WARNING, logger="backend.agents.query_agent"):
+                result = await agent.execute("Show all ledgers", mock_client, session)
+
+        # Should still return the truncated text
+        assert result["message"] == "Truncated response..."
+        # Warning should have been logged
+        assert any(
+            "hit max_tokens limit" in record.message and "2048" in record.message
+            for record in caplog.records
+        ), f"Expected max_tokens warning in logs, got: {[r.message for r in caplog.records]}"

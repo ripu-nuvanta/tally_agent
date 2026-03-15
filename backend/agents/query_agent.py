@@ -101,7 +101,7 @@ class QueryAgent:
             try:
                 response = await anthropic_client.messages.create(
                     model=settings.CLAUDE_MODEL,
-                    max_tokens=1024,
+                    max_tokens=2048,
                     system=system_prompt,
                     tools=_build_query_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,
@@ -117,6 +117,12 @@ class QueryAgent:
                 "QueryAgent turn %d — stop_reason=%s, content_blocks=%d",
                 turn, response.stop_reason, len(response.content),
             )
+
+            if response.stop_reason == "max_tokens":
+                logger.warning(
+                    "QueryAgent hit max_tokens limit (%d) — response may be truncated",
+                    2048,
+                )
 
             # Log Claude's text content for this turn (thinking / reasoning before tool calls)
             for block in response.content:

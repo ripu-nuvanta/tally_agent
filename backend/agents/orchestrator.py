@@ -31,9 +31,6 @@ from backend.agents.context import SessionContext
 from backend.tally_bridge.client import TallyClient
 from backend.utils.date_utils import format_for_tally
 
-# Query types that require analysis post-processing
-_ANALYSIS_TYPES = {"comparison", "trend", "top_n", "aggregation"}
-
 # Patterns indicating user wants table-only output (no chart)
 _TABLE_INTENT_PATTERNS = (
     "show as a table", "as a table", "in table format",
@@ -139,8 +136,6 @@ class Orchestrator:
         tool_results = agent_result.get("tool_results", [])
         all_data = _extract_all_data(tool_results)
         raw_data = all_data[-1] if all_data else None
-        all_datasets = all_data if len(all_data) > 1 else None
-
         raw_tally_data, computed_data = _separate_tool_results(tool_results)
 
         logger.info(
@@ -149,41 +144,35 @@ class Orchestrator:
             len(tool_results), len(all_data), len(raw_tally_data), len(computed_data),
         )
 
-        # --- Analysis Agent (for all query types that have data) ---
+        # --- Analysis Agent (unconditional for all non-greeting/non-clarification queries) ---
         message = agent_result["message"]
         data = raw_data
 
-        if raw_tally_data or computed_data:
-            logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
-            analysis_result = await self.analysis_agent.execute(
-                raw_tally_data, computed_data, user_message, query_type,
-                session=session,
-            )
-            message = analysis_result["message"]
-            data = analysis_result.get("data", raw_data)
-            logger.info(
-                "Orchestrator — AnalysisAgent returned %d tool call(s), chart_suggestion=%s",
-                len(analysis_result.get("tool_results", [])),
-                analysis_result.get("chart_suggestion"),
-            )
+        logger.info("Orchestrator — routing to AnalysisAgent (query_type=%s)", query_type)
+        analysis_result = await self.analysis_agent.execute(
+            raw_tally_data, computed_data, user_message, query_type,
+            session=session,
+        )
+        message = analysis_result["message"]
+        data = analysis_result.get("data", raw_data)
+        logger.info(
+            "Orchestrator — AnalysisAgent returned %d tool call(s), chart_suggestion=%s",
+            len(analysis_result.get("tool_results", [])),
+            analysis_result.get("chart_suggestion"),
+        )
 
-            # Replace the query agent's assistant message with the analysis result
-            # so session history reflects what the user actually sees.
-            if session.messages and session.messages[-1]["role"] == "assistant":
-                session.messages[-1]["content"] = message
-        else:
-            analysis_result = None
+        # Replace the query agent's assistant message with the analysis result
+        # so session history reflects what the user actually sees.
+        if session.messages and session.messages[-1]["role"] == "assistant":
+            session.messages[-1]["content"] = message
 
         # --- Chart Agent (when chart is needed) ---
         chart = None
         if requires_chart:
-            chart_input = analysis_result if analysis_result is not None else {"data": raw_data}
-            chart = self.chart_agent.execute(chart_input, query_type, requires_chart)
+            chart = self.chart_agent.execute(analysis_result, query_type, requires_chart)
 
-        # For multi-dataset responses where analysis didn't merge them, pass all datasets
+        # Final data from analysis result
         final_data = data
-        if all_datasets is not None and analysis_result is None:
-            final_data = _flatten_datasets(all_datasets)
 
         return {
             "query_type": query_type,
@@ -243,19 +232,6 @@ def _strip_markdown_fences(text: str) -> str:
     if match:
         return match.group(1).strip()
     return stripped
-
-
-def _flatten_datasets(datasets: list) -> list[dict]:
-    """Flatten list[list[dict]] into list[dict] with _dataset_index marker."""
-    flat: list[dict] = []
-    for idx, dataset in enumerate(datasets):
-        if isinstance(dataset, list):
-            for record in dataset:
-                if isinstance(record, dict):
-                    flat.append({**record, "_dataset_index": idx})
-        elif isinstance(dataset, dict):
-            flat.append({**dataset, "_dataset_index": idx})
-    return flat
 
 
 # Tool names from ANALYSIS_TOOLS (pre-computed by QueryAgent)

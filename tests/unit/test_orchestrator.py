@@ -205,12 +205,23 @@ class TestOrchestratorClassification:
 
             orch = Orchestrator()
 
-            with patch.object(
-                orch.query_agent, "execute", new_callable=AsyncMock
-            ) as mock_execute:
+            with (
+                patch.object(
+                    orch.query_agent, "execute", new_callable=AsyncMock
+                ) as mock_execute,
+                patch.object(
+                    orch.analysis_agent, "execute", new_callable=AsyncMock
+                ) as mock_analysis,
+            ):
                 mock_execute.return_value = {
                     "message": "Here is the data you requested.",
                     "tool_results": [],
+                }
+                mock_analysis.return_value = {
+                    "message": "Here is the data you requested.",
+                    "data": None,
+                    "tool_results": [],
+                    "chart_suggestion": None,
                 }
 
                 result = await orch.process_query(
@@ -219,6 +230,7 @@ class TestOrchestratorClassification:
 
                 # Should have fallen back to simple_lookup and called query_agent
                 mock_execute.assert_awaited_once()
+                mock_analysis.assert_awaited_once()
 
         assert result["query_type"] == "simple_lookup"
         assert result["message"] == "Here is the data you requested."
@@ -410,7 +422,10 @@ class TestOrchestratorAnalysisRouting:
 
             orch = Orchestrator()
 
-            with patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query:
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+            ):
                 mock_query.return_value = {
                     "message": "Top expenses.",
                     "tool_results": [
@@ -427,6 +442,12 @@ class TestOrchestratorAnalysisRouting:
                         }
                     ],
                 }
+                mock_analysis.return_value = {
+                    "message": "Top expenses.",
+                    "data": [{"Account": "Rent", "Amount": 5000}, {"Account": "Salary", "Amount": 8000}],
+                    "tool_results": [],
+                    "chart_suggestion": "bar",
+                }
 
                 result = await orch.process_query("Show expenses chart", mock_client, session)
 
@@ -434,8 +455,8 @@ class TestOrchestratorAnalysisRouting:
         assert result["query_type"] == "simple_lookup"
 
     @pytest.mark.asyncio
-    async def test_analysis_skipped_when_no_data(self):
-        """If QueryAgent returns no data, AnalysisAgent is skipped."""
+    async def test_analysis_invoked_even_when_no_data(self):
+        """AnalysisAgent is always invoked, even when QueryAgent returns no tool results."""
         from backend.agents.orchestrator import Orchestrator
 
         mock_client = MagicMock()
@@ -458,17 +479,28 @@ class TestOrchestratorAnalysisRouting:
             with (
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
             ):
                 mock_query.return_value = {
                     "message": "No data found.",
                     "tool_results": [],
                 }
+                mock_analysis.return_value = {
+                    "message": "I couldn't find data for top 5 customers.",
+                    "data": None,
+                    "tool_results": [],
+                    "chart_suggestion": None,
+                }
+                mock_chart.return_value = None
 
                 result = await orch.process_query("Top 5 customers", mock_client, session)
 
-                mock_analysis.assert_not_awaited()
+                # AnalysisAgent MUST be invoked even with empty data
+                mock_analysis.assert_awaited_once_with(
+                    [], [], "Top 5 customers", "top_n", session=session,
+                )
 
-        assert result["data"] is None
+        assert result["message"] == "I couldn't find data for top 5 customers."
 
 
 # ---------------------------------------------------------------------------
@@ -550,18 +582,30 @@ class TestOrchestratorAPIError:
 
             orch = Orchestrator()
 
-            with patch.object(
-                orch.query_agent, "execute", new_callable=AsyncMock
-            ) as mock_execute:
+            with (
+                patch.object(
+                    orch.query_agent, "execute", new_callable=AsyncMock
+                ) as mock_execute,
+                patch.object(
+                    orch.analysis_agent, "execute", new_callable=AsyncMock
+                ) as mock_analysis,
+            ):
                 mock_execute.return_value = {
                     "message": "Here is the data.",
                     "tool_results": [],
+                }
+                mock_analysis.return_value = {
+                    "message": "Here is the data.",
+                    "data": None,
+                    "tool_results": [],
+                    "chart_suggestion": None,
                 }
 
                 result = await orch.process_query("Show sales", mock_client, session)
 
                 # Should have fallen back to simple_lookup and called query_agent
                 mock_execute.assert_awaited_once()
+                mock_analysis.assert_awaited_once()
 
         assert result["query_type"] == "simple_lookup"
 
@@ -850,43 +894,6 @@ class TestClassificationFallbackLogging:
                 assert "fallback" in warning_msg.lower() or "Classification" in warning_msg
 
         assert result["query_type"] == "simple_lookup"
-
-
-# ---------------------------------------------------------------------------
-# Tests: _flatten_datasets helper
-# ---------------------------------------------------------------------------
-
-
-class TestFlattenDatasets:
-    """Test _flatten_datasets helper."""
-
-    def test_flattens_two_lists(self):
-        from backend.agents.orchestrator import _flatten_datasets
-        result = _flatten_datasets([[{"a": 1}], [{"b": 2}]])
-        assert len(result) == 2
-        assert result[0] == {"a": 1, "_dataset_index": 0}
-        assert result[1] == {"b": 2, "_dataset_index": 1}
-
-    def test_handles_dict_dataset(self):
-        from backend.agents.orchestrator import _flatten_datasets
-        result = _flatten_datasets([{"x": 1}])
-        assert result == [{"x": 1, "_dataset_index": 0}]
-
-    def test_does_not_mutate_input(self):
-        from backend.agents.orchestrator import _flatten_datasets
-        original = {"key": "val"}
-        _flatten_datasets([[original]])
-        assert "_dataset_index" not in original
-
-    def test_empty_input(self):
-        from backend.agents.orchestrator import _flatten_datasets
-        assert _flatten_datasets([]) == []
-
-    def test_skips_non_dict_items(self):
-        from backend.agents.orchestrator import _flatten_datasets
-        result = _flatten_datasets([[{"a": 1}, "string_item", 42]])
-        assert len(result) == 1
-        assert result[0]["a"] == 1
 
 
 # ---------------------------------------------------------------------------

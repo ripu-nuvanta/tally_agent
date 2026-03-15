@@ -87,7 +87,7 @@ async def test_clarification_returns_question(e2e_client):
 
 @pytest.mark.asyncio
 async def test_simple_lookup_balance_sheet(e2e_client):
-    """Balance sheet lookup -> classify -> query agent (tool call) -> response."""
+    """Balance sheet lookup -> classify -> query agent (tool call) -> analysis agent -> response."""
     client, set_responses, mock_clients = e2e_client
 
     set_responses(
@@ -96,11 +96,15 @@ async def test_simple_lookup_balance_sheet(e2e_client):
             make_tool_call_response("get_balance_sheet", {"from_date": "01-04-2025", "to_date": "31-03-2026"}),
             make_text_response("Here is the balance sheet for FY 2025-26."),
         ],
+        analysis_agent_responses=[
+            make_text_response("Here is the balance sheet for FY 2025-26."),
+        ],
     )
 
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
     ):
         response = await client.post("/api/chat", json={"message": "Show balance sheet"})
 
@@ -236,10 +240,14 @@ async def test_multi_turn_conversation_preserves_session(e2e_client):
             make_tool_call_response("get_trial_balance", {"from_date": "01-04-2025", "to_date": "31-03-2026"}),
             make_text_response("Here is the trial balance."),
         ],
+        analysis_agent_responses=[
+            make_text_response("Here is the trial balance."),
+        ],
     )
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
     ):
         r2 = await client.post("/api/chat", json={"message": "Show trial balance", "session_id": session_id})
 
@@ -266,6 +274,9 @@ async def test_tally_connection_error_surfaced_in_response(e2e_client):
             make_tool_call_response("get_trial_balance", {"from_date": "01-04-2025", "to_date": "31-03-2026"}),
             make_text_response("I'm unable to connect to Tally. Please check the connection."),
         ],
+        analysis_agent_responses=[
+            make_text_response("I'm unable to connect to Tally. Please check the connection."),
+        ],
     )
 
     # Patch the tool handler to raise TallyConnectionError
@@ -275,6 +286,7 @@ async def test_tally_connection_error_surfaced_in_response(e2e_client):
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
         patch("backend.agents.tools.TOOL_HANDLERS", {"get_trial_balance": failing_handler}),
     ):
         response = await client.post("/api/chat", json={"message": "Show trial balance"})
@@ -297,6 +309,9 @@ async def test_tally_response_error_surfaced_in_response(e2e_client):
             make_tool_call_response("get_balance_sheet", {"from_date": "01-04-2025", "to_date": "31-03-2026"}),
             make_text_response("Tally returned an invalid response. Please try again."),
         ],
+        analysis_agent_responses=[
+            make_text_response("Tally returned an invalid response. Please try again."),
+        ],
     )
 
     async def bad_response_handler(client, **kwargs):
@@ -305,6 +320,7 @@ async def test_tally_response_error_surfaced_in_response(e2e_client):
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
         patch("backend.agents.tools.TOOL_HANDLERS", {"get_balance_sheet": bad_response_handler}),
     ):
         response = await client.post("/api/chat", json={"message": "Show balance sheet"})
@@ -333,11 +349,15 @@ async def test_date_resolution_month_name(e2e_client):
             ),
             make_text_response("Here is the P&L for April 2025."),
         ],
+        analysis_agent_responses=[
+            make_text_response("Here is the P&L for April 2025."),
+        ],
     )
 
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
     ):
         response = await client.post(
             "/api/chat",
@@ -367,11 +387,15 @@ async def test_graceful_tool_limit_exceeded(e2e_client):
     set_responses(
         orchestrator_responses=[make_classification_response("simple_lookup")],
         query_agent_responses=tool_calls,
+        analysis_agent_responses=[
+            make_text_response("Here is the trial balance data."),
+        ],
     )
 
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
+        patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
     ):
         response = await client.post(
             "/api/chat",

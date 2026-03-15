@@ -1,0 +1,32 @@
+name: "Architecture Bug Regression (Mock)"
+description: "Validates that follow-up queries using prior-turn data produce full analysis. Regression test for Bug 1 (AnalysisAgent skipped when QueryAgent makes 0 tool calls)."
+tags: [architecture, regression, follow_up, context, mock]
+
+turns:
+  # Turn 1: Establish data — fetch monthly sales
+  - query: "What's the month-over-month growth in sales for this FY?"
+    expect:
+      ground_truth_key: profit_and_loss
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [line, composed, bar]
+      checks:
+        - "Shows monthly sales amounts with MoM growth"
+        - "Data table has multiple months of data"
+        - "Chart renders with sales trend"
+
+  # Turn 2: Follow-up — tests data re-use / re-fetch
+  - query: "What is the average monthly sales amount for this FY and which months were above average?"
+    expect:
+      ground_truth_key: profit_and_loss
+      query_type: trend
+      has_data: true
+      has_chart: true
+      chart_type: [bar, line, composed]
+      checks:
+        - "Response contains actual sales data — NOT an internal status message like 'passing to computation agent'"
+        - "Average monthly sales is computed (not zero or blank)"
+        - "Each month is identified as above or below average"
+        - "At least 3 months of data are shown"
+        - "Data table has numeric values (not all zeros)"

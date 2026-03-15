@@ -974,3 +974,51 @@ class TestAnalysisAgentSessionContext:
 
         assert "message" in result
         assert "10,00,000" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_session_context_includes_8_messages_truncated_at_1500(self):
+        """Context building includes up to 8 messages, each truncated at 1500 chars."""
+        from backend.agents.context import SessionContext
+
+        session = SessionContext()
+        # Add 12 messages — only the last 8 should be included
+        for i in range(12):
+            role = "user" if i % 2 == 0 else "assistant"
+            session.add_message(role, f"Message {i}: " + "x" * 2000)
+
+        agent = AnalysisAgent()
+        captured = {}
+
+        async def mock_create(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _make_text_response("Done.")
+
+        with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(side_effect=mock_create)
+            await agent.execute(
+                raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
+                computed_data=None,
+                user_query="Summary?",
+                query_type="aggregation",
+                session=session,
+            )
+
+        user_content = captured["messages"][0]["content"]
+        assert "Prior Conversation Context" in user_content
+
+        # Exactly 8 messages included (messages 4-11), not the first 4
+        for i in range(4, 12):
+            assert f"Message {i}:" in user_content
+        for i in range(4):
+            assert f"Message {i}:" not in user_content
+
+        # Each message truncated at 1500 chars — no 2000-char 'x' runs
+        # Original content is "Message N: " + "x"*2000 = 2012 chars
+        # After truncation at 1500, each entry has at most 1500 chars of content
+        context_section = user_content.split("Prior Conversation Context")[1].split("## ")[0]
+        entries = [e.strip() for e in context_section.split("\n\n") if e.strip()]
+        for entry in entries:
+            # Strip "User: " or "Assistant: " prefix to get the content portion
+            if ": " in entry:
+                content_part = entry.split(": ", 1)[1]
+                assert len(content_part) <= 1500

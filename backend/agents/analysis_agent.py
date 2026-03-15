@@ -462,7 +462,7 @@ class AnalysisAgent:
             ctx_lines = []
             for msg in recent:
                 role = msg["role"].capitalize()
-                content = msg["content"][:500]
+                content = msg["content"][:1500]
                 ctx_lines.append(f"{role}: {content}")
             context_str = "\n\n".join(ctx_lines)
             parts.insert(0,

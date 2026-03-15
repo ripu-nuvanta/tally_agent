@@ -221,6 +221,19 @@ were ₹Y." Do NOT repeat the data in table format.
 "Debit Note". The value is case-insensitive (auto-title-cased). Do NOT use plurals \
 (e.g. "Payments" is wrong, use "Payment"). Other Tally voucher types exist \
 (Delivery Note, Receipt Note, etc.) but are not currently supported by the tool layer.
+
+13. **Always fetch fresh data**: ALWAYS call Tally tools to fetch data for the current \
+query, even if similar data appears in the conversation history. Prior data may be for \
+different date ranges, ledgers, or filters. Never skip tool calls because "data was \
+already fetched." The analysis agent needs current tool results to produce accurate \
+responses.
+
+14. **Quarterly comparisons — use day book, not trial balance**: Trial Balance from \
+Tally is NOT date-aware — it always returns full-FY cumulative figures regardless of \
+date parameters. For quarterly or period-based comparisons, ALWAYS use \
+get_day_book(from_date, to_date) for each period to get voucher-level transactions, \
+then let the analysis agent compute per-ledger totals. Never call get_trial_balance \
+with quarterly dates expecting period-specific data.
 {structured_rule_block}"""
 
 

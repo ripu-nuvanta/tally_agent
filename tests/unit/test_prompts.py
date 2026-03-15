@@ -127,6 +127,30 @@ class TestQueryAgentPrompt:
         for vtype in ["Sales", "Purchase", "Payment", "Receipt", "Journal", "Contra", "Credit Note", "Debit Note"]:
             assert vtype in prompt
 
+    def test_query_prompt_has_always_fetch_fresh_data_rule(self):
+        """Rule 13 must instruct the agent to always fetch fresh data."""
+        prompt = build_query_agent_prompt("13-03-2026")
+        assert "Always fetch fresh data" in prompt
+        assert "never skip tool calls" in prompt.lower()
+
+    def test_query_prompt_has_quarterly_use_day_book_rule(self):
+        """Rule 14 must warn that Trial Balance is not date-aware."""
+        prompt = build_query_agent_prompt("13-03-2026")
+        assert "Trial Balance" in prompt
+        assert "NOT date-aware" in prompt
+        assert "get_day_book" in prompt
+
+    def test_query_prompt_fresh_data_rule_in_code_exec_mode(self):
+        """Rule 13 must appear in code_execution_enabled mode too."""
+        prompt = build_query_agent_prompt("13-03-2026", code_execution_enabled=True)
+        assert "Always fetch fresh data" in prompt
+
+    def test_query_prompt_quarterly_rule_in_code_exec_mode(self):
+        """Rule 14 must appear in code_execution_enabled mode too."""
+        prompt = build_query_agent_prompt("13-03-2026", code_execution_enabled=True)
+        assert "Trial Balance" in prompt
+        assert "get_day_book" in prompt
+
 
 # ---------------------------------------------------------------------------
 # TestAnalysisAgentPrompt
