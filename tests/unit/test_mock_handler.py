@@ -167,7 +167,7 @@ class TestDateAwarePnL:
         assert q2_result != q3_result, "Q2 and Q3 cumulative P&L must differ"
 
     def test_subtraction_yields_nonzero_for_q3(self):
-        """profit_and_loss_period() for Q3 should yield non-zero after subtraction."""
+        """Q3 cumulative P&L minus Q2 cumulative should be non-zero (mock data has Q3 sales)."""
         cum_xml = _build_pnl_request("01-04-2025", "31-12-2025")
         prior_xml = _build_pnl_request("01-04-2025", "30-09-2025")
         cum_result = mock_tally_request(cum_xml)

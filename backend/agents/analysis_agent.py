@@ -420,6 +420,9 @@ class AnalysisAgent:
                 comparisons). Can be used as-is or enhanced. May be None or empty.
             user_query: Original user question.
             query_type: Classification (comparison, trend, top_n, aggregation).
+            session: Optional SessionContext with prior conversation messages.
+                When provided, recent messages are prepended to the prompt so the
+                model can reference prior-turn data. Defaults to None.
 
         Returns:
             {
@@ -454,8 +457,7 @@ class AnalysisAgent:
 
         # Inject prior conversation context if session provided
         if session and session.messages:
-            from backend.config import settings as _settings
-            n = _settings.ANALYSIS_CONTEXT_MESSAGES
+            n = settings.ANALYSIS_CONTEXT_MESSAGES
             recent = session.messages[-n:]
             ctx_lines = []
             for msg in recent:
