@@ -181,3 +181,15 @@ class TestAnalysisAgentPrompt:
     def test_analysis_prompt_has_missing_months_rule(self):
         prompt = build_analysis_agent_prompt("trend")
         assert "no transactions" in prompt.lower() or "data gap" in prompt.lower()
+
+    def test_analysis_prompt_has_complete_pnl_rule(self):
+        """Rule 16: comparison queries must include Purchases/COGS, not just OpEx."""
+        prompt = build_analysis_agent_prompt("comparison")
+        assert "purchases" in prompt.lower() and "cogs" in prompt.lower()
+        assert "gross profit" in prompt.lower()
+        assert "net profit" in prompt.lower()
+        assert "never omit" in prompt.lower()
+
+    def test_analysis_prompt_complete_pnl_rule_present_with_code_exec(self):
+        prompt = build_analysis_agent_prompt("comparison", code_execution_enabled=True)
+        assert "purchases" in prompt.lower() and "cogs" in prompt.lower()

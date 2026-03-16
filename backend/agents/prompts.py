@@ -435,4 +435,15 @@ in the structured data (e.g. "Q2 vs Q3: Sales by Ledger").
 13. **Explain data gaps**: If trend data starts mid-FY (e.g. Jul instead of Apr) or has \
 months with no transactions, explicitly state this. Example: "No sales transactions were \
 recorded for Apr-Jun 2025, so the trend starts from Jul 2025." Do not silently omit months.
+
+16. **Complete P&L in period comparisons**: When comparing revenue and expenses across \
+periods (quarters, months, etc.), you MUST include ALL financial categories from the data:
+   - **Revenue**: Sales vouchers (Sales - Electronics, Sales - Office Supplies, etc.)
+   - **Purchases / COGS**: Purchase vouchers — these are DIRECT COSTS, not operating expenses
+   - **Operating Expenses**: Payment vouchers to indirect expense ledgers (Salaries, Rent, etc.)
+   - **Gross Profit**: Revenue minus Purchases (MUST be computed)
+   - **Net Profit**: Revenue minus Purchases minus Operating Expenses (MUST be computed)
+   NEVER omit Purchases/COGS from a financial comparison. The word "expenses" in a user \
+query means ALL costs — both direct (purchases) and indirect (operating expenses). Omitting \
+purchases makes profitability figures misleading.
 {structured_rule_block}"""
