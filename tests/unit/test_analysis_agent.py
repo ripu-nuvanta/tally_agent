@@ -1022,3 +1022,68 @@ class TestAnalysisAgentSessionContext:
             if ": " in entry:
                 content_part = entry.split(": ", 1)[1]
                 assert len(content_part) <= 1500
+
+
+# ---------------------------------------------------------------------------
+# Fix: extract_text returns last text block (commit 7f91a31)
+# ---------------------------------------------------------------------------
+
+
+class TestAnalysisAgentLastTextBlock:
+    """Integration-level test: AnalysisAgent returns the LAST text block content
+    when the Claude API response contains multiple text blocks (code_execution)."""
+
+    @pytest.mark.asyncio
+    async def test_code_exec_returns_last_text_block_not_preamble(self):
+        """When Claude returns text + server_tool_use + code_result + text,
+        the AnalysisAgent's message should contain the LAST text block (the answer),
+        not the preamble 'Let me compute...'."""
+        from backend.agents.analysis_agent import AnalysisAgent
+
+        preamble = "Let me compute the monthly averages for you."
+        answer = "Here are the results: The average monthly sales is ₹4,16,483."
+
+        response = MagicMock()
+        response.stop_reason = "end_turn"
+
+        # Block 1: preamble text
+        text_block_1 = MagicMock(type="text")
+        text_block_1.text = preamble
+
+        # Block 2: server_tool_use (code_execution)
+        server_tool = MagicMock(type="server_tool_use")
+        server_tool.input = {"code": "print('hello')"}
+
+        # Block 3: code_execution_tool_result
+        code_result = MagicMock(type="code_execution_tool_result")
+        code_result.stdout = "hello\n"
+        code_result.stderr = ""
+        code_result.return_code = 0
+
+        # Block 4: final answer text
+        text_block_2 = MagicMock(type="text")
+        text_block_2.text = answer + "\nChart suggestion: table_only"
+
+        response.content = [text_block_1, server_tool, code_result, text_block_2]
+
+        with (
+            patch("backend.agents.analysis_agent.anthropic_client") as mock_claude,
+            patch("backend.agents.analysis_agent.settings") as mock_settings,
+        ):
+            mock_settings.CLAUDE_MODEL = "test-model"
+            mock_settings.CODE_EXECUTION_ENABLED = True
+            mock_claude.messages.create = AsyncMock(return_value=response)
+
+            agent = AnalysisAgent()
+            result = await agent.execute(
+                raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
+                computed_data=None,
+                user_query="What is the average monthly sales?",
+                query_type="aggregation",
+            )
+
+        # The message should contain the LAST text block (the answer)
+        assert "average monthly sales" in result["message"]
+        assert "₹4,16,483" in result["message"]
+        # The preamble should NOT be in the returned message
+        assert "Let me compute" not in result["message"]
