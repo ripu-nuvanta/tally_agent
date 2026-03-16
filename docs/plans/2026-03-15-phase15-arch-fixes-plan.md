@@ -322,9 +322,13 @@ The agent's Q3+Q4 figures are **actually correct**:
 - Purchases: Q3 ₹16,74,600 + Q4 ₹3,01,700 = ₹19,76,300 (full-year = ₹25,21,300, gap = P001 Q2 purchase)
 - OpEx: Q3 ₹6,62,000 + Q4 ₹6,81,000 = ₹13,43,000 ✓ (matches full-year)
 
-**Fix needed**: Add quarterly ground truth keys to `mock_golden.json`:
-- `profit_and_loss_q3` (Oct–Dec 2025)
-- `profit_and_loss_q4` (Jan–Mar 2026)
-- `purchases_q3`, `purchases_q4` with per-ledger breakdown
+**Fix**: Added `quarterly_comparison_q3_q4` to `mock_golden.json` with per-ledger breakdowns for revenue, purchases, expenses, GP, and NP. Updated Turn 4 `ground_truth_key` to `quarterly_comparison_q3_q4`.
+Commit: `87773e5` — golden data + scenario YAML.
 
-Then update `stock_reorder_mock.yaml` Turn 4 to use `ground_truth_key: profit_and_loss_q3_q4` (or similar composite key). This lets the judge validate quarterly figures against quarterly ground truth instead of full-year totals.
+### Tests added (commit 1168c2c)
+
+- **AnalysisAgent integration test**: `test_code_exec_returns_last_text_block_not_preamble` — mocks multi-block code_execution response, verifies last text block returned
+- **10 quarterly ground truth tests**: `test_quarterly_ground_truth.py` — validates Q3/Q4 golden data against fixture generator vouchers, cross-checks full-year P&L totals
+- Total: 625 unit tests passing (614 + 11 new)
+
+### Pending: Re-run eval (Run 24) to verify both fixes
