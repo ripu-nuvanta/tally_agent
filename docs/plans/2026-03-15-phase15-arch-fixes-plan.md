@@ -355,4 +355,18 @@ Ground truth pipeline verified working — the quarterly_comparison_q3_q4 data f
 
 **Fix**: Added Rule 16 to AnalysisAgent prompt — explicitly requires Revenue, Purchases/COGS, OpEx, Gross Profit, and Net Profit for period comparisons. Commit: `5720cc1`. 2 new prompt tests.
 
-### Pending: Re-run eval (Run 25) to verify Rule 16 fixes Turn 4
+### Session management pollution — QueryAgent→Orchestrator (P1)
+
+**Root cause**: QueryAgent added `("user", query)` + `("assistant", QA_text)` to session BEFORE AnalysisAgent ran. AnalysisAgent then read `session.messages[-8:]` and saw the current turn's user query + QueryAgent's raw text as a "prior turn":
+- Turn 4: AnalysisAgent reconciled against QA's incorrect numbers ("Q3 revenue differs from prior turn")
+- Turn 7: AnalysisAgent saw same query twice → "same question as prior turn"
+
+**Fix**: Moved session.add_message calls from QueryAgent to Orchestrator, AFTER AnalysisAgent completes. Now AnalysisAgent only sees genuinely prior turns. Commit: `7b6811f`.
+
+**Tests added** (commit `15bcba5`):
+- `test_session_messages_added_after_full_pipeline` — Orchestrator adds user + analysis message
+- `test_session_empty_when_analysis_agent_called` — session clean on first turn
+- `test_session_context_excludes_current_turn` — AnalysisAgent context has prior turns only
+- Total: 630 unit tests passing (627 + 3 new)
+
+### Pending: Re-run eval (Run 25) to verify all 3 fixes (Rule 16, session mgmt, extract_text)
