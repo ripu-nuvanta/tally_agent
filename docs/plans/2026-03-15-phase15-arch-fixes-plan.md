@@ -331,4 +331,28 @@ Commit: `87773e5` — golden data + scenario YAML.
 - **10 quarterly ground truth tests**: `test_quarterly_ground_truth.py` — validates Q3/Q4 golden data against fixture generator vouchers, cross-checks full-year P&L totals
 - Total: 625 unit tests passing (614 + 11 new)
 
-### Pending: Re-run eval (Run 24) to verify both fixes
+### Eval Run 24 (stock_reorder_mock, post-extract_text fix + quarterly ground truth)
+
+| Turn | Query | R23 F/Q/C/Ch | R24 F/Q/C/Ch | Delta |
+|------|-------|--------------|--------------|-------|
+| 1 | Stock reorder | 4/5/5/— | 4/5/5/— | same |
+| 2 | Top 10 customers | 5/5/5/4 | 5/5/5/4 | same |
+| 3 | MoM growth | **1/1/2**/— | **5/5/5/3** | **FIXED** (extract_text) |
+| 4 | Q3 vs Q4 | 3/5/4/3 | 3/5/5/3 | coherence +1, factual still 3 |
+| 5 | Expense % | 5/5/5/— | 5/5/5/— | same |
+| 6 | Top 5 change | 3/5/5/4 | 3/5/5/— | chart lost |
+| 7 | Avg monthly | **1/1/2**/— | **5/5/5/4** | **FIXED** (extract_text) |
+
+**Bug 1 (Turns 3 & 7): CONFIRMED FIXED** — extract_text returning last text block resolved completely.
+
+### Turn 4 factual=3: Root cause — AnalysisAgent omits Purchases/COGS
+
+Judge reasoning: "the response completely omits purchases data (Q3: ₹16,74,600, Q4: ₹3,01,700)... It calculates 'Operating Profit' as Revenue minus OpEx only."
+
+Ground truth pipeline verified working — the quarterly_comparison_q3_q4 data flows intact to the judge. The issue is the AnalysisAgent's response: it categorizes vouchers into Revenue and Operating Expenses but skips Purchases/COGS, making Q3 appear profitable when it actually lost ₹11.45L.
+
+**Root cause**: AnalysisAgent comparison guidance too vague about what "expenses" means. When user says "revenue and expenses," model interprets as Revenue + OpEx only, omitting direct costs (Purchases). Classic accounting ambiguity.
+
+**Fix**: Added Rule 16 to AnalysisAgent prompt — explicitly requires Revenue, Purchases/COGS, OpEx, Gross Profit, and Net Profit for period comparisons. Commit: `5720cc1`. 2 new prompt tests.
+
+### Pending: Re-run eval (Run 25) to verify Rule 16 fixes Turn 4
