@@ -134,8 +134,8 @@ class QueryAgent:
                 final_text = extract_text(response)
                 logger.info("QueryAgent turn %d — final answer (%d chars)", turn, len(final_text))
                 logger.debug("QueryAgent turn %d — FINAL ANSWER:\n%s", turn, final_text)
-                session.add_message("user", user_query)
-                session.add_message("assistant", final_text)
+                # NOTE: Session messages are managed by the Orchestrator, not here.
+                # Adding messages here would pollute session context before AnalysisAgent runs.
                 return {"message": final_text, "tool_results": tool_results}
 
             # ---- Tool use: execute all requested tools ----
@@ -195,12 +195,11 @@ class QueryAgent:
                 logger.warning(
                     "QueryAgent — hit max tool calls (%d), stopping", self.max_tool_calls,
                 )
-                session.add_message("user", user_query)
                 msg = (
                     f"I reached the maximum number of tool calls ({self.max_tool_calls}). "
                     "Here is what I found so far based on the data retrieved."
                 )
-                session.add_message("assistant", msg)
+                # NOTE: Session messages are managed by the Orchestrator, not here.
                 return {"message": msg, "tool_results": tool_results}
 
 

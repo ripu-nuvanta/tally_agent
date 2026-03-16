@@ -71,8 +71,12 @@ class TestQueryAgentDirectAnswer:
         assert result["tool_results"] == []
 
     @pytest.mark.asyncio
-    async def test_session_messages_updated(self):
-        """After execution, the session should contain the user and assistant messages."""
+    async def test_session_messages_not_modified_by_query_agent(self):
+        """QueryAgent must NOT add messages to session — Orchestrator owns session state.
+
+        This prevents AnalysisAgent from seeing the current turn's QueryAgent text
+        as a 'prior turn' response, which caused it to say 'same question as prior turn'.
+        """
         from backend.agents.query_agent import QueryAgent
 
         mock_client = MagicMock()
@@ -86,13 +90,9 @@ class TestQueryAgentDirectAnswer:
             agent = QueryAgent()
             await agent.execute("What are total sales?", mock_client, session)
 
-        # Session should have user + assistant messages
+        # QueryAgent must NOT touch session — Orchestrator adds messages after AnalysisAgent
         msgs = session.get_messages()
-        assert len(msgs) == 2
-        assert msgs[0]["role"] == "user"
-        assert msgs[0]["content"] == "What are total sales?"
-        assert msgs[1]["role"] == "assistant"
-        assert msgs[1]["content"] == "The total sales are ₹40,34,350."
+        assert len(msgs) == 0
 
 
 # ---------------------------------------------------------------------------

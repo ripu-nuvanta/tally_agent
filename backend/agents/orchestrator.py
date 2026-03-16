@@ -145,6 +145,11 @@ class Orchestrator:
         )
 
         # --- Analysis Agent (unconditional for all non-greeting/non-clarification queries) ---
+        # NOTE: Session messages are added AFTER AnalysisAgent runs, not before.
+        # QueryAgent no longer touches session — this prevents the AnalysisAgent from
+        # seeing the current turn's user query + QueryAgent text as a "prior turn",
+        # which caused it to say "same question as prior turn" or reconcile against
+        # QueryAgent's incorrect intermediate numbers.
         message = agent_result["message"]
         data = raw_data
 
@@ -161,10 +166,9 @@ class Orchestrator:
             analysis_result.get("chart_suggestion"),
         )
 
-        # Replace the query agent's assistant message with the analysis result
-        # so session history reflects what the user actually sees.
-        if session.messages and session.messages[-1]["role"] == "assistant":
-            session.messages[-1]["content"] = message
+        # Add the final user query + analysis result to session AFTER both agents complete.
+        session.add_message("user", user_message)
+        session.add_message("assistant", message)
 
         # --- Chart Agent (when chart is needed) ---
         chart = None
