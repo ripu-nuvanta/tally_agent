@@ -66,6 +66,24 @@ class TestExtractText:
         response.content = [block]
         assert extract_text(response) == ""
 
+    def test_returns_last_text_block_for_code_execution(self):
+        """Bug fix: with code_execution, the first text block is a preamble
+        and the actual answer is the last text block after code runs."""
+        preamble = MagicMock(type="text", text="Let me compute this from the raw data.")
+        server_tool = MagicMock(type="server_tool_use")
+        code_result = MagicMock(type="code_execution_tool_result")
+        final_answer = MagicMock(type="text", text="Monthly sales: Apr ₹5L, May ₹8L...")
+        response = MagicMock()
+        response.content = [preamble, server_tool, code_result, final_answer]
+        assert extract_text(response) == "Monthly sales: Apr ₹5L, May ₹8L..."
+
+    def test_single_text_block_still_works(self):
+        """Backward compat: single text block returns that block."""
+        block = MagicMock(type="text", text="Simple answer")
+        response = MagicMock()
+        response.content = [MagicMock(type="tool_use"), block]
+        assert extract_text(response) == "Simple answer"
+
 
 from backend.agents.utils import find_custom_tool_use_blocks
 

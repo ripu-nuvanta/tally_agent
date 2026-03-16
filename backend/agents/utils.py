@@ -12,11 +12,17 @@ STRUCTURED_RESULT_PREFIX = "STRUCTURED_RESULT:"
 
 
 def extract_text(response: Any) -> str:
-    """Pull the text content from a Claude response."""
+    """Pull the final text content from a Claude response.
+
+    Returns the *last* text block, not the first.  With code_execution
+    responses the first text block is often a preamble ("Let me compute…")
+    while the actual answer appears after the code_execution_tool_result.
+    """
+    last_text = ""
     for block in response.content:
         if block.type == "text":
-            return block.text
-    return ""
+            last_text = block.text
+    return last_text
 
 
 def find_tool_use_block(response: Any) -> Any | None:
