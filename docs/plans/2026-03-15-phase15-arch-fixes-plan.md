@@ -276,10 +276,55 @@ Task 5 (eval scenario) ← depends on Tasks 1-4 being implemented
 ## Not Addressed (Future Work)
 
 - Turn 6 chart data zeroing (separate chart_agent bug)
-- Q3/Q4 golden data for judge factual verification
 - Turn 2 chart x-axis using ranks instead of customer names
 - Turn 1 "months" vs "days" of stock remaining
 
 ## Key Learning: Trial Balance is NOT Date-Aware
 
 Tally's Trial Balance API (both live and mock) always returns full-FY cumulative figures regardless of SVFROMDATE/SVTODATE parameters. This is a Tally API limitation, not a mock handler bug. The correct approach for quarterly comparisons is to use `get_day_book` for each period and compute per-ledger totals from voucher-level data. Task 2's Rule 14 encodes this knowledge in the QueryAgent prompt.
+
+---
+
+## Phase 15b: Post-fix Eval Run 23 (2026-03-16)
+
+### Eval Run 23 (stock_reorder_mock, post-Phase 15 + pre-extract_text fix)
+
+| Turn | Query | F | Q | C | Ch |
+|------|-------|---|---|---|-----|
+| 1 | Stock reorder | 4 | 5 | 5 | — |
+| 2 | Top 10 customers | 5 | 5 | 5 | 4 |
+| 3 | MoM growth | **1** | **1** | **2** | — |
+| 4 | Q3 vs Q4 | 3 | 5 | 4 | 3 |
+| 5 | Expense % | 5 | 5 | 5 | — |
+| 6 | Top 5 change | 3 | 5 | 5 | 4 |
+| 7 | Avg monthly (follow-up) | **1** | **1** | **2** | — |
+
+### Bug Found: `extract_text()` returns first text block, not last (P0)
+
+**Root cause**: `backend/agents/utils.py:extract_text()` returned the **first** `text` block from Claude's response. With `code_execution_20260120`, responses contain multiple text blocks:
+
+1. First text block: preamble ("Let me re-run the computation...")
+2. `server_tool_use` block (Python code execution)
+3. `code_execution_tool_result` block (stdout with computed results)
+4. Last text block: **actual answer** with data tables and analysis
+
+The function returned block #1 instead of block #4. Langfuse showed the correct response (block #4) after full processing, but the orchestrator returned the preamble to the user.
+
+**Fix**: Changed `extract_text()` to return the *last* text block instead of the first.
+Commit: `7f91a31` — 2 files changed, 2 new tests, 614 unit tests passing.
+
+### Turn 4 (factual=3): Ground truth lacks quarterly breakdown
+
+**Root cause**: `stock_reorder_mock.yaml` Turn 4 validates against `ground_truth_key: profit_and_loss`, which maps to full-year P&L in `mock_golden.json` (Apr 2025–Mar 2026). The judge compares Q3+Q4 figures against full-year totals and finds a purchase gap of ₹5,45,000 — this is invoice P001 (Samsung stock, Sep 28 2025, Q2) which correctly belongs to Q2, not Q3/Q4.
+
+The agent's Q3+Q4 figures are **actually correct**:
+- Revenue: Q3 ₹11,91,250 + Q4 ₹8,66,400 = ₹20,57,650 ✓ (matches full-year)
+- Purchases: Q3 ₹16,74,600 + Q4 ₹3,01,700 = ₹19,76,300 (full-year = ₹25,21,300, gap = P001 Q2 purchase)
+- OpEx: Q3 ₹6,62,000 + Q4 ₹6,81,000 = ₹13,43,000 ✓ (matches full-year)
+
+**Fix needed**: Add quarterly ground truth keys to `mock_golden.json`:
+- `profit_and_loss_q3` (Oct–Dec 2025)
+- `profit_and_loss_q4` (Jan–Mar 2026)
+- `purchases_q3`, `purchases_q4` with per-ledger breakdown
+
+Then update `stock_reorder_mock.yaml` Turn 4 to use `ground_truth_key: profit_and_loss_q3_q4` (or similar composite key). This lets the judge validate quarterly figures against quarterly ground truth instead of full-year totals.
