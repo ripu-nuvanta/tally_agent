@@ -49,7 +49,7 @@ turns:
   # Turn 4: grouped_bar — quarterly comparison (multi-series)
   - query: "Compare Q3 and Q4 revenue and expenses"
     expect:
-      ground_truth_key: profit_and_loss
+      ground_truth_key: quarterly_comparison_q3_q4
       query_type: comparison
       has_data: true
       has_chart: true

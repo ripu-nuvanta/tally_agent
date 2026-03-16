@@ -355,5 +355,55 @@
       }
     ],
     "raw_response": ""
+  },
+  "quarterly_comparison_q3_q4": {
+    "q3": {
+      "period": "Oct-Dec 2025",
+      "revenue": {
+        "Sales - Electronics": 1139500.0,
+        "Sales - Office Supplies": 51750.0,
+        "total": 1191250.0
+      },
+      "purchases": {
+        "Purchase - Electronics": 1674600.0,
+        "Purchase - Office Supplies": 0.0,
+        "total": 1674600.0
+      },
+      "expenses": {
+        "Rent": 150000.0,
+        "Salaries": 500000.0,
+        "Electricity": 12000.0,
+        "Internet & Phone": 0.0,
+        "Office Maintenance": 0.0,
+        "Travel & Conveyance": 0.0,
+        "total": 662000.0
+      },
+      "gross_profit": -483350.0,
+      "net_profit": -1145350.0
+    },
+    "q4": {
+      "period": "Jan-Mar 2026",
+      "revenue": {
+        "Sales - Electronics": 811400.0,
+        "Sales - Office Supplies": 55000.0,
+        "total": 866400.0
+      },
+      "purchases": {
+        "Purchase - Electronics": 102500.0,
+        "Purchase - Office Supplies": 199200.0,
+        "total": 301700.0
+      },
+      "expenses": {
+        "Rent": 150000.0,
+        "Salaries": 500000.0,
+        "Electricity": 0.0,
+        "Internet & Phone": 8000.0,
+        "Office Maintenance": 8000.0,
+        "Travel & Conveyance": 15000.0,
+        "total": 681000.0
+      },
+      "gross_profit": 564700.0,
+      "net_profit": -116300.0
+    }
   }
 }
