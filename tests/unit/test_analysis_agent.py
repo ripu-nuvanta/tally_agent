@@ -976,6 +976,66 @@ class TestAnalysisAgentSessionContext:
         assert "10,00,000" in result["message"]
 
     @pytest.mark.asyncio
+    async def test_session_context_excludes_current_turn(self):
+        """AnalysisAgent prompt includes prior turns but NOT the current turn's query/response.
+
+        Since Orchestrator adds messages AFTER AnalysisAgent completes, the session
+        passed to AnalysisAgent should only contain prior turns.  This test simulates
+        a second turn where session has one prior turn (turn 1), and verifies:
+        1. The prior turn IS in the prompt context
+        2. The current turn's user query is in the prompt (as the active query, not context)
+        3. The current turn's QueryAgent text is NOT in the context
+        """
+        from backend.agents.context import SessionContext
+
+        session = SessionContext()
+        # Prior turn (turn 1) — already in session before AnalysisAgent runs
+        session.add_message("user", "Show monthly sales for this FY")
+        session.add_message("assistant", "Monthly sales: Jul ₹2,95,000 / Aug ₹3,00,000")
+        # Current turn (turn 2) is NOT added to session yet — Orchestrator adds it after
+
+        agent = AnalysisAgent()
+        captured = {}
+
+        async def mock_create(**kwargs):
+            captured["messages"] = kwargs["messages"]
+            return _make_text_response("The average monthly sales is ₹4,16,483.")
+
+        with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(side_effect=mock_create)
+            await agent.execute(
+                raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
+                computed_data=None,
+                user_query="What is the average monthly sales?",
+                query_type="aggregation",
+                session=session,
+            )
+
+        user_content = captured["messages"][0]["content"]
+
+        # Prior turn IS in context
+        assert "Prior Conversation Context" in user_content
+        assert "Monthly sales: Jul" in user_content
+
+        # Extract just the context block (between "Prior Conversation Context" header and
+        # the next section starting with "User query:" which is the active query)
+        context_start = user_content.index("Prior Conversation Context")
+        # The active query line "User query: ..." marks end of context section
+        active_query_start = user_content.index("User query:")
+        context_section = user_content[context_start:active_query_start]
+
+        # Context should contain the prior turn's messages
+        assert "Show monthly sales for this FY" in context_section
+        assert "Monthly sales: Jul" in context_section
+
+        # Context should NOT contain the current turn's query text
+        assert "average monthly sales" not in context_section
+
+        # The active query line should contain the current query (outside context section)
+        active_line = user_content[active_query_start:user_content.index("\n", active_query_start)]
+        assert "What is the average monthly sales" in active_line
+
+    @pytest.mark.asyncio
     async def test_session_context_includes_8_messages_truncated_at_1500(self):
         """Context building includes up to 8 messages, each truncated at 1500 chars."""
         from backend.agents.context import SessionContext

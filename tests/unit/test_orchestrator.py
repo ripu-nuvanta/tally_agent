@@ -1323,3 +1323,134 @@ class TestOrchestratorPassesSession:
                 call_kwargs = mock_analysis.call_args.kwargs
                 assert "session" in call_kwargs
                 assert call_kwargs["session"] is session
+
+
+class TestSessionManagementInOrchestrator:
+    """Tests verifying session messages are added AFTER the full pipeline completes,
+    not before AnalysisAgent runs.  This prevents AnalysisAgent from seeing the
+    current turn's QueryAgent text as a 'prior turn'."""
+
+    @pytest.mark.asyncio
+    async def test_session_messages_added_after_full_pipeline(self):
+        """After process_query, session has exactly 2 new messages:
+        (user, user_message) and (assistant, analysis_result_message).
+        The assistant message must be from AnalysisAgent, NOT QueryAgent."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "simple_lookup",
+            "requires_chart": False,
+            "reasoning": "User wants trial balance",
+            "clarification_question": None,
+        }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+            ):
+                mock_query.return_value = {
+                    "message": "QueryAgent intermediate text — should NOT appear in session.",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_trial_balance",
+                            "tool_input": {"from_date": "01-04-2025", "to_date": "31-03-2026"},
+                            "result": {
+                                "success": True,
+                                "data": [{"account": "Sales", "amount": 500000}],
+                            },
+                        }
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": "The trial balance shows total debits of ₹50,00,000.",
+                    "data": [{"account": "Sales", "amount": 500000}],
+                    "tool_results": [],
+                    "chart_suggestion": "table_only",
+                }
+
+                result = await orch.process_query(
+                    "Show trial balance", mock_client, session
+                )
+
+        msgs = session.get_messages()
+        assert len(msgs) == 2
+        assert msgs[0]["role"] == "user"
+        assert msgs[0]["content"] == "Show trial balance"
+        assert msgs[1]["role"] == "assistant"
+        # Assistant message is AnalysisAgent's message, NOT QueryAgent's
+        assert msgs[1]["content"] == "The trial balance shows total debits of ₹50,00,000."
+        assert "QueryAgent intermediate text" not in msgs[1]["content"]
+
+    @pytest.mark.asyncio
+    async def test_session_empty_when_analysis_agent_called(self):
+        """On first turn, session.messages must be empty when AnalysisAgent.execute
+        is called — Orchestrator must not add messages before AnalysisAgent runs."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "comparison",
+            "requires_chart": True,
+            "reasoning": "User wants comparison",
+            "clarification_question": None,
+        }
+
+        # Capture session state at the moment AnalysisAgent is called
+        captured_session_messages = []
+
+        async def capture_session_state(*args, **kwargs):
+            # Snapshot the session messages at call time
+            captured_session_messages.extend(session.get_messages())
+            return {
+                "message": "Analysis complete: Q1=₹1,00,000, Q2=₹1,50,000.",
+                "data": {"headers": ["Period", "Sales"], "rows": [["Q1", 100000], ["Q2", 150000]]},
+                "tool_results": [],
+                "chart_suggestion": "grouped_bar",
+            }
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock,
+                             side_effect=capture_session_state) as mock_analysis,
+            ):
+                mock_query.return_value = {
+                    "message": "Data fetched.",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_sales_register",
+                            "tool_input": {},
+                            "result": {"success": True, "data": [{"party": "A", "amount": 100000}]},
+                        }
+                    ],
+                }
+
+                await orch.process_query("Compare Q1 vs Q2 sales", mock_client, session)
+
+        # At the time AnalysisAgent was called, session should have been empty
+        assert captured_session_messages == [], (
+            f"Session had {len(captured_session_messages)} message(s) when AnalysisAgent "
+            f"was called — expected 0 (messages should be added AFTER AnalysisAgent completes)"
+        )
+
+        # After the full pipeline, session should have the 2 messages
+        msgs = session.get_messages()
+        assert len(msgs) == 2
