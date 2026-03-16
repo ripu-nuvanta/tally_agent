@@ -189,3 +189,73 @@ The company selector exists in the UI but has no effect on query execution:
 ### Priority Assessment
 
 **Medium-High**. The feature is user-visible (dropdown exists, does nothing) which creates a UX trust issue. Implementation is low-risk and moderate effort (~50-100 LOC across 4-5 files). Should be addressed before any public demo or user testing.
+
+---
+
+## F3: Chart Pipeline — Rethink or Replace
+
+### Problem Statement
+
+The current 3-agent pipeline (QueryAgent → AnalysisAgent → ChartAgent) has a fragile handoff for chart rendering. ChartAgent receives structured data from AnalysisAgent and generates a Recharts-compatible spec, but this frequently breaks:
+
+- **Numeric column detection** fails on mixed text/number columns
+- **Chart type selection** doesn't always match the data shape
+- **Data zeroing** — chart spec sometimes zeros out valid values (GP/NP in Turn 4)
+- **Secondary axis scaling** — percentage values plotted on same scale as rupee amounts
+- Eval runs consistently score chart quality 3/5 even when table data is correct
+
+The ChartAgent is a separate LLM call that parses AnalysisAgent output, adding latency (~5-10s) and another failure point. Meanwhile, the AnalysisAgent already has `code_execution` — a full Python sandbox.
+
+### Options to Explore
+
+#### Option A: AnalysisAgent generates chart spec directly (eliminate ChartAgent)
+
+Since AnalysisAgent has `code_execution`, it could output the Recharts-compatible chart spec as part of its STRUCTURED_RESULT. This eliminates the ChartAgent entirely:
+
+- AnalysisAgent already knows the data shape, column types, and what it computed
+- No lossy handoff between agents
+- Saves one LLM call (~5-10s latency)
+- Prompt Rule 14 (STRUCTURED_RESULT) already defines the output contract
+
+**Challenge**: AnalysisAgent prompt is already long. Adding chart spec generation rules adds complexity. Need to define a clean `chart_spec` format in STRUCTURED_RESULT.
+
+#### Option B: AnalysisAgent generates charts as images via code_execution
+
+The `code_execution` sandbox supports matplotlib/plotly. AnalysisAgent could generate chart images (PNG/SVG) directly in Python code, bypassing Recharts entirely:
+
+- Full control over chart styling, axes, formatting
+- No frontend chart rendering bugs
+- Charts are deterministic (Python code, not LLM-generated spec)
+- Can use Indian number formatting natively
+
+**Challenge**: Need to figure out how code_execution returns images (base64? file reference?). Frontend needs to render images instead of Recharts components. Loses interactivity (hover, click, resize).
+
+#### Option C: Hide charts, table-only for now
+
+Given that table quality is consistently 5/5 while chart quality hovers at 3/5:
+
+- Remove chart rendering from the pipeline entirely
+- Focus on high-quality tables with proper formatting
+- Revisit charts later when the data pipeline is more mature
+- Simplest option, removes a whole category of bugs
+
+**Tradeoff**: Users expect charts for trend/comparison queries. Tables alone may feel incomplete for a "data assistant" product.
+
+#### Option D: Hybrid — keep ChartAgent but make it deterministic
+
+Instead of LLM-based chart spec generation, use rule-based logic:
+
+- If data has 1 category column + 1-2 numeric columns → bar chart
+- If data has period/month column + numeric → line chart
+- If data has 2 period columns (Q3, Q4) → grouped bar
+- If data has percentage column → pie chart
+
+**Tradeoff**: Less flexible but more reliable. Loses the "smart" chart selection but gains consistency.
+
+### Recommendation
+
+Explore **Option A first** (AnalysisAgent generates chart spec) as it's the least disruptive change — keeps Recharts frontend, eliminates ChartAgent latency, and leverages code_execution's existing capability. Fall back to **Option D** if prompt complexity becomes unmanageable.
+
+### Priority Assessment
+
+**Medium**. Charts are a UX differentiator but currently unreliable. The table output is the primary value delivery. Address after core accuracy issues (Turns 4/6 factual scoring) are resolved.
