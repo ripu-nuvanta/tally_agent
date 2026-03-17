@@ -231,3 +231,110 @@ TURN_7_AVG_MONTHLY = {
         "to benchmark among Q4 months, suggesting partial recovery after a slow Feb/Mar."
     ),
 }
+
+# ---------------------------------------------------------------------------
+# Overspending analysis: two tables, picks the larger (7-row), TOTAL excluded
+# query_type: comparison  |  chart_suggestion: bar
+# ---------------------------------------------------------------------------
+
+TURN_OVERSPENDING = {
+    "query": "Where am I overspending compared to prior months?",
+    "query_type": "comparison",
+    "chart_suggestion": "bar",
+    "message": """**⚠️ Data Note:** March 2026 has only **1 day** of records (Mar 1 — one sales invoice + one receipt). No expense payments have been posted yet. The analysis therefore uses **February 2026** as the most recent complete month and compares it against the prior 3-month average (Nov 2025–Jan 2026).
+
+---
+
+## 📊 Where Are You Overspending? — February 2026 vs 3-Month Average
+
+**Two new expense categories appeared in Feb 2026 that had zero spend in any prior month**, pushing total operating expenses to ₹3,48,000 — ₹16,333 (+4.9%) above the 3-month average.
+
+---
+
+### 🔺 Overspending Categories (Feb 2026)
+
+| Rank | Expense Category | Nov '25 | Dec '25 | Jan '26 | **Feb '26** | vs 3M Avg | Note |
+|------|-----------------|---------|---------|---------|------------|-----------|------|
+| **#1** | **Travel & Conveyance** | — | — | — | **₹15,000** | **+₹15,000** | Brand new expense |
+| **#2** | **Office Maintenance** | — | — | — | **₹8,000** | **+₹8,000** | Brand new expense |
+
+---
+
+### 📋 Full Operating Expense Comparison (Feb 2026 vs Prior Months)
+
+| Category | Nov '25 | Dec '25 | Jan '26 | 3M Avg | **Feb '26** | vs Avg (₹) | vs Avg (%) |
+|---|---|---|---|---|---|---|---|
+| Rent | ₹75,000 | ₹75,000 | ₹75,000 | ₹75,000 | ₹75,000 | — | Flat |
+| Salaries | ₹2,50,000 | ₹2,50,000 | ₹2,50,000 | ₹2,50,000 | ₹2,50,000 | — | Flat |
+| Travel & Conveyance | — | — | — | — | ₹15,000 | **+₹15,000** | **New** |
+| Office Maintenance | — | — | — | — | ₹8,000 | **+₹8,000** | **New** |
+| Electricity | — | ₹12,000 | — | ₹4,000 | — | -₹4,000 | Not billed |
+| Internet & Phone | — | — | ₹8,000 | ₹2,667 | — | -₹2,667 | Not billed |
+| **TOTAL** | **₹3,25,000** | **₹3,37,000** | **₹3,33,000** | **₹3,31,667** | **₹3,48,000** | **+₹16,333** | **+4.9%** |
+
+---
+
+- **#1 overspend: Travel & Conveyance at ₹15,000** — this is a brand-new expense category with no prior booking in any previous month. The sales team travel (PMT015) is the sole driver.
+- **Office Maintenance (₹8,000)** is also a first-time expense — AC servicing charged in Feb 2026, with no equivalent in prior months.
+- **Rent (₹75,000) and Salaries (₹2,50,000)** are perfectly flat across all months — these are fixed, non-overspent costs.
+- **Electricity and Internet & Phone** are absent in Feb 2026 — these tend to be billed quarterly or irregularly, so they may appear in upcoming months and spike total spend.
+- **Overall overspend is modest at +₹16,333 (+4.9%)**, but the emergence of Travel & Maintenance costs signals new recurring categories to budget for going forward.
+
+Chart suggestion: bar
+Chart title: Feb 2026 Operating Expenses vs 3-Month Average (Nov '25–Jan '26)""",
+}
+
+# ---------------------------------------------------------------------------
+# Overdue receivables: two tables, picks Table 1 (7 rows > 5 rows),
+# Rank skipped, Grand Total excluded, % of Total on secondary axis
+# query_type: top_n  |  chart_suggestion: bar
+# ---------------------------------------------------------------------------
+
+TURN_OVERDUE_RECEIVABLES = {
+    "query": "Which customers are delaying payments and impacting cash flow?",
+    "query_type": "top_n",
+    "chart_suggestion": "bar",
+    "message": """## 💸 Customers Delaying Payments & Impacting Cash Flow
+
+**₹8,24,650 is locked in unpaid receivables** across 6 customers, with **5 customers already past their due date**. The oldest unpaid invoice is **76 days overdue** — more than 2.5 months past due.
+
+> 📌 All figures are invoice amounts (incl. GST). Reference date: **1 Mar 2026**.
+
+---
+
+### 🚨 Overdue Customers — Ranked by Age of Delay
+
+| Rank | Customer | Due Date | Overdue Days | Aging Bucket | Pending Amount | % of Total |
+|------|----------|----------|-------------|--------------|----------------|------------|
+| **#1** | **Sunrise Electronics Mumbai** | 15-Dec-2025 | **76 days** | 🔴 61–90 days | **₹1,41,000** | 17.1% |
+| #2 | Sharma & Sons Traders | 28-Dec-2025 | **63 days** | 🔴 61–90 days | ₹14,250 | 1.7% |
+| #3 | Rajesh Computers | 20-Jan-2026 | **40 days** | 🟠 31–60 days | ₹1,39,400 | 16.9% |
+| #4 | Eastern Digital Hub | 05-Feb-2026 | **24 days** | 🟡 1–30 days | ₹1,59,000 | 19.3% |
+| #5 | Apex Technologies Pvt Ltd | 15-Feb-2026 | **14 days** | 🟡 1–30 days | ₹55,000 | 6.7% |
+| — | Global IT Solutions | 01-Mar-2026 | 0 days | 🟢 Current | ₹3,16,000 | 38.3% |
+| | **Grand Total** | | | | **₹8,24,650** | **100%** |
+
+---
+
+### 📦 Aging Bucket Summary
+
+| Aging Bucket | Customers | Pending Amount | % Share |
+|---|---|---|---|
+| 🔴 61–90 days (Critical) | 2 | ₹1,55,250 | 18.8% |
+| 🟠 31–60 days (High Risk) | 1 | ₹1,39,400 | 16.9% |
+| 🟡 1–30 days (Watch) | 2 | ₹2,14,000 | 26.0% |
+| 🟢 Current (Not yet due) | 1 | ₹3,16,000 | 38.3% |
+| **Total** | **6** | **₹8,24,650** | **100%** |
+
+---
+
+### Key Insights
+
+- **#1 Worst offender: Sunrise Electronics Mumbai** — ₹1,41,000 unpaid for **76 days**, now in the critical 61–90 day bucket. Immediate escalation recommended.
+- **Rajesh Computers** (₹1,39,400, 40 days) and **Eastern Digital Hub** (₹1,59,000, 24 days) together account for **₹2,98,400 — 36.2%** of total overdue; both need urgent follow-up before they slip into the critical bucket.
+- **Global IT Solutions** holds the **largest single invoice at ₹3,16,000** but is technically current (due today, 1 Mar 2026) — monitor closely to ensure timely payment.
+- **₹5,08,650** (61.7% of total receivables) is already **past due**, creating significant working capital pressure, especially given Feb 2026's rising expense trend noted earlier.
+
+Chart suggestion: bar
+Chart title: Overdue Receivables by Customer — Days Past Due & Pending Amount""",
+}
