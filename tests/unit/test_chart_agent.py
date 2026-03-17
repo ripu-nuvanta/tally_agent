@@ -7,7 +7,6 @@ import pytest
 
 from backend.agents.chart_agent import (
     ChartAgent,
-    _to_numeric,
     _select_chart_type,
     _generate_title,
     _format_xy_data,
@@ -19,6 +18,7 @@ from backend.agents.chart_agent import (
     _trim_trailing_zeros,
     _detect_scale_mismatches,
 )
+from backend.agents.utils import to_numeric as _to_numeric
 
 
 # ---------------------------------------------------------------------------
@@ -79,42 +79,30 @@ class TestChartAgentExecute:
     def setup_method(self):
         self.agent = ChartAgent()
 
-    def test_returns_none_when_not_required(self):
-        result = self.agent.execute(
-            {"data": {"headers": ["A"], "rows": [[1]]}},
-            "simple_lookup",
-            requires_chart=False,
-        )
-        assert result is None
-
     def test_returns_none_for_empty_data(self):
         result = self.agent.execute(
-            {"data": {"headers": [], "rows": []}},
+            {"headers": [], "rows": []},
             "top_n",
-            requires_chart=True,
         )
         assert result is None
 
     def test_returns_none_for_single_row(self):
         result = self.agent.execute(
-            {"data": {"headers": ["Name", "Amount"], "rows": [["A", 100]]}},
+            {"headers": ["Name", "Amount"], "rows": [["A", 100]]},
             "top_n",
-            requires_chart=True,
         )
         assert result is None
 
     def test_bar_chart_for_top_n(self):
-        data = {
-            "data": {
-                "headers": ["Customer", "Sales"],
-                "rows": [
-                    ["Alpha", 5000],
-                    ["Beta", 3000],
-                    ["Gamma", 2000],
-                ],
-            },
+        table_data = {
+            "headers": ["Customer", "Sales"],
+            "rows": [
+                ["Alpha", 5000],
+                ["Beta", 3000],
+                ["Gamma", 2000],
+            ],
         }
-        result = self.agent.execute(data, "top_n", requires_chart=True)
+        result = self.agent.execute(table_data, "top_n")
         assert result is not None
         assert result["chart_type"] == "bar"
         assert len(result["data"]) == 3
@@ -122,17 +110,15 @@ class TestChartAgentExecute:
         assert result["data"][0]["Sales"] == 5000.0
 
     def test_composed_chart_for_comparison_with_change_pct(self):
-        data = {
-            "data": {
-                "headers": ["Item", "Q1", "Q2", "Change", "Change %"],
-                "rows": [
-                    ["Sales", 10000, 12000, 2000, "+20.0%"],
-                    ["Expenses", 5000, 5500, 500, "+10.0%"],
-                    ["Profit", 5000, 6500, 1500, "+30.0%"],
-                ],
-            },
+        table_data = {
+            "headers": ["Item", "Q1", "Q2", "Change", "Change %"],
+            "rows": [
+                ["Sales", 10000, 12000, 2000, "+20.0%"],
+                ["Expenses", 5000, 5500, 500, "+10.0%"],
+                ["Profit", 5000, 6500, 1500, "+30.0%"],
+            ],
         }
-        result = self.agent.execute(data, "comparison", requires_chart=True)
+        result = self.agent.execute(table_data, "comparison")
         assert result is not None
         assert result["chart_type"] == "composed"
         assert result["data"][0]["Q1"] == 10000.0
@@ -144,48 +130,41 @@ class TestChartAgentExecute:
         assert result["config"]["secondary_colors"] == ["#9CA3AF"]
 
     def test_composed_chart_for_trend_with_change_pct(self):
-        data = {
-            "data": {
-                "headers": ["Period", "Revenue", "Change", "Change %"],
-                "rows": [
-                    ["Jan", 1000, "—", "—"],
-                    ["Feb", 1200, "+200.00", "+20.0%"],
-                    ["Mar", 1100, "-100.00", "-8.3%"],
-                    ["Apr", 1400, "+300.00", "+27.3%"],
-                ],
-            },
+        table_data = {
+            "headers": ["Period", "Revenue", "Change", "Change %"],
+            "rows": [
+                ["Jan", 1000, "—", "—"],
+                ["Feb", 1200, "+200.00", "+20.0%"],
+                ["Mar", 1100, "-100.00", "-8.3%"],
+                ["Apr", 1400, "+300.00", "+27.3%"],
+            ],
         }
-        result = self.agent.execute(data, "trend", requires_chart=True)
+        result = self.agent.execute(table_data, "trend")
         assert result is not None
         assert result["chart_type"] == "composed"
         assert len(result["data"]) == 4
 
     def test_no_composed_override_without_change_pct(self):
         """Without Change % header, chart_type stays as original."""
-        data = {
-            "data": {
-                "headers": ["Customer", "Sales"],
-                "rows": [["A", 5000], ["B", 3000], ["C", 2000]],
-            },
+        table_data = {
+            "headers": ["Customer", "Sales"],
+            "rows": [["A", 5000], ["B", 3000], ["C", 2000]],
         }
-        result = self.agent.execute(data, "top_n", requires_chart=True)
+        result = self.agent.execute(table_data, "top_n")
         assert result is not None
         assert result["chart_type"] == "bar"
         assert "secondary_y_keys" not in result["config"]
 
     def test_pie_chart_for_aggregation(self):
-        data = {
-            "chart_suggestion": "pie",
-            "data": {
-                "headers": ["Category", "Amount"],
-                "rows": [
-                    ["Sales", 50000],
-                    ["Services", 30000],
-                    ["Other", 20000],
-                ],
-            },
+        table_data = {
+            "headers": ["Category", "Amount"],
+            "rows": [
+                ["Sales", 50000],
+                ["Services", 30000],
+                ["Other", 20000],
+            ],
         }
-        result = self.agent.execute(data, "aggregation", requires_chart=True)
+        result = self.agent.execute(table_data, "aggregation", chart_suggestion="pie")
         assert result is not None
         assert result["chart_type"] == "pie"
         assert len(result["data"]) == 3
@@ -193,24 +172,19 @@ class TestChartAgentExecute:
 
     def test_pie_chart_groups_beyond_7_slices(self):
         rows = [[f"Item {i}", i * 100] for i in range(10, 0, -1)]
-        data = {
-            "chart_suggestion": "pie",
-            "data": {"headers": ["Item", "Amount"], "rows": rows},
-        }
-        result = self.agent.execute(data, "aggregation", requires_chart=True)
+        table_data = {"headers": ["Item", "Amount"], "rows": rows}
+        result = self.agent.execute(table_data, "aggregation", chart_suggestion="pie")
         assert result is not None
         assert result["chart_type"] == "pie"
         assert len(result["data"]) == 7  # 6 items + Others
         assert result["data"][-1]["label"] == "Others"
 
     def test_config_has_required_keys(self):
-        data = {
-            "data": {
-                "headers": ["Name", "Amount"],
-                "rows": [["A", 100], ["B", 200], ["C", 300]],
-            },
+        table_data = {
+            "headers": ["Name", "Amount"],
+            "rows": [["A", 100], ["B", 200], ["C", 300]],
         }
-        result = self.agent.execute(data, "top_n", requires_chart=True)
+        result = self.agent.execute(table_data, "top_n")
         assert result is not None
         config = result["config"]
         assert "x_key" in config
@@ -219,17 +193,12 @@ class TestChartAgentExecute:
         assert config["x_key"] == "label"
 
     def test_chart_with_analysis_result_shape(self):
-        """Analysis agent output shape works as input."""
-        data = {
-            "message": "Top customers...",
-            "data": {
-                "headers": ["Customer", "Sales"],
-                "rows": [["A", 500], ["B", 300], ["C", 200]],
-            },
-            "insights": ["A is the top customer"],
-            "chart_suggestion": "bar",
+        """Table data passed directly (headers/rows) works as input."""
+        table_data = {
+            "headers": ["Customer", "Sales"],
+            "rows": [["A", 500], ["B", 300], ["C", 200]],
         }
-        result = self.agent.execute(data, "top_n", requires_chart=True)
+        result = self.agent.execute(table_data, "top_n", chart_suggestion="bar")
         assert result is not None
         assert result["chart_type"] == "bar"
 
@@ -461,14 +430,11 @@ class TestNonNumericColumnFiltering:
     def test_chart_agent_returns_none_when_no_numeric_columns(self):
         from backend.agents.chart_agent import ChartAgent
         agent = ChartAgent()
-        data = {
-            "data": {
-                "headers": ["Name", "Category", "Status"],
-                "rows": [["A", "Cat1", "OK"], ["B", "Cat2", "Watch"]],
-            },
-            "chart_suggestion": "bar",
+        table_data = {
+            "headers": ["Name", "Category", "Status"],
+            "rows": [["A", "Cat1", "OK"], ["B", "Cat2", "Watch"]],
         }
-        result = agent.execute(data, "top_n", True)
+        result = agent.execute(table_data, "top_n", chart_suggestion="bar")
         assert result is None
 
     def test_format_xy_data_excludes_non_numeric_columns(self):
@@ -488,18 +454,15 @@ class TestNonNumericColumnFiltering:
     def test_chart_agent_mixed_columns_charts_only_numeric(self):
         from backend.agents.chart_agent import ChartAgent
         agent = ChartAgent()
-        data = {
-            "data": {
-                "headers": ["Item", "Closing Stock", "Total Sold", "Avg Sales/Month", "Days of Cover", "Status"],
-                "rows": [
-                    ["Samsung Monitor", 20, 23, 4.2, 141.7, "Watch"],
-                    ["HP Laptop", 10, 10, 1.8, 163.0, "OK"],
-                    ["Dell Desktop", 8, 8, 1.5, 163.0, "OK"],
-                ],
-            },
-            "chart_suggestion": "bar",
+        table_data = {
+            "headers": ["Item", "Closing Stock", "Total Sold", "Avg Sales/Month", "Days of Cover", "Status"],
+            "rows": [
+                ["Samsung Monitor", 20, 23, 4.2, 141.7, "Watch"],
+                ["HP Laptop", 10, 10, 1.8, 163.0, "OK"],
+                ["Dell Desktop", 8, 8, 1.5, 163.0, "OK"],
+            ],
         }
-        result = agent.execute(data, "top_n", True)
+        result = agent.execute(table_data, "top_n", chart_suggestion="bar")
         assert result is not None
         assert "Item" not in result["config"]["y_keys"]
         assert "Status" not in result["config"]["y_keys"]
@@ -568,70 +531,58 @@ class TestTableOnlyOverride:
     def test_force_table_only_when_many_non_numeric_columns(self):
         """Tables with 3+ non-numeric columns should be table_only."""
         agent = ChartAgent()
-        data = {
-            "data": {
-                "headers": ["Rank", "Item", "Group", "Stock", "Avg Sales", "Days", "Status"],
-                "rows": [
-                    [1, "Monitor", "Electronics", 20, 4.2, 141.7, "OK"],
-                    [2, "Laptop", "Electronics", 10, 1.8, 50.3, "Watch"],
-                    [3, "Desktop", "Electronics", 0, 1.3, 0, "Critical"],
-                ],
-            },
-            "chart_suggestion": "bar",
+        table_data = {
+            "headers": ["Rank", "Item", "Group", "Stock", "Avg Sales", "Days", "Status"],
+            "rows": [
+                [1, "Monitor", "Electronics", 20, 4.2, 141.7, "OK"],
+                [2, "Laptop", "Electronics", 10, 1.8, 50.3, "Watch"],
+                [3, "Desktop", "Electronics", 0, 1.3, 0, "Critical"],
+            ],
         }
-        result = agent.execute(data, "top_n", True)
+        result = agent.execute(table_data, "top_n", chart_suggestion="bar")
         assert result is None  # table_only → None
 
     def test_allows_chart_when_few_non_numeric_columns(self):
         """Tables with 1-2 non-numeric columns (label + maybe one text) should chart."""
         agent = ChartAgent()
-        data = {
-            "data": {
-                "headers": ["Customer", "Sales Amount"],
-                "rows": [
-                    ["Apex", 500000],
-                    ["Beta", 300000],
-                    ["Gamma", 200000],
-                ],
-            },
-            "chart_suggestion": "bar",
+        table_data = {
+            "headers": ["Customer", "Sales Amount"],
+            "rows": [
+                ["Apex", 500000],
+                ["Beta", 300000],
+                ["Gamma", 200000],
+            ],
         }
-        result = agent.execute(data, "top_n", True)
+        result = agent.execute(table_data, "top_n", chart_suggestion="bar")
         assert result is not None
         assert result["chart_type"] == "bar"
 
     def test_allows_chart_with_two_text_columns(self):
         """Tables with exactly 2 non-numeric columns among non-label headers should still chart."""
         agent = ChartAgent()
-        data = {
-            "data": {
-                "headers": ["Item", "Category", "Status", "Sales Amount"],
-                "rows": [
-                    ["Monitor", "Electronics", "OK", 500000],
-                    ["Laptop", "Electronics", "Watch", 300000],
-                    ["Printer", "Office", "OK", 200000],
-                ],
-            },
-            "chart_suggestion": "bar",
+        table_data = {
+            "headers": ["Item", "Category", "Status", "Sales Amount"],
+            "rows": [
+                ["Monitor", "Electronics", "OK", 500000],
+                ["Laptop", "Electronics", "Watch", 300000],
+                ["Printer", "Office", "OK", 200000],
+            ],
         }
-        result = agent.execute(data, "top_n", True)
+        result = agent.execute(table_data, "top_n", chart_suggestion="bar")
         assert result is not None  # 2 text cols — under threshold
 
     def test_excludes_secondary_axis_columns_from_non_numeric_count(self):
         """Percentage columns on secondary axis should NOT count toward non-numeric."""
         agent = ChartAgent()
-        data = {
-            "data": {
-                "headers": ["Month", "Revenue", "MoM %"],
-                "rows": [
-                    ["Jan", 500000, 5.2],
-                    ["Feb", 550000, 10.0],
-                    ["Mar", 600000, 9.1],
-                ],
-            },
-            "chart_suggestion": "line",
+        table_data = {
+            "headers": ["Month", "Revenue", "MoM %"],
+            "rows": [
+                ["Jan", 500000, 5.2],
+                ["Feb", 550000, 10.0],
+                ["Mar", 600000, 9.1],
+            ],
         }
-        result = agent.execute(data, "trend", True)
+        result = agent.execute(table_data, "trend", chart_suggestion="line")
         assert result is not None  # MoM % is secondary axis, not a text column
 
 

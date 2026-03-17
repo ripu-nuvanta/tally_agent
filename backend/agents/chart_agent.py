@@ -57,25 +57,22 @@ class ChartAgent:
 
     def execute(
         self,
-        data: dict[str, Any],
+        table_data: dict[str, Any],
         query_type: str,
-        requires_chart: bool,
+        chart_suggestion: str | None = None,
+        chart_title: str | None = None,
     ) -> dict[str, Any] | None:
-        """Determine chart spec from analysis result.
+        """Determine chart spec from table data.
 
         Args:
-            data: Either an AnalysisAgent result dict (with "data", "chart_suggestion")
-                  or raw data dict from query agent.
+            table_data: Dict with "headers" and "rows" keys (the {headers, rows} dict directly).
             query_type: One of simple_lookup, comparison, trend, top_n, aggregation.
-            requires_chart: Whether the orchestrator determined a chart is needed.
+            chart_suggestion: Optional chart type hint (e.g. "bar", "pie", "line").
+            chart_title: Optional chart title. Auto-generated if not provided.
 
         Returns:
             Chart spec dict or None if no chart is appropriate.
         """
-        if not requires_chart:
-            return None
-
-        table_data = _extract_table_data(data)
         if not table_data or not table_data.get("rows"):
             logger.info("ChartAgent — no table data, skipping chart")
             return None
@@ -89,20 +86,20 @@ class ChartAgent:
             if not rows:
                 return None
 
-        # Use analysis agent's suggestion if available, otherwise infer from query_type
-        chart_suggestion = data.get("chart_suggestion", "")
-        chart_type = _select_chart_type(chart_suggestion, query_type, rows)
+        # Use caller's suggestion if available, otherwise infer from query_type
+        effective_suggestion = chart_suggestion or ""
+        chart_type = _select_chart_type(effective_suggestion, query_type, rows)
         logger.info(
             "ChartAgent — suggestion=%r, query_type=%s, rows=%d, selected=%s",
-            chart_suggestion, query_type, len(rows), chart_type,
+            effective_suggestion, query_type, len(rows), chart_type,
         )
 
         if chart_type == "table_only":
             logger.info("ChartAgent — table_only, returning None")
             return None
 
-        # Prefer analysis agent's suggested title over auto-generated one
-        title = data.get("chart_title") or _generate_title(query_type, headers)
+        # Prefer caller's suggested title over auto-generated one
+        title = chart_title or _generate_title(query_type, headers)
         numeric_cols = _identify_numeric_columns(headers, rows)
 
         # Force table_only if too many non-numeric columns (charts are unreadable)
@@ -145,21 +142,6 @@ class ChartAgent:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _extract_table_data(data: dict[str, Any]) -> dict | None:
-    """Extract headers/rows from either analysis result or raw data."""
-    # Analysis agent result shape
-    if isinstance(data.get("data"), dict):
-        inner = data["data"]
-        if "headers" in inner and "rows" in inner:
-            return inner
-
-    # Raw data might be a ReportResponse-style dict
-    if "headers" in data and "rows" in data:
-        return data
-
-    return None
 
 
 def _select_chart_type(suggestion: str, query_type: str, rows: list) -> str:
