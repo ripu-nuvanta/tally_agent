@@ -28,7 +28,8 @@ from backend.agents.query_agent import QueryAgent
 from backend.agents.analysis_agent import AnalysisAgent
 from backend.agents.chart_agent import ChartAgent
 from backend.agents.context import SessionContext
-from backend.agents.utils import parse_markdown_table_for_chart
+from backend.agents.chart_advisor import get_chart_advice
+from backend.agents.utils import parse_markdown_table_for_chart, parse_all_markdown_tables
 from backend.tally_bridge.client import TallyClient
 from backend.utils.date_utils import format_for_tally
 
@@ -174,14 +175,45 @@ class Orchestrator:
         # --- Chart Agent (when chart is needed) ---
         chart = None
         if settings.CHARTS_ENABLED and requires_chart:
-            chart_table = parse_markdown_table_for_chart(analysis_result.get("message", ""))
-            if chart_table and analysis_result.get("chart_suggestion") != "table_only":
-                chart = self.chart_agent.execute(
-                    chart_table,
-                    query_type,
-                    chart_suggestion=analysis_result.get("chart_suggestion"),
-                    chart_title=analysis_result.get("chart_title"),
-                )
+            message_text = analysis_result.get("message", "")
+            chart_suggestion = analysis_result.get("chart_suggestion")
+            chart_title = analysis_result.get("chart_title")
+
+            if chart_suggestion != "table_only":
+                all_tables = parse_all_markdown_tables(message_text)
+                if all_tables:
+                    # Try Haiku chart advisor first
+                    advice = await get_chart_advice(
+                        all_tables,
+                        user_message,
+                        chart_suggestion=chart_suggestion,
+                    )
+
+                    if advice and advice.get("chart_type") != "table_only":
+                        # Use advisor's table and column selections
+                        selected_table = all_tables[advice["table_index"]]
+
+                        # Filter table to only advisor-selected columns
+                        filtered = _filter_table_by_advice(selected_table, advice)
+                        if filtered:
+                            chart = self.chart_agent.execute(
+                                filtered,
+                                query_type,
+                                chart_suggestion=advice.get("chart_type", chart_suggestion),
+                                chart_title=advice.get("chart_title", chart_title),
+                            )
+
+                    # Fallback: use rule-based selection if advisor fails (returns None)
+                    # NOTE: if advisor returns table_only, that's a valid "no chart" decision
+                    if chart is None and advice is None:
+                        chart_table = parse_markdown_table_for_chart(message_text)
+                        if chart_table:
+                            chart = self.chart_agent.execute(
+                                chart_table,
+                                query_type,
+                                chart_suggestion=chart_suggestion,
+                                chart_title=chart_title,
+                            )
 
         # Final data from analysis result
         final_data = data
@@ -235,6 +267,49 @@ class Orchestrator:
         except (json.JSONDecodeError, TypeError):
             logger.warning("Classification fallback: could not parse Claude response as JSON. Raw text: %s", text)
             return {"query_type": "simple_lookup", "requires_chart": False}
+
+
+def _filter_table_by_advice(table: dict, advice: dict) -> dict | None:
+    """Filter table columns to only those selected by the chart advisor.
+
+    Returns a new {headers, rows} dict with only the columns named in
+    advice["x_column"], advice["y_columns"], and advice["secondary_y_columns"].
+    Returns None if the x_column is not found or fewer than 2 columns survive.
+    """
+    headers = table["headers"]
+    rows = table["rows"]
+
+    x_col = advice.get("x_column", "")
+    if not x_col or x_col not in headers:
+        return None
+
+    # Build ordered list of column indices: x first, then y, then secondary_y
+    col_indices: list[int] = []
+
+    col_indices.append(headers.index(x_col))
+
+    for col in advice.get("y_columns", []):
+        if col in headers:
+            idx = headers.index(col)
+            if idx not in col_indices:
+                col_indices.append(idx)
+
+    for col in advice.get("secondary_y_columns", []):
+        if col in headers:
+            idx = headers.index(col)
+            if idx not in col_indices:
+                col_indices.append(idx)
+
+    if len(col_indices) < 2:  # Need at least x + 1 y column
+        return None
+
+    new_headers = [headers[i] for i in col_indices]
+    new_rows = []
+    for row in rows:
+        new_row = [row[i] if i < len(row) else "" for i in col_indices]
+        new_rows.append(new_row)
+
+    return {"headers": new_headers, "rows": new_rows}
 
 
 def _strip_markdown_fences(text: str) -> str:

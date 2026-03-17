@@ -172,17 +172,16 @@ def _is_ordinal_column(values: list, header: str) -> bool:
     return False
 
 
-def parse_markdown_table_for_chart(text: str) -> dict[str, Any] | None:
-    """Parse the best markdown table from text for chart rendering.
+def _parse_raw_tables(text: str) -> list[tuple[list[str], list[list], int]]:
+    """Extract and parse all markdown tables from text.
 
-    Finds all markdown tables, selects the one with most rows
-    (tie-break: later table, then most columns), and returns
-    {headers, rows} with ordinal columns stripped.
-
-    Returns None if no suitable table found (< 2 data rows).
+    Returns a list of (headers, rows, ordinal_index) tuples for tables
+    that have >= 2 data rows. Ordinal columns are stripped.
+    This is the shared parsing logic used by both parse_markdown_table_for_chart
+    and parse_all_markdown_tables.
     """
     lines = text.split("\n")
-    tables: list[list[str]] = []
+    raw_blocks: list[list[str]] = []
     current_block: list[str] = []
 
     for line in lines:
@@ -191,16 +190,16 @@ def parse_markdown_table_for_chart(text: str) -> dict[str, Any] | None:
             current_block.append(stripped)
         else:
             if current_block:
-                tables.append(current_block)
+                raw_blocks.append(current_block)
                 current_block = []
     if current_block:
-        tables.append(current_block)
+        raw_blocks.append(current_block)
 
-    if not tables:
-        return None
+    if not raw_blocks:
+        return []
 
     parsed: list[tuple[list[str], list[list], int]] = []
-    for idx, block in enumerate(tables):
+    for idx, block in enumerate(raw_blocks):
         if len(block) < 3:
             continue
         header_line = block[0]
@@ -217,44 +216,70 @@ def parse_markdown_table_for_chart(text: str) -> dict[str, Any] | None:
             cells = [cell.strip() for cell in line.strip("|").split("|")]
             rows.append(cells)
 
-        if len(rows) >= 2:
-            parsed.append((headers, rows, idx))
+        if len(rows) < 2:
+            continue
 
+        # Strip ordinal columns
+        skip_cols = 0
+        for col_idx, header in enumerate(headers):
+            col_values = [row[col_idx] for row in rows if col_idx < len(row)]
+            if _is_ordinal_column(col_values, header):
+                skip_cols = col_idx + 1
+            else:
+                break
+
+        if skip_cols > 0:
+            headers = headers[skip_cols:]
+            rows = [[cell for i, cell in enumerate(row) if i >= skip_cols] for row in rows]
+
+        # Convert numeric values
+        converted_rows = []
+        for row in rows:
+            converted = []
+            for i, cell in enumerate(row):
+                if i == 0:
+                    converted.append(cell)
+                else:
+                    num = to_numeric(cell)
+                    cell_stripped = cell.strip()
+                    if num == 0.0 and cell_stripped and cell_stripped.lower() not in _NON_NUMERIC_SENTINELS:
+                        try:
+                            float(cell_stripped.replace("₹", "").replace(",", "").replace("%", "").replace("*", "").strip())
+                            converted.append(num)
+                        except ValueError:
+                            converted.append(cell_stripped)
+                    else:
+                        converted.append(num)
+            converted_rows.append(converted)
+
+        parsed.append((headers, converted_rows, idx))
+
+    return parsed
+
+
+def parse_all_markdown_tables(text: str) -> list[dict[str, Any]]:
+    """Parse ALL markdown tables from text, returning a list of {headers, rows} dicts.
+
+    Each table has ordinal columns stripped. Tables with < 2 data rows are excluded.
+    Used by the chart advisor to select the best table.
+    """
+    parsed = _parse_raw_tables(text)
+    return [{"headers": headers, "rows": rows} for headers, rows, _ in parsed]
+
+
+def parse_markdown_table_for_chart(text: str) -> dict[str, Any] | None:
+    """Parse the best markdown table from text for chart rendering.
+
+    Finds all markdown tables, selects the one with most rows
+    (tie-break: later table, then most columns), and returns
+    {headers, rows} with ordinal columns stripped.
+
+    Returns None if no suitable table found (< 2 data rows).
+    """
+    parsed = _parse_raw_tables(text)
     if not parsed:
         return None
 
     best = max(parsed, key=lambda t: (len(t[1]), t[2], len(t[0])))
     headers, rows, _ = best
-
-    skip_cols = 0
-    for col_idx, header in enumerate(headers):
-        col_values = [row[col_idx] for row in rows if col_idx < len(row)]
-        if _is_ordinal_column(col_values, header):
-            skip_cols = col_idx + 1
-        else:
-            break
-
-    if skip_cols > 0:
-        headers = headers[skip_cols:]
-        rows = [[cell for i, cell in enumerate(row) if i >= skip_cols] for row in rows]
-
-    converted_rows = []
-    for row in rows:
-        converted = []
-        for i, cell in enumerate(row):
-            if i == 0:
-                converted.append(cell)
-            else:
-                num = to_numeric(cell)
-                cell_stripped = cell.strip()
-                if num == 0.0 and cell_stripped and cell_stripped.lower() not in _NON_NUMERIC_SENTINELS:
-                    try:
-                        float(cell_stripped.replace("₹", "").replace(",", "").replace("%", "").replace("*", "").strip())
-                        converted.append(num)
-                    except ValueError:
-                        converted.append(cell_stripped)
-                else:
-                    converted.append(num)
-        converted_rows.append(converted)
-
-    return {"headers": headers, "rows": converted_rows}
+    return {"headers": headers, "rows": rows}

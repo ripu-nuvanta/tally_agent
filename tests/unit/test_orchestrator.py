@@ -315,6 +315,7 @@ class TestOrchestratorAnalysisRouting:
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
                 patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock) as mock_advisor,
             ):
                 mock_query.return_value = {
                     "message": "Raw data fetched.",
@@ -336,6 +337,15 @@ class TestOrchestratorAnalysisRouting:
                     "chart_suggestion": "grouped_bar",
                     "chart_title": "Q1 vs Q2 Sales",
                     "tool_results": [],
+                }
+                # Advisor returns the same chart type as the analysis_agent suggestion
+                mock_advisor.return_value = {
+                    "table_index": 0,
+                    "x_column": "Period",
+                    "y_columns": ["Sales"],
+                    "secondary_y_columns": [],
+                    "chart_type": "grouped_bar",
+                    "chart_title": "Q1 vs Q2 Sales",
                 }
                 mock_chart.return_value = {"chart_type": "grouped_bar", "data": [], "config": {}}
 
@@ -1480,3 +1490,98 @@ class TestSessionManagementInOrchestrator:
         # After the full pipeline, session should have the 2 messages
         msgs = session.get_messages()
         assert len(msgs) == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: _filter_table_by_advice
+# ---------------------------------------------------------------------------
+
+from backend.agents.orchestrator import _filter_table_by_advice
+
+
+class TestFilterTableByAdvice:
+    def test_filters_columns(self):
+        table = {
+            "headers": ["Category", "Nov", "Dec", "Jan", "3M Avg", "Feb", "vs Avg", "vs Avg %"],
+            "rows": [["Rent", 75000, 75000, 75000, 75000, 75000, 0, "Flat"]]
+        }
+        advice = {
+            "x_column": "Category",
+            "y_columns": ["3M Avg", "Feb"],
+            "secondary_y_columns": [],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["Category", "3M Avg", "Feb"]
+        assert result["rows"][0] == ["Rent", 75000, 75000]
+
+    def test_includes_secondary(self):
+        table = {
+            "headers": ["Month", "Sales", "Change %"],
+            "rows": [["Jan", 100000, 5.2], ["Feb", 110000, 10.0]]
+        }
+        advice = {
+            "x_column": "Month",
+            "y_columns": ["Sales"],
+            "secondary_y_columns": ["Change %"],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result["headers"] == ["Month", "Sales", "Change %"]
+
+    def test_returns_none_if_x_column_missing(self):
+        table = {"headers": ["A", "B"], "rows": [["x", 1]]}
+        advice = {"x_column": "NonExistent", "y_columns": ["B"]}
+        assert _filter_table_by_advice(table, advice) is None
+
+    def test_returns_none_if_only_x_column(self):
+        table = {"headers": ["A", "B"], "rows": [["x", 1]]}
+        advice = {"x_column": "A", "y_columns": [], "secondary_y_columns": []}
+        assert _filter_table_by_advice(table, advice) is None
+
+    def test_skips_unknown_y_columns(self):
+        table = {
+            "headers": ["Month", "Sales", "Profit"],
+            "rows": [["Jan", 100, 20], ["Feb", 200, 40]],
+        }
+        advice = {
+            "x_column": "Month",
+            "y_columns": ["Sales", "UnknownCol"],
+            "secondary_y_columns": [],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["Month", "Sales"]
+
+    def test_no_duplicate_columns(self):
+        table = {
+            "headers": ["Month", "Sales", "Profit"],
+            "rows": [["Jan", 100, 20], ["Feb", 200, 40]],
+        }
+        advice = {
+            "x_column": "Month",
+            "y_columns": ["Sales", "Profit"],
+            "secondary_y_columns": ["Sales"],  # Duplicate — should be deduplicated
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["Month", "Sales", "Profit"]
+
+    def test_empty_x_column_returns_none(self):
+        table = {"headers": ["A", "B"], "rows": [["x", 1]]}
+        advice = {"x_column": "", "y_columns": ["B"]}
+        assert _filter_table_by_advice(table, advice) is None
+
+    def test_row_shorter_than_indices(self):
+        table = {
+            "headers": ["A", "B", "C"],
+            "rows": [["x", 1]],  # Row missing third element
+        }
+        advice = {
+            "x_column": "A",
+            "y_columns": ["B", "C"],
+            "secondary_y_columns": [],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["A", "B", "C"]
+        assert result["rows"][0] == ["x", 1, ""]

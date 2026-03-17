@@ -221,3 +221,86 @@ Second:
         result = parse_markdown_table_for_chart(text)
         assert result["rows"][0][2] == "Good"
         assert result["rows"][1][2] == "Bad"
+
+
+from backend.agents.utils import parse_all_markdown_tables
+
+
+class TestParseAllMarkdownTables:
+    def test_returns_all_tables(self):
+        text = """Table 1:
+| A | B |
+|---|---|
+| 1 | 2 |
+| 3 | 4 |
+
+Table 2:
+| X | Y | Z |
+|---|---|---|
+| a | 5 | 6 |
+| b | 7 | 8 |
+| c | 9 | 10 |
+"""
+        tables = parse_all_markdown_tables(text)
+        assert len(tables) == 2
+        assert tables[0]["headers"] == ["A", "B"]
+        assert tables[1]["headers"] == ["X", "Y", "Z"]
+
+    def test_skips_small_tables(self):
+        text = """| A | B |
+|---|---|
+| 1 | 2 |
+
+| X | Y |
+|---|---|
+| a | 3 |
+| b | 4 |
+"""
+        tables = parse_all_markdown_tables(text)
+        assert len(tables) == 1  # First table has only 1 row, skipped
+
+    def test_empty_text(self):
+        assert parse_all_markdown_tables("no tables here") == []
+
+    def test_ordinal_columns_stripped(self):
+        text = """| Rank | Customer | Sales |
+|------|----------|-------|
+| 1 | Alice | 100 |
+| 2 | Bob | 200 |
+| 3 | Carol | 300 |
+"""
+        tables = parse_all_markdown_tables(text)
+        assert len(tables) == 1
+        assert tables[0]["headers"] == ["Customer", "Sales"]
+
+    def test_numeric_conversion(self):
+        text = """| Month | Sales |
+|-------|-------|
+| Jan | ₹1,00,000 |
+| Feb | ₹2,00,000 |
+| Mar | ₹3,00,000 |
+"""
+        tables = parse_all_markdown_tables(text)
+        assert len(tables) == 1
+        assert tables[0]["rows"][0] == ["Jan", 100000.0]
+
+    def test_returns_all_tables_preserves_order(self):
+        text = """First table:
+| Month | Revenue |
+|-------|---------|
+| Jan | 100 |
+| Feb | 200 |
+
+Second table:
+| Quarter | Profit |
+|---------|--------|
+| Q1 | 50 |
+| Q2 | 75 |
+| Q3 | 80 |
+"""
+        tables = parse_all_markdown_tables(text)
+        assert len(tables) == 2
+        assert tables[0]["headers"] == ["Month", "Revenue"]
+        assert tables[1]["headers"] == ["Quarter", "Profit"]
+        assert len(tables[0]["rows"]) == 2
+        assert len(tables[1]["rows"]) == 3
