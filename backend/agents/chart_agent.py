@@ -23,13 +23,20 @@ DEFAULT_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC489
 # Columns excluded from chart data points (absolute change is noise; percentage cols go to secondary axis)
 _EXCLUDED_CHART_COLUMNS = {"Change"}
 
+# Count-like column name patterns used for scale mismatch detection (Rule A)
+_COUNT_COLUMN_PATTERNS = {"invoice", "voucher", "count", "no. of", "qty", "quantity", "number"}
+
+
+_PERCENTAGE_HEADER_KEYWORDS = {"margin", "rate", "ratio", "growth"}
 
 def _is_secondary_axis_column(header: str) -> bool:
     """Detect columns that belong on a secondary (percentage) axis."""
-    # Percentage columns → secondary axis
+    # Percentage symbol → secondary axis
     if "%" in header:
         return True
-    return False
+    # Keyword-based detection for percentage-like columns
+    h_lower = header.lower()
+    return any(kw in h_lower for kw in _PERCENTAGE_HEADER_KEYWORDS)
 
 
 def _is_excluded_column(header: str) -> bool:
@@ -230,7 +237,11 @@ def _format_xy_data(
     data = []
     for row in rows:
         label = str(row[0]) if row else ""
-        if label.lower() in ("total", "grand total"):
+        clean_label = label.replace("**", "").replace("*", "").strip().lower()
+        if (
+            clean_label in ("total", "grand total", "net total", "sub total", "overall")
+            or clean_label.startswith("total ")
+        ):
             continue
         point: dict[str, Any] = {"label": label}
         for i, header in enumerate(headers[1:], start=1):
@@ -263,7 +274,18 @@ def _format_pie_data(headers: list[str], rows: list[list]) -> list[dict[str, Any
     # Verify selected column actually has numeric data; return empty if all text
     if not any(_to_numeric(row[value_idx]) != 0.0 for row in rows if value_idx < len(row)):
         return []
-    sorted_rows = sorted(rows, key=lambda r: abs(_to_numeric(r[value_idx]) if len(r) > value_idx else 0), reverse=True)
+    # Filter out total/summary rows before sorting (Rule C)
+    filtered_rows = []
+    for row in rows:
+        label = str(row[0]) if row else ""
+        clean_label = label.replace("**", "").replace("*", "").strip().lower()
+        if (
+            clean_label in ("total", "grand total", "net total", "sub total", "overall", "—")
+            or clean_label.startswith("total ")
+        ):
+            continue
+        filtered_rows.append(row)
+    sorted_rows = sorted(filtered_rows, key=lambda r: abs(_to_numeric(r[value_idx]) if len(r) > value_idx else 0), reverse=True)
 
     data = []
     others_total = 0.0
@@ -314,12 +336,44 @@ def _identify_numeric_columns(headers: list[str], rows: list[list]) -> set[str]:
     return numeric_headers
 
 
+def _detect_scale_mismatches(headers: list[str], rows: list[list], numeric_cols: set[str]) -> set[str]:
+    """Detect count-like columns that are on a wildly different scale (>100x) from the max column.
+
+    Returns the set of column headers that should be excluded from y_keys.
+    Only excludes columns whose names match count-like patterns (e.g. Invoices, Vouchers, Qty).
+    """
+    if not rows or len(numeric_cols) < 2:
+        return set()
+    col_maxes: dict[str, float] = {}
+    for h in numeric_cols:
+        if h not in headers:
+            continue
+        idx = headers.index(h)
+        max_val = max(
+            (abs(_to_numeric(row[idx])) for row in rows if idx < len(row)),
+            default=0,
+        )
+        col_maxes[h] = max_val
+    if not col_maxes:
+        return set()
+    overall_max = max(col_maxes.values())
+    if overall_max == 0:
+        return set()
+    exclude: set[str] = set()
+    for h, max_val in col_maxes.items():
+        if max_val == 0 or overall_max / max(max_val, 0.001) > 100:
+            if any(p in h.lower() for p in _COUNT_COLUMN_PATTERNS):
+                exclude.add(h)
+    return exclude
+
+
 def _build_config(chart_type: str, headers: list[str], rows: list[list] | None = None) -> dict[str, Any]:
     """Build Recharts config with axis labels and colors."""
     x_key = "label"
     if rows is not None:
         numeric_cols = _identify_numeric_columns(headers, rows)
-        y_keys = [h for h in headers[1:] if h in numeric_cols]
+        scale_exclude = _detect_scale_mismatches(headers, rows, numeric_cols)
+        y_keys = [h for h in headers[1:] if h in numeric_cols and h not in scale_exclude]
     else:
         y_keys = [h for h in headers[1:] if not _is_excluded_column(h) and not _is_secondary_axis_column(h)]
 
@@ -360,6 +414,10 @@ def _trim_trailing_zeros(headers: list[str], rows: list[list]) -> list[list]:
             last_nonzero = i
     if first_nonzero is None:
         return rows
+    # Only trim if non-zero middle has >= 3 data points (Rule D)
+    nonzero_span = last_nonzero - first_nonzero + 1
+    if nonzero_span < 3:
+        return rows  # Preserve all rows for context
     return rows[first_nonzero : last_nonzero + 1]
 
 

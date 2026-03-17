@@ -11,10 +11,13 @@ from backend.agents.chart_agent import (
     _select_chart_type,
     _generate_title,
     _format_xy_data,
+    _format_pie_data,
     _build_config,
     _EXCLUDED_CHART_COLUMNS,
     _is_secondary_axis_column,
     _is_excluded_column,
+    _trim_trailing_zeros,
+    _detect_scale_mismatches,
 )
 
 
@@ -397,6 +400,7 @@ def test_format_xy_data_excludes_grand_total():
 
 
 def test_trim_trailing_zeros_removes_empty_tail():
+    """With only 1 nonzero row (span < 3), Rule D preserves all rows for context."""
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]
     rows = [
@@ -405,7 +409,8 @@ def test_trim_trailing_zeros_removes_empty_tail():
         ["Mar 2026", 0, "+0.00", "N/A"],
     ]
     trimmed = _trim_trailing_zeros(headers, rows)
-    assert len(trimmed) == 1
+    # Span is 1 (only Jan 2026 nonzero), which is < 3 — Rule D preserves all rows
+    assert len(trimmed) == 3
     assert trimmed[0][0] == "Jan 2026"
 
 def test_trim_trailing_zeros_keeps_mid_zeros():
@@ -680,6 +685,7 @@ def test_identify_numeric_columns_strips_bold():
 
 
 def test_trim_trailing_zeros_also_trims_leading():
+    """With only 2 nonzero rows (span < 3), Rule D preserves all rows for context."""
     from backend.agents.chart_agent import _trim_trailing_zeros
     headers = ["Period", "Sales", "Change", "Change %"]
     rows = [
@@ -690,5 +696,142 @@ def test_trim_trailing_zeros_also_trims_leading():
         ["Aug 2025", 300000, "+5000.00", "+1.7%"],
     ]
     trimmed = _trim_trailing_zeros(headers, rows)
-    assert len(trimmed) == 2
-    assert trimmed[0][0] == "Jul 2025"
+    # Span is 2 (Jul + Aug), which is < 3 — Rule D preserves all rows
+    assert len(trimmed) == 5
+    assert trimmed[0][0] == "Apr 2025"
+
+
+# ---------------------------------------------------------------------------
+# Tests: Rule A — Scale Mismatch Detection
+# ---------------------------------------------------------------------------
+
+
+class TestScaleMismatchDetection:
+    def test_count_column_excluded_when_scale_mismatch(self):
+        headers = ["Customer", "Invoices", "Total Sales Amount"]
+        rows = [["Alice", 3, 708500], ["Bob", 2, 377000], ["Carol", 2, 275000]]
+        config = _build_config("bar", headers, rows)
+        assert "Total Sales Amount" in config["y_keys"]
+        assert "Invoices" not in config["y_keys"]
+
+    def test_vouchers_excluded_when_scale_mismatch(self):
+        headers = ["Month", "Vouchers", "Sales Amount"]
+        rows = [["Oct", 5, 544000], ["Nov", 3, 229500], ["Dec", 3, 417750]]
+        config = _build_config("bar", headers, rows)
+        assert "Sales Amount" in config["y_keys"]
+        assert "Vouchers" not in config["y_keys"]
+
+    def test_no_exclusion_when_same_scale(self):
+        headers = ["Month", "Revenue", "Expenses"]
+        rows = [["Q1", 500000, 400000], ["Q2", 600000, 450000]]
+        config = _build_config("bar", headers, rows)
+        assert "Revenue" in config["y_keys"]
+        assert "Expenses" in config["y_keys"]
+
+
+# ---------------------------------------------------------------------------
+# Tests: Rule B — Percentage Value Detection
+# ---------------------------------------------------------------------------
+
+
+class TestPercentageValueDetection:
+    def test_operating_margin_detected_as_secondary(self):
+        assert _is_secondary_axis_column("Operating Profit Margin") is True
+
+    def test_growth_rate_detected(self):
+        assert _is_secondary_axis_column("Growth Rate") is True
+
+    def test_margin_detected(self):
+        assert _is_secondary_axis_column("Gross Margin") is True
+
+    def test_ratio_detected(self):
+        assert _is_secondary_axis_column("Debt-Equity Ratio") is True
+
+    def test_regular_column_not_detected(self):
+        assert _is_secondary_axis_column("Sales Amount") is False
+
+    def test_existing_percent_still_works(self):
+        assert _is_secondary_axis_column("Change %") is True
+
+
+# ---------------------------------------------------------------------------
+# Tests: Rule C — Enhanced Total Row Exclusion
+# ---------------------------------------------------------------------------
+
+
+class TestEnhancedTotalRowExclusion:
+    def test_total_revenue_skipped(self):
+        headers = ["Ledger", "Q3", "Q4"]
+        rows = [
+            ["Sales - Electronics", 1139500, 811400],
+            ["Sales - Office Supplies", 51750, 55000],
+            ["Total Revenue", 1191250, 866400],
+        ]
+        data = _format_xy_data(headers, rows)
+        labels = [d["label"] for d in data]
+        assert "Total Revenue" not in labels
+        assert "Sales - Electronics" in labels
+
+    def test_total_opex_skipped(self):
+        headers = ["Ledger", "Amount"]
+        rows = [["Rent", 150000], ["Salaries", 500000], ["Total OpEx", 650000]]
+        data = _format_xy_data(headers, rows)
+        assert len(data) == 2
+
+    def test_grand_total_already_works(self):
+        headers = ["Item", "Amount"]
+        rows = [["A", 100], ["B", 200], ["Grand Total", 300]]
+        data = _format_xy_data(headers, rows)
+        assert len(data) == 2
+
+    def test_net_total_skipped(self):
+        headers = ["Item", "Amount"]
+        rows = [["A", 100], ["B", 200], ["Net Total", 300]]
+        data = _format_xy_data(headers, rows)
+        assert len(data) == 2
+
+    def test_bold_total_skipped(self):
+        headers = ["Item", "Amount"]
+        rows = [["A", 100], ["B", 200], ["**Total**", 300]]
+        data = _format_xy_data(headers, rows)
+        assert len(data) == 2
+
+    def test_overall_skipped(self):
+        headers = ["Item", "Amount"]
+        rows = [["A", 100], ["B", 200], ["Overall", 300]]
+        data = _format_xy_data(headers, rows)
+        assert len(data) == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: Rule D — Smarter Zero Trimming
+# ---------------------------------------------------------------------------
+
+
+class TestSmarterZeroTrimming:
+    def test_preserves_zeros_when_few_nonzero_points(self):
+        headers = ["Month", "Sales"]
+        rows = [
+            ["Apr", 0], ["May", 0], ["Jun", 0], ["Jul", 0],
+            ["Aug", 0], ["Sep", 0], ["Oct", 544000], ["Nov", 229500],
+        ]
+        result = _trim_trailing_zeros(headers, rows)
+        assert len(result) == 8
+
+    def test_trims_zeros_when_enough_nonzero(self):
+        headers = ["Month", "Sales"]
+        rows = [
+            ["Jan", 0], ["Feb", 0], ["Mar", 0],
+            ["Apr", 100], ["May", 200], ["Jun", 300], ["Jul", 400],
+            ["Aug", 0], ["Sep", 0],
+        ]
+        result = _trim_trailing_zeros(headers, rows)
+        assert len(result) == 4
+        assert result[0][0] == "Apr"
+        assert result[-1][0] == "Jul"
+
+    def test_no_zeros_unchanged(self):
+        headers = ["Month", "Sales"]
+        rows = [["Jan", 100], ["Feb", 200], ["Mar", 300]]
+        result = _trim_trailing_zeros(headers, rows)
+        assert len(result) == 3
