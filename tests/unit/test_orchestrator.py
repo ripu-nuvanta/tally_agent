@@ -1081,44 +1081,51 @@ class TestSeparateToolResults:
 
 
 class TestAnalysisPromptColumnNamingRules:
-    def test_analysis_prompt_contains_column_naming_rules(self):
-        """AnalysisAgent prompt (code_execution=True) must include standard column naming rules."""
+    def test_analysis_prompt_contains_table_ordering_rule(self):
+        """AnalysisAgent prompt (code_execution=True) must include table ordering guidance.
+
+        Rules 14 and 15 (STRUCTURED_RESULT + standard column naming) have been archived.
+        Rule 14 is now the table ordering rule.
+        """
         from backend.agents.prompts import build_analysis_agent_prompt
 
         prompt = build_analysis_agent_prompt("trend", code_execution_enabled=True)
 
-        assert "Change" in prompt and "Change %" in prompt
-        assert "STRUCTURED_RESULT" in prompt
-        assert "column naming" in prompt.lower() or "standard column" in prompt.lower()
+        # New Rule 14: table ordering guidance
+        assert "table ordering" in prompt.lower() or "comprehensive" in prompt.lower()
+        # STRUCTURED_RESULT rules are archived; must NOT appear in the active prompt
+        assert "STRUCTURED_RESULT" not in prompt
 
-    def test_analysis_prompt_column_rules_present_for_all_query_types(self):
-        """Column naming rules should appear for all query types when code_execution=True."""
+    def test_analysis_prompt_table_ordering_rule_present_for_all_query_types(self):
+        """Table ordering rule should appear for all query types when code_execution=True."""
         from backend.agents.prompts import build_analysis_agent_prompt
 
         for query_type in ("comparison", "trend", "top_n", "aggregation"):
             prompt = build_analysis_agent_prompt(query_type, code_execution_enabled=True)
-            assert "column naming" in prompt.lower() or "standard column" in prompt.lower(), (
-                f"Column naming rules missing for query_type={query_type}"
+            assert "table ordering" in prompt.lower() or "comprehensive" in prompt.lower(), (
+                f"Table ordering rule missing for query_type={query_type}"
             )
 
-    def test_analysis_prompt_column_rules_absent_when_code_exec_disabled(self):
-        """Column naming rules in the code-exec block should not appear when code_execution=False."""
+    def test_analysis_prompt_structured_result_absent_when_code_exec_disabled(self):
+        """STRUCTURED_RESULT rules must not appear in any variant of the analysis prompt."""
         from backend.agents.prompts import build_analysis_agent_prompt
 
         prompt = build_analysis_agent_prompt("trend", code_execution_enabled=False)
-        # The standard column names rule is only needed when code_execution generates columns
-        assert "standard column" not in prompt.lower() or "column naming" not in prompt.lower()
+        assert "STRUCTURED_RESULT" not in prompt
 
-    def test_analysis_prompt_forbids_non_standard_column_names(self):
-        """Prompt should explicitly forbid common non-standard column name variations."""
+    def test_analysis_prompt_archived_rules_not_in_active_prompt(self):
+        """Archived rules 14-15 must be absent from the active prompt for both code_exec modes."""
         from backend.agents.prompts import build_analysis_agent_prompt
 
-        prompt = build_analysis_agent_prompt("comparison", code_execution_enabled=True)
-        # At least some of the forbidden aliases must be mentioned
-        forbidden_variants = ["MoM Change", "Abs Change", "MoM %", "% vs Avg"]
-        assert any(v in prompt for v in forbidden_variants), (
-            "Prompt should list at least one forbidden column name variant"
-        )
+        for code_exec in (True, False):
+            prompt = build_analysis_agent_prompt("comparison", code_execution_enabled=code_exec)
+            # Archived rule markers must not leak into the active prompt
+            assert "STRUCTURED_RESULT:" not in prompt, (
+                f"Archived Rule 14 leaked into active prompt (code_execution_enabled={code_exec})"
+            )
+            assert "MoM Change" not in prompt, (
+                f"Archived Rule 15 leaked into active prompt (code_execution_enabled={code_exec})"
+            )
 
 
 # ---------------------------------------------------------------------------

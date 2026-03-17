@@ -296,39 +296,9 @@ vouchers/records yourself. Always use the code_execution sandbox with Python \
 (e.g. sum/groupby for totals, sorted() for rankings). Manual extraction leads to mismatched totals."""
 
         structured_rule_block = """
-14. **Structured output — CRITICAL for charts**: Your code_execution MUST print \
-a STRUCTURED_RESULT line as the LAST line of stdout. Without this, charts will \
-not render. Print markdown tables for readability AND the JSON line for data:
-
-Example:
-```python
-import json
-headers = ['Customer', 'Sales Amount (₹)', '% of Total']
-rows = [['Global IT Solutions', 708500, 34.4], ['Patel Enterprises', 377000, 18.3]]
-
-# 1. Print markdown for readability
-print('| ' + ' | '.join(headers) + ' |')
-print('|' + '|'.join(['---'] * len(headers)) + '|')
-for row in rows:
-    print('| ' + ' | '.join(str(v) for v in row) + ' |')
-
-# 2. ALWAYS print STRUCTURED_RESULT as LAST line (required for charts)
-print(f'STRUCTURED_RESULT:{json.dumps({"headers": headers, "rows": rows})}')
-```
-
-Rules:
-- Headers: strings. Row values: numbers for numeric data, strings for text.
-- STRUCTURED_RESULT MUST be the LAST line printed.
-- Do NOT wrap numbers in quotes — use 708500 not '₹7,08,500'.
-- Do NOT use bold (**) or formatting in STRUCTURED_RESULT values.
-
-15. **Standard column naming for charts**: Use these EXACT header names in \
-STRUCTURED_RESULT so the chart renderer can detect axes correctly:
-   - Period-over-period absolute delta → "Change"
-   - Period-over-period percentage delta → "Change %"
-   - Do NOT use "MoM Change", "Abs Change", "MoM %", "% vs Avg", or other variations.
-   - For status/flag columns (e.g. "Above"/"Below"), use the header "Status".
-   - Keep the first column as the label/category (e.g. "Month", "Item", "Ledger")."""
+14. **Table ordering**: Always put the comprehensive/complete table LAST in your \
+response. If you produce summary or filtered sub-tables (e.g. "Above Average", \
+"Below Average"), place them BEFORE the main result table."""
     else:
         from backend.agents.analysis_agent import ANALYSIS_TOOLS
 
@@ -447,3 +417,42 @@ periods (quarters, months, etc.), you MUST include ALL financial categories from
 query means ALL costs — both direct (purchases) and indirect (operating expenses). Omitting \
 purchases makes profitability figures misleading.
 {structured_rule_block}"""
+
+
+# Archived prompt rules — not included in active prompt.
+# Preserved for reference and potential future reuse.
+DEPRECATED_ANALYSIS_RULES = """
+Rule 14 (ARCHIVED): **Structured output — CRITICAL for charts**: Your code_execution MUST print
+a STRUCTURED_RESULT line as the LAST line of stdout. Without this, charts will
+not render. Print markdown tables for readability AND the JSON line for data:
+
+Example:
+```python
+import json
+headers = ['Customer', 'Sales Amount (₹)', '% of Total']
+rows = [['Global IT Solutions', 708500, 34.4], ['Patel Enterprises', 377000, 18.3]]
+
+# 1. Print markdown for readability
+print('| ' + ' | '.join(headers) + ' |')
+print('|' + '|'.join(['---'] * len(headers)) + '|')
+for row in rows:
+    print('| ' + ' | '.join(str(v) for v in row) + ' |')
+
+# 2. ALWAYS print STRUCTURED_RESULT as LAST line (required for charts)
+print(f'STRUCTURED_RESULT:{json.dumps({"headers": headers, "rows": rows})}')
+```
+
+Rules:
+- Headers: strings. Row values: numbers for numeric data, strings for text.
+- STRUCTURED_RESULT MUST be the LAST line printed.
+- Do NOT wrap numbers in quotes — use 708500 not '₹7,08,500'.
+- Do NOT use bold (**) or formatting in STRUCTURED_RESULT values.
+
+Rule 15 (ARCHIVED): **Standard column naming for charts**: Use these EXACT header names in
+STRUCTURED_RESULT so the chart renderer can detect axes correctly:
+   - Period-over-period absolute delta → "Change"
+   - Period-over-period percentage delta → "Change %"
+   - Do NOT use "MoM Change", "Abs Change", "MoM %", "% vs Avg", or other variations.
+   - For status/flag columns (e.g. "Above"/"Below"), use the header "Status".
+   - Keep the first column as the label/category (e.g. "Month", "Item", "Ledger").
+"""
