@@ -28,6 +28,7 @@ from backend.agents.query_agent import QueryAgent
 from backend.agents.analysis_agent import AnalysisAgent
 from backend.agents.chart_agent import ChartAgent
 from backend.agents.context import SessionContext
+from backend.agents.utils import parse_markdown_table_for_chart
 from backend.tally_bridge.client import TallyClient
 from backend.utils.date_utils import format_for_tally
 
@@ -172,8 +173,15 @@ class Orchestrator:
 
         # --- Chart Agent (when chart is needed) ---
         chart = None
-        if requires_chart:
-            chart = self.chart_agent.execute(analysis_result, query_type, requires_chart)
+        if settings.CHARTS_ENABLED and requires_chart:
+            chart_table = parse_markdown_table_for_chart(analysis_result.get("message", ""))
+            if chart_table and analysis_result.get("chart_suggestion") != "table_only":
+                chart = self.chart_agent.execute(
+                    chart_table,
+                    query_type,
+                    chart_suggestion=analysis_result.get("chart_suggestion"),
+                    chart_title=analysis_result.get("chart_title"),
+                )
 
         # Final data from analysis result
         final_data = data

@@ -314,6 +314,7 @@ class TestOrchestratorAnalysisRouting:
             with (
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
             ):
                 mock_query.return_value = {
                     "message": "Raw data fetched.",
@@ -326,12 +327,17 @@ class TestOrchestratorAnalysisRouting:
                     ],
                 }
                 mock_analysis.return_value = {
-                    "message": "Q1 sales were ₹100, Q2 were ₹150 — a 50% increase.",
+                    "message": (
+                        "Q1 sales were ₹100, Q2 were ₹150 — a 50% increase.\n\n"
+                        "| Period | Sales |\n|--------|-------|\n| Q1 | 100 |\n| Q2 | 150 |\n"
+                    ),
                     "data": {"headers": ["Period", "Sales"], "rows": [["Q1", 100], ["Q2", 150]]},
                     "insights": ["Sales grew 50%"],
                     "chart_suggestion": "grouped_bar",
+                    "chart_title": "Q1 vs Q2 Sales",
                     "tool_results": [],
                 }
+                mock_chart.return_value = {"chart_type": "grouped_bar", "data": [], "config": {}}
 
                 result = await orch.process_query("Compare Q1 vs Q2 sales", mock_client, session)
 
@@ -343,6 +349,11 @@ class TestOrchestratorAnalysisRouting:
                     "comparison",
                     session=session,
                 )
+                # ChartAgent called with parsed table data, not full analysis_result
+                mock_chart.assert_called_once()
+                call_args = mock_chart.call_args
+                assert call_args.kwargs.get("chart_suggestion") == "grouped_bar"
+                assert call_args.kwargs.get("chart_title") == "Q1 vs Q2 Sales"
 
         assert result["query_type"] == "comparison"
         assert "50%" in result["message"]
@@ -940,10 +951,14 @@ class TestAutoEnableChart:
                     ],
                 }
                 mock_analysis.return_value = {
-                    "message": "Total: ₹10,00,000",
-                    "data": [{"party": "A", "amount": 100}],
+                    "message": (
+                        "Total: ₹10,00,000\n\n"
+                        "| Party | Amount |\n|-------|--------|\n| A | 100 |\n| B | 200 |\n"
+                    ),
+                    "data": [{"party": "A", "amount": 100}, {"party": "B", "amount": 200}],
                     "tool_results": [],
                     "chart_suggestion": "bar",
+                    "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
 
@@ -1247,10 +1262,14 @@ class TestTableIntentSuppressesChart:
                     ],
                 }
                 mock_analysis.return_value = {
-                    "message": "Total: ₹100",
-                    "data": [{"party": "A", "amount": 100}],
+                    "message": (
+                        "Total: ₹100\n\n"
+                        "| Party | Amount |\n|-------|--------|\n| A | 100 |\n| B | 200 |\n"
+                    ),
+                    "data": [{"party": "A", "amount": 100}, {"party": "B", "amount": 200}],
                     "tool_results": [],
                     "chart_suggestion": "bar",
+                    "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
 
