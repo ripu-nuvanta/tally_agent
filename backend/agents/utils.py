@@ -144,3 +144,117 @@ def to_numeric(val: Any) -> float:
         return float(cleaned)
     except ValueError:
         return 0.0
+
+
+# ---------------------------------------------------------------------------
+# Markdown table parser for chart rendering
+# ---------------------------------------------------------------------------
+
+
+def _is_ordinal_header(header: str) -> bool:
+    """Check if a column header suggests an ordinal/index column."""
+    h = header.strip().lower().rstrip(".")
+    return h in {"rank", "#", "s.no", "s no", "sr", "no", "sl", "sl no", "sl. no"}
+
+
+def _is_ordinal_column(values: list, header: str) -> bool:
+    """Detect ordinal columns: known headers or sequential integers."""
+    if _is_ordinal_header(header):
+        return True
+    if len(values) < 2:
+        return False
+    nums = [to_numeric(v) for v in values]
+    if not all(n == int(n) for n in nums if n != 0.0):
+        return False
+    ints = [int(n) for n in nums]
+    if ints == list(range(ints[0], ints[0] + len(ints))):
+        return True
+    return False
+
+
+def parse_markdown_table_for_chart(text: str) -> dict[str, Any] | None:
+    """Parse the best markdown table from text for chart rendering.
+
+    Finds all markdown tables, selects the one with most rows
+    (tie-break: later table, then most columns), and returns
+    {headers, rows} with ordinal columns stripped.
+
+    Returns None if no suitable table found (< 2 data rows).
+    """
+    lines = text.split("\n")
+    tables: list[list[str]] = []
+    current_block: list[str] = []
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("|") and stripped.endswith("|"):
+            current_block.append(stripped)
+        else:
+            if current_block:
+                tables.append(current_block)
+                current_block = []
+    if current_block:
+        tables.append(current_block)
+
+    if not tables:
+        return None
+
+    parsed: list[tuple[list[str], list[list], int]] = []
+    for idx, block in enumerate(tables):
+        if len(block) < 3:
+            continue
+        header_line = block[0]
+        headers = [cell.strip() for cell in header_line.strip("|").split("|")]
+
+        data_start = 1
+        for i, line in enumerate(block[1:], 1):
+            if all(cell.strip().replace("-", "").replace(":", "") == "" for cell in line.strip("|").split("|")):
+                data_start = i + 1
+                break
+
+        rows = []
+        for line in block[data_start:]:
+            cells = [cell.strip() for cell in line.strip("|").split("|")]
+            rows.append(cells)
+
+        if len(rows) >= 2:
+            parsed.append((headers, rows, idx))
+
+    if not parsed:
+        return None
+
+    best = max(parsed, key=lambda t: (len(t[1]), t[2], len(t[0])))
+    headers, rows, _ = best
+
+    skip_cols = 0
+    for col_idx, header in enumerate(headers):
+        col_values = [row[col_idx] for row in rows if col_idx < len(row)]
+        if _is_ordinal_column(col_values, header):
+            skip_cols = col_idx + 1
+        else:
+            break
+
+    if skip_cols > 0:
+        headers = headers[skip_cols:]
+        rows = [[cell for i, cell in enumerate(row) if i >= skip_cols] for row in rows]
+
+    converted_rows = []
+    for row in rows:
+        converted = []
+        for i, cell in enumerate(row):
+            if i == 0:
+                converted.append(cell)
+            else:
+                num = to_numeric(cell)
+                cell_stripped = cell.strip()
+                if num == 0.0 and cell_stripped and cell_stripped.lower() not in _NON_NUMERIC_SENTINELS:
+                    try:
+                        float(cell_stripped.replace("₹", "").replace(",", "").replace("%", "").replace("*", "").strip())
+                        converted.append(num)
+                    except ValueError:
+                        converted.append(cell_stripped)
+                else:
+                    converted.append(num)
+        converted_rows.append(converted)
+
+    return {"headers": headers, "rows": converted_rows}

@@ -81,3 +81,143 @@ class TestToNumeric:
 
     def test_negative_percentage_points(self):
         assert to_numeric("−23.0 pp") == -23.0
+
+
+from backend.agents.utils import parse_markdown_table_for_chart
+
+
+class TestParseMarkdownTableForChart:
+    """Tests for parse_markdown_table_for_chart()."""
+
+    def test_single_table(self):
+        text = """Some intro text.
+
+| Month | Sales |
+|-------|-------|
+| Jan | ₹1,00,000 |
+| Feb | ₹2,00,000 |
+| Mar | ₹3,00,000 |
+
+Some outro text."""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["Month", "Sales"]
+        assert len(result["rows"]) == 3
+        assert result["rows"][0] == ["Jan", 100000.0]
+
+    def test_no_table(self):
+        text = "No tables here, just text."
+        assert parse_markdown_table_for_chart(text) is None
+
+    def test_table_too_small(self):
+        text = """| Name | Value |
+|------|-------|
+| Only | 100 |"""
+        assert parse_markdown_table_for_chart(text) is None
+
+    def test_multiple_tables_picks_most_rows(self):
+        text = """Summary:
+| Category | Total |
+|----------|-------|
+| A | 100 |
+| B | 200 |
+
+Details:
+| Month | Amount | Growth |
+|-------|--------|--------|
+| Jan | 50 | 5% |
+| Feb | 60 | 10% |
+| Mar | 70 | 15% |
+| Apr | 80 | 20% |
+"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["Month", "Amount", "Growth"]
+        assert len(result["rows"]) == 4
+
+    def test_multiple_tables_same_rows_picks_later(self):
+        text = """First:
+| A | B |
+|---|---|
+| 1 | 2 |
+| 3 | 4 |
+
+Second:
+| X | Y |
+|---|---|
+| 5 | 6 |
+| 7 | 8 |
+"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["X", "Y"]
+
+    def test_rank_column_skipped(self):
+        text = """| Rank | Customer | Sales |
+|------|----------|-------|
+| 1 | Alice | 100 |
+| 2 | Bob | 200 |
+| 3 | Carol | 300 |"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["Customer", "Sales"]
+        assert result["rows"][0][0] == "Alice"
+
+    def test_hash_column_skipped(self):
+        text = """| # | Ledger | Amount |
+|---|--------|--------|
+| 1 | Rent | 50000 |
+| 2 | Salary | 100000 |"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["Ledger", "Amount"]
+
+    def test_emoji_rank_column_skipped(self):
+        text = """| # | Expense | Amount |
+|---|---------|--------|
+| 🥇 | Salaries | 1000000 |
+| 🥈 | Rent | 300000 |
+| 🥉 | Travel | 15000 |"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["Expense", "Amount"]
+        assert result["rows"][0][0] == "Salaries"
+
+    def test_sequential_int_column_skipped(self):
+        text = """| No | Item | Price |
+|----|------|-------|
+| 1 | Apple | 10 |
+| 2 | Banana | 20 |
+| 3 | Cherry | 30 |"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["headers"] == ["Item", "Price"]
+
+    def test_numeric_conversion_with_emoji(self):
+        text = """| Month | Sales | Change % |
+|-------|-------|----------|
+| Oct | ₹5,44,000 | — (base) |
+| Nov | ₹2,29,500 | 🔴 −57.8% |
+| Dec | ₹4,17,750 | 🟢 +82.0% |"""
+        result = parse_markdown_table_for_chart(text)
+        assert result is not None
+        assert result["rows"][1][2] == -57.8
+        assert result["rows"][2][2] == 82.0
+
+    def test_total_row_preserved_in_parser(self):
+        text = """| Customer | Sales |
+|----------|-------|
+| Alice | 100 |
+| Bob | 200 |
+| Total | 300 |"""
+        result = parse_markdown_table_for_chart(text)
+        assert len(result["rows"]) == 3
+
+    def test_text_values_kept_as_strings(self):
+        text = """| Month | Sales | Status |
+|-------|-------|--------|
+| Jan | 100 | Good |
+| Feb | 200 | Bad |"""
+        result = parse_markdown_table_for_chart(text)
+        assert result["rows"][0][2] == "Good"
+        assert result["rows"][1][2] == "Bad"
