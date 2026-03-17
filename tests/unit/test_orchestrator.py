@@ -1585,3 +1585,89 @@ class TestFilterTableByAdvice:
         assert result is not None
         assert result["headers"] == ["A", "B", "C"]
         assert result["rows"][0] == ["x", 1, ""]
+
+
+# ---------------------------------------------------------------------------
+# Tests: CHARTS_ENABLED=False suppresses chart generation
+# ---------------------------------------------------------------------------
+
+
+class TestChartsEnabledFalse:
+    @pytest.mark.asyncio
+    async def test_charts_disabled_suppresses_chart_output(self):
+        """When CHARTS_ENABLED=False, chart generation is skipped even for
+        query types that normally produce a chart (e.g. trend with requires_chart=True).
+        Text response should still be returned unchanged."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "trend",
+            "requires_chart": True,
+            "reasoning": "User wants month-over-month sales trend",
+            "clarification_question": None,
+        }
+
+        analysis_message = (
+            "Monthly sales trend shows steady growth.\n\n"
+            "| Month | Sales |\n|-------|-------|\n"
+            "| Apr | 100000 |\n| May | 120000 |\n| Jun | 140000 |\n"
+        )
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.settings") as mock_settings,
+            ):
+                mock_settings.CHARTS_ENABLED = False
+
+                mock_query.return_value = {
+                    "message": "Sales data fetched.",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_sales_register",
+                            "tool_input": {},
+                            "result": {
+                                "success": True,
+                                "data": [
+                                    {"month": "Apr", "amount": 100000},
+                                    {"month": "May", "amount": 120000},
+                                    {"month": "Jun", "amount": 140000},
+                                ],
+                            },
+                        }
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": analysis_message,
+                    "data": {
+                        "headers": ["Month", "Sales"],
+                        "rows": [["Apr", 100000], ["May", 120000], ["Jun", 140000]],
+                    },
+                    "tool_results": [],
+                    "chart_suggestion": "line",
+                    "chart_title": "Monthly Sales Trend",
+                }
+
+                result = await orch.process_query(
+                    "Show me monthly sales trend", mock_client, session
+                )
+
+                # ChartAgent must NOT have been called
+                mock_chart.assert_not_called()
+
+        # Chart must be None
+        assert result["chart"] is None
+        # Message text must still be returned
+        assert "Monthly sales trend" in result["message"]
+        assert result["query_type"] == "trend"

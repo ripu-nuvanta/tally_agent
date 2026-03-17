@@ -164,6 +164,10 @@ def _is_ordinal_column(values: list, header: str) -> bool:
     if len(values) < 2:
         return False
     nums = [to_numeric(v) for v in values]
+    # Require at least half of values to be non-zero (text parses to 0.0 via to_numeric)
+    nonzero_count = sum(1 for n in nums if n != 0.0)
+    if nonzero_count < len(nums) * 0.5:
+        return False
     if not all(n == int(n) for n in nums if n != 0.0):
         return False
     ints = [int(n) for n in nums]

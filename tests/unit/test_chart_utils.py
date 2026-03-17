@@ -273,6 +273,20 @@ Table 2:
         assert len(tables) == 1
         assert tables[0]["headers"] == ["Customer", "Sales"]
 
+    def test_mostly_text_column_not_treated_as_ordinal(self):
+        """A column where most values are text (parse to 0.0) should NOT be ordinal-detected."""
+        text = """| Status | Customer | Sales |
+|--------|----------|-------|
+| Active | Alice | 100 |
+| Inactive | Bob | 200 |
+| Active | Carol | 300 |
+"""
+        tables = parse_all_markdown_tables(text)
+        assert len(tables) == 1
+        # "Status" column has mostly text values — must NOT be stripped as ordinal
+        assert "Status" in tables[0]["headers"]
+        assert tables[0]["headers"][0] == "Status"
+
     def test_numeric_conversion(self):
         text = """| Month | Sales |
 |-------|-------|
