@@ -527,9 +527,17 @@ async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
                     "value_label": "Sales",
                 },
             ),
-            # Second response: final text after seeing tool result
+            # Second response: final text with markdown table for chart parsing
             make_text_response(
-                "Monthly sales trend:\n"
+                "Monthly sales trend:\n\n"
+                "| Period | Sales | Change | Change % |\n"
+                "|--------|-------|--------|----------|\n"
+                "| Apr | 500000 | — | — |\n"
+                "| May | 600000 | +100000 | +20.0% |\n"
+                "| Jun | 400000 | -200000 | -33.3% |\n"
+                "| Jul | 700000 | +300000 | +75.0% |\n"
+                "| Aug | 800000 | +100000 | +14.3% |\n"
+                "| Total | 3000000 | — | — |\n\n"
                 "- Sales peaked in August at 8L\n"
                 "- Lowest in June at 4L\n"
                 "chart_suggestion: line"
