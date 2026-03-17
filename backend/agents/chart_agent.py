@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from backend.agents.utils import to_numeric as _to_numeric
+
 logger = logging.getLogger(__name__)
 
 # Default color palette for Recharts
@@ -361,14 +363,3 @@ def _trim_trailing_zeros(headers: list[str], rows: list[list]) -> list[list]:
     return rows[first_nonzero : last_nonzero + 1]
 
 
-def _to_numeric(val: Any) -> float:
-    """Coerce a value to float, stripping currency symbols and commas."""
-    if isinstance(val, (int, float)):
-        return float(val)
-    if isinstance(val, str):
-        cleaned = val.replace("*", "").replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
-        try:
-            return float(cleaned)
-        except ValueError:
-            return 0.0
-    return 0.0

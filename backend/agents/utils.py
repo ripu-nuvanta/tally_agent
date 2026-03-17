@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -88,3 +89,58 @@ def extract_structured_from_code_execution(response: Any) -> dict[str, Any] | No
     if found_code_exec:
         logger.warning("code_execution ran but no valid STRUCTURED_RESULT found in stdout")
     return None
+
+
+# ---------------------------------------------------------------------------
+# Shared numeric coercion (used by ChartAgent and markdown table parser)
+# ---------------------------------------------------------------------------
+
+# Regex to strip emoji codepoints
+_EMOJI_RE = re.compile(
+    "["
+    "\U0001F300-\U0001F9FF"
+    "\U00002702-\U000027B0"
+    "\U0000FE00-\U0000FE0F"
+    "\U0000200D"
+    "\U000025B2-\U000025BD"
+    "\U00002B06-\U00002B07"
+    "\U000027A1"
+    "]+",
+    flags=re.UNICODE,
+)
+
+_NON_NUMERIC_SENTINELS = {"—", "–", "-", "n/a", "nil", "none", ""}
+
+
+def to_numeric(val: Any) -> float:
+    """Coerce a value to float, stripping currency, emoji, arrows, and symbols.
+
+    Shared converter used by both the markdown table parser and ChartAgent.
+    Returns 0.0 for non-numeric text.
+    """
+    if val is None:
+        return 0.0
+    if isinstance(val, (int, float)):
+        return float(val)
+    if not isinstance(val, str):
+        return 0.0
+
+    cleaned = _EMOJI_RE.sub("", val)
+    cleaned = cleaned.replace("\u2212", "-")
+    cleaned = cleaned.replace("₹", "").replace(",", "").replace("*", "").replace("%", "")
+    cleaned = cleaned.replace(" pp", "")
+    cleaned = cleaned.strip()
+
+    if cleaned.lower() in _NON_NUMERIC_SENTINELS:
+        return 0.0
+
+    if cleaned.startswith("(") and cleaned.endswith(")"):
+        return 0.0
+
+    if cleaned.startswith("+"):
+        cleaned = cleaned[1:]
+
+    try:
+        return float(cleaned)
+    except ValueError:
+        return 0.0
