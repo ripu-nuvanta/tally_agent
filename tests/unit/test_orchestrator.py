@@ -949,6 +949,7 @@ class TestAutoEnableChart:
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
                 patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock) as mock_advisor,
             ):
                 mock_query.return_value = {
                     "message": "Total sales: ₹10,00,000",
@@ -971,6 +972,14 @@ class TestAutoEnableChart:
                     "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
+                mock_advisor.return_value = {
+                    "table_index": 0,
+                    "x_column": "Party",
+                    "y_columns": ["Amount"],
+                    "secondary_y_columns": [],
+                    "chart_type": "bar",
+                    "chart_title": "Total Sales",
+                }
 
                 result = await orch.process_query("Total sales this year", mock_client, session)
 
@@ -1271,6 +1280,7 @@ class TestTableIntentSuppressesChart:
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
                 patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock) as mock_advisor,
             ):
                 mock_query.return_value = {
                     "message": "Total sales",
@@ -1289,6 +1299,14 @@ class TestTableIntentSuppressesChart:
                     "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
+                mock_advisor.return_value = {
+                    "table_index": 0,
+                    "x_column": "Party",
+                    "y_columns": ["Amount"],
+                    "secondary_y_columns": [],
+                    "chart_type": "bar",
+                    "chart_title": "Total Sales",
+                }
 
                 result = await orch.process_query(
                     "Show total sales", mock_client, session

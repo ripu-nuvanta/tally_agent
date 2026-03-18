@@ -29,7 +29,7 @@ from backend.agents.analysis_agent import AnalysisAgent
 from backend.agents.chart_agent import ChartAgent
 from backend.agents.context import SessionContext
 from backend.agents.chart_advisor import get_chart_advice
-from backend.agents.utils import parse_markdown_table_for_chart, parse_all_markdown_tables
+from backend.agents.utils import parse_all_markdown_tables
 from backend.tally_bridge.client import TallyClient
 from backend.utils.date_utils import format_for_tally
 
@@ -211,18 +211,8 @@ class Orchestrator:
                                 chart_title=advice.get("chart_title", chart_title),
                             )
 
-                    # Fallback: use rule-based selection if advisor failed OR
-                    # advisor's selection produced no chart (ChartAgent returned None)
-                    if chart is None and (advice is None or advice.get("chart_type") != "table_only"):
-                        logger.info("Chart pipeline — falling back to rule-based selection")
-                        chart_table = parse_markdown_table_for_chart(message_text)
-                        if chart_table:
-                            chart = self.chart_agent.execute(
-                                chart_table,
-                                query_type,
-                                chart_suggestion=chart_suggestion,
-                                chart_title=chart_title,
-                            )
+                    if chart is None:
+                        logger.info("Chart pipeline — no chart produced (advisor=%s)", "failed" if advice is None else "no suitable columns")
             else:
                 logger.info("Chart pipeline — skipped (chart_suggestion=table_only)")
 
