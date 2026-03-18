@@ -167,4 +167,4 @@ class TestGetChartAdvice:
         # Verify the suggestion was passed to the API
         call_args = mock_client.messages.create.call_args
         user_content = call_args.kwargs["messages"][0]["content"]
-        assert "Suggested chart type: pie" in user_content
+        assert "Suggested chart type (from analysis agent — override if needed): pie" in user_content

@@ -32,6 +32,7 @@ Rules:
 8. Prefer fewer y-axis columns — 2-3 series max for readability
 9. Date columns (like "Due Date") are text, not numeric — don't chart them
 10. If the user query asks to compare specific periods, pick those period columns as y-axis
+11. The chart suggestion from the analysis agent is a hint, not a mandate. Use your best judgment based on the actual table data. Override the suggestion when a different chart type better fits the data (e.g., use "composed" instead of "line" when both absolute values and percentage columns are present).
 
 Supported chart types: bar, grouped_bar, line, pie, composed, table_only
 
@@ -95,7 +96,7 @@ async def get_chart_advice(
 
     user_prompt = f"User query: {user_query}\n\n"
     if chart_suggestion and chart_suggestion != "table_only":
-        user_prompt += f"Suggested chart type: {chart_suggestion}\n\n"
+        user_prompt += f"Suggested chart type (from analysis agent — override if needed): {chart_suggestion}\n\n"
     user_prompt += f"Tables found in the response:\n\n{tables_text}"
 
     try:

@@ -786,3 +786,34 @@ class TestSmarterZeroTrimming:
         rows = [["Jan", 100], ["Feb", 200], ["Mar", 300]]
         result = _trim_trailing_zeros(headers, rows)
         assert len(result) == 3
+
+
+# ---------------------------------------------------------------------------
+# Tests: Secondary y-keys promoted to primary when no primary exists
+# ---------------------------------------------------------------------------
+
+
+class TestSecondaryPromotedToPrimary:
+    """When only secondary-axis columns exist, promote them to primary."""
+
+    def test_growth_column_promoted_when_only_column(self):
+        """MoM Growth as only data column → promoted to primary y_keys."""
+        headers = ["Month", "MoM Growth"]
+        rows = [["Jul", 0], ["Aug", 1.7], ["Sep", 100.0], ["Oct", -4.2]]
+        config = _build_config("line", headers, rows)
+        assert "MoM Growth" in config["y_keys"]
+        assert "secondary_y_keys" not in config or config.get("secondary_y_keys") == []
+
+    def test_margin_column_promoted_when_only_column(self):
+        headers = ["Quarter", "Operating Profit Margin"]
+        rows = [["Q1", 44.4], ["Q2", 21.4], ["Q3", 35.0]]
+        config = _build_config("bar", headers, rows)
+        assert "Operating Profit Margin" in config["y_keys"]
+
+    def test_no_promotion_when_primary_exists(self):
+        """Normal case: primary + secondary both populated."""
+        headers = ["Month", "Sales", "Change %"]
+        rows = [["Jan", 100000, 5.2], ["Feb", 110000, 10.0]]
+        config = _build_config("line", headers, rows)
+        assert "Sales" in config["y_keys"]
+        assert "Change %" in config.get("secondary_y_keys", [])

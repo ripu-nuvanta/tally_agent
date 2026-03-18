@@ -362,6 +362,12 @@ def _build_config(chart_type: str, headers: list[str], rows: list[list] | None =
     # Detect secondary axis data (percentage columns)
     secondary_y_keys = [h for h in headers[1:] if _is_secondary_axis_column(h)]
 
+    # If no primary y_keys but secondary exists, promote secondary to primary
+    # (happens when advisor selects only percentage columns)
+    if not y_keys and secondary_y_keys:
+        y_keys = secondary_y_keys
+        secondary_y_keys = []
+
     # For numeric-only data, limit to actual value columns
     if chart_type == "pie":
         y_keys = ["value"]
