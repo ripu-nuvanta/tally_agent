@@ -63,7 +63,7 @@ def generate_followup(clarification_msg: str, original_query: str) -> str:
     return f"{original_query} for the current financial year April 2025 to March 2026"
 
 
-async def wait_for_response(page: Page, message_count_before: int, timeout: float = 300) -> None:
+async def wait_for_response(page: Page, message_count_before: int, timeout: float = 480) -> None:
     """Wait for a new non-loading assistant message to appear.
 
     Waits until:
