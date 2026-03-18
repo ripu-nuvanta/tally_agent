@@ -179,11 +179,12 @@ During implementation, rule-based column selection proved insufficient for compl
 
 **Function:** `get_chart_advice(tables, user_query, chart_suggestion) → dict | None`
 
-- Makes one API call to `CLAUDE_CLASSIFIER_MODEL` (Haiku)
-- Input: all parsed markdown tables + user query + AnalysisAgent's chart suggestion
-- Output: `{table_index, x_column, y_columns, secondary_y_columns, chart_type, chart_title}`
+- Makes one API call to `CLAUDE_CLASSIFIER_MODEL` (Haiku) using **tool_use** for guaranteed structured output
+- Input: all parsed markdown tables + user query + AnalysisAgent's chart suggestion (presented as override-able hint)
+- Output: `{table_index, x_column, y_columns, secondary_y_columns, chart_type, chart_title}` via `select_chart` tool schema
 - Cost: ~$0.001 per call, ~1-2s latency
 - Prompt includes rules for column selection (max 2-3 y-columns, skip counts alongside currency, etc.)
+- Chart suggestion from AnalysisAgent is a hint — advisor overrides when a better type fits the data
 
 **Helper:** `_filter_table_by_advice(table, advice) → dict | None`
 
