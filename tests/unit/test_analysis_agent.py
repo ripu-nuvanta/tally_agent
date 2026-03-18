@@ -53,6 +53,18 @@ def _make_tool_call_response(
     return msg
 
 
+def _make_stream_mock(response):
+    """Create a mock that simulates anthropic_client.messages.stream() context manager."""
+    mock_stream = AsyncMock()
+    mock_stream.get_final_message = AsyncMock(return_value=response)
+
+    mock_manager = MagicMock()
+    mock_manager.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_manager.__aexit__ = AsyncMock(return_value=False)
+
+    return mock_manager
+
+
 # ---------------------------------------------------------------------------
 # Tests: Pure Python analysis tools
 # ---------------------------------------------------------------------------
@@ -236,13 +248,13 @@ class TestAnalysisAgentLoop:
         raw_data = [{"name": "A", "amount": 100}]
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(
-                return_value=_make_text_response(
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(
+                _make_text_response(
                     "The total amount is ₹100.\n"
                     "- Only one item in the dataset\n"
                     "Chart suggestion: table_only"
                 )
-            )
+            ))
             result = await agent.execute(raw_data, None, "What is the total?", "aggregation")
 
         assert "₹100" in result["message"]
@@ -278,7 +290,9 @@ class TestAnalysisAgentLoop:
         )
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(side_effect=[tool_call, final])
+            mock_claude.messages.stream = MagicMock(side_effect=[
+                _make_stream_mock(tool_call), _make_stream_mock(final)
+            ])
             result = await agent.execute(raw_data, None, "Top 3 customers", "top_n")
 
         assert len(result["tool_results"]) == 1
@@ -299,7 +313,7 @@ class TestAnalysisAgentLoop:
         )
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(return_value=infinite_call)
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(infinite_call))
             result = await agent.execute(raw_data, None, "Total?", "aggregation")
 
         assert len(result["tool_results"]) == 2
@@ -311,15 +325,15 @@ class TestAnalysisAgentLoop:
         agent = AnalysisAgent()
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(
-                return_value=_make_text_response(
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(
+                _make_text_response(
                     "Summary here.\n"
                     "- Revenue grew 20% QoQ\n"
                     "- Expenses remained flat\n"
                     "- Net profit improved\n"
                     "Chart suggestion: line"
                 )
-            )
+            ))
             result = await agent.execute([], None, "Show trend", "trend")
 
         assert len(result["insights"]) == 3
@@ -339,7 +353,9 @@ class TestAnalysisAgentLoop:
         final = _make_text_response("I encountered an error sorting. The data is: ₹100.")
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(side_effect=[bad_call, final])
+            mock_claude.messages.stream = MagicMock(side_effect=[
+                _make_stream_mock(bad_call), _make_stream_mock(final)
+            ])
             result = await agent.execute([], None, "Sort data", "top_n")
 
         assert len(result["tool_results"]) == 1
@@ -381,7 +397,9 @@ class TestAnalysisAgentParallelCalls:
         final = _make_text_response("Sorted and totaled.\n- Sales is highest\nChart suggestion: bar")
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(side_effect=[parallel, final])
+            mock_claude.messages.stream = MagicMock(side_effect=[
+                _make_stream_mock(parallel), _make_stream_mock(final)
+            ])
             result = await agent.execute(raw_data, None, "Sort and total", "aggregation")
 
         assert len(result["tool_results"]) == 2
@@ -400,7 +418,7 @@ class TestAnalysisAgentParallelCalls:
         ])
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(return_value=parallel)
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(parallel))
             result = await agent.execute(raw_data, None, "Analyze", "aggregation")
 
         assert len(result["tool_results"]) == 2
@@ -421,7 +439,7 @@ class TestAnalysisAgentAPIError:
         agent = AnalysisAgent()
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(
+            mock_claude.messages.stream = MagicMock(
                 side_effect=anthropic.APIConnectionError(request=MagicMock())
             )
             result = await agent.execute([], None, "Analyze", "aggregation")
@@ -668,7 +686,9 @@ async def test_comparison_table_data_tracker_prefers_period_comparison():
     )
 
     with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-        mock_claude.messages.create = AsyncMock(side_effect=[comparison_call, totals_call, final])
+        mock_claude.messages.stream = MagicMock(side_effect=[
+            _make_stream_mock(comparison_call), _make_stream_mock(totals_call), _make_stream_mock(final)
+        ])
         result = await agent.execute(raw_data, None, "Compare Q2 vs Q3", "comparison")
 
     # The comparison table (2 rows) should be preferred over the totals (1 row)
@@ -725,7 +745,7 @@ class TestAnalysisAgentCodeExecution:
         ):
             mock_settings.CLAUDE_MODEL = "test-model"
             mock_settings.CODE_EXECUTION_ENABLED = True
-            mock_claude.messages.create = AsyncMock(return_value=response)
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(response))
 
             agent = AnalysisAgent()
             result = await agent.execute(
@@ -855,7 +875,7 @@ class TestMarkdownTableFallbackIntegration:
         ):
             mock_settings.CLAUDE_MODEL = "test-model"
             mock_settings.CODE_EXECUTION_ENABLED = False
-            mock_claude.messages.create = AsyncMock(return_value=md_response)
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(md_response))
 
             result = await agent.execute(
                 raw_data=[{"month": "Oct", "sales": 500000}],
@@ -889,7 +909,7 @@ class TestMarkdownTableFallbackIntegration:
         ):
             mock_settings.CLAUDE_MODEL = "test-model"
             mock_settings.CODE_EXECUTION_ENABLED = True
-            mock_claude.messages.create = AsyncMock(return_value=response)
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(response))
 
             result = await agent.execute(
                 raw_data=[],
@@ -937,12 +957,12 @@ class TestAnalysisAgentSessionContext:
         agent = AnalysisAgent()
         captured = {}
 
-        async def mock_create(**kwargs):
+        def mock_stream(**kwargs):
             captured["messages"] = kwargs["messages"]
-            return _make_text_response("The average monthly sales is ₹4,16,483.")
+            return _make_stream_mock(_make_text_response("The average monthly sales is ₹4,16,483."))
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(side_effect=mock_create)
+            mock_claude.messages.stream = MagicMock(side_effect=mock_stream)
             result = await agent.execute(
                 raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
                 computed_data=None,
@@ -962,9 +982,9 @@ class TestAnalysisAgentSessionContext:
         agent = AnalysisAgent()
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(
-                return_value=_make_text_response("Total sales: ₹10,00,000.")
-            )
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(
+                _make_text_response("Total sales: ₹10,00,000.")
+            ))
             result = await agent.execute(
                 raw_data=[{"account_name": "Sales", "closing_balance": 1000000}],
                 computed_data=None,
@@ -997,12 +1017,12 @@ class TestAnalysisAgentSessionContext:
         agent = AnalysisAgent()
         captured = {}
 
-        async def mock_create(**kwargs):
+        def mock_stream(**kwargs):
             captured["messages"] = kwargs["messages"]
-            return _make_text_response("The average monthly sales is ₹4,16,483.")
+            return _make_stream_mock(_make_text_response("The average monthly sales is ₹4,16,483."))
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(side_effect=mock_create)
+            mock_claude.messages.stream = MagicMock(side_effect=mock_stream)
             await agent.execute(
                 raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
                 computed_data=None,
@@ -1049,12 +1069,12 @@ class TestAnalysisAgentSessionContext:
         agent = AnalysisAgent()
         captured = {}
 
-        async def mock_create(**kwargs):
+        def mock_stream(**kwargs):
             captured["messages"] = kwargs["messages"]
-            return _make_text_response("Done.")
+            return _make_stream_mock(_make_text_response("Done."))
 
         with patch("backend.agents.analysis_agent.anthropic_client") as mock_claude:
-            mock_claude.messages.create = AsyncMock(side_effect=mock_create)
+            mock_claude.messages.stream = MagicMock(side_effect=mock_stream)
             await agent.execute(
                 raw_data=[{"account_name": "Sales", "closing_balance": 100000}],
                 computed_data=None,
@@ -1132,7 +1152,7 @@ class TestAnalysisAgentLastTextBlock:
         ):
             mock_settings.CLAUDE_MODEL = "test-model"
             mock_settings.CODE_EXECUTION_ENABLED = True
-            mock_claude.messages.create = AsyncMock(return_value=response)
+            mock_claude.messages.stream = MagicMock(return_value=_make_stream_mock(response))
 
             agent = AnalysisAgent()
             result = await agent.execute(

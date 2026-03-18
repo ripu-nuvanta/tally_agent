@@ -16,6 +16,7 @@ Usage:
 from __future__ import annotations
 
 from collections import deque
+from contextlib import asynccontextmanager
 from typing import Any
 
 from anthropic.types import (
@@ -32,6 +33,22 @@ from anthropic.types import (
 # ---------------------------------------------------------------------------
 
 
+class MockStreamContext:
+    """Async context manager that wraps a single Message as a stream result."""
+
+    def __init__(self, message: Message) -> None:
+        self._message = message
+
+    async def __aenter__(self) -> "MockStreamContext":
+        return self
+
+    async def __aexit__(self, *args: Any) -> bool:
+        return False
+
+    async def get_final_message(self) -> Message:
+        return self._message
+
+
 class MockMessages:
     """Drop-in for ``anthropic.AsyncAnthropic().messages``."""
 
@@ -46,6 +63,17 @@ class MockMessages:
                 "Add more responses to the mock."
             )
         return self.client.responses.popleft()
+
+    def stream(self, **kwargs: Any) -> MockStreamContext:
+        """Return an async context manager that yields a mock stream."""
+        self.client.call_log.append(kwargs)
+        if not self.client.responses:
+            raise RuntimeError(
+                f"MockAnthropicClient exhausted after {len(self.client.call_log)} calls. "
+                "Add more responses to the mock."
+            )
+        message = self.client.responses.popleft()
+        return MockStreamContext(message)
 
 
 class MockAnthropicClient:

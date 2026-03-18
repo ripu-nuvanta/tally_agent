@@ -487,13 +487,14 @@ class AnalysisAgent:
         while True:
             turn += 1
             try:
-                response = await anthropic_client.messages.create(
+                async with anthropic_client.messages.stream(
                     model=settings.CLAUDE_MODEL,
-                    max_tokens=21000,  # SDK limit: ~21333 for non-streaming (streaming needed for higher)
+                    max_tokens=32768,
                     system=system_prompt,
                     tools=_build_analysis_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,
-                )
+                ) as stream:
+                    response = await stream.get_final_message()
             except anthropic.APIError as exc:
                 logger.error("AnalysisAgent turn %d — API error: %s", turn, exc)
                 preferred_data = (
