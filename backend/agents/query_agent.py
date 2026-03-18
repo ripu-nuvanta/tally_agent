@@ -114,8 +114,9 @@ class QueryAgent:
                 return {"message": error_msg, "tool_results": tool_results}
 
             logger.info(
-                "QueryAgent turn %d — stop_reason=%s, content_blocks=%d",
+                "QueryAgent turn %d — stop_reason=%s, content_blocks=%d, input=%d, output=%d tokens",
                 turn, response.stop_reason, len(response.content),
+                response.usage.input_tokens, response.usage.output_tokens,
             )
 
             if response.stop_reason == "max_tokens":

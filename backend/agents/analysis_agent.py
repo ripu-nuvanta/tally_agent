@@ -511,7 +511,9 @@ class AnalysisAgent:
                 )
 
             logger.info(
-                "AnalysisAgent turn %d — stop_reason=%s", turn, response.stop_reason,
+                "AnalysisAgent turn %d — stop_reason=%s, input=%d, output=%d tokens",
+                turn, response.stop_reason,
+                response.usage.input_tokens, response.usage.output_tokens,
             )
 
             # Log Claude's text content for this turn

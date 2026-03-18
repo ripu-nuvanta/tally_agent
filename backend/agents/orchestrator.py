@@ -263,6 +263,11 @@ class Orchestrator:
                 text = block.text
                 break
 
+        logger.info(
+            "Orchestrator classifier — input=%d, output=%d tokens",
+            response.usage.input_tokens, response.usage.output_tokens,
+        )
+
         try:
             return json.loads(_strip_markdown_fences(text))
         except (json.JSONDecodeError, TypeError):
