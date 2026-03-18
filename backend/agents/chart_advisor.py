@@ -87,8 +87,10 @@ async def get_chart_advice(
         chart_type, chart_title. Returns None if call fails.
     """
     if not tables:
+        logger.info("Chart advisor — no tables provided, skipping")
         return None
 
+    logger.info("Chart advisor — %d tables, query=%r, suggestion=%s", len(tables), user_query[:80], chart_suggestion)
     tables_text = _format_tables_for_prompt(tables)
 
     user_prompt = f"User query: {user_query}\n\n"

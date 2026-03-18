@@ -181,6 +181,8 @@ class Orchestrator:
 
             if chart_suggestion != "table_only":
                 all_tables = parse_all_markdown_tables(message_text)
+                logger.info("Chart pipeline — found %d tables, suggestion=%s", len(all_tables), chart_suggestion)
+
                 if all_tables:
                     # Try Haiku chart advisor first
                     advice = await get_chart_advice(
@@ -188,6 +190,7 @@ class Orchestrator:
                         user_message,
                         chart_suggestion=chart_suggestion,
                     )
+                    logger.info("Chart advisor returned: %s", advice)
 
                     if advice and advice.get("chart_type") != "table_only":
                         # Use advisor's table and column selections
@@ -195,6 +198,11 @@ class Orchestrator:
 
                         # Filter table to only advisor-selected columns
                         filtered = _filter_table_by_advice(selected_table, advice)
+                        logger.info(
+                            "Chart filter — headers=%s, rows=%d",
+                            filtered["headers"] if filtered else None,
+                            len(filtered["rows"]) if filtered else 0,
+                        )
                         if filtered:
                             chart = self.chart_agent.execute(
                                 filtered,
@@ -203,9 +211,10 @@ class Orchestrator:
                                 chart_title=advice.get("chart_title", chart_title),
                             )
 
-                    # Fallback: use rule-based selection if advisor fails (returns None)
-                    # NOTE: if advisor returns table_only, that's a valid "no chart" decision
-                    if chart is None and advice is None:
+                    # Fallback: use rule-based selection if advisor failed OR
+                    # advisor's selection produced no chart (ChartAgent returned None)
+                    if chart is None and (advice is None or advice.get("chart_type") != "table_only"):
+                        logger.info("Chart pipeline — falling back to rule-based selection")
                         chart_table = parse_markdown_table_for_chart(message_text)
                         if chart_table:
                             chart = self.chart_agent.execute(
@@ -214,6 +223,8 @@ class Orchestrator:
                                 chart_suggestion=chart_suggestion,
                                 chart_title=chart_title,
                             )
+            else:
+                logger.info("Chart pipeline — skipped (chart_suggestion=table_only)")
 
         # Final data from analysis result
         final_data = data
