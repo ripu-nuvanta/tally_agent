@@ -80,7 +80,7 @@ def log_result(test_name: str, query: str, result: dict) -> None:
 
     chart = result.get("chart")
     if chart:
-        print(f"  chart: type={chart.get('type')}, title={chart.get('title')}")
+        print(f"  chart: type={chart.get('chart_type')}, title={chart.get('title')}")
         chart_data = chart.get("data", [])
         print(f"    chart data points: {len(chart_data)}")
     else:
