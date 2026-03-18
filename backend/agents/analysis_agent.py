@@ -489,7 +489,7 @@ class AnalysisAgent:
             try:
                 response = await anthropic_client.messages.create(
                     model=settings.CLAUDE_MODEL,
-                    max_tokens=32768,
+                    max_tokens=21000,  # SDK limit: ~21333 for non-streaming (streaming needed for higher)
                     system=system_prompt,
                     tools=_build_analysis_tools(settings.CODE_EXECUTION_ENABLED),
                     messages=messages,
