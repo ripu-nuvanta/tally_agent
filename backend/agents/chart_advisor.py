@@ -108,12 +108,27 @@ async def get_chart_advice(
         )
 
         text = response.content[0].text.strip()
+        logger.debug("Chart advisor raw response: %s", text[:500])
+
         # Strip markdown code fences if present
         if text.startswith("```"):
             text = text.split("\n", 1)[1] if "\n" in text else text[3:]
             if text.endswith("```"):
                 text = text[:-3]
             text = text.strip()
+
+        # Extract first JSON object if Haiku appended extra text
+        if text.startswith("{"):
+            # Find matching closing brace
+            depth = 0
+            for i, ch in enumerate(text):
+                if ch == "{":
+                    depth += 1
+                elif ch == "}":
+                    depth -= 1
+                    if depth == 0:
+                        text = text[: i + 1]
+                        break
 
         advice = json.loads(text)
 

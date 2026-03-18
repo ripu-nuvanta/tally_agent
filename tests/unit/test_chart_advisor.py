@@ -108,6 +108,28 @@ class TestGetChartAdvice:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_handles_json_with_trailing_text(self):
+        """Haiku sometimes appends explanation after the JSON object."""
+        response_text = (
+            '{"table_index": 0, "x_column": "Month", "y_columns": ["Sales"], '
+            '"secondary_y_columns": ["Change %"], "chart_type": "composed", '
+            '"chart_title": "Trend"}\n\n'
+            'I selected the Sales column as the primary metric and Change % '
+            'as the secondary axis for a composed chart.'
+        )
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=_make_mock_response(response_text))
+
+        with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
+            result = await get_chart_advice(
+                [{"headers": ["Month", "Sales", "Change %"], "rows": [["Jan", 100, 5.2]]}],
+                "sales trend",
+            )
+        assert result is not None
+        assert result["chart_type"] == "composed"
+        assert result["y_columns"] == ["Sales"]
+
+    @pytest.mark.asyncio
     async def test_validates_table_index(self):
         advice = json.dumps({
             "table_index": 5,
