@@ -6,7 +6,6 @@ replacing complex rule-based heuristics with semantic understanding.
 
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
 
@@ -18,6 +17,44 @@ logger = logging.getLogger(__name__)
 
 # Module-level client (patchable in tests)
 anthropic_client = anthropic.AsyncAnthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+CHART_SELECTION_TOOL = {
+    "name": "select_chart",
+    "description": "Select the best chart configuration for the given table data",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "table_index": {
+                "type": "integer",
+                "description": "Index of the table to chart (0-based)",
+            },
+            "x_column": {
+                "type": "string",
+                "description": "Column name for the x-axis (categorical labels)",
+            },
+            "y_columns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Column names for primary y-axis (1-3 numeric columns at same scale)",
+            },
+            "secondary_y_columns": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": "Column names for secondary y-axis (percentage/rate columns)",
+            },
+            "chart_type": {
+                "type": "string",
+                "enum": ["bar", "grouped_bar", "line", "pie", "composed", "table_only"],
+                "description": "Chart type that best represents the data",
+            },
+            "chart_title": {
+                "type": "string",
+                "description": "Short descriptive chart title",
+            },
+        },
+        "required": ["table_index", "x_column", "y_columns", "chart_type", "chart_title"],
+    },
+}
 
 CHART_ADVISOR_SYSTEM_PROMPT = """You are a chart column selector. Given markdown tables from a data analysis response, select the BEST single chart configuration.
 
@@ -44,8 +81,7 @@ Choose chart type:
 - composed: mixing bars (currency) with line (percentage on secondary axis)
 - table_only: data not suitable for visualization
 
-Respond with ONLY valid JSON:
-{"table_index": 0, "x_column": "name", "y_columns": ["col1"], "secondary_y_columns": [], "chart_type": "bar", "chart_title": "Title"}"""
+Use the select_chart tool to return your selection."""
 
 
 def _format_tables_for_prompt(tables: list[dict]) -> str:
@@ -105,32 +141,20 @@ async def get_chart_advice(
             max_tokens=256,
             system=CHART_ADVISOR_SYSTEM_PROMPT,
             messages=[{"role": "user", "content": user_prompt}],
+            tools=[CHART_SELECTION_TOOL],
+            tool_choice={"type": "tool", "name": "select_chart"},
         )
 
-        text = response.content[0].text.strip()
-        logger.debug("Chart advisor raw response: %s", text[:500])
+        # Extract tool use result — guaranteed valid JSON matching schema
+        tool_block = next(
+            (b for b in response.content if b.type == "tool_use"),
+            None,
+        )
+        if not tool_block:
+            logger.warning("Chart advisor — no tool_use block in response")
+            return None
 
-        # Strip markdown code fences if present
-        if text.startswith("```"):
-            text = text.split("\n", 1)[1] if "\n" in text else text[3:]
-            if text.endswith("```"):
-                text = text[:-3]
-            text = text.strip()
-
-        # Extract first JSON object if Haiku appended extra text
-        if text.startswith("{"):
-            # Find matching closing brace
-            depth = 0
-            for i, ch in enumerate(text):
-                if ch == "{":
-                    depth += 1
-                elif ch == "}":
-                    depth -= 1
-                    if depth == 0:
-                        text = text[: i + 1]
-                        break
-
-        advice = json.loads(text)
+        advice = tool_block.input
 
         # Validate required fields
         required = {"table_index", "x_column", "y_columns", "chart_type"}
@@ -174,6 +198,6 @@ async def get_chart_advice(
 
         return advice
 
-    except (json.JSONDecodeError, anthropic.APIError, KeyError, IndexError) as exc:
+    except (anthropic.APIError, KeyError, IndexError) as exc:
         logger.warning("Chart advisor failed: %s", exc)
         return None

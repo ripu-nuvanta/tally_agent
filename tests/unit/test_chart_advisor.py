@@ -1,6 +1,5 @@
 """Unit tests for chart advisor — mock the Haiku API call."""
 
-import json
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -31,11 +30,22 @@ class TestFormatTablesForPrompt:
         assert "5 more rows" in result
 
 
-def _make_mock_response(content: str):
-    """Create a mock Anthropic response."""
+def _make_mock_response(tool_input: dict):
+    """Create a mock Anthropic response with a tool_use block."""
     mock_resp = MagicMock()
     mock_block = MagicMock()
-    mock_block.text = content
+    mock_block.type = "tool_use"
+    mock_block.input = tool_input
+    mock_resp.content = [mock_block]
+    return mock_resp
+
+
+def _make_mock_text_response(text: str):
+    """Create a mock Anthropic response with text (for error cases)."""
+    mock_resp = MagicMock()
+    mock_block = MagicMock()
+    mock_block.type = "text"
+    mock_block.text = text
     mock_resp.content = [mock_block]
     return mock_resp
 
@@ -43,16 +53,16 @@ def _make_mock_response(content: str):
 class TestGetChartAdvice:
     @pytest.mark.asyncio
     async def test_returns_valid_advice(self):
-        advice_json = json.dumps({
+        advice = {
             "table_index": 0,
             "x_column": "Customer",
             "y_columns": ["Sales"],
             "secondary_y_columns": [],
             "chart_type": "bar",
             "chart_title": "Top Customers",
-        })
+        }
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice_json))
+        mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
             result = await get_chart_advice(
@@ -65,28 +75,17 @@ class TestGetChartAdvice:
         assert result["chart_type"] == "bar"
 
     @pytest.mark.asyncio
-    async def test_handles_code_fences(self):
-        advice_json = '```json\n{"table_index": 0, "x_column": "Month", "y_columns": ["Sales"], "secondary_y_columns": [], "chart_type": "line", "chart_title": "Trend"}\n```'
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice_json))
-
-        with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
-                [{"headers": ["Month", "Sales"], "rows": [["Jan", 100], ["Feb", 200]]}],
-                "sales trend",
-            )
-        assert result is not None
-        assert result["chart_type"] == "line"
-
-    @pytest.mark.asyncio
     async def test_returns_none_on_empty_tables(self):
         result = await get_chart_advice([], "some query")
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_returns_none_on_invalid_json(self):
+    async def test_returns_none_on_no_tool_block(self):
+        """Returns None when response contains no tool_use block."""
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_make_mock_response("not json"))
+        mock_client.messages.create = AsyncMock(
+            return_value=_make_mock_text_response("I cannot select a chart for this data.")
+        )
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
             result = await get_chart_advice(
@@ -98,7 +97,9 @@ class TestGetChartAdvice:
     @pytest.mark.asyncio
     async def test_returns_none_on_missing_fields(self):
         mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_make_mock_response('{"table_index": 0}'))
+        mock_client.messages.create = AsyncMock(
+            return_value=_make_mock_response({"table_index": 0})
+        )
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
             result = await get_chart_advice(
@@ -108,36 +109,14 @@ class TestGetChartAdvice:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_handles_json_with_trailing_text(self):
-        """Haiku sometimes appends explanation after the JSON object."""
-        response_text = (
-            '{"table_index": 0, "x_column": "Month", "y_columns": ["Sales"], '
-            '"secondary_y_columns": ["Change %"], "chart_type": "composed", '
-            '"chart_title": "Trend"}\n\n'
-            'I selected the Sales column as the primary metric and Change % '
-            'as the secondary axis for a composed chart.'
-        )
-        mock_client = AsyncMock()
-        mock_client.messages.create = AsyncMock(return_value=_make_mock_response(response_text))
-
-        with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
-                [{"headers": ["Month", "Sales", "Change %"], "rows": [["Jan", 100, 5.2]]}],
-                "sales trend",
-            )
-        assert result is not None
-        assert result["chart_type"] == "composed"
-        assert result["y_columns"] == ["Sales"]
-
-    @pytest.mark.asyncio
     async def test_validates_table_index(self):
-        advice = json.dumps({
+        advice = {
             "table_index": 5,
             "x_column": "A",
             "y_columns": ["B"],
             "chart_type": "bar",
             "chart_title": "Test",
-        })
+        }
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
@@ -151,13 +130,13 @@ class TestGetChartAdvice:
 
     @pytest.mark.asyncio
     async def test_normalizes_string_y_columns(self):
-        advice = json.dumps({
+        advice = {
             "table_index": 0,
             "x_column": "Name",
             "y_columns": "Amount",
             "chart_type": "bar",
             "chart_title": "Test",
-        })
+        }
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
@@ -170,13 +149,13 @@ class TestGetChartAdvice:
 
     @pytest.mark.asyncio
     async def test_passes_chart_suggestion(self):
-        advice = json.dumps({
+        advice = {
             "table_index": 0,
             "x_column": "Category",
             "y_columns": ["Amount"],
             "chart_type": "pie",
             "chart_title": "Breakdown",
-        })
+        }
         mock_client = AsyncMock()
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
@@ -190,3 +169,24 @@ class TestGetChartAdvice:
         call_args = mock_client.messages.create.call_args
         user_content = call_args.kwargs["messages"][0]["content"]
         assert "Suggested chart type (from analysis agent — override if needed): pie" in user_content
+        # Verify tools were passed
+        assert "tools" in call_args.kwargs
+
+    @pytest.mark.asyncio
+    async def test_passes_tool_choice(self):
+        """Verify tool_choice forces select_chart tool."""
+        advice = {
+            "table_index": 0, "x_column": "A", "y_columns": ["B"],
+            "chart_type": "bar", "chart_title": "Test",
+        }
+        mock_client = AsyncMock()
+        mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
+
+        with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
+            await get_chart_advice(
+                [{"headers": ["A", "B"], "rows": [["x", 1], ["y", 2]]}],
+                "query",
+            )
+        call_kwargs = mock_client.messages.create.call_args.kwargs
+        assert "tools" in call_kwargs
+        assert call_kwargs["tool_choice"] == {"type": "tool", "name": "select_chart"}
