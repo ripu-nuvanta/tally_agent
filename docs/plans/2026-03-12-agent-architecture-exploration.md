@@ -134,6 +134,11 @@ Add SSE/WebSocket streaming for long-running queries (Turn 6 took 129.9s). User 
 - "Fetching data from Tally..." → "Analyzing..." → "Generating chart..." → final response
 - Requires frontend SSE handler + backend async generator
 
+**Additional motivation (discovered in Phase 16):** Anthropic SDK enforces a non-streaming max_tokens limit of ~21333 (`3600 * max_tokens / 128000 > 600`). AnalysisAgent currently uses `max_tokens=21000` — at the limit. Switching to streaming would:
+- Remove the max_tokens ceiling (can use 32768+ for complex queries)
+- Enable progressive UI updates (user sees computation progress)
+- Fix Turns 4-6 timeout issues in stock_reorder_mock eval (AA hit max_tokens=16384 before streaming limit was discovered)
+
 ### F4: XML-Tagged Structured Output
 
 Replace plain-text `STRUCTURED_RESULT:` prefix with XML tags for more robust parsing:
