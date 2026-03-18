@@ -252,10 +252,33 @@ Instead of LLM-based chart spec generation, use rule-based logic:
 
 **Tradeoff**: Less flexible but more reliable. Loses the "smart" chart selection but gains consistency.
 
-### Recommendation
+### Recommendation (original)
 
 Explore **Option A first** (AnalysisAgent generates chart spec) as it's the least disruptive change — keeps Recharts frontend, eliminates ChartAgent latency, and leverages code_execution's existing capability. Fall back to **Option D** if prompt complexity becomes unmanageable.
 
+### Resolution (Phase 16, 2026-03-18) — IMPLEMENTED: Option E (Hybrid D + Haiku Advisor)
+
+**What was actually built** combines elements of Options C, D, and a new approach not originally considered:
+
+1. **Markdown table as single source of truth** (from Option C's simplicity principle): Chart data now comes from the same markdown table the user sees, not STRUCTURED_RESULT. This eliminates data divergence entirely.
+
+2. **Rule-based ChartAgent formatting** (from Option D): ChartAgent is now purely deterministic — Rules A-D handle scale mismatch detection, percentage column detection, total row exclusion, and zero trimming. No LLM call in ChartAgent.
+
+3. **Haiku chart advisor** (new — Option E): A lightweight Haiku LLM call (`get_chart_advice()`) semantically selects which table to chart, which columns to use as x/y/secondary axes, and the chart type. This replaces the brittle rule-based table/column selection that couldn't handle:
+   - 7-column expense tables (too many series for a readable chart)
+   - Mixed text/numeric tables (3+ text columns triggered table_only override)
+   - Multi-table responses (picking summary vs detail table)
+
+**Pipeline**: `parse_all_markdown_tables()` → `get_chart_advice()` (Haiku) → `_filter_table_by_advice()` → `ChartAgent.execute()` (formatting only)
+
+**Why not Option A**: Adding chart spec generation to AnalysisAgent's prompt would have made an already-long prompt even longer, and the chart spec would still be LLM-generated (non-deterministic). The Haiku advisor approach keeps the AnalysisAgent focused on data analysis while using a separate, cheap LLM call for the simpler chart selection task.
+
+**Why not Option B**: PNG charts lose Recharts interactivity (hover tooltips, responsive resize). The Haiku advisor + Recharts approach preserves interactivity.
+
+**Results**: Chart pipeline is now reliable — eval run confirmed charts render with correct columns, scales, and types. `CHARTS_ENABLED` config allows disabling charts entirely if needed.
+
+See: `docs/plans/2026-03-17-chart-stabilization-design.md` for full spec.
+
 ### Priority Assessment
 
-**Medium**. Charts are a UX differentiator but currently unreliable. The table output is the primary value delivery. Address after core accuracy issues (Turns 4/6 factual scoring) are resolved.
+~~**Medium**. Charts are a UX differentiator but currently unreliable.~~ **RESOLVED** in Phase 16.
