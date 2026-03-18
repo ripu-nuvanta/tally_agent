@@ -273,9 +273,26 @@ Render chart specs from E2E tests in frontend:
 | `tests/e2e/test_chart_pipeline.py` | **New**: 9 E2E tests (5 transcript + 2 advisor path + 2 fixture) |
 | `tests/fixtures/chart_transcript_fixtures.py` | **New**: 7 fixtures from eval transcripts |
 
+## Additional Changes (Post-Merge, 2026-03-18)
+
+### AnalysisAgent Streaming
+Switched from `messages.create()` to `messages.stream()` + `get_final_message()` to bypass SDK non-streaming max_tokens limit (~21333). Now uses `max_tokens=32768`. The `get_final_message()` returns the same `Message` object — zero downstream changes needed. This fixed Turn 5 of stock_reorder_mock eval (needed 34,795 output tokens).
+
+### tool_use for Chart Advisor
+Replaced raw JSON prompt response with Anthropic `tool_use` feature. `select_chart` tool schema guarantees structured output — eliminates JSON parsing failures (trailing text, code fences).
+
+### Secondary-to-Primary Promotion
+When Haiku advisor selects only percentage/growth columns (no primary currency column), ChartAgent promotes `secondary_y_keys` to `y_keys` instead of returning `None`.
+
+### Token Usage Logging
+Added `input=N, output=N tokens` to all agent log lines (QueryAgent, AnalysisAgent, Orchestrator classifier).
+
+### Timeout Increase
+Frontend axios + eval collector timeout increased to 480s (8 min) based on Langfuse max observed latency of 6m37s.
+
 ## Out of Scope
 
-- Frontend changes (none needed)
+- ~~Frontend changes (none needed)~~ Frontend timeout changed
 - AnalysisAgent code_execution changes
 - STRUCTURED_RESULT removal (kept but unused)
 - Chart interactivity enhancements
