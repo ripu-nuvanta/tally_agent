@@ -13,6 +13,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from backend.agents.utils import to_numeric as _to_numeric
+
 logger = logging.getLogger(__name__)
 
 # Default color palette for Recharts
@@ -21,13 +23,20 @@ DEFAULT_COLORS = ["#4F46E5", "#10B981", "#F59E0B", "#EF4444", "#8B5CF6", "#EC489
 # Columns excluded from chart data points (absolute change is noise; percentage cols go to secondary axis)
 _EXCLUDED_CHART_COLUMNS = {"Change"}
 
+# Count-like column name patterns used for scale mismatch detection (Rule A)
+_COUNT_COLUMN_PATTERNS = {"invoice", "voucher", "count", "no. of", "qty", "quantity", "number"}
+
+
+_PERCENTAGE_HEADER_KEYWORDS = {"margin", "rate", "ratio", "growth"}
 
 def _is_secondary_axis_column(header: str) -> bool:
     """Detect columns that belong on a secondary (percentage) axis."""
-    # Percentage columns → secondary axis
+    # Percentage symbol → secondary axis
     if "%" in header:
         return True
-    return False
+    # Keyword-based detection for percentage-like columns
+    h_lower = header.lower()
+    return any(kw in h_lower for kw in _PERCENTAGE_HEADER_KEYWORDS)
 
 
 def _is_excluded_column(header: str) -> bool:
@@ -48,25 +57,22 @@ class ChartAgent:
 
     def execute(
         self,
-        data: dict[str, Any],
+        table_data: dict[str, Any],
         query_type: str,
-        requires_chart: bool,
+        chart_suggestion: str | None = None,
+        chart_title: str | None = None,
     ) -> dict[str, Any] | None:
-        """Determine chart spec from analysis result.
+        """Determine chart spec from table data.
 
         Args:
-            data: Either an AnalysisAgent result dict (with "data", "chart_suggestion")
-                  or raw data dict from query agent.
+            table_data: Dict with "headers" and "rows" keys (the {headers, rows} dict directly).
             query_type: One of simple_lookup, comparison, trend, top_n, aggregation.
-            requires_chart: Whether the orchestrator determined a chart is needed.
+            chart_suggestion: Optional chart type hint (e.g. "bar", "pie", "line").
+            chart_title: Optional chart title. Auto-generated if not provided.
 
         Returns:
             Chart spec dict or None if no chart is appropriate.
         """
-        if not requires_chart:
-            return None
-
-        table_data = _extract_table_data(data)
         if not table_data or not table_data.get("rows"):
             logger.info("ChartAgent — no table data, skipping chart")
             return None
@@ -80,20 +86,20 @@ class ChartAgent:
             if not rows:
                 return None
 
-        # Use analysis agent's suggestion if available, otherwise infer from query_type
-        chart_suggestion = data.get("chart_suggestion", "")
-        chart_type = _select_chart_type(chart_suggestion, query_type, rows)
+        # Use caller's suggestion if available, otherwise infer from query_type
+        effective_suggestion = chart_suggestion or ""
+        chart_type = _select_chart_type(effective_suggestion, query_type, rows)
         logger.info(
             "ChartAgent — suggestion=%r, query_type=%s, rows=%d, selected=%s",
-            chart_suggestion, query_type, len(rows), chart_type,
+            effective_suggestion, query_type, len(rows), chart_type,
         )
 
         if chart_type == "table_only":
             logger.info("ChartAgent — table_only, returning None")
             return None
 
-        # Prefer analysis agent's suggested title over auto-generated one
-        title = data.get("chart_title") or _generate_title(query_type, headers)
+        # Prefer caller's suggested title over auto-generated one
+        title = chart_title or _generate_title(query_type, headers)
         numeric_cols = _identify_numeric_columns(headers, rows)
 
         # Force table_only if too many non-numeric columns (charts are unreadable)
@@ -136,21 +142,6 @@ class ChartAgent:
 # ---------------------------------------------------------------------------
 # Internal helpers
 # ---------------------------------------------------------------------------
-
-
-def _extract_table_data(data: dict[str, Any]) -> dict | None:
-    """Extract headers/rows from either analysis result or raw data."""
-    # Analysis agent result shape
-    if isinstance(data.get("data"), dict):
-        inner = data["data"]
-        if "headers" in inner and "rows" in inner:
-            return inner
-
-    # Raw data might be a ReportResponse-style dict
-    if "headers" in data and "rows" in data:
-        return data
-
-    return None
 
 
 def _select_chart_type(suggestion: str, query_type: str, rows: list) -> str:
@@ -228,7 +219,11 @@ def _format_xy_data(
     data = []
     for row in rows:
         label = str(row[0]) if row else ""
-        if label.lower() in ("total", "grand total"):
+        clean_label = label.replace("**", "").replace("*", "").strip().lower()
+        if (
+            clean_label in ("total", "grand total", "net total", "sub total", "overall")
+            or clean_label.startswith("total ")
+        ):
             continue
         point: dict[str, Any] = {"label": label}
         for i, header in enumerate(headers[1:], start=1):
@@ -261,7 +256,18 @@ def _format_pie_data(headers: list[str], rows: list[list]) -> list[dict[str, Any
     # Verify selected column actually has numeric data; return empty if all text
     if not any(_to_numeric(row[value_idx]) != 0.0 for row in rows if value_idx < len(row)):
         return []
-    sorted_rows = sorted(rows, key=lambda r: abs(_to_numeric(r[value_idx]) if len(r) > value_idx else 0), reverse=True)
+    # Filter out total/summary rows before sorting (Rule C)
+    filtered_rows = []
+    for row in rows:
+        label = str(row[0]) if row else ""
+        clean_label = label.replace("**", "").replace("*", "").strip().lower()
+        if (
+            clean_label in ("total", "grand total", "net total", "sub total", "overall", "—")
+            or clean_label.startswith("total ")
+        ):
+            continue
+        filtered_rows.append(row)
+    sorted_rows = sorted(filtered_rows, key=lambda r: abs(_to_numeric(r[value_idx]) if len(r) > value_idx else 0), reverse=True)
 
     data = []
     others_total = 0.0
@@ -312,12 +318,44 @@ def _identify_numeric_columns(headers: list[str], rows: list[list]) -> set[str]:
     return numeric_headers
 
 
+def _detect_scale_mismatches(headers: list[str], rows: list[list], numeric_cols: set[str]) -> set[str]:
+    """Detect count-like columns that are on a wildly different scale (>100x) from the max column.
+
+    Returns the set of column headers that should be excluded from y_keys.
+    Only excludes columns whose names match count-like patterns (e.g. Invoices, Vouchers, Qty).
+    """
+    if not rows or len(numeric_cols) < 2:
+        return set()
+    col_maxes: dict[str, float] = {}
+    for h in numeric_cols:
+        if h not in headers:
+            continue
+        idx = headers.index(h)
+        max_val = max(
+            (abs(_to_numeric(row[idx])) for row in rows if idx < len(row)),
+            default=0,
+        )
+        col_maxes[h] = max_val
+    if not col_maxes:
+        return set()
+    overall_max = max(col_maxes.values())
+    if overall_max == 0:
+        return set()
+    exclude: set[str] = set()
+    for h, max_val in col_maxes.items():
+        if max_val == 0 or overall_max / max(max_val, 0.001) > 100:
+            if any(p in h.lower() for p in _COUNT_COLUMN_PATTERNS):
+                exclude.add(h)
+    return exclude
+
+
 def _build_config(chart_type: str, headers: list[str], rows: list[list] | None = None) -> dict[str, Any]:
     """Build Recharts config with axis labels and colors."""
     x_key = "label"
     if rows is not None:
         numeric_cols = _identify_numeric_columns(headers, rows)
-        y_keys = [h for h in headers[1:] if h in numeric_cols]
+        scale_exclude = _detect_scale_mismatches(headers, rows, numeric_cols)
+        y_keys = [h for h in headers[1:] if h in numeric_cols and h not in scale_exclude]
     else:
         y_keys = [h for h in headers[1:] if not _is_excluded_column(h) and not _is_secondary_axis_column(h)]
 
@@ -358,17 +396,10 @@ def _trim_trailing_zeros(headers: list[str], rows: list[list]) -> list[list]:
             last_nonzero = i
     if first_nonzero is None:
         return rows
+    # Only trim if non-zero middle has >= 3 data points (Rule D)
+    nonzero_span = last_nonzero - first_nonzero + 1
+    if nonzero_span < 3:
+        return rows  # Preserve all rows for context
     return rows[first_nonzero : last_nonzero + 1]
 
 
-def _to_numeric(val: Any) -> float:
-    """Coerce a value to float, stripping currency symbols and commas."""
-    if isinstance(val, (int, float)):
-        return float(val)
-    if isinstance(val, str):
-        cleaned = val.replace("*", "").replace("₹", "").replace(",", "").replace("%", "").replace(" ", "").strip()
-        try:
-            return float(cleaned)
-        except ValueError:
-            return 0.0
-    return 0.0

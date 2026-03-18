@@ -11,3 +11,6 @@ node_modules/
 .worktrees/
 tests/eval/results/
 frontend/test-results/
+*.log
+.DS_Store
+*.DS_Store

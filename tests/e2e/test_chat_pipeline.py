@@ -527,9 +527,17 @@ async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
                     "value_label": "Sales",
                 },
             ),
-            # Second response: final text after seeing tool result
+            # Second response: final text with markdown table for chart parsing
             make_text_response(
-                "Monthly sales trend:\n"
+                "Monthly sales trend:\n\n"
+                "| Period | Sales | Change | Change % |\n"
+                "|--------|-------|--------|----------|\n"
+                "| Apr | 500000 | — | — |\n"
+                "| May | 600000 | +100000 | +20.0% |\n"
+                "| Jun | 400000 | -200000 | -33.3% |\n"
+                "| Jul | 700000 | +300000 | +75.0% |\n"
+                "| Aug | 800000 | +100000 | +14.3% |\n"
+                "| Total | 3000000 | — | — |\n\n"
                 "- Sales peaked in August at 8L\n"
                 "- Lowest in June at 4L\n"
                 "chart_suggestion: line"
@@ -537,10 +545,19 @@ async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
         ],
     )
 
+    chart_advice = {
+        "table_index": 0,
+        "x_column": "Period",
+        "y_columns": ["Sales"],
+        "secondary_y_columns": ["Change %"],
+        "chart_type": "composed",
+        "chart_title": "Monthly Sales Trend",
+    }
     with (
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
         patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
+        patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock, return_value=chart_advice),
     ):
         response = await client.post(
             "/api/chat", json={"message": "Show monthly sales trend this FY"}

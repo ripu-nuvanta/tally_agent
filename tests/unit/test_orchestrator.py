@@ -314,6 +314,8 @@ class TestOrchestratorAnalysisRouting:
             with (
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock) as mock_advisor,
             ):
                 mock_query.return_value = {
                     "message": "Raw data fetched.",
@@ -326,12 +328,26 @@ class TestOrchestratorAnalysisRouting:
                     ],
                 }
                 mock_analysis.return_value = {
-                    "message": "Q1 sales were ₹100, Q2 were ₹150 — a 50% increase.",
+                    "message": (
+                        "Q1 sales were ₹100, Q2 were ₹150 — a 50% increase.\n\n"
+                        "| Period | Sales |\n|--------|-------|\n| Q1 | 100 |\n| Q2 | 150 |\n"
+                    ),
                     "data": {"headers": ["Period", "Sales"], "rows": [["Q1", 100], ["Q2", 150]]},
                     "insights": ["Sales grew 50%"],
                     "chart_suggestion": "grouped_bar",
+                    "chart_title": "Q1 vs Q2 Sales",
                     "tool_results": [],
                 }
+                # Advisor returns the same chart type as the analysis_agent suggestion
+                mock_advisor.return_value = {
+                    "table_index": 0,
+                    "x_column": "Period",
+                    "y_columns": ["Sales"],
+                    "secondary_y_columns": [],
+                    "chart_type": "grouped_bar",
+                    "chart_title": "Q1 vs Q2 Sales",
+                }
+                mock_chart.return_value = {"chart_type": "grouped_bar", "data": [], "config": {}}
 
                 result = await orch.process_query("Compare Q1 vs Q2 sales", mock_client, session)
 
@@ -343,6 +359,11 @@ class TestOrchestratorAnalysisRouting:
                     "comparison",
                     session=session,
                 )
+                # ChartAgent called with parsed table data, not full analysis_result
+                mock_chart.assert_called_once()
+                call_args = mock_chart.call_args
+                assert call_args.kwargs.get("chart_suggestion") == "grouped_bar"
+                assert call_args.kwargs.get("chart_title") == "Q1 vs Q2 Sales"
 
         assert result["query_type"] == "comparison"
         assert "50%" in result["message"]
@@ -928,6 +949,7 @@ class TestAutoEnableChart:
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
                 patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock) as mock_advisor,
             ):
                 mock_query.return_value = {
                     "message": "Total sales: ₹10,00,000",
@@ -940,12 +962,24 @@ class TestAutoEnableChart:
                     ],
                 }
                 mock_analysis.return_value = {
-                    "message": "Total: ₹10,00,000",
-                    "data": [{"party": "A", "amount": 100}],
+                    "message": (
+                        "Total: ₹10,00,000\n\n"
+                        "| Party | Amount |\n|-------|--------|\n| A | 100 |\n| B | 200 |\n"
+                    ),
+                    "data": [{"party": "A", "amount": 100}, {"party": "B", "amount": 200}],
                     "tool_results": [],
                     "chart_suggestion": "bar",
+                    "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
+                mock_advisor.return_value = {
+                    "table_index": 0,
+                    "x_column": "Party",
+                    "y_columns": ["Amount"],
+                    "secondary_y_columns": [],
+                    "chart_type": "bar",
+                    "chart_title": "Total Sales",
+                }
 
                 result = await orch.process_query("Total sales this year", mock_client, session)
 
@@ -1066,44 +1100,51 @@ class TestSeparateToolResults:
 
 
 class TestAnalysisPromptColumnNamingRules:
-    def test_analysis_prompt_contains_column_naming_rules(self):
-        """AnalysisAgent prompt (code_execution=True) must include standard column naming rules."""
+    def test_analysis_prompt_contains_table_ordering_rule(self):
+        """AnalysisAgent prompt (code_execution=True) must include table ordering guidance.
+
+        Rules 14 and 15 (STRUCTURED_RESULT + standard column naming) have been archived.
+        Rule 14 is now the table ordering rule.
+        """
         from backend.agents.prompts import build_analysis_agent_prompt
 
         prompt = build_analysis_agent_prompt("trend", code_execution_enabled=True)
 
-        assert "Change" in prompt and "Change %" in prompt
-        assert "STRUCTURED_RESULT" in prompt
-        assert "column naming" in prompt.lower() or "standard column" in prompt.lower()
+        # New Rule 14: table ordering guidance
+        assert "table ordering" in prompt.lower() or "comprehensive" in prompt.lower()
+        # STRUCTURED_RESULT rules are archived; must NOT appear in the active prompt
+        assert "STRUCTURED_RESULT" not in prompt
 
-    def test_analysis_prompt_column_rules_present_for_all_query_types(self):
-        """Column naming rules should appear for all query types when code_execution=True."""
+    def test_analysis_prompt_table_ordering_rule_present_for_all_query_types(self):
+        """Table ordering rule should appear for all query types when code_execution=True."""
         from backend.agents.prompts import build_analysis_agent_prompt
 
         for query_type in ("comparison", "trend", "top_n", "aggregation"):
             prompt = build_analysis_agent_prompt(query_type, code_execution_enabled=True)
-            assert "column naming" in prompt.lower() or "standard column" in prompt.lower(), (
-                f"Column naming rules missing for query_type={query_type}"
+            assert "table ordering" in prompt.lower() or "comprehensive" in prompt.lower(), (
+                f"Table ordering rule missing for query_type={query_type}"
             )
 
-    def test_analysis_prompt_column_rules_absent_when_code_exec_disabled(self):
-        """Column naming rules in the code-exec block should not appear when code_execution=False."""
+    def test_analysis_prompt_structured_result_absent_when_code_exec_disabled(self):
+        """STRUCTURED_RESULT rules must not appear in any variant of the analysis prompt."""
         from backend.agents.prompts import build_analysis_agent_prompt
 
         prompt = build_analysis_agent_prompt("trend", code_execution_enabled=False)
-        # The standard column names rule is only needed when code_execution generates columns
-        assert "standard column" not in prompt.lower() or "column naming" not in prompt.lower()
+        assert "STRUCTURED_RESULT" not in prompt
 
-    def test_analysis_prompt_forbids_non_standard_column_names(self):
-        """Prompt should explicitly forbid common non-standard column name variations."""
+    def test_analysis_prompt_archived_rules_not_in_active_prompt(self):
+        """Archived rules 14-15 must be absent from the active prompt for both code_exec modes."""
         from backend.agents.prompts import build_analysis_agent_prompt
 
-        prompt = build_analysis_agent_prompt("comparison", code_execution_enabled=True)
-        # At least some of the forbidden aliases must be mentioned
-        forbidden_variants = ["MoM Change", "Abs Change", "MoM %", "% vs Avg"]
-        assert any(v in prompt for v in forbidden_variants), (
-            "Prompt should list at least one forbidden column name variant"
-        )
+        for code_exec in (True, False):
+            prompt = build_analysis_agent_prompt("comparison", code_execution_enabled=code_exec)
+            # Archived rule markers must not leak into the active prompt
+            assert "STRUCTURED_RESULT:" not in prompt, (
+                f"Archived Rule 14 leaked into active prompt (code_execution_enabled={code_exec})"
+            )
+            assert "MoM Change" not in prompt, (
+                f"Archived Rule 15 leaked into active prompt (code_execution_enabled={code_exec})"
+            )
 
 
 # ---------------------------------------------------------------------------
@@ -1239,6 +1280,7 @@ class TestTableIntentSuppressesChart:
                 patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
                 patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
                 patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock) as mock_advisor,
             ):
                 mock_query.return_value = {
                     "message": "Total sales",
@@ -1247,12 +1289,24 @@ class TestTableIntentSuppressesChart:
                     ],
                 }
                 mock_analysis.return_value = {
-                    "message": "Total: ₹100",
-                    "data": [{"party": "A", "amount": 100}],
+                    "message": (
+                        "Total: ₹100\n\n"
+                        "| Party | Amount |\n|-------|--------|\n| A | 100 |\n| B | 200 |\n"
+                    ),
+                    "data": [{"party": "A", "amount": 100}, {"party": "B", "amount": 200}],
                     "tool_results": [],
                     "chart_suggestion": "bar",
+                    "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
+                mock_advisor.return_value = {
+                    "table_index": 0,
+                    "x_column": "Party",
+                    "y_columns": ["Amount"],
+                    "secondary_y_columns": [],
+                    "chart_type": "bar",
+                    "chart_title": "Total Sales",
+                }
 
                 result = await orch.process_query(
                     "Show total sales", mock_client, session
@@ -1454,3 +1508,184 @@ class TestSessionManagementInOrchestrator:
         # After the full pipeline, session should have the 2 messages
         msgs = session.get_messages()
         assert len(msgs) == 2
+
+
+# ---------------------------------------------------------------------------
+# Tests: _filter_table_by_advice
+# ---------------------------------------------------------------------------
+
+from backend.agents.orchestrator import _filter_table_by_advice
+
+
+class TestFilterTableByAdvice:
+    def test_filters_columns(self):
+        table = {
+            "headers": ["Category", "Nov", "Dec", "Jan", "3M Avg", "Feb", "vs Avg", "vs Avg %"],
+            "rows": [["Rent", 75000, 75000, 75000, 75000, 75000, 0, "Flat"]]
+        }
+        advice = {
+            "x_column": "Category",
+            "y_columns": ["3M Avg", "Feb"],
+            "secondary_y_columns": [],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["Category", "3M Avg", "Feb"]
+        assert result["rows"][0] == ["Rent", 75000, 75000]
+
+    def test_includes_secondary(self):
+        table = {
+            "headers": ["Month", "Sales", "Change %"],
+            "rows": [["Jan", 100000, 5.2], ["Feb", 110000, 10.0]]
+        }
+        advice = {
+            "x_column": "Month",
+            "y_columns": ["Sales"],
+            "secondary_y_columns": ["Change %"],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result["headers"] == ["Month", "Sales", "Change %"]
+
+    def test_returns_none_if_x_column_missing(self):
+        table = {"headers": ["A", "B"], "rows": [["x", 1]]}
+        advice = {"x_column": "NonExistent", "y_columns": ["B"]}
+        assert _filter_table_by_advice(table, advice) is None
+
+    def test_returns_none_if_only_x_column(self):
+        table = {"headers": ["A", "B"], "rows": [["x", 1]]}
+        advice = {"x_column": "A", "y_columns": [], "secondary_y_columns": []}
+        assert _filter_table_by_advice(table, advice) is None
+
+    def test_skips_unknown_y_columns(self):
+        table = {
+            "headers": ["Month", "Sales", "Profit"],
+            "rows": [["Jan", 100, 20], ["Feb", 200, 40]],
+        }
+        advice = {
+            "x_column": "Month",
+            "y_columns": ["Sales", "UnknownCol"],
+            "secondary_y_columns": [],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["Month", "Sales"]
+
+    def test_no_duplicate_columns(self):
+        table = {
+            "headers": ["Month", "Sales", "Profit"],
+            "rows": [["Jan", 100, 20], ["Feb", 200, 40]],
+        }
+        advice = {
+            "x_column": "Month",
+            "y_columns": ["Sales", "Profit"],
+            "secondary_y_columns": ["Sales"],  # Duplicate — should be deduplicated
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["Month", "Sales", "Profit"]
+
+    def test_empty_x_column_returns_none(self):
+        table = {"headers": ["A", "B"], "rows": [["x", 1]]}
+        advice = {"x_column": "", "y_columns": ["B"]}
+        assert _filter_table_by_advice(table, advice) is None
+
+    def test_row_shorter_than_indices(self):
+        table = {
+            "headers": ["A", "B", "C"],
+            "rows": [["x", 1]],  # Row missing third element
+        }
+        advice = {
+            "x_column": "A",
+            "y_columns": ["B", "C"],
+            "secondary_y_columns": [],
+        }
+        result = _filter_table_by_advice(table, advice)
+        assert result is not None
+        assert result["headers"] == ["A", "B", "C"]
+        assert result["rows"][0] == ["x", 1, ""]
+
+
+# ---------------------------------------------------------------------------
+# Tests: CHARTS_ENABLED=False suppresses chart generation
+# ---------------------------------------------------------------------------
+
+
+class TestChartsEnabledFalse:
+    @pytest.mark.asyncio
+    async def test_charts_disabled_suppresses_chart_output(self):
+        """When CHARTS_ENABLED=False, chart generation is skipped even for
+        query types that normally produce a chart (e.g. trend with requires_chart=True).
+        Text response should still be returned unchanged."""
+        from backend.agents.orchestrator import Orchestrator
+
+        mock_client = MagicMock()
+        session = SessionContext()
+
+        classification = {
+            "query_type": "trend",
+            "requires_chart": True,
+            "reasoning": "User wants month-over-month sales trend",
+            "clarification_question": None,
+        }
+
+        analysis_message = (
+            "Monthly sales trend shows steady growth.\n\n"
+            "| Month | Sales |\n|-------|-------|\n"
+            "| Apr | 100000 |\n| May | 120000 |\n| Jun | 140000 |\n"
+        )
+
+        with patch("backend.agents.orchestrator.anthropic_client") as mock_claude:
+            mock_claude.messages.create = AsyncMock(
+                return_value=_make_classification_response(classification)
+            )
+
+            orch = Orchestrator()
+
+            with (
+                patch.object(orch.query_agent, "execute", new_callable=AsyncMock) as mock_query,
+                patch.object(orch.analysis_agent, "execute", new_callable=AsyncMock) as mock_analysis,
+                patch.object(orch.chart_agent, "execute") as mock_chart,
+                patch("backend.agents.orchestrator.settings") as mock_settings,
+            ):
+                mock_settings.CHARTS_ENABLED = False
+
+                mock_query.return_value = {
+                    "message": "Sales data fetched.",
+                    "tool_results": [
+                        {
+                            "tool_name": "get_sales_register",
+                            "tool_input": {},
+                            "result": {
+                                "success": True,
+                                "data": [
+                                    {"month": "Apr", "amount": 100000},
+                                    {"month": "May", "amount": 120000},
+                                    {"month": "Jun", "amount": 140000},
+                                ],
+                            },
+                        }
+                    ],
+                }
+                mock_analysis.return_value = {
+                    "message": analysis_message,
+                    "data": {
+                        "headers": ["Month", "Sales"],
+                        "rows": [["Apr", 100000], ["May", 120000], ["Jun", 140000]],
+                    },
+                    "tool_results": [],
+                    "chart_suggestion": "line",
+                    "chart_title": "Monthly Sales Trend",
+                }
+
+                result = await orch.process_query(
+                    "Show me monthly sales trend", mock_client, session
+                )
+
+                # ChartAgent must NOT have been called
+                mock_chart.assert_not_called()
+
+        # Chart must be None
+        assert result["chart"] is None
+        # Message text must still be returned
+        assert "Monthly sales trend" in result["message"]
+        assert result["query_type"] == "trend"

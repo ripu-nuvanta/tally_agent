@@ -38,7 +38,9 @@ class TestAnalysisAgentPromptCodeExec:
         assert "## Code Execution" in prompt
         assert "## Available Tools" not in prompt
         assert "sort_by_field" not in prompt
-        assert "STRUCTURED_RESULT:" in prompt
+        # STRUCTURED_RESULT rules are archived; table ordering rule replaces them
+        assert "STRUCTURED_RESULT:" not in prompt
+        assert "table ordering" in prompt.lower() or "comprehensive" in prompt.lower()
 
     def test_code_exec_disabled_keeps_analysis_tools(self):
         from backend.agents.prompts import build_analysis_agent_prompt
