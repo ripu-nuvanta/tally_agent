@@ -1,14 +1,17 @@
 # Chart Stabilization Implementation Plan
 
-> **For agentic workers:** REQUIRED: Use superpowers:subagent-driven-development (if subagents available) or superpowers:executing-plans to implement this plan. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Status:** COMPLETE — merged to master 2026-03-18. 18 commits, 1024 total tests.
 
-**Goal:** Make chart rendering deterministic and correct by parsing markdown tables instead of STRUCTURED_RESULT, adding scale mismatch detection, and fixing numeric parsing for emoji/symbol-laden values.
+**Goal:** Make chart rendering deterministic and correct by parsing markdown tables instead of STRUCTURED_RESULT, adding scale mismatch detection, fixing numeric parsing, and using a Haiku LLM advisor for semantic column selection.
 
-**Architecture:** Replace STRUCTURED_RESULT as chart data source with a markdown table parser in `utils.py`. Enhance ChartAgent with scale mismatch detection, percentage column detection, and improved total/zero row handling. Add `CHARTS_ENABLED` config kill switch.
+**Architecture:** Markdown table parser extracts all tables from AnalysisAgent text. Haiku chart advisor selects the best table and columns. ChartAgent formats the filtered data for Recharts. No rule-based fallback.
 
-**Tech Stack:** Python (FastAPI), pytest, Recharts (frontend unchanged)
+**Tech Stack:** Python (FastAPI), pytest, Recharts (frontend unchanged), Claude Haiku (chart advisor)
 
 **Spec:** `docs/plans/2026-03-17-chart-stabilization-design.md`
+
+**Additions beyond original plan:**
+- Tasks 15-18: Haiku chart advisor (added during implementation when rule-based column selection proved insufficient for complex tables like 7-column expense comparisons and mixed text/numeric tables)
 
 ---
 

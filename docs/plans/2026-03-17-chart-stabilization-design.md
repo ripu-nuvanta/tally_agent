@@ -1,7 +1,7 @@
 # Chart Stabilization Design Spec
 
 **Date**: 2026-03-17
-**Status**: Draft
+**Status**: COMPLETE — merged to master 2026-03-18
 **Phase**: 16
 
 ## Problem Statement
@@ -152,7 +152,7 @@ Enhanced: Only trim edge zeros when the non-zero middle has **≥ 3 data points*
 AnalysisAgent → STRUCTURED_RESULT extraction → ChartAgent(structured_data)
 ```
 
-**New flow:**
+**New flow (as implemented):**
 ```
 AnalysisAgent returns result dict:
   - result["message"] = text with markdown tables + chart metadata
@@ -160,45 +160,52 @@ AnalysisAgent returns result dict:
   - result["chart_suggestion"] = extracted chart type string
 
 Orchestrator:
-  → strip chart title/suggestion from result["message"] (always, regardless of config)
-  → if CHARTS_ENABLED and requires_chart:
-      parse markdown table from result["message"] → {headers, rows} for chart
-      if table_only suggestion OR no table → chart = None
-      else → ChartAgent.execute(table_data, query_type, chart_suggestion)
+  → strip chart title/suggestion from result["message"] (always, via AnalysisAgent)
+  → if CHARTS_ENABLED and requires_chart and chart_suggestion != "table_only":
+      parse_all_markdown_tables(message) → list of {headers, rows}
+      get_chart_advice(tables, user_query, chart_suggestion) → Haiku picks table + columns
+      _filter_table_by_advice(selected_table, advice) → filtered {headers, rows}
+      ChartAgent.execute(filtered, query_type, chart_type, chart_title)
   → return response with cleaned text + data (for DataTable) + chart (or None)
 ```
 
+**NOTE: No rule-based fallback.** If the Haiku advisor fails (API error), no chart is produced. The advisor handles all semantic decisions (which table, which columns, chart type). ChartAgent is purely a formatter.
+
+### Section 5b: Haiku Chart Advisor (added during implementation)
+
+**New file:** `backend/agents/chart_advisor.py`
+
+During implementation, rule-based column selection proved insufficient for complex tables (e.g., 7-column expense comparisons, tables with mixed text/numeric columns). A lightweight Haiku LLM call was added to handle semantic table/column selection.
+
+**Function:** `get_chart_advice(tables, user_query, chart_suggestion) → dict | None`
+
+- Makes one API call to `CLAUDE_CLASSIFIER_MODEL` (Haiku)
+- Input: all parsed markdown tables + user query + AnalysisAgent's chart suggestion
+- Output: `{table_index, x_column, y_columns, secondary_y_columns, chart_type, chart_title}`
+- Cost: ~$0.001 per call, ~1-2s latency
+- Prompt includes rules for column selection (max 2-3 y-columns, skip counts alongside currency, etc.)
+
+**Helper:** `_filter_table_by_advice(table, advice) → dict | None`
+
+Filters a parsed table to only the columns the advisor selected (x + y + secondary).
+
 **ChartAgent signature change:**
 
-Current: `execute(self, data: dict, query_type: str, requires_chart: bool)`
-— where `data` is the full analysis result dict, and `chart_suggestion` is extracted internally via `data.get("chart_suggestion")`
-
-New: `execute(self, table_data: dict, query_type: str, chart_suggestion: str | None = None)`
-— `table_data` is `{headers, rows}` from markdown parser
-— `chart_suggestion` passed explicitly by orchestrator
-— `requires_chart` check moved to orchestrator (ChartAgent always produces chart when called)
-
-**DataTable `data` field:**
-
-The AnalysisAgent continues to extract STRUCTURED_RESULT when present and return it as `result["data"]`. This feeds the frontend DataTable. The prompt rules for STRUCTURED_RESULT are archived (not actively enforced), but the extraction code remains — if the LLM still produces STRUCTURED_RESULT naturally, it gets captured. If not, the frontend falls back to rendering markdown tables from the message text.
-
-The markdown table parser is used **only for chart input** — it does not replace the DataTable data source.
-
-**Chart metadata stripping:**
-
-Stays in `analysis_agent.py` (existing behavior). The orchestrator reads `chart_suggestion` and `chart_title` from the result dict — the analysis agent has already extracted and returned them. No location change needed.
+`execute(self, table_data: dict, query_type: str, chart_suggestion: str | None = None, chart_title: str | None = None)`
+— `table_data` is `{headers, rows}` from advisor-filtered table
+— `chart_suggestion` and `chart_title` from advisor (or AnalysisAgent)
+— `requires_chart` check moved to orchestrator
 
 **What changes:**
-- Orchestrator calls new `parse_markdown_table_for_chart()` on message text for chart input
-- ChartAgent signature updated: receives `{headers, rows}` + `chart_suggestion` directly
+- Orchestrator uses `parse_all_markdown_tables()` + Haiku advisor for chart input
+- ChartAgent signature updated: receives filtered `{headers, rows}` directly
 - `requires_chart` check moved from ChartAgent to orchestrator
 - ChartAgent internals enhanced with Rules A-D
 
 **What stays the same:**
-- ChartAgent core rule-based logic (type selection, pie formatting, config building)
+- ChartAgent core formatting logic (data formatting, config building, pie grouping)
 - Frontend `ChartRenderer` and `MessageBubble` — no changes
 - AnalysisAgent's `data` field still available for DataTable rendering
-- Chart suggestion obeyed when charts enabled
 - Chart metadata stripping location (analysis_agent.py)
 
 ### Section 6: Testing Strategy
@@ -248,20 +255,22 @@ Render chart specs from E2E tests in frontend:
 - Compare across viewports (mobile, tablet, desktop)
 - Visually verify: correct x-axis labels (names not ranks), correct data scale, no invisible bars, Change % line not flat
 
-## Files to Modify
+## Files Modified (actual)
 
 | File | Change |
 |------|--------|
 | `backend/config.py` | Add `CHARTS_ENABLED: bool = True` |
-| `backend/agents/utils.py` | Add `parse_markdown_table_for_chart()` |
-| `backend/agents/chart_agent.py` | Rules A-D: scale detection, % value detection, total exclusion, zero trim |
-| `backend/agents/orchestrator.py` | Use markdown parser for chart input, respect `CHARTS_ENABLED`, strip title/suggestion |
-| `backend/agents/prompts.py` | Archive Rules 14-15, add "comprehensive table last" guidance |
-| `tests/unit/test_markdown_table_parser.py` | New: parser unit tests |
-| `tests/unit/test_chart_agent.py` | Add: scale mismatch, % detection, total exclusion, zero trim tests |
-| `tests/unit/test_orchestrator.py` | Add: CHARTS_ENABLED toggle tests |
-| `tests/e2e/test_chart_pipeline.py` | New: E2E with real transcript fixtures (5 turns) |
-| `tests/fixtures/chart_transcript_fixtures/` | New: extracted responses from eval run |
+| `backend/agents/utils.py` | Add `to_numeric()`, `parse_markdown_table_for_chart()`, `parse_all_markdown_tables()`, ordinal detection |
+| `backend/agents/chart_agent.py` | Rules A-D, new execute() signature, scale mismatch detection |
+| `backend/agents/chart_advisor.py` | **New**: Haiku chart advisor (`get_chart_advice()`) |
+| `backend/agents/orchestrator.py` | Advisor-only pipeline, `_filter_table_by_advice()`, `CHARTS_ENABLED` gate |
+| `backend/agents/prompts.py` | Archive Rules 14-15, add table ordering guidance |
+| `tests/unit/test_chart_utils.py` | **New**: 45 tests for to_numeric + markdown parser |
+| `tests/unit/test_chart_advisor.py` | **New**: 11 tests for Haiku advisor (mocked API) |
+| `tests/unit/test_chart_agent.py` | Updated: 85 tests (new signature, Rules A-D, scale mismatch) |
+| `tests/unit/test_orchestrator.py` | Updated: advisor integration, CHARTS_ENABLED, filter tests |
+| `tests/e2e/test_chart_pipeline.py` | **New**: 9 E2E tests (5 transcript + 2 advisor path + 2 fixture) |
+| `tests/fixtures/chart_transcript_fixtures.py` | **New**: 7 fixtures from eval transcripts |
 
 ## Out of Scope
 
