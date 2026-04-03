@@ -19,6 +19,17 @@ class Settings(BaseSettings):
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"
 
+    # Database & Auth (Set A1)
+    DATABASE_URL: str | None = None
+    JWT_SECRET: str | None = None
+    JWT_ACCESS_TOKEN_EXPIRY_MINUTES: int = 30
+    JWT_REFRESH_TOKEN_EXPIRY_DAYS: int = 7
+
+    @property
+    def db_mode(self) -> bool:
+        """True when DATABASE_URL is set — enables auth + persistence."""
+        return self.DATABASE_URL is not None
+
     @property
     def TALLY_URL(self) -> str:
         return f"http://{self.TALLY_HOST}:{self.TALLY_PORT}"
