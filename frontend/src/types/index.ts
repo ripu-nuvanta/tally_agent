@@ -24,6 +24,8 @@ export interface ChatRequest {
   message: string;
   session_id?: string;
   company?: string;
+  workspace_id?: string;
+  conversation_id?: string;
 }
 
 export interface ChatResponse {
@@ -54,4 +56,64 @@ export interface TallyModeResponse {
 
 export interface TallyModeRequest {
   mode: "mock" | "live";
+}
+
+// --- Auth types (Set A1) ---
+
+export interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+export interface AuthResponse {
+  user: AuthUser;
+  access_token: string;
+}
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  name: string;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+// --- Workspace types (Set A1) ---
+
+export interface WorkspaceData {
+  id: string;
+  name: string;
+  agent_type: string;
+  config: Record<string, unknown>;
+  memory: Record<string, unknown>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationSummary {
+  id: string;
+  title: string | null;
+  tag: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ConversationDetail {
+  id: string;
+  title: string | null;
+  tag: string | null;
+  messages: MessageData[];
+}
+
+export interface MessageData {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  data?: TableData | TableData[];
+  chart?: ChartSpec;
+  created_at: string;
 }
