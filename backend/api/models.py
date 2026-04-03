@@ -65,3 +65,39 @@ class TallyModeResponse(BaseModel):
 class ErrorResponse(BaseModel):
     error: str
     detail: str | None = None
+
+
+# --- Auth models (Set A1) ---
+
+class RegisterRequest(BaseModel):
+    email: str
+    password: str
+    name: str
+
+    @field_validator("email")
+    @classmethod
+    def email_valid(cls, v: str) -> str:
+        if "@" not in v or "." not in v.split("@")[-1]:
+            raise ValueError("Invalid email format")
+        return v.lower().strip()
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class AuthResponse(BaseModel):
+    user: dict[str, Any]
+    access_token: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+
+
+class UserResponse(BaseModel):
+    id: str
+    email: str
+    name: str
+    created_at: str
