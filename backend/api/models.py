@@ -18,6 +18,8 @@ class ChatRequest(BaseModel):
         return v
     session_id: str | None = None
     company: str | None = None
+    workspace_id: str | None = None
+    conversation_id: str | None = None
 
 
 class ChartSpec(BaseModel):

@@ -25,6 +25,13 @@ async def lifespan(app: FastAPI):
     app.state.tally_client = TallyClient(settings.TALLY_HOST, settings.TALLY_PORT)
     app.state.tally_client.mock_mode = settings.TALLY_MODE == "mock"
     app.state.session_store = SessionStore(ttl_minutes=settings.SESSION_TTL_MINUTES)
+    # Initialize database if configured
+    if settings.db_mode:
+        from backend.db.engine import init_engine
+        if not settings.JWT_SECRET or len(settings.JWT_SECRET) < 32:
+            raise ValueError("JWT_SECRET must be at least 32 characters when DATABASE_URL is set")
+        init_engine()
+        logger.info("Database mode enabled (PostgreSQL)")
     if settings.LANGFUSE_PUBLIC_KEY:
         import base64
 
@@ -54,6 +61,9 @@ async def lifespan(app: FastAPI):
     yield
     if hasattr(app.state, "tracer_provider"):
         app.state.tracer_provider.shutdown()
+    if settings.db_mode:
+        from backend.db.engine import close_engine
+        await close_engine()
     await app.state.tally_client.close()
 
 
@@ -76,6 +86,13 @@ app.include_router(health.router, prefix="/api")
 app.include_router(companies.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(tally_mode.router, prefix="/api")
+
+# DB-mode routers (auth, workspaces, conversations, usage)
+if settings.db_mode:
+    from backend.api import auth, conversations, workspaces
+    app.include_router(auth.router, prefix="/api")
+    app.include_router(workspaces.router, prefix="/api")
+    app.include_router(conversations.router, prefix="/api")
 
 
 @app.exception_handler(TallyConnectionError)
