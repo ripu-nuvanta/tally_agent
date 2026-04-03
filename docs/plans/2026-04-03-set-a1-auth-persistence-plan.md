@@ -4146,6 +4146,294 @@ git commit -m "fix: smoke test fixes for auth + persistence flow"
 
 ---
 
+## Task 18: Automated E2E Smoke Tests (Both Modes)
+
+**Files:**
+- Create: `tests/e2e/test_legacy_smoke.py`
+- Create: `tests/e2e/test_db_smoke.py`
+
+These tests use FastAPI's `TestClient` / `httpx.AsyncClient` with the app directly — no external server needed.
+
+- [ ] **Step 1: Write legacy mode E2E smoke test**
+
+Create `tests/e2e/test_legacy_smoke.py`:
+
+```python
+"""E2E smoke test — legacy mode (no DATABASE_URL, no auth)."""
+
+import os
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+# Ensure legacy mode: no DATABASE_URL
+os.environ.pop("DATABASE_URL", None)
+
+
+@pytest.fixture
+def app():
+    """Import app fresh to pick up env state."""
+    from backend.main import app
+    app.state.tally_client.mock_mode = True
+    return app
+
+
+@pytest.mark.asyncio
+async def test_legacy_health(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/health")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["status"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_legacy_chat_no_auth_required(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/api/chat", json={"message": "hello"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "message" in data
+    assert "session_id" in data
+
+
+@pytest.mark.asyncio
+async def test_legacy_chat_session_continuity(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp1 = await ac.post("/api/chat", json={"message": "hello"})
+        session_id = resp1.json()["session_id"]
+
+        resp2 = await ac.post("/api/chat", json={
+            "message": "What is 2+2?",
+            "session_id": session_id,
+        })
+    assert resp2.status_code == 200
+    assert resp2.json()["session_id"] == session_id
+
+
+@pytest.mark.asyncio
+async def test_legacy_no_workspace_endpoints(app):
+    """In legacy mode, workspace endpoints should not exist."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/workspaces")
+    assert resp.status_code == 404
+```
+
+- [ ] **Step 2: Run legacy smoke test**
+
+Run: `ANTHROPIC_API_KEY=test-key pytest tests/e2e/test_legacy_smoke.py -v`
+Expected: All 4 tests PASS.
+
+- [ ] **Step 3: Write DB mode E2E smoke test**
+
+Create `tests/e2e/test_db_smoke.py`:
+
+```python
+"""E2E smoke test — DB mode (auth + persistence).
+
+Requires TEST_DATABASE_URL to be set. Uses a real Postgres instance.
+"""
+
+import os
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+pytestmark = pytest.mark.skipif(
+    not os.environ.get("TEST_DATABASE_URL"),
+    reason="TEST_DATABASE_URL not set — skipping DB E2E tests",
+)
+
+
+@pytest.fixture(autouse=True)
+def set_db_env(monkeypatch):
+    """Configure DB mode for this test module."""
+    db_url = os.environ["TEST_DATABASE_URL"]
+    monkeypatch.setenv("DATABASE_URL", db_url)
+    monkeypatch.setenv("JWT_SECRET", "a" * 64)
+    monkeypatch.setenv("TALLY_MODE", "mock")
+
+
+@pytest.fixture
+async def setup_db():
+    """Create and teardown tables."""
+    from sqlalchemy.ext.asyncio import create_async_engine
+    from backend.db.models import Base
+
+    engine = create_async_engine(os.environ["TEST_DATABASE_URL"])
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest.fixture
+def app(setup_db):
+    """Import app fresh with DB mode enabled."""
+    # Force reimport to pick up env changes
+    import importlib
+    import backend.config
+    importlib.reload(backend.config)
+    import backend.main
+    importlib.reload(backend.main)
+    from backend.main import app
+    return app
+
+
+@pytest.mark.asyncio
+async def test_db_health_is_public(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.get("/api/health")
+    assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_db_chat_requires_auth(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/api/chat", json={"message": "hello"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_db_register_login_flow(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "smoke@example.com",
+            "password": "Str0ng!Pass#99",
+            "name": "Smoke Test",
+        })
+        assert resp.status_code == 200
+        token = resp.json()["access_token"]
+        assert token
+
+        # /me with token
+        resp = await ac.get("/api/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        assert resp.json()["email"] == "smoke@example.com"
+
+        # Login
+        resp = await ac.post("/api/auth/login", json={
+            "email": "smoke@example.com",
+            "password": "Str0ng!Pass#99",
+        })
+        assert resp.status_code == 200
+        assert resp.json()["access_token"]
+
+
+@pytest.mark.asyncio
+async def test_db_full_chat_flow(app):
+    """Register → create workspace → create conversation → send chat → verify persistence."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "fullflow@example.com",
+            "password": "Str0ng!Pass#99",
+            "name": "Full Flow",
+        })
+        token = resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Create workspace
+        resp = await ac.post("/api/workspaces", json={
+            "name": "Test Co",
+            "config": {"tally_host": "localhost", "tally_port": 9000, "mock_mode": True},
+        }, headers=headers)
+        assert resp.status_code == 201
+        workspace_id = resp.json()["id"]
+
+        # Create conversation
+        resp = await ac.post(
+            f"/api/workspaces/{workspace_id}/conversations",
+            json={},
+            headers=headers,
+        )
+        assert resp.status_code == 201
+        conv_id = resp.json()["id"]
+
+        # Send chat message
+        resp = await ac.post("/api/chat", json={
+            "message": "hello",
+            "workspace_id": workspace_id,
+            "conversation_id": conv_id,
+        }, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["message"]
+
+        # Verify conversation has messages
+        resp = await ac.get(
+            f"/api/workspaces/{workspace_id}/conversations/{conv_id}",
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        messages = resp.json()["messages"]
+        assert len(messages) >= 2  # user + assistant
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "hello"
+        assert messages[1]["role"] == "assistant"
+
+        # Verify conversation title was auto-generated
+        assert resp.json()["title"] == "hello"
+
+
+@pytest.mark.asyncio
+async def test_db_weak_password_rejected(app):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        resp = await ac.post("/api/auth/register", json={
+            "email": "weak@example.com",
+            "password": "weak",
+            "name": "Weak Pass",
+        })
+    assert resp.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_db_workspace_isolation(app):
+    """Users can only see their own workspaces."""
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
+        # User 1
+        resp = await ac.post("/api/auth/register", json={
+            "email": "user1@example.com", "password": "Str0ng!Pass#99", "name": "User 1",
+        })
+        token1 = resp.json()["access_token"]
+
+        await ac.post("/api/workspaces", json={"name": "User1 Co"},
+                       headers={"Authorization": f"Bearer {token1}"})
+
+        # User 2
+        resp = await ac.post("/api/auth/register", json={
+            "email": "user2@example.com", "password": "Str0ng!Pass#99", "name": "User 2",
+        })
+        token2 = resp.json()["access_token"]
+
+        # User 2 should see 0 workspaces
+        resp = await ac.get("/api/workspaces",
+                            headers={"Authorization": f"Bearer {token2}"})
+        assert resp.status_code == 200
+        assert len(resp.json()) == 0
+```
+
+- [ ] **Step 4: Run DB smoke test (if Postgres available)**
+
+Run: `TEST_DATABASE_URL=postgresql+asyncpg://localhost/tallyagent_test ANTHROPIC_API_KEY=test-key pytest tests/e2e/test_db_smoke.py -v`
+Expected: All 6 tests PASS. Skipped if TEST_DATABASE_URL not set.
+
+- [ ] **Step 5: Run ALL tests to verify no regression**
+
+Run: `ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/ --ignore=tests/eval/ -x`
+Expected: All existing + new tests PASS.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add tests/e2e/test_legacy_smoke.py tests/e2e/test_db_smoke.py
+git commit -m "test: add automated E2E smoke tests for both legacy and DB modes"
+```
+
+---
+
 ## Summary
 
 | Task | What | Tests Added |
@@ -4166,7 +4454,8 @@ git commit -m "fix: smoke test fixes for auth + persistence flow"
 | 14 | Login + register pages | — |
 | 15 | Sidebar + conversation list | — |
 | 16 | Wire up App.tsx with Router | — (regression) |
-| 17 | E2E smoke test | — (manual) |
+| 17 | Manual E2E smoke test | — (manual) |
+| 18 | Automated E2E smoke tests (both modes) | 10 |
 
-**Total new tests:** ~52 (unit + integration)
+**Total new tests:** ~62 (unit + integration + E2E)
 **Existing tests preserved:** 1024 (legacy mode, zero changes)
