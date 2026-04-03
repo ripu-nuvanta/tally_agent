@@ -23,6 +23,7 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 from backend.config import settings
+from backend.agents.base import BaseAgent
 from backend.agents.prompts import build_orchestrator_prompt
 from backend.agents.query_agent import QueryAgent
 from backend.agents.analysis_agent import AnalysisAgent
@@ -54,7 +55,7 @@ GREETING_RESPONSE = (
 )
 
 
-class Orchestrator:
+class Orchestrator(BaseAgent):
     """Classifies user queries and routes to the appropriate agent.
 
     Flow:
@@ -70,13 +71,70 @@ class Orchestrator:
         self.analysis_agent = AnalysisAgent()
         self.chart_agent = ChartAgent()
 
+    # --- BaseAgent interface implementation (with backward compatibility) ---
     async def process_query(
+        self,
+        message: str,
+        workspace_config: dict[str, Any] | Any | None = None,
+        workspace_memory: dict[str, Any] | Any | None = None,
+        conversation_messages: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Process a query with support for both signatures.
+
+        Can be called as:
+        1. BaseAgent interface: process_query(message, workspace_config, workspace_memory, conversation_messages, **kwargs)
+        2. Legacy interface: process_query(user_message, client, session)
+
+        Args:
+            message: The user's query text.
+            workspace_config: Either a dict (BaseAgent mode) or TallyClient (legacy mode).
+            workspace_memory: Either a dict (BaseAgent mode) or SessionContext (legacy mode).
+            conversation_messages: List of dicts (BaseAgent mode) or None (legacy mode).
+            **kwargs: Additional params.
+
+        Returns:
+            Response dict with keys: query_type, message, data, chart, session_id.
+        """
+        # Detect which signature was used by checking if workspace_config has async methods (TallyClient-like)
+        # or if it's a dict (BaseAgent mode)
+        if workspace_config is not None and not isinstance(workspace_config, dict) and isinstance(workspace_memory, SessionContext):
+            # Legacy mode: process_query(user_message, client, session)
+            client = workspace_config
+            session = workspace_memory
+            return await self._execute_internal(message, client, session)
+
+        # BaseAgent mode: process_query(message, workspace_config, workspace_memory, conversation_messages, **kwargs)
+        if not isinstance(workspace_config, dict):
+            workspace_config = {}
+        if workspace_memory is None:
+            workspace_memory = {}
+        if conversation_messages is None:
+            conversation_messages = []
+
+        # Extract Tally client from kwargs or create one from config
+        client = kwargs.get("client")
+        if client is None:
+            from backend.tally_bridge.client import TallyClient
+            host = workspace_config.get("TALLY_HOST", "localhost")
+            port = workspace_config.get("TALLY_PORT", 9000)
+            client = TallyClient(host=host, port=port)
+
+        # Reconstruct session from conversation_messages or create new one
+        session = SessionContext(company=workspace_config.get("company", ""))
+        for msg in conversation_messages:
+            session.add_message(msg.get("role", "user"), msg.get("content", ""))
+
+        # Delegate to the internal execution method
+        return await self._execute_internal(message, client, session)
+
+    async def _execute_internal(
         self,
         user_message: str,
         client: TallyClient,
         session: SessionContext,
     ) -> dict[str, Any]:
-        """Process a user query through classification and routing.
+        """Internal query execution (called by process_query).
 
         Returns:
             {
