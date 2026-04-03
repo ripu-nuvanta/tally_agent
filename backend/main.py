@@ -89,10 +89,11 @@ app.include_router(tally_mode.router, prefix="/api")
 
 # DB-mode routers (auth, workspaces, conversations, usage)
 if settings.db_mode:
-    from backend.api import auth, conversations, workspaces
+    from backend.api import auth, conversations, usage, workspaces
     app.include_router(auth.router, prefix="/api")
     app.include_router(workspaces.router, prefix="/api")
     app.include_router(conversations.router, prefix="/api")
+    app.include_router(usage.router, prefix="/api")
 
 
 @app.exception_handler(TallyConnectionError)
