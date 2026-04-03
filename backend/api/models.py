@@ -101,3 +101,56 @@ class UserResponse(BaseModel):
     email: str
     name: str
     created_at: str
+
+
+# --- Workspace models (Set A1) ---
+
+class WorkspaceCreateRequest(BaseModel):
+    name: str
+    agent_type: str = "tally"
+    config: dict[str, Any] = {}
+
+class WorkspaceUpdateRequest(BaseModel):
+    name: str | None = None
+    config: dict[str, Any] | None = None
+    memory: dict[str, Any] | None = None
+
+class WorkspaceResponse(BaseModel):
+    id: str
+    name: str
+    agent_type: str
+    config: dict[str, Any]
+    memory: dict[str, Any]
+    created_at: str
+    updated_at: str
+
+# --- Conversation models (Set A1) ---
+
+class ConversationCreateRequest(BaseModel):
+    title: str | None = None
+    tag: str | None = None
+
+class ConversationUpdateRequest(BaseModel):
+    title: str | None = None
+    tag: str | None = None
+
+class ConversationSummaryResponse(BaseModel):
+    id: str
+    title: str | None
+    tag: str | None
+    created_at: str
+    updated_at: str
+
+class MessageResponse(BaseModel):
+    id: str
+    role: str
+    content: str
+    data: dict[str, Any] | list[dict[str, Any]] | None = None
+    chart: dict[str, Any] | None = None
+    created_at: str
+
+class ConversationDetailResponse(BaseModel):
+    id: str
+    title: str | None
+    tag: str | None
+    messages: list[MessageResponse]
