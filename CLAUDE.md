@@ -15,10 +15,16 @@ TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime
 ### Backend (Python)
 ```bash
 # Install dependencies
-uv sync --extra dev --extra langfuse  # or: pip install -r requirements.txt
+uv sync --extra dev --extra langfuse --extra db  # or: pip install -r requirements.txt
 
-# Run the FastAPI server
+# Run the FastAPI server (legacy mode — no auth, in-memory sessions)
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# Run the FastAPI server (DB mode — auth + persistence, requires Postgres)
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tallyagent JWT_SECRET=<32+ chars> uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+
+# Run Alembic migrations (DB mode only)
+DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tallyagent PYTHONPATH=. python -m alembic upgrade head
 
 # Run all unit tests (fast, no external deps)
 pytest tests/unit/ -v
@@ -32,8 +38,11 @@ pytest tests/unit/test_request_builder.py::test_trial_balance_xml_has_correct_da
 # Integration tests (needs mock Tally server)
 pytest tests/integration/ -v
 
-# E2E scenario tests
+# E2E scenario tests (includes legacy + DB smoke tests)
 ANTHROPIC_API_KEY=test-key pytest tests/e2e/ -v
+
+# DB integration tests (requires Postgres)
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tallyagent_test ANTHROPIC_API_KEY=test-key pytest tests/integration/test_auth_flow.py tests/integration/test_workspace_flow.py tests/integration/test_conversation_flow.py tests/e2e/test_db_smoke.py -v
 
 # All backend tests (unit + integration + E2E mock)
 ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/
@@ -83,9 +92,10 @@ PYTHONPATH=. python tests/eval/generate_golden.py --host <TALLY_IP> --port 9000
 ```bash
 cd frontend
 npm install
-npm run dev                          # Vite dev server
+npm run dev                          # Vite dev server (legacy mode)
+VITE_DB_MODE=true npm run dev        # Vite dev server (DB mode — auth + sidebar)
 npm run build                        # Production build
-npm test                             # Vitest unit tests (111 tests)
+npm test                             # Vitest unit tests (116 tests)
 npm run test:watch                   # Vitest in watch mode
 npm run test:playwright              # Playwright visual tests (39 tests: responsive + eval-visual × 3 viewports)
                                      # PREREQUISITE: backend must be running (uvicorn on port 8000)
@@ -119,8 +129,16 @@ rm -rf tests/playwright/__screenshots__ && npm run test:playwright -- --update-s
 3. **FastAPI Routes** (`backend/api/`) — REST endpoints:
    - `POST /api/chat` — Main chat endpoint (NL query → agent pipeline → response with optional table/chart)
    - `GET /api/health` — Tally connectivity check
-   - `GET /api/companies` — List loaded Tally companies
+   - `GET /api/companies` — List loaded Tally companies (legacy mode)
    - `GET /api/reports/{name}` — Direct report access
+   - DB mode adds: `POST /api/auth/{register,login,refresh,logout}`, `GET /api/auth/me`, workspace CRUD (`/api/workspaces`), conversation CRUD (`/api/workspaces/:id/conversations`), `GET /api/usage`
+
+4. **Database Layer** (`backend/db/`) — PostgreSQL persistence (Set A1, optional via `DATABASE_URL`):
+   - `engine.py` — Async SQLAlchemy engine + session factory
+   - `models.py` — ORM models: User, Workspace, Conversation, Message, UsageLog
+   - `migrations/` — Alembic migrations
+
+5. **Agent Registry** (`backend/agents/registry.py`) — Pluggable agent types keyed by `workspace.agent_type`. Currently registers "tally" → `Orchestrator`. `BaseAgent` interface in `backend/agents/base.py`.
 
 ### Agent Pipeline Flow
 
@@ -132,7 +150,11 @@ User query → Orchestrator (classify) → Query Agent (fetch from Tally via too
 
 ### Frontend (React + Vite + Tailwind + Recharts)
 
-Chat-based UI at `frontend/src/`. Key components: `ChatWindow`, `MessageBubble` (renders text/table/chart inline), `ChartRenderer` (bar/line/pie via Recharts), `DataTable` (sortable with CSV export), `QuickActions` (preset query buttons), `CompanySelector`.
+Chat-based UI at `frontend/src/`. Two modes controlled by `VITE_DB_MODE`:
+- **Legacy mode** (default): `SessionProvider` → `Header` + `ChatWindow`. No auth, no sidebar.
+- **DB mode** (`VITE_DB_MODE=true`): `BrowserRouter` + `AuthProvider` → `LoginPage`/`RegisterPage` (public) or `ChatApp` (protected: `Header` + `Sidebar` + `ChatWindow`).
+
+Key components: `ChatWindow`, `MessageBubble` (renders text/table/chart inline), `ChartRenderer` (bar/line/pie via Recharts), `DataTable` (sortable with CSV export), `QuickActions` (preset query buttons), `Sidebar` (conversation list grouped by workspace), `ConnectCompanyModal`, `UserMenu`.
 
 ## Key Technical Conventions
 
@@ -140,7 +162,7 @@ Chat-based UI at `frontend/src/`. Key components: `ChatWindow`, `MessageBubble` 
 - **Currency**: Use Indian comma formatting (₹12,34,567.00). Negative = outflow/debit, Positive = inflow/credit (Tally convention).
 - **XML requests**: Preferred over JSON for Tally communication — more stable and documented across versions. Use `xml.etree.ElementTree` for parsing.
 - **Claude models**: `claude-sonnet-4-6` for query/analysis agents, `claude-haiku-4-5-20251001` for orchestrator classification, `claude-opus-4-6` for eval judge.
-- **Session management**: In-memory dict for MVP (session_id → conversation history + company + cached data). TTL = 60 min. Limit to 20 messages for token control.
+- **Session management**: Two modes — **Legacy** (in-memory dict, session_id → conversation history, TTL 60 min, 20 message limit) and **DB mode** (Postgres-backed, persistent conversations, per-workspace config). Controlled by `DATABASE_URL` env var.
 - **Tally Bridge is READ-ONLY** — no import/write operations except the seed data script.
 - **Configuration**: All settings via `.env` file loaded by `pydantic_settings.BaseSettings` in `backend/config.py`.
 
@@ -154,16 +176,24 @@ CLAUDE_CLASSIFIER_MODEL (default: claude-haiku-4-5-20251001)
 EVAL_JUDGE_MODEL (default: claude-opus-4-6)
 APP_HOST, APP_PORT (default: 0.0.0.0:8000)
 VITE_API_URL (default: http://localhost:8000)
+
+# DB mode (Set A1) — all optional, app runs in legacy mode without them
+DATABASE_URL                         # e.g. postgresql+asyncpg://user:pass@localhost/tallyagent
+JWT_SECRET                           # minimum 32 chars, required when DATABASE_URL is set
+JWT_ACCESS_TOKEN_EXPIRY_MINUTES      # default: 30
+JWT_REFRESH_TOKEN_EXPIRY_DAYS        # default: 7
+VITE_DB_MODE=true                    # frontend: enables auth pages + sidebar (omit for legacy)
+TEST_DATABASE_URL                    # for DB integration tests (separate DB recommended)
 ```
 
 ## Testing
 
-- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting, mock handler. 501 tests.
-- **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle + mock format parity. 120 tests.
-- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. 20 tests.
+- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting, mock handler, auth utils, pricing, DB models. 760 tests.
+- **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle + mock format parity. Also includes DB integration tests (auth flow, workspace CRUD, conversation persistence) — these require `TEST_DATABASE_URL`. 120 + 9 DB tests.
+- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. Includes legacy smoke tests (3) and DB smoke tests (6, require `TEST_DATABASE_URL`). 20 + 9 tests.
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var OR `--tally-mode mock`. In mock mode, uses built-in mock handler (no real Tally needed, still needs Claude API key). 19 tests.
 - **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 8 scenarios, 49 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`. Mock mode: `--tally-mode mock` auto-selects `*_mock.yaml` scenario variants when available.
-- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all 8 components + utils. 111 tests.
+- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all components + utils. 116 tests.
 - **Frontend Playwright tests** (`frontend/tests/playwright/`): Unified visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) = 39 tests. **IMPORTANT: After running Playwright tests, always visually inspect the eval-visual screenshots** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/eval-visual.spec.ts/` before reporting pass/fail. Check for: blank space, content cutoff, header leaking into screenshots, missing text/tables/charts. A test suite reporting "39 passed" is NOT sufficient — screenshots must be visually verified.
 - **Playwright screenshot regeneration**: Always delete `frontend/tests/playwright/__screenshots__/` before running `--update-snapshots`. Playwright's pixel-diff threshold can silently keep stale screenshots that don't reflect code changes (e.g., updated button text, new header layout).
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
