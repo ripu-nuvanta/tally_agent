@@ -184,6 +184,37 @@ async def test_db_full_chat_flow(db_app):
         # Verify title auto-generated
         assert resp.json()["title"] == "hello"
 
+        # Verify usage was logged
+        resp = await ac.get("/api/usage", headers=headers)
+        assert resp.status_code == 200
+        usage = resp.json()
+        assert usage["total_input_tokens"] >= 0
+        assert usage["total_output_tokens"] >= 0
+        assert isinstance(usage["by_workspace"], list)
+        assert isinstance(usage["by_day"], list)
+
+
+@pytest.mark.asyncio
+async def test_db_usage_endpoint(db_app):
+    """Verify usage endpoint returns correct structure."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "usage@example.com", "password": "Str0ng!Pass#99", "name": "Usage Test",
+        })
+        token = resp.json()["access_token"]
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # Empty usage before any chat
+        resp = await ac.get("/api/usage", headers=headers)
+        assert resp.status_code == 200
+        usage = resp.json()
+        assert usage["total_input_tokens"] == 0
+        assert usage["total_output_tokens"] == 0
+        assert usage["total_cost_usd"] == 0
+        assert usage["by_workspace"] == []
+        assert usage["by_day"] == []
+
 
 async def test_db_weak_password_rejected(db_app):
     async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
