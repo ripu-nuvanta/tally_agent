@@ -64,7 +64,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
                 }`}
               >
                 <span>{ws.name}</span>
-                <span className="text-gray-400">{isCollapsed ? "▸" : "▾"}</span>
+                <span className="text-sm text-gray-400">{isCollapsed ? "▸" : "▾"}</span>
               </button>
               {!isCollapsed && (
                 <ConversationList workspaceId={ws.id} conversations={conversations[ws.id] || []}
