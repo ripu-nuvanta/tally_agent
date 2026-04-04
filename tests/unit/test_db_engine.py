@@ -1,8 +1,11 @@
 """Tests for database engine initialization."""
 import pytest
-from backend.db.engine import init_engine
 
-def test_init_engine_raises_without_url():
+
+def test_init_engine_raises_without_url(monkeypatch):
+    monkeypatch.delenv("DATABASE_URL", raising=False)
+    monkeypatch.setattr("backend.config.settings.DATABASE_URL", None)
+    from backend.db.engine import init_engine
     with pytest.raises(ValueError, match="DATABASE_URL must be set"):
         init_engine(database_url=None)
 
