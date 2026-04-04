@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     CODE_EXECUTION_ENABLED: bool = True  # kill switch: False reverts to analysis tools
     ANALYSIS_CONTEXT_MESSAGES: int = 8  # Number of prior session messages passed to AnalysisAgent
     CHARTS_ENABLED: bool = True  # kill switch for chart rendering
+    CORS_ORIGINS: str = ""  # Comma-separated allowed origins; empty/"*" = allow all (legacy default)
     LANGFUSE_PUBLIC_KEY: str = ""
     LANGFUSE_SECRET_KEY: str = ""
     LANGFUSE_BASE_URL: str = "https://cloud.langfuse.com"

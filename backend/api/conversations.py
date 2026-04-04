@@ -18,7 +18,7 @@ router = APIRouter(prefix="/workspaces/{workspace_id}/conversations", tags=["con
 async def _verify_workspace_access(workspace_id: str, user_id: str, db: AsyncSession) -> Workspace:
     result = await db.execute(
         select(Workspace).where(
-            Workspace.id == workspace_id, Workspace.user_id == user_id, Workspace.is_deleted == False,
+            Workspace.id == workspace_id, Workspace.user_id == user_id, Workspace.is_deleted.is_(False),
         )
     )
     ws = result.scalar_one_or_none()
@@ -37,7 +37,7 @@ async def list_conversations(
     result = await db.execute(
         select(Conversation).where(
             Conversation.workspace_id == workspace_id, Conversation.user_id == user_id,
-            Conversation.is_deleted == False,
+            Conversation.is_deleted.is_(False),
         ).order_by(Conversation.updated_at.desc())
     )
     return [
@@ -76,7 +76,7 @@ async def get_conversation(
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id, Conversation.workspace_id == workspace_id,
-            Conversation.user_id == user_id, Conversation.is_deleted == False,
+            Conversation.user_id == user_id, Conversation.is_deleted.is_(False),
         ).options(selectinload(Conversation.messages))
     )
     conv = result.scalar_one_or_none()
@@ -104,7 +104,7 @@ async def update_conversation(
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id, Conversation.workspace_id == workspace_id,
-            Conversation.user_id == user_id,
+            Conversation.user_id == user_id, Conversation.is_deleted.is_(False),
         )
     )
     conv = result.scalar_one_or_none()
@@ -132,7 +132,7 @@ async def delete_conversation(
     result = await db.execute(
         select(Conversation).where(
             Conversation.id == conversation_id, Conversation.workspace_id == workspace_id,
-            Conversation.user_id == user_id,
+            Conversation.user_id == user_id, Conversation.is_deleted.is_(False),
         )
     )
     conv = result.scalar_one_or_none()

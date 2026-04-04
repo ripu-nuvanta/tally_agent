@@ -17,7 +17,7 @@ async def list_workspaces(
     db: AsyncSession = Depends(get_db),
 ) -> list[WorkspaceResponse]:
     result = await db.execute(
-        select(Workspace).where(Workspace.user_id == user_id, Workspace.is_deleted == False)
+        select(Workspace).where(Workspace.user_id == user_id, Workspace.is_deleted.is_(False))
         .order_by(Workspace.created_at)
     )
     return [
@@ -54,7 +54,10 @@ async def update_workspace(
     db: AsyncSession = Depends(get_db),
 ) -> WorkspaceResponse:
     result = await db.execute(
-        select(Workspace).where(Workspace.id == workspace_id, Workspace.user_id == user_id)
+        select(Workspace).where(
+            Workspace.id == workspace_id, Workspace.user_id == user_id,
+            Workspace.is_deleted.is_(False),
+        )
     )
     ws = result.scalar_one_or_none()
     if not ws:
@@ -81,7 +84,10 @@ async def delete_workspace(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     result = await db.execute(
-        select(Workspace).where(Workspace.id == workspace_id, Workspace.user_id == user_id)
+        select(Workspace).where(
+            Workspace.id == workspace_id, Workspace.user_id == user_id,
+            Workspace.is_deleted.is_(False),
+        )
     )
     ws = result.scalar_one_or_none()
     if not ws:

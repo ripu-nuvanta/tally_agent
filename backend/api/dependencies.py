@@ -3,6 +3,8 @@
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
+import jwt as pyjwt
+
 from backend.agents.context import SessionStore
 from backend.config import settings
 from backend.tally_bridge.client import TallyClient
@@ -36,7 +38,7 @@ async def get_current_user(
 
     try:
         payload = decode_token(credentials.credentials, settings.JWT_SECRET)
-    except Exception:
+    except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
         raise HTTPException(status_code=401, detail="Invalid or expired token")
 
     if payload.get("type") != "access":
@@ -58,5 +60,5 @@ async def get_optional_user(
         if payload.get("type") != "access":
             return None
         return payload["sub"]
-    except Exception:
+    except (pyjwt.ExpiredSignatureError, pyjwt.InvalidTokenError):
         return None

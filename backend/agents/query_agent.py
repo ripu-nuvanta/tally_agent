@@ -89,6 +89,7 @@ class QueryAgent:
         messages.append({"role": "user", "content": user_query})
 
         tool_results: list[dict[str, Any]] = []
+        usage_records: list[dict[str, Any]] = []
         tool_call_count = 0
         turn = 0
 
@@ -111,13 +112,20 @@ class QueryAgent:
                 logger.error("QueryAgent turn %d — API error: %s", turn, exc)
                 session.add_message("user", user_query)
                 session.add_message("assistant", error_msg)
-                return {"message": error_msg, "tool_results": tool_results}
+                return {"message": error_msg, "tool_results": tool_results, "usage": usage_records}
 
             logger.info(
                 "QueryAgent turn %d — stop_reason=%s, content_blocks=%d, input=%d, output=%d tokens",
                 turn, response.stop_reason, len(response.content),
                 response.usage.input_tokens, response.usage.output_tokens,
             )
+
+            usage_records.append({
+                "agent": "query_agent",
+                "model": settings.CLAUDE_MODEL,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+            })
 
             if response.stop_reason == "max_tokens":
                 logger.warning(
@@ -137,7 +145,7 @@ class QueryAgent:
                 logger.debug("QueryAgent turn %d — FINAL ANSWER:\n%s", turn, final_text)
                 # NOTE: Session messages are managed by the Orchestrator, not here.
                 # Adding messages here would pollute session context before AnalysisAgent runs.
-                return {"message": final_text, "tool_results": tool_results}
+                return {"message": final_text, "tool_results": tool_results, "usage": usage_records}
 
             # ---- Tool use: execute all requested tools ----
             tool_blocks = find_all_tool_use_blocks(response)
@@ -201,6 +209,6 @@ class QueryAgent:
                     "Here is what I found so far based on the data retrieved."
                 )
                 # NOTE: Session messages are managed by the Orchestrator, not here.
-                return {"message": msg, "tool_results": tool_results}
+                return {"message": msg, "tool_results": tool_results, "usage": usage_records}
 
 

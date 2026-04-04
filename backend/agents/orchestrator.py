@@ -143,11 +143,18 @@ class Orchestrator(BaseAgent):
                 "data": dict | None,
                 "chart": None,
                 "session_id": str,
+                "usage": list[dict],
             }
         """
+        usage_records: list[dict[str, Any]] = []
+
         classification = await self._classify(user_message, session)
         query_type = classification.get("query_type", "simple_lookup")
         requires_chart = classification.get("requires_chart", False)
+
+        # Capture classifier usage
+        if "usage" in classification:
+            usage_records.append(classification["usage"])
 
         # Respect explicit table-only intent from user message
         if _has_table_intent(user_message):
@@ -172,6 +179,7 @@ class Orchestrator(BaseAgent):
                 "data": None,
                 "chart": None,
                 "session_id": session.session_id,
+                "usage": usage_records,
             }
 
         # --- Clarification needed ---
@@ -188,6 +196,7 @@ class Orchestrator(BaseAgent):
                 "data": None,
                 "chart": None,
                 "session_id": session.session_id,
+                "usage": usage_records,
             }
 
         # --- All other types: route to QueryAgent ---
@@ -197,6 +206,10 @@ class Orchestrator(BaseAgent):
         all_data = _extract_all_data(tool_results)
         raw_data = all_data[-1] if all_data else None
         raw_tally_data, computed_data = _separate_tool_results(tool_results)
+
+        # Capture QueryAgent usage
+        if agent_result.get("usage"):
+            usage_records.extend(agent_result["usage"])
 
         logger.info(
             "Orchestrator — QueryAgent returned %d tool call(s), %d data set(s) "
@@ -220,6 +233,11 @@ class Orchestrator(BaseAgent):
         )
         message = analysis_result["message"]
         data = analysis_result.get("data", raw_data)
+
+        # Capture AnalysisAgent usage
+        if analysis_result.get("usage"):
+            usage_records.extend(analysis_result["usage"])
+
         logger.info(
             "Orchestrator — AnalysisAgent returned %d tool call(s), chart_suggestion=%s",
             len(analysis_result.get("tool_results", [])),
@@ -243,11 +261,13 @@ class Orchestrator(BaseAgent):
 
                 if all_tables:
                     # Try Haiku chart advisor first
-                    advice = await get_chart_advice(
+                    advice, advisor_usage = await get_chart_advice(
                         all_tables,
                         user_message,
                         chart_suggestion=chart_suggestion,
                     )
+                    if advisor_usage:
+                        usage_records.append(advisor_usage)
                     logger.info("Chart advisor returned: %s", advice)
 
                     if advice and advice.get("chart_type") != "table_only":
@@ -283,6 +303,7 @@ class Orchestrator(BaseAgent):
             "data": final_data,
             "chart": chart,
             "session_id": session.session_id,
+            "usage": usage_records,
         }
 
     async def _classify(self, user_message: str, session: SessionContext | None = None) -> dict:
@@ -326,11 +347,20 @@ class Orchestrator(BaseAgent):
             response.usage.input_tokens, response.usage.output_tokens,
         )
 
+        classifier_usage = {
+            "agent": "classifier",
+            "model": settings.CLAUDE_CLASSIFIER_MODEL,
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+
         try:
-            return json.loads(_strip_markdown_fences(text))
+            result = json.loads(_strip_markdown_fences(text))
+            result["usage"] = classifier_usage
+            return result
         except (json.JSONDecodeError, TypeError):
             logger.warning("Classification fallback: could not parse Claude response as JSON. Raw text: %s", text)
-            return {"query_type": "simple_lookup", "requires_chart": False}
+            return {"query_type": "simple_lookup", "requires_chart": False, "usage": classifier_usage}
 
 
 def _filter_table_by_advice(table: dict, advice: dict) -> dict | None:
