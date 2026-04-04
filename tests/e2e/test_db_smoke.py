@@ -247,3 +247,204 @@ async def test_db_workspace_isolation(db_app):
         resp = await ac.get("/api/workspaces", headers={"Authorization": f"Bearer {token2}"})
         assert resp.status_code == 200
         assert len(resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_db_token_refresh_flow(db_app):
+    """Register → get access token → refresh via cookie → use new token to call /me."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register — response sets a refresh_token cookie (secure=True, so httpx won't auto-send
+        # it over http://test). We extract it manually to simulate browser cookie jar behaviour.
+        resp = await ac.post("/api/auth/register", json={
+            "email": "refresh@example.com", "password": "Str0ng!Pass#99", "name": "Refresh User",
+        })
+        assert resp.status_code == 200, resp.text
+        original_token = resp.json()["access_token"]
+        assert original_token
+
+        # Extract the refresh_token cookie value from the Set-Cookie header
+        refresh_cookie = resp.cookies.get("refresh_token")
+        assert refresh_cookie, "register must set a refresh_token cookie"
+
+        # Call /refresh — pass the cookie explicitly because httpx won't send secure cookies
+        # over a non-HTTPS base_url
+        resp = await ac.post("/api/auth/refresh", cookies={"refresh_token": refresh_cookie})
+        assert resp.status_code == 200, resp.text
+        new_token = resp.json()["access_token"]
+        assert new_token  # a valid access token was issued
+
+        # Use new token to call /me
+        resp = await ac.get("/api/auth/me", headers={"Authorization": f"Bearer {new_token}"})
+        assert resp.status_code == 200
+        assert resp.json()["email"] == "refresh@example.com"
+
+
+@pytest.mark.asyncio
+async def test_db_logout_clears_session(db_app):
+    """Register → login → logout → refresh should fail with 401."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register and grab the refresh token cookie
+        resp = await ac.post("/api/auth/register", json={
+            "email": "logout@example.com", "password": "Str0ng!Pass#99", "name": "Logout User",
+        })
+        assert resp.status_code == 200, resp.text
+        refresh_cookie = resp.cookies.get("refresh_token")
+        assert refresh_cookie, "register must set a refresh_token cookie"
+
+        # Verify refresh works before logout (pass cookie explicitly)
+        resp = await ac.post("/api/auth/refresh", cookies={"refresh_token": refresh_cookie})
+        assert resp.status_code == 200, resp.text
+
+        # Logout — clears the refresh_token cookie server-side
+        resp = await ac.post("/api/auth/logout")
+        assert resp.status_code == 200
+
+        # Refresh should now fail with 401 — send no cookie (simulating cleared state)
+        resp = await ac.post("/api/auth/refresh")
+        assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_db_login_rate_limiting(db_app):
+    """5 failed login attempts → 6th attempt returns 429."""
+    import backend.api.auth as auth_module
+
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register a valid user first
+        await ac.post("/api/auth/register", json={
+            "email": "ratelimit@example.com", "password": "Str0ng!Pass#99", "name": "Rate Limit",
+        })
+
+        email = "ratelimit@example.com"
+        # Make 5 failed login attempts with wrong password
+        for _ in range(5):
+            resp = await ac.post("/api/auth/login", json={
+                "email": email, "password": "WrongPassword!1",
+            })
+            assert resp.status_code == 401
+
+        # 6th attempt should be rate-limited
+        resp = await ac.post("/api/auth/login", json={
+            "email": email, "password": "WrongPassword!1",
+        })
+        assert resp.status_code == 429
+
+    # Clean up in-memory rate limit state to avoid leaking into other tests
+    auth_module._login_attempts.pop(email, None)
+
+
+@pytest.mark.asyncio
+async def test_db_duplicate_email_rejected(db_app):
+    """Registering with an already-used email returns 409."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        payload = {"email": "dupe@example.com", "password": "Str0ng!Pass#99", "name": "Dupe User"}
+
+        resp = await ac.post("/api/auth/register", json=payload)
+        assert resp.status_code == 200, resp.text
+
+        # Second registration with same email
+        resp = await ac.post("/api/auth/register", json=payload)
+        assert resp.status_code == 409
+
+
+@pytest.mark.asyncio
+async def test_db_invalid_token_rejected(db_app):
+    """Sending a garbage bearer token returns 401."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        resp = await ac.get("/api/auth/me", headers={"Authorization": "Bearer garbage-token"})
+    assert resp.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_db_workspace_crud(db_app):
+    """Register → create workspace → list → update name → verify → delete → list empty."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "wscrud@example.com", "password": "Str0ng!Pass#99", "name": "WS CRUD",
+        })
+        assert resp.status_code == 200, resp.text
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        # Create workspace
+        resp = await ac.post("/api/workspaces", json={"name": "Original Name"}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        ws_id = resp.json()["id"]
+        assert resp.json()["name"] == "Original Name"
+
+        # List — should have 1
+        resp = await ac.get("/api/workspaces", headers=headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
+
+        # Update name
+        resp = await ac.patch(f"/api/workspaces/{ws_id}", json={"name": "Updated Name"}, headers=headers)
+        assert resp.status_code == 200
+        assert resp.json()["name"] == "Updated Name"
+
+        # Verify updated name via list
+        resp = await ac.get("/api/workspaces", headers=headers)
+        assert resp.json()[0]["name"] == "Updated Name"
+
+        # Delete workspace
+        resp = await ac.delete(f"/api/workspaces/{ws_id}", headers=headers)
+        assert resp.status_code == 204
+
+        # List — should have 0
+        resp = await ac.get("/api/workspaces", headers=headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_db_conversation_crud(db_app):
+    """Register → create workspace → create conversation → list → update title → verify → delete → list empty."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "convcrud@example.com", "password": "Str0ng!Pass#99", "name": "Conv CRUD",
+        })
+        assert resp.status_code == 200, resp.text
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        # Create workspace
+        resp = await ac.post("/api/workspaces", json={"name": "Conv Test Co"}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        ws_id = resp.json()["id"]
+
+        # Create conversation with a title
+        resp = await ac.post(
+            f"/api/workspaces/{ws_id}/conversations",
+            json={"title": "Initial Title"},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        conv_id = resp.json()["id"]
+        assert resp.json()["title"] == "Initial Title"
+
+        # List conversations — should have 1
+        resp = await ac.get(f"/api/workspaces/{ws_id}/conversations", headers=headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 1
+
+        # Update title
+        resp = await ac.patch(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}",
+            json={"title": "Updated Title"},
+            headers=headers,
+        )
+        assert resp.status_code == 200
+        assert resp.json()["title"] == "Updated Title"
+
+        # Verify updated title via list
+        resp = await ac.get(f"/api/workspaces/{ws_id}/conversations", headers=headers)
+        assert resp.json()[0]["title"] == "Updated Title"
+
+        # Delete conversation
+        resp = await ac.delete(f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers)
+        assert resp.status_code == 204
+
+        # List — should have 0
+        resp = await ac.get(f"/api/workspaces/{ws_id}/conversations", headers=headers)
+        assert resp.status_code == 200
+        assert len(resp.json()) == 0
