@@ -9,6 +9,7 @@ export default function ChatApp() {
   const { conversationId } = useParams();
   const navigate = useNavigate();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
+  const [sidebarRefresh, setSidebarRefresh] = useState(0);
 
   const handleConversationSelect = useCallback(
     (workspaceId: string, convId: string) => {
@@ -38,9 +39,9 @@ export default function ChatApp() {
         </div>
       </header>
       <div className="flex-1 flex overflow-hidden">
-        <Sidebar activeConversationId={conversationId} onConversationSelect={handleConversationSelect} onNewChat={handleNewChat} />
+        <Sidebar activeConversationId={conversationId} onConversationSelect={handleConversationSelect} onNewChat={handleNewChat} refreshTrigger={sidebarRefresh} />
         <main className="flex-1 overflow-hidden">
-          <ChatWindow conversationId={conversationId} workspaceId={activeWorkspaceId || undefined} />
+          <ChatWindow conversationId={conversationId} workspaceId={activeWorkspaceId || undefined} onMessageSent={() => setSidebarRefresh((n) => n + 1)} />
         </main>
       </div>
     </div>

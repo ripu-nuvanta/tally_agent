@@ -8,9 +8,10 @@ interface SidebarProps {
   activeConversationId?: string;
   onConversationSelect: (workspaceId: string, conversationId: string) => void;
   onNewChat: (workspaceId: string) => void;
+  refreshTrigger?: number;
 }
 
-export default function Sidebar({ activeConversationId, onConversationSelect, onNewChat }: SidebarProps) {
+export default function Sidebar({ activeConversationId, onConversationSelect, onNewChat, refreshTrigger }: SidebarProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceData[]>([]);
   const [conversations, setConversations] = useState<Record<string, ConversationSummary[]>>({});
   const [showModal, setShowModal] = useState(false);
@@ -25,7 +26,7 @@ export default function Sidebar({ activeConversationId, onConversationSelect, on
     setConversations(convMap);
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [refreshTrigger]);
 
   return (
     <aside className="w-70 border-r border-gray-200 bg-gray-50 flex flex-col h-full overflow-hidden">

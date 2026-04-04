@@ -10,9 +10,10 @@ import QuickActions from "./QuickActions";
 interface ChatWindowProps {
   conversationId?: string;
   workspaceId?: string;
+  onMessageSent?: () => void;
 }
 
-export default function ChatWindow({ conversationId, workspaceId }: ChatWindowProps = {}) {
+export default function ChatWindow({ conversationId, workspaceId, onMessageSent }: ChatWindowProps = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -78,6 +79,7 @@ export default function ChatWindow({ conversationId, workspaceId }: ChatWindowPr
         setMessages((prev) =>
           prev.map((m) => (m.id === loadingMsg.id ? agentMsg : m))
         );
+        onMessageSent?.();
       } catch (err) {
         const errorMsg: ChatMessage = {
           id: generateId(),
