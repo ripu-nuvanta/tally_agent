@@ -4508,7 +4508,7 @@ Review saved to `docs/code-review-set-a1.md`. Verdict: **conditionally approved*
 | S8 | No error handling | `.catch()` on `getConversation` |
 | S9 | `== False` warning | `.is_(False)` idiom |
 
-### Test Coverage (2026-04-04)
+### Test Coverage (2026-04-04, final)
 
 Overall: **83% backend** (unit tests only), higher with DB integration tests.
 
@@ -4516,12 +4516,24 @@ Overall: **83% backend** (unit tests only), higher with DB integration tests.
 |-----------|-------|
 | Unit tests | 770 |
 | DB integration (auth, workspace, conversation, usage) | 12 |
-| DB E2E smoke | 8 |
+| DB E2E smoke (API) | 14 |
 | Legacy E2E smoke | 3 |
-| Frontend Vitest | 116 |
-| **Total** | **909** |
+| Playwright DB-mode (browser) | 9 |
+| Frontend Vitest | 167 |
+| **Total** | **975** |
 
-### Remaining Work
+### Hardening (2026-04-04)
 
-- [ ] **Playwright E2E tests for DB mode**: Register → login → connect company → new chat → send message → verify response → logout → login → verify persistence. Would have caught the useSession bug.
-- [ ] **Known limitation**: On hard page reload, chat messages don't auto-load until user clicks conversation in sidebar (workspaceId lost from React state). The `onWorkspaceResolved` callback resolves workspace identity and ChatWindow re-fires the useEffect, but only after sidebar data loads.
+All remaining items addressed:
+
+- [x] **Playwright E2E tests for DB mode** (9 tests): Register → connect company (demo mode) → new chat → send greeting → sidebar title → logout → login → persistence → load history. Gated by `RUN_PLAYWRIGHT_DB_TESTS=1`.
+- [x] **Medium-priority DB API tests** (7 tests): Token refresh, logout, rate limiting, duplicate email, invalid token, workspace CRUD, conversation CRUD.
+- [x] **Frontend Vitest tests** (+51 tests): LoginPage (8), RegisterPage (13), ProtectedRoute (5), ConversationList (9), UserMenu (11), ChatWindow reload (5).
+- [x] **Page-reload verified working**: `workspaceId` in useEffect deps triggers re-fetch when sidebar resolves workspace. Added regression tests.
+
+### Known Limitations (acceptable for merge)
+
+- On page reload, brief empty chat state until sidebar resolves workspace (~1-2s)
+- Rate limiting is in-memory (not shared across workers — documented, upgrade to Redis when scaling)
+- No password reset (needs email service — Set A2)
+- No email verification (future)
