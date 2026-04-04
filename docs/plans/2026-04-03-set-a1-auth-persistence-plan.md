@@ -4459,3 +4459,34 @@ git commit -m "test: add automated E2E smoke tests for both legacy and DB modes"
 
 **Total new tests:** ~62 (unit + integration + E2E)
 **Existing tests preserved:** 1024 (legacy mode, zero changes)
+
+---
+
+## Post-Implementation Notes (2026-04-04)
+
+### All 18 tasks completed — 21 commits on `feature/set-a1-auth-persistence`
+
+### Bugs Found & Fixed During Smoke Test
+
+1. **useSession crash in DB mode** (commit dd0c012): `ChatWindow` called `useSession()` which requires `SessionProvider`, but DB mode uses `AuthProvider`. Fixed by making `useSession()` return a no-op default instead of throwing when no provider exists.
+
+2. **Mock mode not propagating to per-workspace TallyClient** (commit b5a16ae): Workspaces created without `mock_mode` in config caused the DB-mode chat endpoint to create a live TallyClient, which tried to connect to a non-existent Tally. Fixed by adding Demo Mode toggle to ConnectCompanyModal.
+
+3. **Sidebar not refreshing after chat** (commit b5a16ae): Sidebar loaded data on mount only. After sending a message (which auto-generates conversation title), sidebar was stale. Fixed with `refreshTrigger` prop incremented after each chat response.
+
+4. **Active company unclear in UI** (commit 7bb1deb + preceding): No indication of which workspace was active. Fixed by: showing active company name in header, bolding active workspace in sidebar, adding collapsible workspace sections.
+
+5. **.env symlink needed for worktree**: Worktree doesn't inherit `.env` from main repo. Needed `ln -s` to make `DATABASE_URL` and `JWT_SECRET` available to the backend.
+
+### Test Gap Identified
+
+**No Playwright test renders the DB-mode React component tree in a real browser.** The `useSession` crash was only caught during manual smoke test because:
+- Vitest tests mock contexts (always wrap in `SessionProvider`)
+- DB E2E tests use `httpx.ASGITransport` (API-only, no browser)
+- Playwright tests only cover legacy mode
+
+### Remaining Work
+
+- [ ] **Playwright E2E tests for DB mode**: Register → login → connect company → new chat → send message → verify response → logout → login → verify persistence. Would have caught the useSession bug.
+- [ ] **Code review**: Run spec compliance + code quality review before merge
+- [ ] **Known limitation**: On hard page reload, chat messages don't auto-load until user clicks conversation in sidebar (workspaceId lost from React state). The `onWorkspaceResolved` callback resolves workspace identity but ChatWindow still needs both props to fetch messages. Fix: auto-load messages when workspace is resolved.
