@@ -6,15 +6,18 @@ import ConnectCompanyModal from "./ConnectCompanyModal";
 
 interface SidebarProps {
   activeConversationId?: string;
-  onConversationSelect: (workspaceId: string, conversationId: string) => void;
-  onNewChat: (workspaceId: string) => void;
+  activeWorkspaceId?: string;
+  onConversationSelect: (workspaceId: string, conversationId: string, workspaceName: string) => void;
+  onNewChat: (workspaceId: string, workspaceName: string) => void;
   refreshTrigger?: number;
+  onWorkspaceResolved?: (workspaceId: string, workspaceName: string) => void;
 }
 
-export default function Sidebar({ activeConversationId, onConversationSelect, onNewChat, refreshTrigger }: SidebarProps) {
+export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved }: SidebarProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceData[]>([]);
   const [conversations, setConversations] = useState<Record<string, ConversationSummary[]>>({});
   const [showModal, setShowModal] = useState(false);
+  const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 
   const loadData = async () => {
     const ws = await getWorkspaces();
@@ -24,6 +27,22 @@ export default function Sidebar({ activeConversationId, onConversationSelect, on
       convMap[w.id] = await getConversations(w.id);
     }
     setConversations(convMap);
+    if (activeConversationId && onWorkspaceResolved) {
+      for (const w of ws) {
+        const convs = convMap[w.id] || [];
+        if (convs.some((c) => c.id === activeConversationId)) {
+          onWorkspaceResolved(w.id, w.name);
+          break;
+        }
+      }
+    }
+  };
+
+  const toggleCollapse = (wsId: string) => {
+    setCollapsed((prev) => ({
+      ...prev,
+      [wsId]: !prev[wsId],
+    }));
   };
 
   useEffect(() => { loadData(); }, [refreshTrigger]);
@@ -31,15 +50,31 @@ export default function Sidebar({ activeConversationId, onConversationSelect, on
   return (
     <aside className="w-70 border-r border-gray-200 bg-gray-50 flex flex-col h-full overflow-hidden">
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        {workspaces.map((ws) => (
-          <div key={ws.id}>
-            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-2 mb-1">{ws.name}</h3>
-            <ConversationList workspaceId={ws.id} conversations={conversations[ws.id] || []}
-              activeConversationId={activeConversationId}
-              onSelect={(cid) => onConversationSelect(ws.id, cid)}
-              onNewChat={() => onNewChat(ws.id)} />
-          </div>
-        ))}
+        {workspaces.map((ws) => {
+          const isActive = ws.id === activeWorkspaceId;
+          const isCollapsed = collapsed[ws.id] && !isActive;
+          return (
+            <div key={ws.id}>
+              <button
+                onClick={() => toggleCollapse(ws.id)}
+                className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 ${
+                  isActive
+                    ? "font-bold text-gray-900"
+                    : "font-semibold text-gray-500"
+                }`}
+              >
+                <span>{ws.name}</span>
+                <span className="text-gray-400">{isCollapsed ? "▸" : "▾"}</span>
+              </button>
+              {!isCollapsed && (
+                <ConversationList workspaceId={ws.id} conversations={conversations[ws.id] || []}
+                  activeConversationId={activeConversationId}
+                  onSelect={(cid) => onConversationSelect(ws.id, cid, ws.name)}
+                  onNewChat={() => onNewChat(ws.id, ws.name)} />
+              )}
+            </div>
+          );
+        })}
       </div>
       <div className="border-t border-gray-200 p-3">
         <button onClick={() => setShowModal(true)}
