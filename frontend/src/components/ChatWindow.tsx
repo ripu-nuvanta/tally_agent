@@ -25,17 +25,22 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
 
   useEffect(() => {
     if (conversationId && workspaceId) {
-      getConversation(workspaceId, conversationId).then((conv) => {
-        setMessages(
-          conv.messages.map((m) => ({
-            id: m.id,
-            role: m.role,
-            content: m.content,
-            data: m.data,
-            chart: m.chart,
-          })),
-        );
-      });
+      getConversation(workspaceId, conversationId)
+        .then((conv) => {
+          setMessages(
+            conv.messages.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              data: m.data,
+              chart: m.chart,
+            })),
+          );
+        })
+        .catch(() => {
+          // Conversation may have been deleted or is inaccessible
+          setMessages([]);
+        });
     }
   }, [conversationId, workspaceId]);
 

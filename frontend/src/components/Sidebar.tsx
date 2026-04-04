@@ -22,10 +22,9 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
   const loadData = async () => {
     const ws = await getWorkspaces();
     setWorkspaces(ws);
+    const convResults = await Promise.all(ws.map((w) => getConversations(w.id)));
     const convMap: Record<string, ConversationSummary[]> = {};
-    for (const w of ws) {
-      convMap[w.id] = await getConversations(w.id);
-    }
+    ws.forEach((w, i) => { convMap[w.id] = convResults[i]; });
     setConversations(convMap);
     if (activeConversationId && onWorkspaceResolved) {
       for (const w of ws) {
