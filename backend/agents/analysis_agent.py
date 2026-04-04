@@ -475,6 +475,7 @@ class AnalysisAgent:
         user_content = "".join(parts)
         messages: list[dict] = [{"role": "user", "content": user_content}]
         tool_results_log: list[dict] = []
+        usage_records: list[dict[str, Any]] = []
         tool_call_count = 0
         last_table_data: dict = {"headers": [], "rows": []}
         ranked_table_data: dict | None = None  # Prefer sort_by_field for top_n
@@ -509,6 +510,7 @@ class AnalysisAgent:
                     f"Analysis could not be completed: {exc}",
                     preferred_data,
                     tool_results_log,
+                    usage=usage_records,
                 )
 
             logger.info(
@@ -516,6 +518,13 @@ class AnalysisAgent:
                 turn, response.stop_reason,
                 response.usage.input_tokens, response.usage.output_tokens,
             )
+
+            usage_records.append({
+                "agent": "analysis_agent",
+                "model": settings.CLAUDE_MODEL,
+                "input_tokens": response.usage.input_tokens,
+                "output_tokens": response.usage.output_tokens,
+            })
 
             # Log Claude's text content for this turn
             for block in response.content:
@@ -598,7 +607,7 @@ class AnalysisAgent:
                 )
                 if preferred_data and preferred_data.get("headers") and preferred_data.get("rows"):
                     preferred_data["rows"] = _ensure_totals_row(preferred_data["headers"], preferred_data["rows"], query_type)
-                return _build_result(final_text, preferred_data, tool_results_log)
+                return _build_result(final_text, preferred_data, tool_results_log, usage=usage_records)
 
             # ---- Tool use: execute all requested analysis tools ----
             if settings.CODE_EXECUTION_ENABLED:
@@ -666,6 +675,7 @@ class AnalysisAgent:
                     "Here is the analysis based on what was computed.",
                     preferred_data,
                     tool_results_log,
+                    usage=usage_records,
                 )
 
 
@@ -791,6 +801,7 @@ def _build_result(
     message: str,
     table_data: dict,
     tool_results: list[dict],
+    usage: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Build the standard AnalysisAgent result dict."""
     insights = _extract_insights(message)
@@ -803,6 +814,7 @@ def _build_result(
         "insights": insights,
         "chart_suggestion": chart_suggestion,
         "tool_results": tool_results,
+        "usage": usage or [],
     }
     if chart_title:
         result["chart_title"] = chart_title

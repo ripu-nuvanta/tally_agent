@@ -23,6 +23,7 @@ import anthropic
 logger = logging.getLogger(__name__)
 
 from backend.config import settings
+from backend.agents.base import BaseAgent
 from backend.agents.prompts import build_orchestrator_prompt
 from backend.agents.query_agent import QueryAgent
 from backend.agents.analysis_agent import AnalysisAgent
@@ -54,7 +55,7 @@ GREETING_RESPONSE = (
 )
 
 
-class Orchestrator:
+class Orchestrator(BaseAgent):
     """Classifies user queries and routes to the appropriate agent.
 
     Flow:
@@ -70,13 +71,70 @@ class Orchestrator:
         self.analysis_agent = AnalysisAgent()
         self.chart_agent = ChartAgent()
 
+    # --- BaseAgent interface implementation (with backward compatibility) ---
     async def process_query(
+        self,
+        message: str,
+        workspace_config: dict[str, Any] | Any | None = None,
+        workspace_memory: dict[str, Any] | Any | None = None,
+        conversation_messages: list[dict[str, Any]] | None = None,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        """Process a query with support for both signatures.
+
+        Can be called as:
+        1. BaseAgent interface: process_query(message, workspace_config, workspace_memory, conversation_messages, **kwargs)
+        2. Legacy interface: process_query(user_message, client, session)
+
+        Args:
+            message: The user's query text.
+            workspace_config: Either a dict (BaseAgent mode) or TallyClient (legacy mode).
+            workspace_memory: Either a dict (BaseAgent mode) or SessionContext (legacy mode).
+            conversation_messages: List of dicts (BaseAgent mode) or None (legacy mode).
+            **kwargs: Additional params.
+
+        Returns:
+            Response dict with keys: query_type, message, data, chart, session_id.
+        """
+        # Detect which signature was used by checking if workspace_config has async methods (TallyClient-like)
+        # or if it's a dict (BaseAgent mode)
+        if workspace_config is not None and not isinstance(workspace_config, dict) and isinstance(workspace_memory, SessionContext):
+            # Legacy mode: process_query(user_message, client, session)
+            client = workspace_config
+            session = workspace_memory
+            return await self._execute_internal(message, client, session)
+
+        # BaseAgent mode: process_query(message, workspace_config, workspace_memory, conversation_messages, **kwargs)
+        if not isinstance(workspace_config, dict):
+            workspace_config = {}
+        if workspace_memory is None:
+            workspace_memory = {}
+        if conversation_messages is None:
+            conversation_messages = []
+
+        # Extract Tally client from kwargs or create one from config
+        client = kwargs.get("client")
+        if client is None:
+            from backend.tally_bridge.client import TallyClient
+            host = workspace_config.get("TALLY_HOST", "localhost")
+            port = workspace_config.get("TALLY_PORT", 9000)
+            client = TallyClient(host=host, port=port)
+
+        # Reconstruct session from conversation_messages or create new one
+        session = SessionContext(company=workspace_config.get("company", ""))
+        for msg in conversation_messages:
+            session.add_message(msg.get("role", "user"), msg.get("content", ""))
+
+        # Delegate to the internal execution method
+        return await self._execute_internal(message, client, session)
+
+    async def _execute_internal(
         self,
         user_message: str,
         client: TallyClient,
         session: SessionContext,
     ) -> dict[str, Any]:
-        """Process a user query through classification and routing.
+        """Internal query execution (called by process_query).
 
         Returns:
             {
@@ -85,11 +143,18 @@ class Orchestrator:
                 "data": dict | None,
                 "chart": None,
                 "session_id": str,
+                "usage": list[dict],
             }
         """
+        usage_records: list[dict[str, Any]] = []
+
         classification = await self._classify(user_message, session)
         query_type = classification.get("query_type", "simple_lookup")
         requires_chart = classification.get("requires_chart", False)
+
+        # Capture classifier usage
+        if "usage" in classification:
+            usage_records.append(classification["usage"])
 
         # Respect explicit table-only intent from user message
         if _has_table_intent(user_message):
@@ -114,6 +179,7 @@ class Orchestrator:
                 "data": None,
                 "chart": None,
                 "session_id": session.session_id,
+                "usage": usage_records,
             }
 
         # --- Clarification needed ---
@@ -130,6 +196,7 @@ class Orchestrator:
                 "data": None,
                 "chart": None,
                 "session_id": session.session_id,
+                "usage": usage_records,
             }
 
         # --- All other types: route to QueryAgent ---
@@ -139,6 +206,10 @@ class Orchestrator:
         all_data = _extract_all_data(tool_results)
         raw_data = all_data[-1] if all_data else None
         raw_tally_data, computed_data = _separate_tool_results(tool_results)
+
+        # Capture QueryAgent usage
+        if agent_result.get("usage"):
+            usage_records.extend(agent_result["usage"])
 
         logger.info(
             "Orchestrator — QueryAgent returned %d tool call(s), %d data set(s) "
@@ -162,6 +233,11 @@ class Orchestrator:
         )
         message = analysis_result["message"]
         data = analysis_result.get("data", raw_data)
+
+        # Capture AnalysisAgent usage
+        if analysis_result.get("usage"):
+            usage_records.extend(analysis_result["usage"])
+
         logger.info(
             "Orchestrator — AnalysisAgent returned %d tool call(s), chart_suggestion=%s",
             len(analysis_result.get("tool_results", [])),
@@ -185,11 +261,13 @@ class Orchestrator:
 
                 if all_tables:
                     # Try Haiku chart advisor first
-                    advice = await get_chart_advice(
+                    advice, advisor_usage = await get_chart_advice(
                         all_tables,
                         user_message,
                         chart_suggestion=chart_suggestion,
                     )
+                    if advisor_usage:
+                        usage_records.append(advisor_usage)
                     logger.info("Chart advisor returned: %s", advice)
 
                     if advice and advice.get("chart_type") != "table_only":
@@ -225,6 +303,7 @@ class Orchestrator:
             "data": final_data,
             "chart": chart,
             "session_id": session.session_id,
+            "usage": usage_records,
         }
 
     async def _classify(self, user_message: str, session: SessionContext | None = None) -> dict:
@@ -268,11 +347,20 @@ class Orchestrator:
             response.usage.input_tokens, response.usage.output_tokens,
         )
 
+        classifier_usage = {
+            "agent": "classifier",
+            "model": settings.CLAUDE_CLASSIFIER_MODEL,
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+
         try:
-            return json.loads(_strip_markdown_fences(text))
+            result = json.loads(_strip_markdown_fences(text))
+            result["usage"] = classifier_usage
+            return result
         except (json.JSONDecodeError, TypeError):
             logger.warning("Classification fallback: could not parse Claude response as JSON. Raw text: %s", text)
-            return {"query_type": "simple_lookup", "requires_chart": False}
+            return {"query_type": "simple_lookup", "requires_chart": False, "usage": classifier_usage}
 
 
 def _filter_table_by_advice(table: dict, advice: dict) -> dict | None:

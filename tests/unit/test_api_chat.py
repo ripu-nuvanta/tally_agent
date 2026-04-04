@@ -6,15 +6,24 @@ from unittest.mock import AsyncMock, patch, MagicMock
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from backend.api.chat import router
-from backend.api.dependencies import get_client, get_session_store
+from backend.api.chat import router, _get_optional_db
+from backend.api.dependencies import get_client, get_current_user, get_session_store
 from backend.agents.context import SessionStore, SessionContext
+
+
+@pytest.fixture(autouse=True)
+def force_legacy_mode(monkeypatch):
+    """Ensure chat tests run in legacy mode regardless of .env."""
+    monkeypatch.setattr("backend.config.settings.DATABASE_URL", None)
 
 
 @pytest.fixture
 def app():
     app = FastAPI()
     app.include_router(router, prefix="/api")
+    # Override auth + db dependencies for legacy-mode behavior
+    app.dependency_overrides[get_current_user] = lambda: "test-user"
+    app.dependency_overrides[_get_optional_db] = lambda: None
     return app
 
 

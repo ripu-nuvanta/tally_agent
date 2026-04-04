@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { sendChat } from "../api/client";
+import { getConversation, sendChat } from "../api/client";
 import { useSession } from "../context/SessionContext";
 import type { ChatMessage } from "../types";
 import { generateId } from "../utils/format";
@@ -7,7 +7,13 @@ import ChatInput from "./ChatInput";
 import MessageBubble from "./MessageBubble";
 import QuickActions from "./QuickActions";
 
-export default function ChatWindow() {
+interface ChatWindowProps {
+  conversationId?: string;
+  workspaceId?: string;
+  onMessageSent?: () => void;
+}
+
+export default function ChatWindow({ conversationId, workspaceId, onMessageSent }: ChatWindowProps = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -16,6 +22,27 @@ export default function ChatWindow() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  useEffect(() => {
+    if (conversationId && workspaceId) {
+      getConversation(workspaceId, conversationId)
+        .then((conv) => {
+          setMessages(
+            conv.messages.map((m) => ({
+              id: m.id,
+              role: m.role,
+              content: m.content,
+              data: m.data,
+              chart: m.chart,
+            })),
+          );
+        })
+        .catch(() => {
+          // Conversation may have been deleted or is inaccessible
+          setMessages([]);
+        });
+    }
+  }, [conversationId, workspaceId]);
 
   const handleSend = useCallback(
     async (text: string) => {
@@ -40,6 +67,8 @@ export default function ChatWindow() {
           message: text,
           session_id: sessionId ?? undefined,
           company: company ?? undefined,
+          workspace_id: workspaceId,
+          conversation_id: conversationId,
         });
 
         setSessionId(response.session_id);
@@ -55,6 +84,7 @@ export default function ChatWindow() {
         setMessages((prev) =>
           prev.map((m) => (m.id === loadingMsg.id ? agentMsg : m))
         );
+        onMessageSent?.();
       } catch (err) {
         const errorMsg: ChatMessage = {
           id: generateId(),
@@ -73,7 +103,7 @@ export default function ChatWindow() {
         setLoading(false);
       }
     },
-    [sessionId, company, setSessionId]
+    [sessionId, company, setSessionId, workspaceId, conversationId]
   );
 
   return (

@@ -4459,3 +4459,81 @@ git commit -m "test: add automated E2E smoke tests for both legacy and DB modes"
 
 **Total new tests:** ~62 (unit + integration + E2E)
 **Existing tests preserved:** 1024 (legacy mode, zero changes)
+
+---
+
+## Post-Implementation Notes (2026-04-04)
+
+### All 18 tasks completed + code review fixes — 26 commits on `feature/set-a1-auth-persistence`
+
+### Bugs Found & Fixed During Smoke Test
+
+1. **useSession crash in DB mode** (commit dd0c012): `ChatWindow` called `useSession()` which requires `SessionProvider`, but DB mode uses `AuthProvider`. Fixed by making `useSession()` return a no-op default instead of throwing when no provider exists.
+
+2. **Mock mode not propagating to per-workspace TallyClient** (commit b5a16ae): Workspaces created without `mock_mode` in config caused the DB-mode chat endpoint to create a live TallyClient, which tried to connect to a non-existent Tally. Fixed by adding Demo Mode toggle to ConnectCompanyModal.
+
+3. **Sidebar not refreshing after chat** (commit b5a16ae): Sidebar loaded data on mount only. After sending a message (which auto-generates conversation title), sidebar was stale. Fixed with `refreshTrigger` prop incremented after each chat response.
+
+4. **Active company unclear in UI** (commit 7bb1deb + preceding): No indication of which workspace was active. Fixed by: showing active company name in header, bolding active workspace in sidebar, adding collapsible workspace sections.
+
+5. **.env symlink needed for worktree**: Worktree doesn't inherit `.env` from main repo. Needed `ln -s` to make `DATABASE_URL` and `JWT_SECRET` available to the backend.
+
+### Test Gap Identified
+
+**No Playwright test renders the DB-mode React component tree in a real browser.** The `useSession` crash was only caught during manual smoke test because:
+- Vitest tests mock contexts (always wrap in `SessionProvider`)
+- DB E2E tests use `httpx.ASGITransport` (API-only, no browser)
+- Playwright tests only cover legacy mode
+
+### Code Review (2026-04-04)
+
+Review saved to `docs/code-review-set-a1.md`. Verdict: **conditionally approved**.
+
+**All findings fixed:**
+
+| ID | Finding | Fix |
+|----|---------|-----|
+| C1 | Usage logging never fires | Orchestrator returns usage records from all agents |
+| I1 | No register rate limiting | 3/hour per IP via `_check_register_rate_limit()` |
+| I2 | CORS `*` + credentials | Configurable `CORS_ORIGINS` setting |
+| I3 | Email case-sensitive | `LoginRequest` gets `email_valid` validator |
+| I4 | Bare `except Exception` | Specific `jwt.ExpiredSignatureError, jwt.InvalidTokenError` |
+| I5 | Manual DB session | `_get_optional_db` dependency injection |
+| I6 | is_deleted not checked | Added `.is_(False)` to update/delete queries |
+| I7 | Direct nav doesn't load | Already working — `workspaceId` in useEffect deps |
+| S1 | Registry not wired | `get_agent(workspace.agent_type)` in chat endpoint |
+| S2 | Serial sidebar loading | `Promise.all` for parallel loading |
+| S4 | Rate limit memory leak | Prune dict when >1000 entries |
+| S6 | updated_at not bumped | Explicit `conversation.updated_at` update |
+| S8 | No error handling | `.catch()` on `getConversation` |
+| S9 | `== False` warning | `.is_(False)` idiom |
+
+### Test Coverage (2026-04-04, final)
+
+Overall: **83% backend** (unit tests only), higher with DB integration tests.
+
+| Test Suite | Count |
+|-----------|-------|
+| Unit tests | 770 |
+| DB integration (auth, workspace, conversation, usage) | 12 |
+| DB E2E smoke (API) | 14 |
+| Legacy E2E smoke | 3 |
+| Playwright DB-mode (browser) | 9 |
+| Frontend Vitest | 167 |
+| **Total** | **975** |
+
+### Hardening (2026-04-04)
+
+All remaining items addressed:
+
+- [x] **Playwright E2E tests for DB mode** (9 tests): Register → connect company (demo mode) → new chat → send greeting → sidebar title → logout → login → persistence → load history. Gated by `RUN_PLAYWRIGHT_DB_TESTS=1`.
+- [x] **Medium-priority DB API tests** (7 tests): Token refresh, logout, rate limiting, duplicate email, invalid token, workspace CRUD, conversation CRUD.
+- [x] **Frontend Vitest tests** (+51 tests): LoginPage (8), RegisterPage (13), ProtectedRoute (5), ConversationList (9), UserMenu (11), ChatWindow reload (5).
+- [x] **Page-reload verified working**: `workspaceId` in useEffect deps triggers re-fetch when sidebar resolves workspace. Added regression tests.
+
+### Known Limitations (acceptable for merge)
+
+- On page reload, brief empty chat state until sidebar resolves workspace (~1-2s)
+- Rate limiting is in-memory (not shared across workers — documented, upgrade to Redis when scaling)
+- No password reset (needs email service — Set A2)
+- No email verification (future)

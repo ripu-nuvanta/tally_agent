@@ -37,6 +37,7 @@ def _make_mock_response(tool_input: dict):
     mock_block.type = "tool_use"
     mock_block.input = tool_input
     mock_resp.content = [mock_block]
+    mock_resp.usage = MagicMock(input_tokens=100, output_tokens=50)
     return mock_resp
 
 
@@ -47,6 +48,7 @@ def _make_mock_text_response(text: str):
     mock_block.type = "text"
     mock_block.text = text
     mock_resp.content = [mock_block]
+    mock_resp.usage = MagicMock(input_tokens=100, output_tokens=50)
     return mock_resp
 
 
@@ -65,7 +67,7 @@ class TestGetChartAdvice:
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
+            result, usage = await get_chart_advice(
                 [{"headers": ["Customer", "Sales"], "rows": [["A", 100], ["B", 200]]}],
                 "top customers",
             )
@@ -73,11 +75,14 @@ class TestGetChartAdvice:
         assert result["x_column"] == "Customer"
         assert result["y_columns"] == ["Sales"]
         assert result["chart_type"] == "bar"
+        assert usage is not None
+        assert usage["agent"] == "chart_advisor"
 
     @pytest.mark.asyncio
     async def test_returns_none_on_empty_tables(self):
-        result = await get_chart_advice([], "some query")
+        result, usage = await get_chart_advice([], "some query")
         assert result is None
+        assert usage is None
 
     @pytest.mark.asyncio
     async def test_returns_none_on_no_tool_block(self):
@@ -88,11 +93,12 @@ class TestGetChartAdvice:
         )
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
+            result, usage = await get_chart_advice(
                 [{"headers": ["A", "B"], "rows": [["x", 1], ["y", 2]]}],
                 "query",
             )
         assert result is None
+        assert usage is not None  # Usage still tracked even on failure
 
     @pytest.mark.asyncio
     async def test_returns_none_on_missing_fields(self):
@@ -102,11 +108,12 @@ class TestGetChartAdvice:
         )
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
+            result, usage = await get_chart_advice(
                 [{"headers": ["A", "B"], "rows": [["x", 1], ["y", 2]]}],
                 "query",
             )
         assert result is None
+        assert usage is not None
 
     @pytest.mark.asyncio
     async def test_validates_table_index(self):
@@ -121,7 +128,7 @@ class TestGetChartAdvice:
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
+            result, usage = await get_chart_advice(
                 [{"headers": ["A", "B"], "rows": [["x", 1], ["y", 2]]}],
                 "query",
             )
@@ -141,7 +148,7 @@ class TestGetChartAdvice:
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
+            result, _ = await get_chart_advice(
                 [{"headers": ["Name", "Amount"], "rows": [["A", 100], ["B", 200]]}],
                 "query",
             )
@@ -160,7 +167,7 @@ class TestGetChartAdvice:
         mock_client.messages.create = AsyncMock(return_value=_make_mock_response(advice))
 
         with patch("backend.agents.chart_advisor.anthropic_client", mock_client):
-            result = await get_chart_advice(
+            result, _ = await get_chart_advice(
                 [{"headers": ["Category", "Amount"], "rows": [["A", 100], ["B", 200]]}],
                 "breakdown",
                 chart_suggestion="pie",

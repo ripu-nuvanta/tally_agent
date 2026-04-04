@@ -22,8 +22,14 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   );
 }
 
+const _defaultSession: SessionContextValue = {
+  sessionId: null,
+  setSessionId: () => {},
+  company: null,
+  setCompany: () => {},
+};
+
 export function useSession(): SessionContextValue {
   const ctx = useContext(SessionContext);
-  if (!ctx) throw new Error("useSession must be used within SessionProvider");
-  return ctx;
+  return ctx ?? _defaultSession;
 }

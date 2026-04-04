@@ -111,7 +111,7 @@ async def get_chart_advice(
     tables: list[dict],
     user_query: str,
     chart_suggestion: str | None = None,
-) -> dict | None:
+) -> tuple[dict | None, dict | None]:
     """Ask Haiku which table and columns to chart.
 
     Args:
@@ -120,12 +120,13 @@ async def get_chart_advice(
         chart_suggestion: Optional suggestion from AnalysisAgent
 
     Returns:
-        Dict with keys: table_index, x_column, y_columns, secondary_y_columns,
-        chart_type, chart_title. Returns None if call fails.
+        Tuple of (advice_dict, usage_dict). advice_dict has keys: table_index,
+        x_column, y_columns, secondary_y_columns, chart_type, chart_title.
+        Either or both may be None if the call fails.
     """
     if not tables:
         logger.info("Chart advisor — no tables provided, skipping")
-        return None
+        return None, None
 
     logger.info("Chart advisor — %d tables, query=%r, suggestion=%s", len(tables), user_query[:80], chart_suggestion)
     tables_text = _format_tables_for_prompt(tables)
@@ -145,6 +146,13 @@ async def get_chart_advice(
             tool_choice={"type": "tool", "name": "select_chart"},
         )
 
+        advisor_usage = {
+            "agent": "chart_advisor",
+            "model": settings.CLAUDE_CLASSIFIER_MODEL,
+            "input_tokens": response.usage.input_tokens,
+            "output_tokens": response.usage.output_tokens,
+        }
+
         # Extract tool use result — guaranteed valid JSON matching schema
         tool_block = next(
             (b for b in response.content if b.type == "tool_use"),
@@ -152,7 +160,7 @@ async def get_chart_advice(
         )
         if not tool_block:
             logger.warning("Chart advisor — no tool_use block in response")
-            return None
+            return None, advisor_usage
 
         advice = tool_block.input
 
@@ -163,7 +171,7 @@ async def get_chart_advice(
                 "Chart advisor response missing required fields: %s",
                 required - advice.keys(),
             )
-            return None
+            return None, advisor_usage
 
         # Validate table_index
         if not 0 <= advice["table_index"] < len(tables):
@@ -196,8 +204,8 @@ async def get_chart_advice(
             advice["chart_type"],
         )
 
-        return advice
+        return advice, advisor_usage
 
     except (anthropic.APIError, KeyError, IndexError) as exc:
         logger.warning("Chart advisor failed: %s", exc)
-        return None
+        return None, None

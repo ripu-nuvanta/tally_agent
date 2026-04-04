@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, act } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import ChatWindow from "../components/ChatWindow";
 import { SessionProvider } from "../context/SessionContext";
@@ -113,5 +113,96 @@ describe("ChatWindow", () => {
     renderWithProvider();
     await user.click(screen.getByRole("button", { name: "P&L last month" }));
     expect(mockedApi.sendChat).toHaveBeenCalledWith(expect.objectContaining({ message: "P&L last month" }));
+  });
+
+  describe("page-reload: workspace resolution after mount", () => {
+    const mockConversation = {
+      id: "conv-1",
+      title: "Test conversation",
+      tag: null,
+      messages: [
+        { id: "msg-1", role: "user" as const, content: "Hello", created_at: "2024-01-01T00:00:00Z" },
+        { id: "msg-2", role: "assistant" as const, content: "Hi there!", created_at: "2024-01-01T00:00:01Z" },
+      ],
+    };
+
+    it("loads messages immediately when both conversationId and workspaceId are provided at mount", async () => {
+      mockedApi.getConversation.mockResolvedValue(mockConversation);
+      render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" workspaceId="ws-1" />
+        </SessionProvider>
+      );
+      await waitFor(() => {
+        expect(screen.getByText("Hello")).toBeInTheDocument();
+        expect(screen.getByText("Hi there!")).toBeInTheDocument();
+      });
+      expect(mockedApi.getConversation).toHaveBeenCalledWith("ws-1", "conv-1");
+    });
+
+    it("does not call getConversation when workspaceId is missing", () => {
+      render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" />
+        </SessionProvider>
+      );
+      expect(mockedApi.getConversation).not.toHaveBeenCalled();
+    });
+
+    it("loads messages when workspaceId is resolved after mount (page-reload scenario)", async () => {
+      mockedApi.getConversation.mockResolvedValue(mockConversation);
+
+      // Simulate page-reload: initially no workspaceId (sidebar hasn't resolved yet)
+      const { rerender } = render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" workspaceId={undefined} />
+        </SessionProvider>
+      );
+
+      // workspaceId is undefined — getConversation should NOT be called yet
+      expect(mockedApi.getConversation).not.toHaveBeenCalled();
+      expect(screen.queryByText("Hello")).not.toBeInTheDocument();
+
+      // Sidebar resolves the workspace and ChatApp sets activeWorkspaceId → workspaceId prop updates
+      await act(async () => {
+        rerender(
+          <SessionProvider>
+            <ChatWindow conversationId="conv-1" workspaceId="ws-1" />
+          </SessionProvider>
+        );
+      });
+
+      await waitFor(() => {
+        expect(screen.getByText("Hello")).toBeInTheDocument();
+        expect(screen.getByText("Hi there!")).toBeInTheDocument();
+      });
+      expect(mockedApi.getConversation).toHaveBeenCalledWith("ws-1", "conv-1");
+    });
+
+    it("shows empty state when getConversation returns no messages", async () => {
+      mockedApi.getConversation.mockResolvedValue({ ...mockConversation, messages: [] });
+      render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" workspaceId="ws-1" />
+        </SessionProvider>
+      );
+      await waitFor(() => {
+        expect(mockedApi.getConversation).toHaveBeenCalled();
+      });
+      expect(screen.getByText("TallyPrime AI Assistant")).toBeInTheDocument();
+    });
+
+    it("shows empty state when getConversation fails", async () => {
+      mockedApi.getConversation.mockRejectedValue(new Error("Not found"));
+      render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" workspaceId="ws-1" />
+        </SessionProvider>
+      );
+      await waitFor(() => {
+        expect(mockedApi.getConversation).toHaveBeenCalled();
+      });
+      expect(screen.getByText("TallyPrime AI Assistant")).toBeInTheDocument();
+    });
   });
 });

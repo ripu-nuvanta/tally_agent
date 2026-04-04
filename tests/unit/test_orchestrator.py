@@ -339,14 +339,14 @@ class TestOrchestratorAnalysisRouting:
                     "tool_results": [],
                 }
                 # Advisor returns the same chart type as the analysis_agent suggestion
-                mock_advisor.return_value = {
+                mock_advisor.return_value = ({
                     "table_index": 0,
                     "x_column": "Period",
                     "y_columns": ["Sales"],
                     "secondary_y_columns": [],
                     "chart_type": "grouped_bar",
                     "chart_title": "Q1 vs Q2 Sales",
-                }
+                }, {"agent": "chart_advisor", "model": "test", "input_tokens": 10, "output_tokens": 5})
                 mock_chart.return_value = {"chart_type": "grouped_bar", "data": [], "config": {}}
 
                 result = await orch.process_query("Compare Q1 vs Q2 sales", mock_client, session)
@@ -972,14 +972,14 @@ class TestAutoEnableChart:
                     "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
-                mock_advisor.return_value = {
+                mock_advisor.return_value = ({
                     "table_index": 0,
                     "x_column": "Party",
                     "y_columns": ["Amount"],
                     "secondary_y_columns": [],
                     "chart_type": "bar",
                     "chart_title": "Total Sales",
-                }
+                }, {"agent": "chart_advisor", "model": "test", "input_tokens": 10, "output_tokens": 5})
 
                 result = await orch.process_query("Total sales this year", mock_client, session)
 
@@ -1299,14 +1299,14 @@ class TestTableIntentSuppressesChart:
                     "chart_title": "Total Sales",
                 }
                 mock_chart.return_value = {"chart_type": "bar", "data": [], "config": {}}
-                mock_advisor.return_value = {
+                mock_advisor.return_value = ({
                     "table_index": 0,
                     "x_column": "Party",
                     "y_columns": ["Amount"],
                     "secondary_y_columns": [],
                     "chart_type": "bar",
                     "chart_title": "Total Sales",
-                }
+                }, {"agent": "chart_advisor", "model": "test", "input_tokens": 10, "output_tokens": 5})
 
                 result = await orch.process_query(
                     "Show total sales", mock_client, session
