@@ -4464,7 +4464,7 @@ git commit -m "test: add automated E2E smoke tests for both legacy and DB modes"
 
 ## Post-Implementation Notes (2026-04-04)
 
-### All 18 tasks completed — 21 commits on `feature/set-a1-auth-persistence`
+### All 18 tasks completed + code review fixes — 26 commits on `feature/set-a1-auth-persistence`
 
 ### Bugs Found & Fixed During Smoke Test
 
@@ -4485,8 +4485,43 @@ git commit -m "test: add automated E2E smoke tests for both legacy and DB modes"
 - DB E2E tests use `httpx.ASGITransport` (API-only, no browser)
 - Playwright tests only cover legacy mode
 
+### Code Review (2026-04-04)
+
+Review saved to `docs/code-review-set-a1.md`. Verdict: **conditionally approved**.
+
+**All findings fixed:**
+
+| ID | Finding | Fix |
+|----|---------|-----|
+| C1 | Usage logging never fires | Orchestrator returns usage records from all agents |
+| I1 | No register rate limiting | 3/hour per IP via `_check_register_rate_limit()` |
+| I2 | CORS `*` + credentials | Configurable `CORS_ORIGINS` setting |
+| I3 | Email case-sensitive | `LoginRequest` gets `email_valid` validator |
+| I4 | Bare `except Exception` | Specific `jwt.ExpiredSignatureError, jwt.InvalidTokenError` |
+| I5 | Manual DB session | `_get_optional_db` dependency injection |
+| I6 | is_deleted not checked | Added `.is_(False)` to update/delete queries |
+| I7 | Direct nav doesn't load | Already working — `workspaceId` in useEffect deps |
+| S1 | Registry not wired | `get_agent(workspace.agent_type)` in chat endpoint |
+| S2 | Serial sidebar loading | `Promise.all` for parallel loading |
+| S4 | Rate limit memory leak | Prune dict when >1000 entries |
+| S6 | updated_at not bumped | Explicit `conversation.updated_at` update |
+| S8 | No error handling | `.catch()` on `getConversation` |
+| S9 | `== False` warning | `.is_(False)` idiom |
+
+### Test Coverage (2026-04-04)
+
+Overall: **83% backend** (unit tests only), higher with DB integration tests.
+
+| Test Suite | Count |
+|-----------|-------|
+| Unit tests | 770 |
+| DB integration (auth, workspace, conversation, usage) | 12 |
+| DB E2E smoke | 8 |
+| Legacy E2E smoke | 3 |
+| Frontend Vitest | 116 |
+| **Total** | **909** |
+
 ### Remaining Work
 
 - [ ] **Playwright E2E tests for DB mode**: Register → login → connect company → new chat → send message → verify response → logout → login → verify persistence. Would have caught the useSession bug.
-- [ ] **Code review**: Run spec compliance + code quality review before merge
-- [ ] **Known limitation**: On hard page reload, chat messages don't auto-load until user clicks conversation in sidebar (workspaceId lost from React state). The `onWorkspaceResolved` callback resolves workspace identity but ChatWindow still needs both props to fetch messages. Fix: auto-load messages when workspace is resolved.
+- [ ] **Known limitation**: On hard page reload, chat messages don't auto-load until user clicks conversation in sidebar (workspaceId lost from React state). The `onWorkspaceResolved` callback resolves workspace identity and ChatWindow re-fires the useEffect, but only after sidebar data loads.
