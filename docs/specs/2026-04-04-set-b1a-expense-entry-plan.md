@@ -734,7 +734,7 @@ def build_delete_group(name: str, company: str) -> str:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_import_builder.py -v`
-Expected: All 7 tests PASS
+Expected: All 11 tests PASS
 
 - [ ] **Step 5: Commit**
 
@@ -816,6 +816,25 @@ class TestParseImportResponse:
     def test_empty_response(self):
         result = parse_import_response("")
         assert result["success"] is False
+
+    def test_exceptions_response(self):
+        """EXCEPTIONS=1 means silent failure (e.g., missing NAME.LIST in master XML)."""
+        xml = """<RESPONSE>
+<CREATED>0</CREATED>
+<ALTERED>0</ALTERED>
+<DELETED>0</DELETED>
+<LASTVCHID>0</LASTVCHID>
+<LASTMID>0</LASTMID>
+<COMBINED>0</COMBINED>
+<IGNORED>0</IGNORED>
+<ERRORS>0</ERRORS>
+<CANCELLED>0</CANCELLED>
+<EXCEPTIONS>1</EXCEPTIONS>
+</RESPONSE>"""
+        result = parse_import_response(xml)
+        assert result["success"] is False
+        assert result["exceptions"] == 1
+        assert "exception" in result["error_message"].lower()
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -889,7 +908,7 @@ def parse_import_response(raw_xml: str) -> dict:
 - [ ] **Step 4: Run tests to verify they pass**
 
 Run: `pytest tests/unit/test_import_response.py -v`
-Expected: All 5 tests PASS
+Expected: All 6 tests PASS
 
 - [ ] **Step 5: Commit**
 
@@ -3494,9 +3513,9 @@ git commit -m "feat(B1a): complete expense receipt data entry pipeline"
 
 | Task | Description | Key Files | Tests |
 |------|-------------|-----------|-------|
-| 0 | Tally write exploration | `scripts/explore_tally_write.py` | Manual |
-| 1 | Import XML builder | `import_builder.py` | 7 |
-| 2 | Import response parser | `response_parser.py` | 5 |
+| 0 | Tally write exploration | `scripts/explore_tally_write*.py` | Manual (DONE) |
+| 1 | Import XML builder | `import_builder.py` | 11 |
+| 2 | Import response parser | `response_parser.py` | 6 |
 | 3 | Tally writer + validation | `writer.py` | 8 |
 | 4 | DB schema + config | `models.py`, `config.py`, migration | — |
 | 5 | Document parser | `document_parser.py` | 10 |
@@ -3511,5 +3530,5 @@ git commit -m "feat(B1a): complete expense receipt data entry pipeline"
 | 14 | Frontend action wiring | `ChatWindow.tsx`, `client.ts` | — |
 | 15 | Smoke test | — | Manual |
 
-**Total new tests: ~59**
-**Estimated new test count after B1a: ~1034**
+**Total new tests: ~64**
+**Estimated new test count after B1a: ~1039**
