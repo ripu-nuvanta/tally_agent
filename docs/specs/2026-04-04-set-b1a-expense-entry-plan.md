@@ -9,6 +9,20 @@
 **Tech Stack:** Python (FastAPI, httpx, xml.etree, Anthropic SDK vision), PostgreSQL (SQLAlchemy, Alembic), React (TypeScript, Tailwind, lucide-react)
 
 **Spec:** `docs/specs/2026-04-04-set-b1-file-upload-tally-write-design.md`
+**Exploration results:** `docs/tally-write-exploration.md` — MUST READ before implementing Tasks 1-3.
+
+### Critical Findings from Live Tally Exploration (Task 0 — COMPLETED)
+
+These override any XML examples in the tasks below:
+
+1. **`NAME.LIST` is REQUIRED** for all master operations (create AND delete). Without it, Tally crashes with memory violation.
+2. **`PERSISTEDVIEW`** tag is required for Sales/Purchase vouchers (not Payment).
+3. **Voucher delete/cancel** uses `TAGNAME="Master ID" TAGVALUE="<LASTVCHID>"` + `DATE` + `VCHTYPE` — NOT `VCHKEY` or `REMOTEID`.
+4. **`ACTION="Cancel"`** returns `ALTERED=1` (cancel is internally an alter). Preferred for undo.
+5. **`ALLLEDGERENTRIES.LIST`** works for all voucher types (Payment, Sales, Purchase).
+6. **GST ledgers** in live company: `INPUT CGST`, `INPUT SGST`, `INPUT IGST`, `OUTPUT CGST`, `OUTPUTSGST`, `OUTPUT IGST` — all under `Duties & Taxes`.
+7. **Response fields**: `CREATED`, `ALTERED`, `DELETED`, `ERRORS`, `EXCEPTIONS`, `LASTVCHID`, `LINEERROR`, `CANCELLED`.
+8. **`EXCEPTIONS=1`** means silent failure (bad XML format). `ERRORS` + `LINEERROR` means explicit error.
 
 ---
 
@@ -337,14 +351,20 @@ git commit -m "explore: test Tally write operations against live instance"
 - [ ] **Step 1: Write failing tests for import XML generation**
 
 ```python
-"""Tests for Tally import XML builder — vouchers, ledgers, groups."""
+"""Tests for Tally import XML builder — vouchers, ledgers, groups.
+
+IMPORTANT: XML formats verified against live Tally in docs/tally-write-exploration.md.
+Key requirements: NAME.LIST for masters, TAGNAME/TAGVALUE for voucher delete/cancel.
+"""
 import xml.etree.ElementTree as ET
 
 from backend.tally_bridge.import_builder import (
     build_create_group,
     build_create_ledger,
     build_create_payment_voucher,
+    build_cancel_voucher,
     build_delete_ledger,
+    build_delete_group,
     build_delete_voucher,
 )
 
@@ -438,6 +458,15 @@ class TestCreateLedger:
         assert ledger.get("ACTION") == "Create"
         assert ledger.findtext("PARENT") == "Indirect Expenses"
 
+    def test_ledger_has_name_list(self):
+        """NAME.LIST is REQUIRED — without it Tally crashes with memory violation."""
+        xml = build_create_ledger(name="Test", parent="Indirect Expenses", company="Test Co")
+        root = _parse(xml)
+        ledger = root.find(".//LEDGER")
+        name_list = ledger.find("NAME.LIST")
+        assert name_list is not None
+        assert name_list.findtext("NAME") == "Test"
+
     def test_ledger_with_gstin(self):
         xml = build_create_ledger(
             name="Supplier ABC",
@@ -464,25 +493,65 @@ class TestCreateGroup:
         assert group.get("ACTION") == "Create"
         assert group.findtext("PARENT") == "Indirect Expenses"
 
+    def test_group_has_name_list(self):
+        """NAME.LIST is REQUIRED for group operations too."""
+        xml = build_create_group(name="Test Group", parent="Indirect Expenses", company="Test Co")
+        root = _parse(xml)
+        group = root.find(".//GROUP")
+        name_list = group.find("NAME.LIST")
+        assert name_list is not None
+        assert name_list.findtext("NAME") == "Test Group"
+
 
 class TestDeleteOperations:
-    def test_delete_voucher(self):
+    def test_delete_voucher_uses_tagname(self):
+        """Voucher delete uses TAGNAME='Master ID' + TAGVALUE (not VCHKEY)."""
         xml = build_delete_voucher(
             voucher_type="Payment",
-            voucher_number="1",
+            master_id="301",
+            date="20260405",
             company="Test Co",
         )
         root = _parse(xml)
         voucher = root.find(".//VOUCHER")
         assert voucher.get("ACTION") == "Delete"
         assert voucher.get("VCHTYPE") == "Payment"
+        assert voucher.get("TAGNAME") == "Master ID"
+        assert voucher.get("TAGVALUE") == "301"
+        assert voucher.get("DATE") == "20260405"
 
-    def test_delete_ledger(self):
+    def test_cancel_voucher(self):
+        """Cancel sets ACTION='Cancel', returns ALTERED=1 from Tally."""
+        xml = build_cancel_voucher(
+            voucher_type="Payment",
+            master_id="301",
+            date="20260405",
+            company="Test Co",
+            narration="Cancelled by user",
+        )
+        root = _parse(xml)
+        voucher = root.find(".//VOUCHER")
+        assert voucher.get("ACTION") == "Cancel"
+        assert voucher.get("TAGNAME") == "Master ID"
+        assert voucher.findtext("NARRATION") == "Cancelled by user"
+
+    def test_delete_ledger_has_name_list(self):
+        """Ledger delete REQUIRES NAME.LIST — without it Tally crashes."""
         xml = build_delete_ledger(name="Old Ledger", company="Test Co")
         root = _parse(xml)
         ledger = root.find(".//LEDGER")
         assert ledger.get("ACTION") == "Delete"
         assert ledger.get("NAME") == "Old Ledger"
+        name_list = ledger.find("NAME.LIST")
+        assert name_list is not None
+
+    def test_delete_group_has_name_list(self):
+        xml = build_delete_group(name="Old Group", company="Test Co")
+        root = _parse(xml)
+        group = root.find(".//GROUP")
+        assert group.get("ACTION") == "Delete"
+        name_list = group.find("NAME.LIST")
+        assert name_list is not None
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -493,35 +562,33 @@ Expected: FAIL — `ModuleNotFoundError: No module named 'backend.tally_bridge.i
 - [ ] **Step 3: Implement import_builder.py**
 
 ```python
-"""Build Tally IMPORTDATA XML payloads for creating/deleting vouchers, ledgers, groups.
+"""Build Tally IMPORTDATA XML payloads for creating/cancelling/deleting vouchers, ledgers, groups.
 
 All functions are pure — no I/O, no side effects. Each returns an XML string.
 Tally import date format: YYYYMMDD (different from query format DD-MM-YYYY).
+
+CRITICAL (from live Tally exploration — docs/tally-write-exploration.md):
+- NAME.LIST is REQUIRED for all master operations (create AND delete). Without it, Tally crashes.
+- Voucher delete/cancel uses TAGNAME="Master ID" + TAGVALUE=LASTVCHID (not VCHKEY).
+- PERSISTEDVIEW is required for Sales/Purchase vouchers.
 """
 
 
 def _wrap_import(report_name: str, company: str, inner_xml: str) -> str:
     """Wrap entity XML in the standard IMPORTDATA envelope."""
     return f"""<ENVELOPE>
-<HEADER>
-<TALLYREQUEST>Import Data</TALLYREQUEST>
-</HEADER>
-<BODY>
-<IMPORTDATA>
+<HEADER><TALLYREQUEST>Import Data</TALLYREQUEST></HEADER>
+<BODY><IMPORTDATA>
 <REQUESTDESC>
 <REPORTNAME>{report_name}</REPORTNAME>
-<STATICVARIABLES>
-<SVCURRENTCOMPANY>{company}</SVCURRENTCOMPANY>
-</STATICVARIABLES>
+<STATICVARIABLES><SVCURRENTCOMPANY>{company}</SVCURRENTCOMPANY></STATICVARIABLES>
 </REQUESTDESC>
 <REQUESTDATA>
 <TALLYMESSAGE xmlns:UDF="TallyUDF">
 {inner_xml}
 </TALLYMESSAGE>
 </REQUESTDATA>
-</IMPORTDATA>
-</BODY>
-</ENVELOPE>"""
+</IMPORTDATA></BODY></ENVELOPE>"""
 
 
 def build_create_payment_voucher(
@@ -544,12 +611,10 @@ def build_create_payment_voucher(
         company: Tally company name.
         gst_entries: Optional list of {"ledger": str, "amount": float} for GST components.
     """
-    # Calculate base amount (total minus GST)
     gst_total = sum(e["amount"] for e in (gst_entries or []))
     base_amount = amount - gst_total
 
     entries = []
-    # Debit: expense ledger (base amount)
     entries.append(
         f"""<ALLLEDGERENTRIES.LIST>
 <LEDGERNAME>{debit_ledger}</LEDGERNAME>
@@ -557,8 +622,6 @@ def build_create_payment_voucher(
 <AMOUNT>-{base_amount:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>"""
     )
-
-    # GST entries (debit)
     for gst in gst_entries or []:
         entries.append(
             f"""<ALLLEDGERENTRIES.LIST>
@@ -567,8 +630,6 @@ def build_create_payment_voucher(
 <AMOUNT>-{gst["amount"]:.2f}</AMOUNT>
 </ALLLEDGERENTRIES.LIST>"""
         )
-
-    # Credit: cash/bank ledger (total amount)
     entries.append(
         f"""<ALLLEDGERENTRIES.LIST>
 <LEDGERNAME>{credit_ledger}</LEDGERNAME>
@@ -580,10 +641,11 @@ def build_create_payment_voucher(
     entries_xml = "\n".join(entries)
     voucher_xml = f"""<VOUCHER VCHTYPE="Payment" ACTION="Create">
 <DATE>{date}</DATE>
+<VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
 <NARRATION>{narration}</NARRATION>
+<PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
 {entries_xml}
 </VOUCHER>"""
-
     return _wrap_import("Vouchers", company, voucher_xml)
 
 
@@ -593,9 +655,13 @@ def build_create_ledger(
     company: str,
     gstin: str | None = None,
 ) -> str:
-    """Build XML to create a ledger master in Tally."""
+    """Build XML to create a ledger master in Tally.
+
+    CRITICAL: NAME.LIST is required — without it Tally crashes with memory violation.
+    """
     gstin_xml = f"\n<PARTYGSTIN>{gstin}</PARTYGSTIN>" if gstin else ""
     ledger_xml = f"""<LEDGER NAME="{name}" ACTION="Create">
+<NAME.LIST><NAME>{name}</NAME></NAME.LIST>
 <PARENT>{parent}</PARENT>{gstin_xml}
 </LEDGER>"""
     return _wrap_import("All Masters", company, ledger_xml)
@@ -604,6 +670,7 @@ def build_create_ledger(
 def build_create_group(name: str, parent: str, company: str) -> str:
     """Build XML to create an account group in Tally."""
     group_xml = f"""<GROUP NAME="{name}" ACTION="Create">
+<NAME.LIST><NAME>{name}</NAME></NAME.LIST>
 <PARENT>{parent}</PARENT>
 </GROUP>"""
     return _wrap_import("All Masters", company, group_xml)
@@ -611,19 +678,57 @@ def build_create_group(name: str, parent: str, company: str) -> str:
 
 def build_delete_voucher(
     voucher_type: str,
-    voucher_number: str,
+    master_id: str,
+    date: str,
     company: str,
 ) -> str:
-    """Build XML to delete a voucher from Tally."""
-    voucher_xml = f"""<VOUCHER VCHTYPE="{voucher_type}" ACTION="Delete" VCHKEY="{voucher_number}">
+    """Build XML to delete a voucher from Tally.
+
+    Uses TAGNAME="Master ID" + TAGVALUE (the LASTVCHID from creation response).
+    """
+    voucher_xml = f"""<VOUCHER DATE="{date}" TAGNAME="Master ID" TAGVALUE="{master_id}" VCHTYPE="{voucher_type}" ACTION="Delete">
+</VOUCHER>"""
+    return _wrap_import("Vouchers", company, voucher_xml)
+
+
+def build_cancel_voucher(
+    voucher_type: str,
+    master_id: str,
+    date: str,
+    company: str,
+    narration: str = "",
+) -> str:
+    """Build XML to cancel a voucher in Tally (preserves audit trail).
+
+    Cancel returns ALTERED=1 from Tally (cancel is internally an alter).
+    Preferred over delete for undo operations.
+    """
+    narration_xml = f"\n<NARRATION>{narration}</NARRATION>" if narration else ""
+    voucher_xml = f"""<VOUCHER DATE="{date}" TAGNAME="Master ID" TAGVALUE="{master_id}" VCHTYPE="{voucher_type}" ACTION="Cancel">{narration_xml}
 </VOUCHER>"""
     return _wrap_import("Vouchers", company, voucher_xml)
 
 
 def build_delete_ledger(name: str, company: str) -> str:
-    """Build XML to delete a ledger master from Tally."""
-    ledger_xml = f"""<LEDGER NAME="{name}" ACTION="Delete"/>"""
+    """Build XML to delete a ledger master from Tally.
+
+    CRITICAL: NAME.LIST is required — without it Tally crashes with memory violation.
+    """
+    ledger_xml = f"""<LEDGER NAME="{name}" ACTION="Delete">
+<NAME.LIST><NAME>{name}</NAME></NAME.LIST>
+</LEDGER>"""
     return _wrap_import("All Masters", company, ledger_xml)
+
+
+def build_delete_group(name: str, company: str) -> str:
+    """Build XML to delete an account group from Tally.
+
+    CRITICAL: NAME.LIST is required — without it Tally crashes with memory violation.
+    """
+    group_xml = f"""<GROUP NAME="{name}" ACTION="Delete">
+<NAME.LIST><NAME>{name}</NAME></NAME.LIST>
+</GROUP>"""
+    return _wrap_import("All Masters", company, group_xml)
 ```
 
 - [ ] **Step 4: Run tests to verify they pass**
@@ -746,10 +851,17 @@ def parse_import_response(raw_xml: str) -> dict:
         return {"success": False, "error_message": "Invalid XML in Tally response",
                 "created": 0, "altered": 0, "deleted": 0, "errors": 0, "last_vch_id": None}
 
-    created = int(root.findtext("CREATED") or root.findtext(".//CREATED") or "0")
-    altered = int(root.findtext("ALTERED") or root.findtext(".//ALTERED") or "0")
-    deleted = int(root.findtext("DELETED") or root.findtext(".//DELETED") or "0")
-    errors = int(root.findtext("ERRORS") or root.findtext(".//ERRORS") or "0")
+    def _find_int(tag: str) -> int:
+        el = root.find(tag)
+        if el is None:
+            el = root.find(f".//{tag}")
+        return int(el.text.strip()) if el is not None and el.text else 0
+
+    created = _find_int("CREATED")
+    altered = _find_int("ALTERED")
+    deleted = _find_int("DELETED")
+    errors = _find_int("ERRORS")
+    exceptions = _find_int("EXCEPTIONS")
     last_vch_id = root.findtext("LASTVCHID") or root.findtext(".//LASTVCHID")
     if last_vch_id == "0":
         last_vch_id = None
@@ -758,14 +870,17 @@ def parse_import_response(raw_xml: str) -> dict:
     if errors > 0:
         line_error = root.findtext("LINEERROR") or root.findtext(".//LINEERROR")
         error_message = line_error or f"Tally reported {errors} error(s)"
+    elif exceptions > 0:
+        error_message = f"Tally reported {exceptions} exception(s) — likely malformed XML"
 
-    success = errors == 0 and (created > 0 or altered > 0 or deleted > 0)
+    success = errors == 0 and exceptions == 0 and (created > 0 or altered > 0 or deleted > 0)
     return {
         "success": success,
         "created": created,
         "altered": altered,
         "deleted": deleted,
         "errors": errors,
+        "exceptions": exceptions,
         "last_vch_id": last_vch_id,
         "error_message": error_message,
     }
@@ -941,9 +1056,11 @@ from __future__ import annotations
 
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.import_builder import (
+    build_cancel_voucher,
     build_create_group,
     build_create_ledger,
     build_create_payment_voucher,
+    build_delete_group,
     build_delete_ledger,
     build_delete_voucher,
 )
@@ -1051,15 +1168,29 @@ class TallyWriter:
         response_xml = await self.client.post_xml(xml)
         return parse_import_response(response_xml)
 
-    async def delete_voucher(self, voucher_type: str, voucher_number: str) -> dict:
+    async def cancel_voucher(
+        self, voucher_type: str, master_id: str, date: str, narration: str = "",
+    ) -> dict:
+        """Cancel a voucher in Tally (preferred for undo — preserves audit trail)."""
+        xml = build_cancel_voucher(voucher_type, master_id, date, self.company, narration)
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def delete_voucher(self, voucher_type: str, master_id: str, date: str) -> dict:
         """Delete a voucher from Tally."""
-        xml = build_delete_voucher(voucher_type, voucher_number, self.company)
+        xml = build_delete_voucher(voucher_type, master_id, date, self.company)
         response_xml = await self.client.post_xml(xml)
         return parse_import_response(response_xml)
 
     async def delete_ledger(self, name: str) -> dict:
         """Delete a ledger master from Tally."""
         xml = build_delete_ledger(name, self.company)
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def delete_group(self, name: str) -> dict:
+        """Delete an account group from Tally."""
+        xml = build_delete_group(name, self.company)
         response_xml = await self.client.post_xml(xml)
         return parse_import_response(response_xml)
 ```
