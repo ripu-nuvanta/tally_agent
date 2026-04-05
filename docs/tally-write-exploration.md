@@ -298,11 +298,15 @@ The correct format uses `TAGNAME="Master ID" TAGVALUE="<LASTVCHID>"` and works p
 - Delete after cancel: also works (DELETED=1)
 - All voucher types tested: Payment, Sales, Purchase
 
-### Master (Ledger/Group) Delete: TIMEOUT
-Deleting ledgers and groups via XML API consistently times out (30s).
-May need longer timeout or may be a Tally version issue.
-**Workaround:** Delete masters manually via Tally UI if needed.
-Not critical for B1 — we primarily create masters, rarely delete them.
+### Master (Ledger/Group) Delete: WORKS with NAME.LIST
+Earlier crashes were caused by missing `NAME.LIST` in delete XML (same issue as creation).
+Correct format:
+```xml
+<GROUP NAME="_Test Group" ACTION="Delete">
+<NAME.LIST><NAME>_Test Group</NAME></NAME.LIST>
+</GROUP>
+```
+Without `NAME.LIST`, Tally crashes with memory violation. With it, returns DELETED=1 cleanly.
 
 ### Timeout Requirements
 - 30s default timeout is insufficient for write operations
@@ -326,8 +330,8 @@ The NAME.LIST requirement is undocumented but essential. Likely applies to GROUP
 | Create Purchase (with GST) | WORKS | `ALLLEDGERENTRIES.LIST` + `PERSISTEDVIEW` |
 | Cancel Voucher | WORKS | `TAGNAME="Master ID"` + `TAGVALUE=LASTVCHID` |
 | Delete Voucher | WORKS | Same as Cancel, `ACTION="Delete"` |
-| Delete Ledger | TIMEOUT | Use Tally UI instead |
-| Delete Group | TIMEOUT | Use Tally UI instead |
+| Delete Ledger | WORKS | Requires `NAME.LIST` (crashes without it) |
+| Delete Group | WORKS | Requires `NAME.LIST` (crashes without it) |
 
 ## Sales/Purchase: Key Differences from Payment
 
