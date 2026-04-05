@@ -74,16 +74,25 @@ These override any XML examples in the tasks below:
 
 ---
 
-## Task 0: Tally Write Exploration (Live Tally)
+## Task 0: Tally Write Exploration (Live Tally) — COMPLETED
 
-> **Prerequisite:** Requires live Tally instance at 172.26.104.48:9000.
-> This task is exploratory — scripts go in `scripts/`, results documented in `docs/`.
+> **Status:** DONE. Results documented in `docs/tally-write-exploration.md`.
+> The code block below is the ORIGINAL pre-exploration script. For the ACTUAL verified scripts, see:
+> - `scripts/explore_tally_write.py` — v1 (initial attempt, discovered NAME.LIST requirement)
+> - `scripts/explore_tally_write_v2.py` — v2 (format testing, verified ledger + payment creation)
+> - `scripts/explore_tally_write_v3.py` — v3 (sales, purchase, cancel, delete verification)
+> - `scripts/cleanup_tally_test.py` — cleanup utility for test entities
+>
+> **Do NOT use the code block below** — it contains pre-exploration XML formats that crash Tally. Refer to the scripts above and `docs/tally-write-exploration.md` for correct formats.
+
+<details>
+<summary>Original pre-exploration script (STALE — click to expand)</summary>
 
 **Files:**
 - Create: `scripts/explore_tally_write.py`
 - Create: `docs/tally-write-exploration.md`
 
-- [ ] **Step 1: Write exploration script**
+- [x] **Step 1: Write exploration script**
 
 ```python
 """Explore Tally write operations against live instance.
@@ -339,6 +348,8 @@ Write `docs/tally-write-exploration.md` with:
 git add scripts/explore_tally_write.py docs/tally-write-exploration.md docs/tally-write-exploration.log
 git commit -m "explore: test Tally write operations against live instance"
 ```
+
+</details>
 
 ---
 
