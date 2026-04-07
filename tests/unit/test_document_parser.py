@@ -148,3 +148,43 @@ class TestAmountValidation:
         )
         warnings = validate_extracted_amounts(doc)
         assert warnings == []
+
+    def test_never_raises_on_float_amounts(self):
+        """Hand-constructed docs with float (not Decimal) amounts must not crash."""
+        doc = ExtractedDocument(
+            doc_type="expense",
+            vendor_name="Test",
+            date="2026-04-04",
+            total_amount=1180.0,  # float, not Decimal
+            line_items=[LineItem(description="Item", amount=1000.0)],  # float
+            gst=GSTBreakdown(cgst_rate=9.0, cgst_amount=90.0, sgst_rate=9.0, sgst_amount=90.0),
+        )
+        # Must not raise
+        warnings = validate_extracted_amounts(doc)
+        assert isinstance(warnings, list)
+
+    def test_never_raises_on_none_line_items(self):
+        doc = ExtractedDocument(
+            doc_type="expense",
+            vendor_name="Test",
+            date="2026-04-04",
+            total_amount=Decimal("100"),
+            line_items=None,  # type: ignore
+        )
+        warnings = validate_extracted_amounts(doc)
+        assert isinstance(warnings, list)
+
+    def test_sgst_mismatch_warning(self):
+        doc = ExtractedDocument(
+            doc_type="expense",
+            vendor_name="Test",
+            date="2026-04-04",
+            total_amount=Decimal("1180.00"),
+            line_items=[LineItem(description="Item", amount=Decimal("1000.00"))],
+            gst=GSTBreakdown(
+                cgst_rate=Decimal("9"), cgst_amount=Decimal("90"),
+                sgst_rate=Decimal("9"), sgst_amount=Decimal("50"),  # Wrong
+            ),
+        )
+        warnings = validate_extracted_amounts(doc)
+        assert any("sgst" in w.lower() for w in warnings)

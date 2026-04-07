@@ -174,32 +174,57 @@ def validate_extracted_amounts(doc: ExtractedDocument) -> list[str]:
     warnings to the user or block the entry.
     """
     warnings = []
+    try:
+        total = _to_decimal(doc.total_amount)
+        if total == 0:
+            warnings.append("Total amount is zero — please verify")
 
-    if doc.total_amount == 0:
-        warnings.append("Total amount is zero — please verify")
+        items = doc.line_items or []
+        items_sum = sum((_to_decimal(item.amount) for item in items), Decimal("0"))
 
-    items_sum = sum((item.amount for item in doc.line_items), Decimal("0"))
-    gst_sum = Decimal("0")
-    if doc.gst:
-        gst_sum += doc.gst.cgst_amount or Decimal("0")
-        gst_sum += doc.gst.sgst_amount or Decimal("0")
-        gst_sum += doc.gst.igst_amount or Decimal("0")
+        gst_sum = Decimal("0")
+        if doc.gst:
+            gst_sum += _to_decimal(doc.gst.cgst_amount)
+            gst_sum += _to_decimal(doc.gst.sgst_amount)
+            gst_sum += _to_decimal(doc.gst.igst_amount)
 
-    expected_total = items_sum + gst_sum
-    if abs(expected_total - doc.total_amount) > Decimal("1.00"):
-        warnings.append(
-            f"Line items ({items_sum}) + GST ({gst_sum}) = {expected_total}, "
-            f"but document total is {doc.total_amount} — please verify"
-        )
+        expected_total = items_sum + gst_sum
+        if abs(expected_total - total) > Decimal("1.00"):
+            warnings.append(
+                f"Line items ({items_sum}) + GST ({gst_sum}) = {expected_total}, "
+                f"but document total is {total} — please verify"
+            )
 
-    if doc.gst and doc.line_items:
-        base = items_sum
-        if doc.gst.cgst_rate and doc.gst.cgst_amount:
-            expected_cgst = base * doc.gst.cgst_rate / Decimal("100")
-            if abs(expected_cgst - doc.gst.cgst_amount) > Decimal("1.00"):
-                warnings.append(
-                    f"CGST {doc.gst.cgst_rate}% of {base} should be {expected_cgst}, "
-                    f"but extracted {doc.gst.cgst_amount}"
-                )
+        if doc.gst and items:
+            base = items_sum
+            cgst_rate = _to_decimal(doc.gst.cgst_rate)
+            cgst_amount = _to_decimal(doc.gst.cgst_amount)
+            if cgst_rate and cgst_amount:
+                expected_cgst = base * cgst_rate / Decimal("100")
+                if abs(expected_cgst - cgst_amount) > Decimal("1.00"):
+                    warnings.append(
+                        f"CGST {cgst_rate}% of {base} should be {expected_cgst}, "
+                        f"but extracted {cgst_amount}"
+                    )
+            sgst_rate = _to_decimal(doc.gst.sgst_rate)
+            sgst_amount = _to_decimal(doc.gst.sgst_amount)
+            if sgst_rate and sgst_amount:
+                expected_sgst = base * sgst_rate / Decimal("100")
+                if abs(expected_sgst - sgst_amount) > Decimal("1.00"):
+                    warnings.append(
+                        f"SGST {sgst_rate}% of {base} should be {expected_sgst}, "
+                        f"but extracted {sgst_amount}"
+                    )
+            igst_rate = _to_decimal(doc.gst.igst_rate)
+            igst_amount = _to_decimal(doc.gst.igst_amount)
+            if igst_rate and igst_amount:
+                expected_igst = base * igst_rate / Decimal("100")
+                if abs(expected_igst - igst_amount) > Decimal("1.00"):
+                    warnings.append(
+                        f"IGST {igst_rate}% of {base} should be {expected_igst}, "
+                        f"but extracted {igst_amount}"
+                    )
+    except Exception as e:
+        warnings.append(f"Validation error: {type(e).__name__}: {e}")
 
     return warnings
