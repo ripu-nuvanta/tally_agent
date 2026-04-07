@@ -184,3 +184,49 @@ class TestWriteVoucher:
                 known_ledgers=["Cash"],
             )
         mock_client.post_xml.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_exceptions_response_marked_as_failure(self):
+        """EXCEPTIONS=1 from Tally (silent failure) must surface as success=False through the writer."""
+        mock_client = AsyncMock()
+        mock_client.post_xml.return_value = """<RESPONSE>
+<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>
+<LASTVCHID>0</LASTVCHID><LASTMID>0</LASTMID>
+<COMBINED>0</COMBINED><IGNORED>0</IGNORED><ERRORS>0</ERRORS>
+<CANCELLED>0</CANCELLED><EXCEPTIONS>1</EXCEPTIONS>
+</RESPONSE>"""
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        result = await writer.create_payment_voucher(
+            date="20260404",
+            debit_ledger="Travel Expenses",
+            credit_ledger="Cash",
+            amount=500.00,
+            narration="Test",
+        )
+        assert result["success"] is False
+        assert result["exceptions"] == 1
+        assert "exception" in result["error_message"].lower()
+        # Tally was still called (validation passed; the failure came from Tally)
+        mock_client.post_xml.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_line_error_response_marked_as_failure(self):
+        """ERRORS + LINEERROR from Tally must surface as success=False with the error message."""
+        mock_client = AsyncMock()
+        mock_client.post_xml.return_value = """<RESPONSE>
+<LINEERROR>Ledger 'Nonexistent' does not exist!</LINEERROR>
+<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>
+<LASTVCHID>0</LASTVCHID><LASTMID>0</LASTMID>
+<COMBINED>0</COMBINED><IGNORED>0</IGNORED><ERRORS>0</ERRORS>
+<CANCELLED>0</CANCELLED><EXCEPTIONS>1</EXCEPTIONS>
+</RESPONSE>"""
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        result = await writer.create_payment_voucher(
+            date="20260404",
+            debit_ledger="Travel Expenses",
+            credit_ledger="Cash",
+            amount=500.00,
+            narration="Test",
+        )
+        assert result["success"] is False
+        assert "Nonexistent" in result["error_message"]

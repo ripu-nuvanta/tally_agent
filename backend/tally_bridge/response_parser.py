@@ -474,13 +474,15 @@ def parse_import_response(raw_xml: str) -> dict:
         last_vch_id = None
 
     error_message = None
-    if errors > 0:
-        line_error = root.findtext("LINEERROR") or root.findtext(".//LINEERROR")
-        error_message = line_error or f"Tally reported {errors} error(s)"
+    line_error = root.findtext("LINEERROR") or root.findtext(".//LINEERROR")
+    if line_error:
+        error_message = line_error
+    elif errors > 0:
+        error_message = f"Tally reported {errors} error(s)"
     elif exceptions > 0:
         error_message = f"Tally reported {exceptions} exception(s) — likely malformed XML"
 
-    success = errors == 0 and exceptions == 0 and (created > 0 or altered > 0 or deleted > 0)
+    success = errors == 0 and exceptions == 0 and not line_error and (created > 0 or altered > 0 or deleted > 0)
     return {
         "success": success,
         "created": created,

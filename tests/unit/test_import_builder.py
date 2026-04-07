@@ -96,6 +96,25 @@ class TestCreatePaymentVoucher:
         assert debit.findtext("LEDGERNAME") == "Office Supplies"
         assert float(debit.findtext("AMOUNT")) == -1000.00
 
+    def test_includes_required_tally_tags(self):
+        """PERSISTEDVIEW and VOUCHERTYPENAME are required by Tally — verified during exploration."""
+        xml = build_create_payment_voucher(
+            date="20260404",
+            debit_ledger="Travel Expenses",
+            credit_ledger="Cash",
+            amount=500.00,
+            narration="Test",
+            company="Test Co",
+        )
+        root = _parse(xml)
+        voucher = root.find(".//VOUCHER")
+        # PERSISTEDVIEW required for proper voucher rendering in Tally
+        persisted_view = voucher.findtext("PERSISTEDVIEW")
+        assert persisted_view == "Accounting Voucher View", \
+            f"Expected PERSISTEDVIEW='Accounting Voucher View', got {persisted_view!r}"
+        # VOUCHERTYPENAME mirrors VCHTYPE attribute (required for Sales/Purchase compatibility)
+        assert voucher.findtext("VOUCHERTYPENAME") == "Payment"
+
 
 class TestXmlEscaping:
     def test_narration_with_special_chars_escaped(self):
