@@ -1,11 +1,13 @@
 """Chat endpoint — main conversational interface to the agent pipeline."""
 
 import logging
+import os
 import time as time_module
+import uuid as uuid_mod
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +47,67 @@ async def chat(
         return await _chat_db_mode(request, client, user_id, db)
     else:
         return await _chat_legacy_mode(request, client, session_store)
+
+
+@router.post("/chat/upload", response_model=ChatResponse)
+async def chat_with_file(
+    file: UploadFile = File(...),
+    message: str = Form(default=""),
+    workspace_id: str = Form(default=""),
+    conversation_id: str = Form(default=""),
+    client: TallyClient = Depends(get_client),
+    user_id: str = Depends(get_current_user),
+) -> ChatResponse:
+    """Upload a document (receipt/invoice) for data entry.
+
+    Validates and saves the file. Task 12 will replace the placeholder
+    response with the full data entry pipeline (parse → map → review card).
+    """
+    from backend.services.document_parser import detect_file_type
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    file_type = detect_file_type(file.filename, file.content_type or "")
+    if file_type == "unsupported":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file.filename}",
+        )
+
+    # Read and validate size
+    contents = await file.read()
+    file_size = len(contents)
+    max_bytes = settings.FILE_MAX_SIZE_MB * 1024 * 1024
+    if file_size > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"File too large ({file_size} bytes). "
+                f"Max: {settings.FILE_MAX_SIZE_MB}MB"
+            ),
+        )
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    # Save to local storage
+    os.makedirs(settings.FILE_STORAGE_PATH, exist_ok=True)
+    file_id = str(uuid_mod.uuid4())
+    ext = os.path.splitext(file.filename)[1]
+    storage_path = os.path.join(settings.FILE_STORAGE_PATH, f"{file_id}{ext}")
+    with open(storage_path, "wb") as f:
+        f.write(contents)
+
+    return ChatResponse(
+        message=f"File '{file.filename}' uploaded successfully ({file_size} bytes). Processing...",
+        data={
+            "type": "file_uploaded",
+            "file_id": file_id,
+            "filename": file.filename,
+            "size": file_size,
+        },
+        session_id=conversation_id or file_id,
+    )
 
 
 async def _chat_legacy_mode(
