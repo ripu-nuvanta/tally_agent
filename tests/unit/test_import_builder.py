@@ -5,6 +5,8 @@ Key requirements: NAME.LIST for masters, TAGNAME/TAGVALUE for voucher delete/can
 """
 import xml.etree.ElementTree as ET
 
+import pytest
+
 from backend.tally_bridge.import_builder import (
     build_create_group,
     build_create_ledger,
@@ -88,6 +90,93 @@ class TestCreatePaymentVoucher:
         # Verify amounts balance: sum of all amounts should be 0
         total = sum(float(e.findtext("AMOUNT")) for e in entries)
         assert abs(total) < 0.01
+
+        # Verify base amount is correct (total minus GST)
+        debit = entries[0]
+        assert debit.findtext("LEDGERNAME") == "Office Supplies"
+        assert float(debit.findtext("AMOUNT")) == -1000.00
+
+
+class TestXmlEscaping:
+    def test_narration_with_special_chars_escaped(self):
+        xml = build_create_payment_voucher(
+            date="20260404",
+            debit_ledger="Travel",
+            credit_ledger="Cash",
+            amount=100.00,
+            narration='Refund for "X & Y" <urgent>',
+            company="Test Co",
+        )
+        root = _parse(xml)  # must parse without error
+        assert root.find(".//NARRATION").text == 'Refund for "X & Y" <urgent>'
+
+    def test_ledger_name_with_ampersand(self):
+        xml = build_create_ledger(
+            name="Smith & Sons",
+            parent="Sundry Creditors",
+            company="Test Co",
+        )
+        root = _parse(xml)  # must not raise
+        ledger = root.find(".//LEDGER")
+        assert ledger.get("NAME") == "Smith & Sons"
+        assert ledger.find("NAME.LIST").findtext("NAME") == "Smith & Sons"
+
+    def test_company_name_with_special_chars(self):
+        xml = build_create_ledger(
+            name="Test Ledger",
+            parent="Indirect Expenses",
+            company="M/s. Smith & Co.",
+        )
+        root = _parse(xml)
+        assert root.findtext(".//SVCURRENTCOMPANY") == "M/s. Smith & Co."
+
+    def test_quote_in_attribute_escaped(self):
+        xml = build_create_ledger(
+            name='Foo "Bar" Inc',
+            parent="Sundry Creditors",
+            company="Test Co",
+        )
+        root = _parse(xml)  # must parse despite quotes in attribute
+        assert root.find(".//LEDGER").get("NAME") == 'Foo "Bar" Inc'
+
+
+class TestValidation:
+    def test_negative_amount_raises(self):
+        with pytest.raises(ValueError, match="amount must be positive"):
+            build_create_payment_voucher(
+                date="20260404", debit_ledger="Travel", credit_ledger="Cash",
+                amount=-100.00, narration="Test", company="Test Co",
+            )
+
+    def test_zero_amount_raises(self):
+        with pytest.raises(ValueError, match="amount must be positive"):
+            build_create_payment_voucher(
+                date="20260404", debit_ledger="Travel", credit_ledger="Cash",
+                amount=0, narration="Test", company="Test Co",
+            )
+
+    def test_gst_exceeds_amount_raises(self):
+        with pytest.raises(ValueError, match="invalid gst"):
+            build_create_payment_voucher(
+                date="20260404", debit_ledger="Travel", credit_ledger="Cash",
+                amount=100.00, narration="Test", company="Test Co",
+                gst_entries=[{"ledger": "CGST", "amount": 200.00}],
+            )
+
+    def test_empty_narration_raises(self):
+        with pytest.raises(ValueError, match="narration is required"):
+            build_create_payment_voucher(
+                date="20260404", debit_ledger="Travel", credit_ledger="Cash",
+                amount=100.00, narration="", company="Test Co",
+            )
+
+    def test_empty_ledger_name_raises(self):
+        with pytest.raises(ValueError, match="name is required"):
+            build_create_ledger(name="", parent="Indirect Expenses", company="Test Co")
+
+    def test_whitespace_only_name_raises(self):
+        with pytest.raises(ValueError, match="name is required"):
+            build_create_ledger(name="   ", parent="Indirect Expenses", company="Test Co")
 
 
 class TestCreateLedger:
