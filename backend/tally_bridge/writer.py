@@ -43,7 +43,10 @@ class TallyWriter:
     def validate_voucher(
         self, voucher: dict, known_ledgers: list[str] | None = None,
     ) -> list[str]:
-        """Dry-run validation. Returns list of error strings (empty = valid)."""
+        """Dry-run validation. Returns list of error strings (empty = valid).
+
+        Never raises — always returns a list. Caller decides whether to abort.
+        """
         errors = []
 
         if not voucher.get("date"):
@@ -56,17 +59,36 @@ class TallyWriter:
         if len(entries) < 2:
             errors.append("At least two ledger entries required")
 
-        # Balance check
-        total = sum(e["amount"] for e in entries)
-        if abs(total) > 0.01:
-            errors.append(f"Ledger entries do not balance (sum={total:.2f})")
+        # Per-entry validation: check for required keys
+        valid_entries = []
+        for i, entry in enumerate(entries):
+            if not isinstance(entry, dict):
+                errors.append(f"Entry {i} is not a dict")
+                continue
+            if "amount" not in entry or entry["amount"] is None:
+                errors.append(f"Entry {i} is missing 'amount'")
+                continue
+            ledger_name = entry.get("ledger")
+            if not ledger_name or not str(ledger_name).strip():
+                errors.append(f"Entry {i} is missing 'ledger'")
+                continue
+            valid_entries.append(entry)
 
-        # Ledger existence check
-        if known_ledgers is not None:
-            known_set = {l.lower() for l in known_ledgers}
-            for e in entries:
-                if e["ledger"].lower() not in known_set:
-                    errors.append(f"Ledger \"{e['ledger']}\" not found in Tally")
+        # Balance check (only on valid entries)
+        if valid_entries:
+            try:
+                total = sum(float(e["amount"]) for e in valid_entries)
+                if abs(total) > 0.01:
+                    errors.append(f"Ledger entries do not balance (sum={total:.2f})")
+            except (TypeError, ValueError) as e:
+                errors.append(f"Invalid amount in ledger entries: {e}")
+
+        # Ledger existence check (only on valid entries)
+        if known_ledgers is not None and valid_entries:
+            known_set = {name.lower() for name in known_ledgers}
+            for entry in valid_entries:
+                if entry["ledger"].lower() not in known_set:
+                    errors.append(f"Ledger \"{entry['ledger']}\" not found in Tally")
 
         return errors
 

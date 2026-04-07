@@ -89,6 +89,64 @@ class TestDryRunValidation:
         errors = writer.validate_voucher(voucher, known_ledgers=["Travel", "Cash"])
         assert any("date" in e.lower() for e in errors)
 
+    def test_missing_amount_key_does_not_crash(self):
+        writer = TallyWriter.__new__(TallyWriter)
+        voucher = {
+            "voucher_type": "Payment",
+            "date": "20260404",
+            "narration": "Test",
+            "ledger_entries": [
+                {"ledger": "Travel"},  # Missing amount
+                {"ledger": "Cash", "amount": 500.00},
+            ],
+        }
+        # Must not raise — should return errors
+        errors = writer.validate_voucher(voucher, known_ledgers=["Travel", "Cash"])
+        assert any("amount" in e.lower() for e in errors)
+
+    def test_missing_ledger_key_does_not_crash(self):
+        writer = TallyWriter.__new__(TallyWriter)
+        voucher = {
+            "voucher_type": "Payment",
+            "date": "20260404",
+            "narration": "Test",
+            "ledger_entries": [
+                {"amount": -500.00},  # Missing ledger
+                {"ledger": "Cash", "amount": 500.00},
+            ],
+        }
+        errors = writer.validate_voucher(voucher, known_ledgers=["Cash"])
+        assert any("ledger" in e.lower() for e in errors)
+
+    def test_case_insensitive_ledger_match(self):
+        writer = TallyWriter.__new__(TallyWriter)
+        voucher = {
+            "voucher_type": "Payment",
+            "date": "20260404",
+            "narration": "Test",
+            "ledger_entries": [
+                {"ledger": "Travel Expenses", "amount": -500.00},
+                {"ledger": "Cash", "amount": 500.00},
+            ],
+        }
+        # Pass ledger names in different case
+        errors = writer.validate_voucher(voucher, known_ledgers=["travel expenses", "CASH"])
+        assert errors == []
+
+    def test_whitespace_narration_fails(self):
+        writer = TallyWriter.__new__(TallyWriter)
+        voucher = {
+            "voucher_type": "Payment",
+            "date": "20260404",
+            "narration": "   ",
+            "ledger_entries": [
+                {"ledger": "Travel", "amount": -500.00},
+                {"ledger": "Cash", "amount": 500.00},
+            ],
+        }
+        errors = writer.validate_voucher(voucher, known_ledgers=["Travel", "Cash"])
+        assert any("narration" in e.lower() for e in errors)
+
 
 class TestWriteVoucher:
     @pytest.mark.asyncio
