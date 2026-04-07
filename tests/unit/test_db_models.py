@@ -29,4 +29,4 @@ def test_workspace_default_agent_type():
 
 def test_base_has_metadata():
     assert Base.metadata is not None
-    assert len(Base.metadata.tables) == 5
+    assert len(Base.metadata.tables) == 8

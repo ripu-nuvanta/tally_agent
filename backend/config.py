@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     JWT_ACCESS_TOKEN_EXPIRY_MINUTES: int = 30
     JWT_REFRESH_TOKEN_EXPIRY_DAYS: int = 7
 
+    # File upload (Set B1)
+    FILE_STORAGE_PATH: str = "./uploads"
+    FILE_MAX_SIZE_MB: int = 10
+
+    # Tally write (Set B1)
+    TALLY_WRITE_ENABLED: bool = True
+    TALLY_DRY_RUN: bool = False
+
     @property
     def db_mode(self) -> bool:
         """True when DATABASE_URL is set — enables auth + persistence."""
