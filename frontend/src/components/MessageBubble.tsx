@@ -1,6 +1,7 @@
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import type { ChatMessage, TableData } from "../types";
+import type { VoucherAction } from "../api/client";
 import DataTable from "./DataTable";
 import ChartRenderer from "./ChartRenderer";
 import VoucherReviewCard, { type VoucherEntry } from "./VoucherReviewCard";
@@ -16,9 +17,10 @@ function isTableData(d: unknown): d is TableData {
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onVoucherAction?: (action: VoucherAction, entry: Record<string, unknown>) => void;
 }
 
-export default function MessageBubble({ message }: MessageBubbleProps) {
+export default function MessageBubble({ message, onVoucherAction }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   if (message.isLoading) {
@@ -109,22 +111,34 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
         )}
 
         {/* Voucher review card (Set B1) */}
-        {voucherData && (
-          <VoucherReviewCard
-            entries={(voucherData.entries as VoucherEntry[]) || []}
-            availableLedgers={(voucherData.available_ledgers as string[]) || []}
-            availablePaymentLedgers={(voucherData.available_payment_ledgers as string[]) || []}
-            onApprove={() => {
-              // Wired in Task 14
-            }}
-            onDiscard={() => {
-              // Wired in Task 14
-            }}
-            onEdit={() => {
-              // Wired in Task 14
-            }}
-          />
-        )}
+        {voucherData && (() => {
+          const entries = (voucherData.entries as VoucherEntry[]) || [];
+          return (
+            <VoucherReviewCard
+              entries={entries}
+              availableLedgers={(voucherData.available_ledgers as string[]) || []}
+              availablePaymentLedgers={(voucherData.available_payment_ledgers as string[]) || []}
+              onApprove={(id) => {
+                const entry = entries.find((e) => e.id === id);
+                if (entry && onVoucherAction) {
+                  onVoucherAction("approve", entry as unknown as Record<string, unknown>);
+                }
+              }}
+              onDiscard={(id) => {
+                const entry = entries.find((e) => e.id === id);
+                if (entry && onVoucherAction) {
+                  onVoucherAction("discard", entry as unknown as Record<string, unknown>);
+                }
+              }}
+              onEdit={(id, updates) => {
+                const entry = entries.find((e) => e.id === id);
+                if (entry && onVoucherAction) {
+                  onVoucherAction("edit", { ...entry, ...updates } as unknown as Record<string, unknown>);
+                }
+              }}
+            />
+          );
+        })()}
 
         {/* Fallback: render DataTable only if structured data exists but no markdown table in text */}
         {!isVoucherReview && showDataTableFallback && tables.map((tableData, idx) => (

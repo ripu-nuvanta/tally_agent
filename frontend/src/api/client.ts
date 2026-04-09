@@ -185,6 +185,23 @@ export async function sendChatWithFile(
   return data;
 }
 
+export type VoucherAction = "approve" | "discard" | "edit";
+
+export async function voucherAction(
+  action: VoucherAction,
+  entry: Record<string, unknown>,
+  company: string,
+  sessionId: string,
+): Promise<ChatResponse> {
+  const { data } = await api.post<ChatResponse>("/chat/voucher-action", {
+    action,
+    entry,
+    company,
+    session_id: sessionId,
+  });
+  return data;
+}
+
 export async function getHealth(): Promise<HealthResponse> {
   const { data } = await api.get<HealthResponse>("/health");
   return data;
