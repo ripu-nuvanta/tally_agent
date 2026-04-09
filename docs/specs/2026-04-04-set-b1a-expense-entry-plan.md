@@ -1,5 +1,17 @@
 # B1a: Expense Receipt Entry — Implementation Plan
 
+> **Status: ✅ COMPLETE — merged to master on 2026-04-09.**
+> All 15 tasks implemented, all code review issues (C1-C4, I1-I5) resolved.
+> Test totals: 858 backend unit + 133 integration + 9 e2e + 181 frontend ≈ **1181 tests**, zero regressions.
+>
+> **Code review:** `docs/code-review-set-b1a.md`
+> **Known gaps (intentional, deferred):**
+> - DB persistence of uploaded_files/voucher_entries rows (models exist, orchestrator doesn't populate)
+> - LedgerMapping DB persistence (in-memory only)
+> - Frontend DB-mode workspace_id propagation to voucher-action endpoint
+> - Sales/Purchase voucher builders (Set B1b/B1c)
+> - Bulk upload for bank statements (Set B1d)
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Upload an expense receipt in the chat, AI extracts data via Claude Vision, maps to Tally ledgers, shows a review card, and on approval writes a Payment voucher to Tally.

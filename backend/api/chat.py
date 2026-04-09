@@ -1,11 +1,13 @@
 """Chat endpoint — main conversational interface to the agent pipeline."""
 
 import logging
+import os
 import time as time_module
+import uuid as uuid_mod
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from opentelemetry import trace
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.agents.context import SessionContext, SessionStore
 from backend.agents.orchestrator import Orchestrator
 from backend.api.dependencies import get_client, get_current_user, get_session_store
-from backend.api.models import ChatRequest, ChatResponse, ChartSpec
+from backend.api.models import ChatRequest, ChatResponse, ChartSpec, VoucherActionRequest
 from backend.config import settings
 from backend.tally_bridge.client import TallyClient
 
@@ -33,6 +35,30 @@ async def _get_optional_db() -> AsyncGenerator[AsyncSession | None, None]:
         yield session
 
 
+_SAFE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".pdf", ".csv", ".xlsx", ".xls"}
+
+
+async def _verify_workspace_ownership(
+    workspace_id: str, user_id: str, db: AsyncSession,
+):
+    """Load workspace and verify it belongs to the current user.
+
+    Raises HTTPException(404) if not found or not owned.
+    """
+    from backend.db.models import Workspace
+    result = await db.execute(
+        select(Workspace).where(
+            Workspace.id == workspace_id,
+            Workspace.user_id == user_id,
+            Workspace.is_deleted.is_(False),
+        )
+    )
+    workspace = result.scalar_one_or_none()
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -45,6 +71,236 @@ async def chat(
         return await _chat_db_mode(request, client, user_id, db)
     else:
         return await _chat_legacy_mode(request, client, session_store)
+
+
+@router.post("/chat/upload", response_model=ChatResponse)
+async def chat_with_file(
+    file: UploadFile = File(...),
+    message: str = Form(default=""),
+    workspace_id: str = Form(default=""),
+    conversation_id: str = Form(default=""),
+    client: TallyClient = Depends(get_client),
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession | None = Depends(_get_optional_db),
+) -> ChatResponse:
+    """Upload a document (receipt/invoice) for data entry.
+
+    Validates and saves the file. Task 12 will replace the placeholder
+    response with the full data entry pipeline (parse → map → review card).
+    """
+    from backend.services.document_parser import detect_file_type
+
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="No file provided")
+
+    file_type = detect_file_type(file.filename, file.content_type or "")
+    if file_type == "unsupported":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file.filename}",
+        )
+
+    # Read and validate size
+    contents = await file.read()
+    file_size = len(contents)
+    max_bytes = settings.FILE_MAX_SIZE_MB * 1024 * 1024
+    if file_size > max_bytes:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"File too large ({file_size} bytes). "
+                f"Max: {settings.FILE_MAX_SIZE_MB}MB"
+            ),
+        )
+    if file_size == 0:
+        raise HTTPException(status_code=400, detail="File is empty")
+
+    # In DB mode, verify workspace ownership before running the pipeline.
+    if settings.db_mode:
+        if not workspace_id:
+            raise HTTPException(status_code=400, detail="workspace_id is required in DB mode")
+        if db is None:
+            raise HTTPException(status_code=500, detail="Database session not available")
+        await _verify_workspace_ownership(workspace_id, user_id, db)
+
+    # Save to local storage — sanitize the extension to a safe whitelist to
+    # avoid stashing arbitrary user-supplied suffixes (e.g. ".jpg.php").
+    os.makedirs(settings.FILE_STORAGE_PATH, exist_ok=True)
+    file_id = str(uuid_mod.uuid4())
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in _SAFE_EXTS:
+        ext = ""  # no extension is safer than trusting random input
+    storage_path = os.path.join(settings.FILE_STORAGE_PATH, f"{file_id}{ext}")
+    with open(storage_path, "wb") as f:
+        f.write(contents)
+
+    # Run the data entry pipeline via the orchestrator.
+    orchestrator = Orchestrator()
+    session = SessionContext(session_id=conversation_id or file_id)
+
+    try:
+        result = await orchestrator.process_file_upload(
+            file_path=storage_path,
+            filename=file.filename,
+            mime_type=file.content_type or "",
+            user_message=message,
+            client=client,
+            session=session,
+            file_id=file_id,
+        )
+    except HTTPException:
+        # Clean up the uploaded file on pipeline failure.
+        try:
+            os.remove(storage_path)
+        except OSError:
+            pass
+        raise
+    except Exception as e:
+        # Clean up the uploaded file on pipeline failure.
+        try:
+            os.remove(storage_path)
+        except OSError:
+            pass
+        logger.exception("Data entry pipeline failed")
+        raise HTTPException(status_code=500, detail=f"Pipeline error: {e}")
+
+    return ChatResponse(
+        message=result["message"],
+        data=result.get("data"),
+        session_id=conversation_id or file_id,
+    )
+
+
+@router.post("/chat/voucher-action", response_model=ChatResponse)
+async def voucher_action(
+    request: VoucherActionRequest,
+    client: TallyClient = Depends(get_client),
+    user_id: str = Depends(get_current_user),
+    db: AsyncSession | None = Depends(_get_optional_db),
+) -> ChatResponse:
+    """Handle voucher approve/edit/discard actions from the review card.
+
+    approve/edit both write to Tally (edit means user already modified the
+    entry in the EditForm before confirming). discard just acknowledges.
+    """
+    from backend.tally_bridge.writer import TallyWriter, ValidationError
+
+    entry = request.entry
+    session_id = request.session_id
+
+    # In DB mode, verify workspace ownership and prefer the workspace's
+    # configured company over the client-supplied value. This prevents a
+    # user from targeting another workspace's Tally company.
+    if settings.db_mode:
+        if not request.workspace_id:
+            raise HTTPException(status_code=400, detail="workspace_id is required in DB mode")
+        if db is None:
+            raise HTTPException(status_code=500, detail="Database session not available")
+        workspace = await _verify_workspace_ownership(request.workspace_id, user_id, db)
+        ws_config = workspace.config or {}
+        company = ws_config.get("tally_company") or workspace.name or "Default"
+        # Re-configure TallyClient from workspace config if present.
+        if ws_config.get("tally_host"):
+            client = TallyClient(
+                ws_config["tally_host"],
+                ws_config.get("tally_port", 9000),
+            )
+            if ws_config.get("mock_mode"):
+                client.mock_mode = True
+    else:
+        company = request.company or "Default"
+
+    if request.action == "discard":
+        return ChatResponse(
+            message="Entry discarded.",
+            data={"type": "voucher_discarded", "entry_id": entry.get("id")},
+            session_id=session_id,
+        )
+
+    # approve and edit both write to Tally
+    if request.action in ("approve", "edit"):
+        if not settings.TALLY_WRITE_ENABLED:
+            return ChatResponse(
+                message="Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
+        writer = TallyWriter(client=client, company=company)
+
+        # Create new ledger first if the review card marked it as new
+        if entry.get("is_new_ledger"):
+            ledger_name = entry.get("debit_ledger")
+            parent = entry.get("suggested_parent") or "Indirect Expenses"
+            if not ledger_name:
+                return ChatResponse(
+                    message="Cannot create new ledger: debit_ledger is empty.",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+            try:
+                ledger_result = await writer.create_ledger(name=ledger_name, parent=parent)
+            except Exception as e:
+                logger.exception("Failed to create new ledger")
+                return ChatResponse(
+                    message=f"Failed to create new ledger '{ledger_name}': {e}",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+            if not ledger_result["success"]:
+                return ChatResponse(
+                    message=(
+                        f"Failed to create new ledger '{ledger_name}': "
+                        f"{ledger_result.get('error_message', 'Unknown error')}"
+                    ),
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+
+        # Create the voucher
+        try:
+            gst_entries = entry.get("gst_entries") or None
+            result = await writer.create_payment_voucher(
+                date=entry["date"],
+                debit_ledger=entry["debit_ledger"],
+                credit_ledger=entry["credit_ledger"],
+                amount=entry["amount"],
+                narration=entry["narration"],
+                gst_entries=gst_entries,
+            )
+        except ValidationError as e:
+            return ChatResponse(
+                message=f"Validation failed: {'; '.join(e.errors)}",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+        except KeyError as e:
+            return ChatResponse(
+                message=f"Voucher entry is missing required field: {e}",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
+        if result["success"]:
+            vch_id = result.get("last_vch_id") or ""
+            return ChatResponse(
+                message=f"Payment voucher written to Tally successfully. Voucher ID: {vch_id}",
+                data={
+                    "type": "voucher_written",
+                    "entry_id": entry.get("id"),
+                    "tally_voucher_id": vch_id,
+                },
+                session_id=session_id,
+            )
+        else:
+            return ChatResponse(
+                message=f"Failed to write to Tally: {result.get('error_message', 'Unknown error')}",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
+    # Should be unreachable thanks to Literal[...] on VoucherActionRequest.action
+    raise HTTPException(status_code=400, detail=f"Unknown action: {request.action}")
 
 
 async def _chat_legacy_mode(

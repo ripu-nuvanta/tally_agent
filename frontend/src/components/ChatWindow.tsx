@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getConversation, sendChat } from "../api/client";
+import { getConversation, sendChat, sendChatWithFile, voucherAction, type VoucherAction } from "../api/client";
 import { useSession } from "../context/SessionContext";
 import type { ChatMessage } from "../types";
 import { generateId } from "../utils/format";
@@ -45,11 +45,11 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
   }, [conversationId, workspaceId]);
 
   const handleSend = useCallback(
-    async (text: string) => {
+    async (text: string, file?: File) => {
       const userMsg: ChatMessage = {
         id: generateId(),
         role: "user",
-        content: text,
+        content: file ? `${text || "Uploading file"} [${file.name}]` : text,
       };
 
       const loadingMsg: ChatMessage = {
@@ -63,13 +63,15 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
       setLoading(true);
 
       try {
-        const response = await sendChat({
-          message: text,
-          session_id: sessionId ?? undefined,
-          company: company ?? undefined,
-          workspace_id: workspaceId,
-          conversation_id: conversationId,
-        });
+        const response = file
+          ? await sendChatWithFile(file, text, workspaceId, conversationId)
+          : await sendChat({
+              message: text,
+              session_id: sessionId ?? undefined,
+              company: company ?? undefined,
+              workspace_id: workspaceId,
+              conversation_id: conversationId,
+            });
 
         setSessionId(response.session_id);
 
@@ -103,7 +105,51 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
         setLoading(false);
       }
     },
-    [sessionId, company, setSessionId, workspaceId, conversationId]
+    [sessionId, company, setSessionId, workspaceId, conversationId, onMessageSent]
+  );
+
+  const handleVoucherAction = useCallback(
+    async (action: VoucherAction, entry: Record<string, unknown>) => {
+      const loadingMsg: ChatMessage = {
+        id: generateId(),
+        role: "assistant",
+        content: "",
+        isLoading: true,
+      };
+      setMessages((prev) => [...prev, loadingMsg]);
+      setLoading(true);
+
+      try {
+        const response = await voucherAction(
+          action,
+          entry,
+          company ?? "",
+          sessionId ?? "",
+        );
+        const resultMsg: ChatMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: response.message,
+          data: response.data,
+        };
+        setMessages((prev) =>
+          prev.map((m) => (m.id === loadingMsg.id ? resultMsg : m))
+        );
+      } catch {
+        const errorMsg: ChatMessage = {
+          id: generateId(),
+          role: "assistant",
+          content: "Failed to perform action. Please try again.",
+          isError: true,
+        };
+        setMessages((prev) =>
+          prev.map((m) => (m.id === loadingMsg.id ? errorMsg : m))
+        );
+      } finally {
+        setLoading(false);
+      }
+    },
+    [company, sessionId]
   );
 
   return (
@@ -124,7 +170,7 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
             </div>
           )}
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} />
+            <MessageBubble key={msg.id} message={msg} onVoucherAction={handleVoucherAction} />
           ))}
           <div ref={bottomRef} />
         </div>

@@ -422,3 +422,86 @@ def parse_cash_flow(raw_xml: str) -> list[dict]:
     so it can be adjusted independently after live testing.
     """
     return parse_trial_balance(raw_xml)
+
+
+def parse_import_response(raw_xml: str) -> dict:
+    """Parse Tally's IMPORTDATA response.
+
+    Tally returns CREATED/ALTERED/DELETED counts, plus ERRORS and EXCEPTIONS.
+    EXCEPTIONS=1 (without ERRORS) means silent failure — typically malformed XML
+    (e.g., missing NAME.LIST in master operations).
+
+    Returns:
+        {
+            "success": bool,
+            "created": int,
+            "altered": int,
+            "deleted": int,
+            "errors": int,
+            "exceptions": int,
+            "last_vch_id": str | None,
+            "error_message": str | None,
+        }
+    """
+    if not raw_xml or not raw_xml.strip():
+        return {
+            "success": False, "error_message": "Empty response from Tally",
+            "created": 0, "altered": 0, "deleted": 0, "errors": 0,
+            "exceptions": 0, "last_vch_id": None,
+        }
+    try:
+        root = ET.fromstring(sanitize_xml(raw_xml))
+    except ET.ParseError:
+        return {
+            "success": False, "error_message": "Invalid XML in Tally response",
+            "created": 0, "altered": 0, "deleted": 0, "errors": 0,
+            "exceptions": 0, "last_vch_id": None,
+        }
+
+    def _find_int(tag: str) -> int:
+        el = root.find(tag)
+        if el is None:
+            el = root.find(f".//{tag}")
+        return int(el.text.strip()) if el is not None and el.text else 0
+
+    created = _find_int("CREATED")
+    altered = _find_int("ALTERED")
+    deleted = _find_int("DELETED")
+    errors = _find_int("ERRORS")
+    exceptions = _find_int("EXCEPTIONS")
+    last_vch_id = root.findtext("LASTVCHID") or root.findtext(".//LASTVCHID")
+    if last_vch_id == "0":
+        last_vch_id = None
+
+    error_message = None
+    line_error = root.findtext("LINEERROR") or root.findtext(".//LINEERROR")
+    if line_error:
+        # Translate Tally's misleading "Voucher date is missing" error.
+        # Despite the message, the date IS present in the XML. The real cause is
+        # that the voucher date is after Tally's configured "current date".
+        # The user must press F2 in Tally (Gateway of Tally) and update the
+        # current date to a date >= the voucher date.
+        if "voucher date is missing" in line_error.lower():
+            error_message = (
+                "Tally rejected the voucher date. Its configured 'current date' is "
+                "earlier than the voucher date. In Tally: press F2 (at Gateway of "
+                "Tally) and set the current date to today or later, then retry."
+            )
+        else:
+            error_message = line_error
+    elif errors > 0:
+        error_message = f"Tally reported {errors} error(s)"
+    elif exceptions > 0:
+        error_message = f"Tally reported {exceptions} exception(s) — likely malformed XML"
+
+    success = errors == 0 and exceptions == 0 and not line_error and (created > 0 or altered > 0 or deleted > 0)
+    return {
+        "success": success,
+        "created": created,
+        "altered": altered,
+        "deleted": deleted,
+        "errors": errors,
+        "exceptions": exceptions,
+        "last_vch_id": last_vch_id,
+        "error_message": error_message,
+    }
