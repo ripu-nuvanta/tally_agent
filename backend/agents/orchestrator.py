@@ -128,6 +128,170 @@ class Orchestrator(BaseAgent):
         # Delegate to the internal execution method
         return await self._execute_internal(message, client, session)
 
+    async def process_file_upload(
+        self,
+        file_path: str,
+        filename: str,
+        mime_type: str,
+        user_message: str,
+        client,  # TallyClient
+        session,  # SessionContext
+        file_id: str,
+    ) -> dict:
+        """Process an uploaded file for data entry.
+
+        Pipeline: parse document → fetch Tally ledgers → map vendor → build voucher
+        → return review card data.
+
+        The actual Tally write happens later when the user clicks "Write to Tally"
+        (via /chat/voucher-action endpoint).
+
+        Returns a dict with keys: message, data (ChatResponse-compatible).
+        """
+        import base64
+        import uuid as uuid_mod
+
+        from backend.services.document_parser import (
+            build_vision_prompt,
+            detect_file_type,
+            parse_vision_response,
+            validate_extracted_amounts,
+        )
+        from backend.services.ledger_mapper import LedgerMapper
+        from backend.services.voucher_builder import build_payment_voucher_data
+        from backend.tally_bridge.request_builder import build_list_ledgers
+        from backend.tally_bridge.response_parser import parse_ledger_list
+
+        # 1. Parse the document
+        file_type = detect_file_type(filename, mime_type)
+        if file_type != "vision":
+            return {
+                "message": (
+                    f"File type '{file_type}' not yet supported in B1a. "
+                    "Please upload an image or PDF of an expense receipt."
+                ),
+                "data": None,
+            }
+
+        with open(file_path, "rb") as f:
+            image_data = base64.b64encode(f.read()).decode("utf-8")
+
+        # Map MIME type for Claude Vision
+        media_type = mime_type or "image/jpeg"
+        if media_type == "image/heic":
+            media_type = "image/jpeg"  # Claude doesn't support HEIC directly
+
+        ai_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+        if media_type == "application/pdf":
+            # PDF support via document block
+            content_block = {
+                "type": "document",
+                "source": {
+                    "type": "base64",
+                    "media_type": "application/pdf",
+                    "data": image_data,
+                },
+            }
+        else:
+            content_block = {
+                "type": "image",
+                "source": {
+                    "type": "base64",
+                    "media_type": media_type,
+                    "data": image_data,
+                },
+            }
+
+        response = ai_client.messages.create(
+            model=settings.CLAUDE_MODEL,
+            max_tokens=1024,
+            messages=[{
+                "role": "user",
+                "content": [
+                    content_block,
+                    {"type": "text", "text": build_vision_prompt()},
+                ],
+            }],
+        )
+        extracted_text = response.content[0].text
+        try:
+            extracted = parse_vision_response(extracted_text)
+        except Exception as e:
+            return {
+                "message": f"Could not parse document: {e}. Raw response:\n{extracted_text[:500]}",
+                "data": None,
+            }
+
+        # 2. Validate amounts (warnings, not blocking)
+        warnings = validate_extracted_amounts(extracted)
+
+        # 3. Fetch Tally ledgers for mapping
+        ledger_xml = await client.post_xml(build_list_ledgers())
+        tally_ledgers = parse_ledger_list(ledger_xml)
+        ledger_names = [l["name"] for l in tally_ledgers]
+
+        payment_groups = {"cash-in-hand", "bank accounts", "bank occ a/c"}
+        payment_ledgers = [
+            l["name"] for l in tally_ledgers
+            if l.get("parent_group", "").lower() in payment_groups
+        ]
+        if not payment_ledgers:
+            payment_ledgers = ["Cash"]
+
+        # 4. Map vendor to ledger
+        mapper = LedgerMapper()
+        # TODO(Task 14+): Load stored mappings from DB (ledger_mappings table) per workspace
+        mapping = await mapper.find_mapping(
+            extracted.vendor_name or "Expense",
+            "Payment",
+            tally_ledgers=ledger_names,
+        )
+
+        # 5. Build voucher payload
+        voucher = build_payment_voucher_data(
+            doc=extracted,
+            expense_ledger=mapping.ledger_name,
+            payment_ledger=payment_ledgers[0],
+        )
+
+        # 6. Assemble review card response
+        entry_id = str(uuid_mod.uuid4())
+        review_data = {
+            "type": "voucher_review",
+            "file_id": file_id,
+            "entries": [{
+                "id": entry_id,
+                "voucher_type": voucher.voucher_type,
+                "date": voucher.date,
+                "vendor_name": extracted.vendor_name,
+                "amount": float(voucher.amount),
+                "debit_ledger": voucher.debit_ledger,
+                "credit_ledger": voucher.credit_ledger,
+                "narration": voucher.narration,
+                "gst_entries": voucher.gst_entries,
+                "status": "draft",
+                "warnings": warnings,
+                "is_new_ledger": mapping.is_new_ledger,
+                "suggested_parent": mapping.suggested_parent,
+            }],
+            "available_ledgers": ledger_names,
+            "available_payment_ledgers": payment_ledgers,
+        }
+
+        vendor_display = extracted.vendor_name or "Unknown vendor"
+        amount_display = f"₹{float(voucher.amount):,.2f}"
+        message = (
+            f"I've extracted the expense details from your receipt:\n\n"
+            f"**{vendor_display}** — {amount_display} on {extracted.date}\n\n"
+            f"Please review the entry below and click **Write to Tally** to create "
+            f"the payment voucher, or **Edit Entry** to make corrections."
+        )
+        if warnings:
+            message += "\n\n⚠️ " + " | ".join(warnings)
+
+        return {"message": message, "data": review_data}
+
     async def _execute_internal(
         self,
         user_message: str,

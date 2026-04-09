@@ -1,5 +1,7 @@
 """Tests for file upload endpoint."""
 import io
+import json
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,31 +12,52 @@ def client(tmp_path, monkeypatch):
     """FastAPI client with file storage redirected to tmp path."""
     from backend.config import settings
     monkeypatch.setattr(settings, "FILE_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(settings, "TALLY_MODE", "mock")
+    monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
     from backend.main import app
     with TestClient(app) as c:
         yield c
 
 
+def _mock_vision_client(vendor: str = "Uber", amount: float = 500.0):
+    """Build a MagicMock anthropic.Anthropic replacement returning a fake extraction."""
+    vision_response_text = json.dumps({
+        "doc_type": "expense",
+        "vendor_name": vendor,
+        "date": "2026-04-04",
+        "total_amount": amount,
+        "line_items": [{"description": "Test", "amount": amount}],
+        "gst": None,
+        "payment_mode": "upi",
+    })
+    mock_message = MagicMock()
+    mock_message.content = [MagicMock(text=vision_response_text)]
+    mock_instance = MagicMock()
+    mock_instance.messages.create.return_value = mock_message
+    return mock_instance
+
+
 class TestFileUploadEndpoint:
     def test_upload_jpg_returns_success(self, client):
         file_content = b"\xff\xd8\xff\xe0" + b"\x00" * 100  # JPEG header
-        response = client.post(
-            "/api/chat/upload",
-            files={"file": ("receipt.jpg", io.BytesIO(file_content), "image/jpeg")},
-            data={"message": "lunch expense"},
-        )
+        with patch("anthropic.Anthropic", return_value=_mock_vision_client()):
+            response = client.post(
+                "/api/chat/upload",
+                files={"file": ("receipt.jpg", io.BytesIO(file_content), "image/jpeg")},
+                data={"message": "lunch expense"},
+            )
         assert response.status_code == 200
         data = response.json()
-        assert "uploaded" in data["message"].lower()
-        assert data["data"]["type"] == "file_uploaded"
-        assert data["data"]["filename"] == "receipt.jpg"
+        assert data["data"]["type"] == "voucher_review"
+        assert data["data"]["entries"][0]["vendor_name"] == "Uber"
 
     def test_upload_pdf_returns_success(self, client):
         file_content = b"%PDF-1.4" + b"\x00" * 100
-        response = client.post(
-            "/api/chat/upload",
-            files={"file": ("invoice.pdf", io.BytesIO(file_content), "application/pdf")},
-        )
+        with patch("anthropic.Anthropic", return_value=_mock_vision_client()):
+            response = client.post(
+                "/api/chat/upload",
+                files={"file": ("invoice.pdf", io.BytesIO(file_content), "application/pdf")},
+            )
         assert response.status_code == 200
 
     def test_upload_unsupported_type(self, client):

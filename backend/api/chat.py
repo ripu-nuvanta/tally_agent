@@ -98,16 +98,108 @@ async def chat_with_file(
     with open(storage_path, "wb") as f:
         f.write(contents)
 
+    # Run the data entry pipeline via the orchestrator.
+    orchestrator = Orchestrator()
+    session = SessionContext(session_id=conversation_id or file_id)
+
+    try:
+        result = await orchestrator.process_file_upload(
+            file_path=storage_path,
+            filename=file.filename,
+            mime_type=file.content_type or "",
+            user_message=message,
+            client=client,
+            session=session,
+            file_id=file_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Data entry pipeline failed")
+        raise HTTPException(status_code=500, detail=f"Pipeline error: {e}")
+
     return ChatResponse(
-        message=f"File '{file.filename}' uploaded successfully ({file_size} bytes). Processing...",
-        data={
-            "type": "file_uploaded",
-            "file_id": file_id,
-            "filename": file.filename,
-            "size": file_size,
-        },
+        message=result["message"],
+        data=result.get("data"),
         session_id=conversation_id or file_id,
     )
+
+
+@router.post("/chat/voucher-action", response_model=ChatResponse)
+async def voucher_action(
+    request: dict,
+    client: TallyClient = Depends(get_client),
+    user_id: str = Depends(get_current_user),
+) -> ChatResponse:
+    """Handle voucher approve/discard actions from the review card.
+
+    Body shape:
+        {
+            "action": "approve" | "discard",
+            "entry": VoucherReviewEntry dict,
+            "company": str,
+            "session_id": str,
+        }
+    """
+    from backend.tally_bridge.writer import TallyWriter, ValidationError
+
+    action = request.get("action")
+    entry = request.get("entry", {})
+    company = request.get("company", "") or "Default"
+    session_id = request.get("session_id", "")
+
+    if action == "approve":
+        if not settings.TALLY_WRITE_ENABLED:
+            return ChatResponse(
+                message="Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
+        writer = TallyWriter(client=client, company=company)
+        try:
+            gst_entries = entry.get("gst_entries") or None
+            result = await writer.create_payment_voucher(
+                date=entry["date"],
+                debit_ledger=entry["debit_ledger"],
+                credit_ledger=entry["credit_ledger"],
+                amount=entry["amount"],
+                narration=entry["narration"],
+                gst_entries=gst_entries,
+            )
+        except ValidationError as e:
+            return ChatResponse(
+                message=f"Validation failed: {'; '.join(e.errors)}",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
+        if result["success"]:
+            vch_id = result.get("last_vch_id") or ""
+            return ChatResponse(
+                message=f"Payment voucher written to Tally successfully. Voucher ID: {vch_id}",
+                data={
+                    "type": "voucher_written",
+                    "entry_id": entry.get("id"),
+                    "tally_voucher_id": vch_id,
+                },
+                session_id=session_id,
+            )
+        else:
+            return ChatResponse(
+                message=f"Failed to write to Tally: {result.get('error_message', 'Unknown error')}",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
+    elif action == "discard":
+        return ChatResponse(
+            message="Entry discarded.",
+            data={"type": "voucher_discarded", "entry_id": entry.get("id")},
+            session_id=session_id,
+        )
+
+    raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
 
 
 async def _chat_legacy_mode(
