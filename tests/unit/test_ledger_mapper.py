@@ -26,6 +26,18 @@ class TestStoredRuleMapping:
         assert result.source != "stored_rule"
 
     @pytest.mark.asyncio
+    async def test_stored_rule_increments_use_count(self):
+        mapper = LedgerMapper()
+        mapper._stored_mappings = [
+            {"vendor_pattern": "uber", "ledger_name": "Travel Expenses",
+             "voucher_type": "Payment", "confidence": 1.0, "use_count": 5},
+        ]
+        await mapper.find_mapping("Uber", "Payment", tally_ledgers=[])
+        assert mapper._stored_mappings[0]["use_count"] == 6
+        await mapper.find_mapping("Uber", "Payment", tally_ledgers=[])
+        assert mapper._stored_mappings[0]["use_count"] == 7
+
+    @pytest.mark.asyncio
     async def test_voucher_type_mismatch_skips_stored(self):
         mapper = LedgerMapper()
         mapper._stored_mappings = [

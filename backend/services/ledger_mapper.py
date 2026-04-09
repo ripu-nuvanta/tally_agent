@@ -47,6 +47,7 @@ class LedgerMapper:
                 mapping["vendor_pattern"] == vendor_lower
                 and mapping["voucher_type"] == voucher_type
             ):
+                mapping["use_count"] += 1
                 return MappingResult(
                     ledger_name=mapping["ledger_name"],
                     source="stored_rule",

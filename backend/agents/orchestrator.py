@@ -181,8 +181,6 @@ class Orchestrator(BaseAgent):
         if media_type == "image/heic":
             media_type = "image/jpeg"  # Claude doesn't support HEIC directly
 
-        ai_client = anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
-
         if media_type == "application/pdf":
             # PDF support via document block
             content_block = {
@@ -203,7 +201,7 @@ class Orchestrator(BaseAgent):
                 },
             }
 
-        response = ai_client.messages.create(
+        response = await anthropic_client.messages.create(
             model=settings.CLAUDE_MODEL,
             max_tokens=1024,
             messages=[{

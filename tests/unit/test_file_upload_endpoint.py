@@ -1,7 +1,7 @@
 """Tests for file upload endpoint."""
 import io
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -25,8 +25,8 @@ def client(tmp_path, monkeypatch):
         yield c
 
 
-def _mock_vision_client(vendor: str = "Uber", amount: float = 500.0):
-    """Build a MagicMock anthropic.Anthropic replacement returning a fake extraction."""
+def _mock_vision_message(vendor: str = "Uber", amount: float = 500.0):
+    """Build a fake Claude Vision response message."""
     vision_response_text = json.dumps({
         "doc_type": "expense",
         "vendor_name": vendor,
@@ -38,15 +38,16 @@ def _mock_vision_client(vendor: str = "Uber", amount: float = 500.0):
     })
     mock_message = MagicMock()
     mock_message.content = [MagicMock(text=vision_response_text)]
-    mock_instance = MagicMock()
-    mock_instance.messages.create.return_value = mock_message
-    return mock_instance
+    return mock_message
 
 
 class TestFileUploadEndpoint:
     def test_upload_jpg_returns_success(self, client):
         file_content = b"\xff\xd8\xff\xe0" + b"\x00" * 100  # JPEG header
-        with patch("anthropic.Anthropic", return_value=_mock_vision_client()):
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=_mock_vision_message()),
+        ):
             response = client.post(
                 "/api/chat/upload",
                 files={"file": ("receipt.jpg", io.BytesIO(file_content), "image/jpeg")},
@@ -59,7 +60,10 @@ class TestFileUploadEndpoint:
 
     def test_upload_pdf_returns_success(self, client):
         file_content = b"%PDF-1.4" + b"\x00" * 100
-        with patch("anthropic.Anthropic", return_value=_mock_vision_client()):
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=_mock_vision_message()),
+        ):
             response = client.post(
                 "/api/chat/upload",
                 files={"file": ("invoice.pdf", io.BytesIO(file_content), "application/pdf")},

@@ -1,7 +1,7 @@
 """E2E test for expense data entry pipeline (mock mode)."""
 import io
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 from fastapi.testclient import TestClient
@@ -41,10 +41,12 @@ class TestDataEntryE2E:
         mock_message = MagicMock()
         mock_message.content = [MagicMock(text=vision_response_text)]
 
-        mock_anthropic_instance = MagicMock()
-        mock_anthropic_instance.messages.create.return_value = mock_message
-
-        with patch("anthropic.Anthropic", return_value=mock_anthropic_instance):
+        # Patch the module-level AsyncAnthropic client's messages.create
+        # with an AsyncMock so `await` works in process_file_upload.
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=mock_message),
+        ):
             file_content = b"\xff\xd8\xff\xe0" + b"\x00" * 200
             response = client.post(
                 "/api/chat/upload",
