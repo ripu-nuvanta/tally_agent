@@ -3,6 +3,7 @@ import remarkGfm from "remark-gfm";
 import type { ChatMessage, TableData } from "../types";
 import DataTable from "./DataTable";
 import ChartRenderer from "./ChartRenderer";
+import VoucherReviewCard, { type VoucherEntry } from "./VoucherReviewCard";
 
 function hasMarkdownTable(text: string): boolean {
   // Check if text contains a markdown pipe table (at least a header + separator row)
@@ -34,14 +35,27 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
     );
   }
 
+  // Detect voucher review data (Set B1)
+  const voucherData =
+    message.data !== null &&
+    message.data !== undefined &&
+    typeof message.data === "object" &&
+    !Array.isArray(message.data) &&
+    (message.data as unknown as Record<string, unknown>).type === "voucher_review"
+      ? (message.data as unknown as Record<string, unknown>)
+      : null;
+  const isVoucherReview = voucherData !== null;
+
   // Determine tables to render
   const tables: TableData[] = [];
-  if (Array.isArray(message.data)) {
-    for (const d of message.data) {
-      if (isTableData(d)) tables.push(d);
+  if (!isVoucherReview) {
+    if (Array.isArray(message.data)) {
+      for (const d of message.data) {
+        if (isTableData(d)) tables.push(d);
+      }
+    } else if (isTableData(message.data)) {
+      tables.push(message.data);
     }
-  } else if (isTableData(message.data)) {
-    tables.push(message.data);
   }
 
   // If message has markdown tables, render them inline (don't strip).
@@ -94,8 +108,26 @@ export default function MessageBubble({ message }: MessageBubbleProps) {
           </div>
         )}
 
+        {/* Voucher review card (Set B1) */}
+        {voucherData && (
+          <VoucherReviewCard
+            entries={(voucherData.entries as VoucherEntry[]) || []}
+            availableLedgers={(voucherData.available_ledgers as string[]) || []}
+            availablePaymentLedgers={(voucherData.available_payment_ledgers as string[]) || []}
+            onApprove={() => {
+              // Wired in Task 14
+            }}
+            onDiscard={() => {
+              // Wired in Task 14
+            }}
+            onEdit={() => {
+              // Wired in Task 14
+            }}
+          />
+        )}
+
         {/* Fallback: render DataTable only if structured data exists but no markdown table in text */}
-        {showDataTableFallback && tables.map((tableData, idx) => (
+        {!isVoucherReview && showDataTableFallback && tables.map((tableData, idx) => (
           <DataTable key={idx} data={tableData} />
         ))}
         {message.chart && <ChartRenderer chart={message.chart} />}
