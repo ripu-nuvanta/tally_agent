@@ -132,6 +132,28 @@ describe("VoucherReviewCard", () => {
     expect(screen.getByText("Confirm & Write to Tally")).toBeInTheDocument();
   });
 
+  it("allows editing the date", () => {
+    const onEdit = vi.fn();
+    render(
+      <VoucherReviewCard
+        entries={[mockEntry]}
+        availableLedgers={["Travel Expenses"]}
+        availablePaymentLedgers={["Cash"]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={onEdit}
+      />
+    );
+    fireEvent.click(screen.getByText("Edit Entry"));
+    const dateInput = screen.getByLabelText("Date");
+    fireEvent.change(dateInput, { target: { value: "2026-03-02" } });
+    fireEvent.click(screen.getByText("Confirm & Write to Tally"));
+    expect(onEdit).toHaveBeenCalledWith(
+      "test-1",
+      expect.objectContaining({ date: "20260302" })
+    );
+  });
+
   it("calls onEdit with updated values when confirmed", () => {
     const onEdit = vi.fn();
     render(

@@ -79,3 +79,25 @@ class TestParseImportResponse:
         assert result["success"] is False
         assert result["exceptions"] == 1
         assert "exception" in result["error_message"].lower()
+
+    def test_translates_voucher_date_missing_error(self):
+        """Tally's 'Voucher date is missing' is misleading — translate to a clear hint."""
+        xml = """<RESPONSE>
+<LINEERROR>Voucher date is missing for: 'Payment' voucher 1.  Verify the data, resolve errors (if any) and retry Split.</LINEERROR>
+<CREATED>0</CREATED>
+<ALTERED>0</ALTERED>
+<DELETED>0</DELETED>
+<LASTVCHID>0</LASTVCHID>
+<LASTMID>0</LASTMID>
+<COMBINED>0</COMBINED>
+<IGNORED>0</IGNORED>
+<ERRORS>0</ERRORS>
+<CANCELLED>0</CANCELLED>
+<EXCEPTIONS>1</EXCEPTIONS>
+</RESPONSE>"""
+        result = parse_import_response(xml)
+        assert result["success"] is False
+        # The original misleading message should be replaced
+        assert "F2" in result["error_message"] or "current date" in result["error_message"]
+        # Make sure the hint mentions the actionable fix
+        assert "tally" in result["error_message"].lower()

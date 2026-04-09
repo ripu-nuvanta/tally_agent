@@ -25,6 +25,19 @@ interface VoucherReviewCardProps {
   onEdit: (entryId: string, updates: Partial<VoucherEntry>) => void;
 }
 
+function formatDateForInput(yyyymmdd: string): string {
+  // Convert YYYYMMDD → YYYY-MM-DD for <input type="date">
+  if (yyyymmdd.length === 8 && /^\d{8}$/.test(yyyymmdd)) {
+    return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
+  }
+  return yyyymmdd;
+}
+
+function formatDateForStorage(yyyy_mm_dd: string): string {
+  // Convert YYYY-MM-DD → YYYYMMDD for Tally
+  return yyyy_mm_dd.replace(/-/g, "");
+}
+
 function formatDate(dateStr: string): string {
   // YYYYMMDD → DD-MMM-YYYY
   if (dateStr.length === 8 && /^\d{8}$/.test(dateStr)) {
@@ -184,6 +197,7 @@ function EditForm({
   onCancel,
 }: EditFormProps) {
   const [vendor, setVendor] = useState(entry.vendor_name || "");
+  const [date, setDate] = useState(formatDateForInput(entry.date));
   const [amount, setAmount] = useState(String(entry.amount));
   const [debitLedger, setDebitLedger] = useState(entry.debit_ledger);
   const [creditLedger, setCreditLedger] = useState(entry.credit_ledger);
@@ -196,6 +210,13 @@ function EditForm({
         onChange={(e) => setVendor(e.target.value)}
         placeholder="Vendor"
         aria-label="Vendor"
+        className="w-full rounded border px-2 py-1 text-sm"
+      />
+      <input
+        type="date"
+        value={date}
+        onChange={(e) => setDate(e.target.value)}
+        aria-label="Date"
         className="w-full rounded border px-2 py-1 text-sm"
       />
       <input
@@ -246,6 +267,7 @@ function EditForm({
           onClick={() =>
             onSave({
               vendor_name: vendor,
+              date: formatDateForStorage(date),
               amount: parseFloat(amount),
               debit_ledger: debitLedger,
               credit_ledger: creditLedger,

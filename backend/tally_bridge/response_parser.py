@@ -476,7 +476,19 @@ def parse_import_response(raw_xml: str) -> dict:
     error_message = None
     line_error = root.findtext("LINEERROR") or root.findtext(".//LINEERROR")
     if line_error:
-        error_message = line_error
+        # Translate Tally's misleading "Voucher date is missing" error.
+        # Despite the message, the date IS present in the XML. The real cause is
+        # that the voucher date is after Tally's configured "current date".
+        # The user must press F2 in Tally (Gateway of Tally) and update the
+        # current date to a date >= the voucher date.
+        if "voucher date is missing" in line_error.lower():
+            error_message = (
+                "Tally rejected the voucher date. Its configured 'current date' is "
+                "earlier than the voucher date. In Tally: press F2 (at Gateway of "
+                "Tally) and set the current date to today or later, then retry."
+            )
+        else:
+            error_message = line_error
     elif errors > 0:
         error_message = f"Tally reported {errors} error(s)"
     elif exceptions > 0:
