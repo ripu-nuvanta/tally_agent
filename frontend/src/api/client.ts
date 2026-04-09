@@ -167,6 +167,24 @@ export async function sendChat(request: ChatRequest): Promise<ChatResponse> {
   return data;
 }
 
+export async function sendChatWithFile(
+  file: File,
+  message: string,
+  workspaceId?: string,
+  conversationId?: string,
+): Promise<ChatResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  form.append("message", message);
+  if (workspaceId) form.append("workspace_id", workspaceId);
+  if (conversationId) form.append("conversation_id", conversationId);
+
+  const { data } = await api.post<ChatResponse>("/chat/upload", form, {
+    headers: { "Content-Type": "multipart/form-data" },
+  });
+  return data;
+}
+
 export async function getHealth(): Promise<HealthResponse> {
   const { data } = await api.get<HealthResponse>("/health");
   return data;

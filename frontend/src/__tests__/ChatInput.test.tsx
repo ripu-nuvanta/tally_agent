@@ -20,7 +20,7 @@ describe("ChatInput", () => {
     render(<ChatInput onSend={onSend} />);
     const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
     await user.type(textarea, "Show trial balance{Enter}");
-    expect(onSend).toHaveBeenCalledWith("Show trial balance");
+    expect(onSend).toHaveBeenCalledWith("Show trial balance", undefined);
   });
 
   it("does not call onSend on Shift+Enter", async () => {
@@ -56,7 +56,7 @@ describe("ChatInput", () => {
     const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
     await user.type(textarea, "test query");
     await user.click(screen.getByRole("button", { name: "Send message" }));
-    expect(onSend).toHaveBeenCalledWith("test query");
+    expect(onSend).toHaveBeenCalledWith("test query", undefined);
   });
 
   it("disables textarea and button when disabled", () => {
