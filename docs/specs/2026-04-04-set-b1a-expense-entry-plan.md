@@ -12,6 +12,74 @@
 > - Sales/Purchase voucher builders (Set B1b/B1c)
 > - Bulk upload for bank statements (Set B1d)
 
+## ⚠️ Follow-up: Tally "current date" write rejection (needs further experimentation)
+
+**Discovered during smoke test on 2026-04-09 with live Tally.**
+
+### Symptom
+
+Write operations fail with Tally returning:
+```xml
+<LINEERROR>Voucher date is missing for: 'Payment' voucher 1. Verify the data, resolve errors (if any) and retry Split.</LINEERROR>
+<CREATED>0</CREATED>
+<EXCEPTIONS>1</EXCEPTIONS>
+```
+
+**The DATE field IS present in the XML.** The error message is misleading.
+
+### Root cause (observed, not fully confirmed)
+
+Tally has an internal "current date" setting (separate from the period From/To range). When a voucher's `<DATE>` is **after** this current date, Tally rejects with the above error.
+
+Confirmed boundary test on live Tally (2026-04-09):
+- `20260301` → CREATED=1 (works)
+- `20260302` → CREATED=1 (works)  ← Tally's current date
+- `20260303` → LINEERROR (rejected, even though an existing journal voucher exists on this date)
+- `20260304` → LINEERROR (the invoice date we tried to write)
+- `20260409` → LINEERROR (today's real date)
+- `20250801` → CREATED=1 (any past date works)
+
+### Attempted workarounds (all failed)
+
+1. `SVCURRENTDATE` in `STATICVARIABLES` (`20260409`, `9-Apr-2026`, `09-04-2026`) — no effect on writes (only read queries honor it)
+2. `SVFROMDATE` + `SVTODATE` in STATICVARIABLES — no effect
+3. Explicit `<EFFECTIVEDATE>` tag — no effect
+4. Explicit `VOUCHERNUMBER` — Tally parses it (error mentions the number) but still rejects date
+5. Alternative envelope format (`<TYPE>Data</TYPE><ID>Vouchers</ID>`) — same error
+6. Raw `curl` (not our httpx client) — same error, rules out client encoding issue
+7. `ACTION="Alter"` on company master to set current date — no documented syntax found
+8. Web research — confirmed multiple sources: **Tally XML API does NOT support changing the current date**. Only interactive F2 in Tally UI works.
+
+### Current mitigation (already shipped)
+
+- `parse_import_response` detects `"voucher date is missing"` LINEERROR and translates it to:
+  > "Tally rejected the voucher date. Its configured 'current date' is earlier than the voucher date. In Tally: press F2 (at Gateway of Tally) and set the current date to today or later, then retry."
+- `VoucherReviewCard` EditForm now includes a date input so users can edit and retry with an earlier date.
+
+### User experience note
+
+F2 in **TallyPrime 7.0+** opens the **Period** dialog (From/To range), not a single "current date" prompt as in older Tally ERP 9. Changing the period end date to 31-3-2026 during the smoke test did NOT unblock writes. The actual "current date" setting appears to be in a different UI flow (possibly Alt+F2 or Company Features). **Need a Tally domain expert to confirm the exact TallyPrime UI path to change current date**, and document it in the error message.
+
+### Things to experiment with
+
+1. **Read Tally's current date via XML first** — there may be a `Current Date` collection or system variable we can query. If yes, we can show the user the actual current date setting and compute a valid voucher date automatically (or block before sending).
+2. **Try `<VOUCHER>` with `ALTER` action on an existing voucher** — does the date restriction apply to alters too, or only creates?
+3. **Test against a fresh Tally company** — does the issue only appear when the company has existing vouchers, or is it a general Tally behavior?
+4. **Investigate TallyPrime 7.0 UI more** — find the exact menu path to change current date in TallyPrime (as opposed to Tally ERP 9 where F2 at Gateway was sufficient).
+5. **`REPORTNAME=Vouchers` vs other names** — try `All Vouchers`, `Day Book`, or other report names to see if any bypasses the current-date check.
+6. **TDL approach** — if XML truly cannot set current date, consider deploying a small TDL that exposes a "set current date" collection callable via XML.
+7. **Workaround: always write with `TODAY()` then alter the date?** — may not help since alter likely has the same restriction.
+
+### Priority
+
+**Medium.** Current mitigation (clear error + user can edit date) works but forces users to either:
+- (a) manually press F2 in Tally every time Tally's current date lags behind the real date
+- (b) backdate their vouchers to a valid range (loses real invoice date)
+
+Neither is acceptable for production. A real fix is needed before Set B1a is "done" for real users.
+
+**Next session:** dispatch an exploration task dedicated to this issue — start with #1 (query Tally's current date) and #4 (TallyPrime UI investigation).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Upload an expense receipt in the chat, AI extracts data via Claude Vision, maps to Tally ledgers, shows a review card, and on approval writes a Payment voucher to Tally.
