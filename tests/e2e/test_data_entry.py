@@ -13,6 +13,10 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "FILE_STORAGE_PATH", str(tmp_path))
     monkeypatch.setattr(settings, "TALLY_MODE", "mock")
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    # Force legacy (non-DB) mode so auth dependency is a no-op, even if the
+    # developer has DATABASE_URL set in .env (Set A1 default).
+    monkeypatch.setattr(settings, "DATABASE_URL", None)
+    monkeypatch.setattr(settings, "JWT_SECRET", None)
     from backend.main import app
     with TestClient(app) as tc:
         yield tc
@@ -92,3 +96,75 @@ class TestDataEntryE2E:
         assert response.status_code == 200
         data = response.json()
         assert data["data"]["type"] == "voucher_discarded"
+
+    def test_voucher_edit_writes_to_tally(self, client):
+        """Edit action should be treated as approve — writes the (possibly edited) entry."""
+        response = client.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "edit",
+                "entry": {
+                    "id": "test-edit",
+                    "date": "20260302",
+                    "debit_ledger": "Bank Charges",
+                    "credit_ledger": "Cash",
+                    "amount": 123.45,
+                    "narration": "Edited entry test",
+                    "gst_entries": [],
+                },
+                "company": "Test Co",
+                "session_id": "test",
+            },
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert data["data"]["type"] == "voucher_written"
+
+    def test_voucher_approve_creates_new_ledger_first(self, client):
+        """When is_new_ledger=True, backend must create the ledger before the voucher."""
+        response = client.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "approve",
+                "entry": {
+                    "id": "test-new",
+                    "date": "20260302",
+                    "debit_ledger": "Brand New Vendor Inc",
+                    "credit_ledger": "Cash",
+                    "amount": 100.00,
+                    "narration": "First time vendor",
+                    "gst_entries": [],
+                    "is_new_ledger": True,
+                    "suggested_parent": "Indirect Expenses",
+                },
+                "company": "Test Co",
+                "session_id": "test",
+            },
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        # Mock handler returns success for both ledger and voucher create
+        assert data["data"]["type"] == "voucher_written"
+
+    def test_voucher_action_missing_required_field(self, client):
+        """Missing action field → 422 validation error."""
+        response = client.post(
+            "/api/chat/voucher-action",
+            json={
+                "entry": {"id": "x"},
+                "company": "Test Co",
+            },
+        )
+        assert response.status_code == 422
+
+    def test_voucher_action_unknown_action(self, client):
+        """Unknown action → 422 from Literal validation."""
+        response = client.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "explode",
+                "entry": {"id": "x"},
+                "company": "Test Co",
+            },
+        )
+        assert response.status_code == 422

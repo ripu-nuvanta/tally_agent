@@ -191,3 +191,11 @@ class VoucherReviewData(BaseModel):
     entries: list[VoucherReviewEntry]
     available_ledgers: list[str] = []
     available_payment_ledgers: list[str] = []
+
+
+class VoucherActionRequest(BaseModel):
+    """Request body for /chat/voucher-action endpoint."""
+    action: Literal["approve", "discard", "edit"]
+    entry: dict[str, Any]
+    company: str = ""
+    session_id: str = ""

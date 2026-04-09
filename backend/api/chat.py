@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from backend.agents.context import SessionContext, SessionStore
 from backend.agents.orchestrator import Orchestrator
 from backend.api.dependencies import get_client, get_current_user, get_session_store
-from backend.api.models import ChatRequest, ChatResponse, ChartSpec
+from backend.api.models import ChatRequest, ChatResponse, ChartSpec, VoucherActionRequest
 from backend.config import settings
 from backend.tally_bridge.client import TallyClient
 
@@ -127,28 +127,30 @@ async def chat_with_file(
 
 @router.post("/chat/voucher-action", response_model=ChatResponse)
 async def voucher_action(
-    request: dict,
+    request: VoucherActionRequest,
     client: TallyClient = Depends(get_client),
     user_id: str = Depends(get_current_user),
 ) -> ChatResponse:
-    """Handle voucher approve/discard actions from the review card.
+    """Handle voucher approve/edit/discard actions from the review card.
 
-    Body shape:
-        {
-            "action": "approve" | "discard",
-            "entry": VoucherReviewEntry dict,
-            "company": str,
-            "session_id": str,
-        }
+    approve/edit both write to Tally (edit means user already modified the
+    entry in the EditForm before confirming). discard just acknowledges.
     """
     from backend.tally_bridge.writer import TallyWriter, ValidationError
 
-    action = request.get("action")
-    entry = request.get("entry", {})
-    company = request.get("company", "") or "Default"
-    session_id = request.get("session_id", "")
+    entry = request.entry
+    company = request.company or "Default"
+    session_id = request.session_id
 
-    if action == "approve":
+    if request.action == "discard":
+        return ChatResponse(
+            message="Entry discarded.",
+            data={"type": "voucher_discarded", "entry_id": entry.get("id")},
+            session_id=session_id,
+        )
+
+    # approve and edit both write to Tally
+    if request.action in ("approve", "edit"):
         if not settings.TALLY_WRITE_ENABLED:
             return ChatResponse(
                 message="Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
@@ -157,6 +159,37 @@ async def voucher_action(
             )
 
         writer = TallyWriter(client=client, company=company)
+
+        # Create new ledger first if the review card marked it as new
+        if entry.get("is_new_ledger"):
+            ledger_name = entry.get("debit_ledger")
+            parent = entry.get("suggested_parent") or "Indirect Expenses"
+            if not ledger_name:
+                return ChatResponse(
+                    message="Cannot create new ledger: debit_ledger is empty.",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+            try:
+                ledger_result = await writer.create_ledger(name=ledger_name, parent=parent)
+            except Exception as e:
+                logger.exception("Failed to create new ledger")
+                return ChatResponse(
+                    message=f"Failed to create new ledger '{ledger_name}': {e}",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+            if not ledger_result["success"]:
+                return ChatResponse(
+                    message=(
+                        f"Failed to create new ledger '{ledger_name}': "
+                        f"{ledger_result.get('error_message', 'Unknown error')}"
+                    ),
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+
+        # Create the voucher
         try:
             gst_entries = entry.get("gst_entries") or None
             result = await writer.create_payment_voucher(
@@ -170,6 +203,12 @@ async def voucher_action(
         except ValidationError as e:
             return ChatResponse(
                 message=f"Validation failed: {'; '.join(e.errors)}",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+        except KeyError as e:
+            return ChatResponse(
+                message=f"Voucher entry is missing required field: {e}",
                 data={"type": "voucher_error", "entry_id": entry.get("id")},
                 session_id=session_id,
             )
@@ -192,14 +231,8 @@ async def voucher_action(
                 session_id=session_id,
             )
 
-    elif action == "discard":
-        return ChatResponse(
-            message="Entry discarded.",
-            data={"type": "voucher_discarded", "entry_id": entry.get("id")},
-            session_id=session_id,
-        )
-
-    raise HTTPException(status_code=400, detail=f"Unknown action: {action}")
+    # Should be unreachable thanks to Literal[...] on VoucherActionRequest.action
+    raise HTTPException(status_code=400, detail=f"Unknown action: {request.action}")
 
 
 async def _chat_legacy_mode(
