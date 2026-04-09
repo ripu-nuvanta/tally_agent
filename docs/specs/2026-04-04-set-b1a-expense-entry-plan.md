@@ -8,9 +8,49 @@
 > **Known gaps (intentional, deferred):**
 > - DB persistence of uploaded_files/voucher_entries rows (models exist, orchestrator doesn't populate)
 > - LedgerMapping DB persistence (in-memory only)
-> - Frontend DB-mode workspace_id propagation to voucher-action endpoint
+> - ~~Frontend DB-mode workspace_id propagation to voucher-action endpoint~~ ✅ fixed 2026-04-09 (commit 8727d02)
 > - Sales/Purchase voucher builders (Set B1b/B1c)
 > - Bulk upload for bank statements (Set B1d)
+
+## ⚠️ Follow-ups from 2026-04-09 live smoke test
+
+The Playwright-driven UI smoke test against live NUVANTA Tally succeeded end-to-end (voucher 323 created and cleaned up), but surfaced three items worth addressing before B1a is considered production-ready:
+
+### F1. Workspace creation should pull company name from connected Tally
+
+**Symptom:** The "Nuvanta AI" workspace was created with `config.tally_company` unset, so the backend fell back to `workspace.name` ("Nuvanta AI") which Tally rejected with `"Could not set 'SVCurrentCompany' to 'Nuvanta AI'"`. The actual loaded company is "NUVANTA AI TECHNOLOGIES PRIVATE LIMITED".
+
+**Fix needed:** When creating a workspace (or connecting a company via the "+ Connect Company" modal), query the connected Tally instance's company list and present the exact names as a dropdown. For demo/mock workspaces, use the fixture company name ("Bharat Traders Pvt Ltd"). Store the selected name in `workspace.config.tally_company`. The workspace's display `name` can remain user-editable but the Tally-side name must match exactly.
+
+**Workaround used during smoke test:** direct SQL update on the workspace row.
+
+### F2. Amount mismatch on Claude-Api-Invoice-Mar2026.pdf is a USD→INR conversion gap
+
+**Symptom:** The review card warning showed `Line items (1730.0) + GST (0) = 1730.0, but document total is 1762.03 — please verify` (second run; first run showed 1682.6 vs 1713.1). The invoice is a Stripe receipt from Anthropic charged in USD; the "document total" is Stripe's shown INR figure while the line items Claude Vision extracted are in USD (or a partial conversion). Two runs produced different extracted totals, suggesting the model's conversion is non-deterministic.
+
+**Investigate:**
+- How is Claude Vision currently producing the "total" field — is it reading the USD number, the INR number, or attempting its own conversion?
+- Is there a system prompt instruction telling it which to prefer?
+- Should we extract USD and INR separately and store both, then pick INR for Tally?
+- If the invoice shows an FX rate, can we extract and verify the conversion math?
+
+**Eventual fix direction:** Update `backend/services/document_parser.py` extraction prompt to explicitly handle multi-currency receipts — extract `line_items_currency`, `line_items_amount`, `total_currency`, `total_amount`, `fx_rate`, and `inr_total`. The validator should then check `line_items_amount × fx_rate ≈ inr_total` instead of the naive sum comparison.
+
+### F3. Payment vs Purchase classification — is this a limitation or a bug?
+
+**Symptom:** The Anthropic API invoice was classified as a **Payment** voucher. It should arguably be a **Purchase** voucher (vendor invoice for services consumed, GST-eligible).
+
+**Root cause:** Current implementation limitation, not a model error. `backend/services/voucher_builder.py:75` hardcodes `voucher_type="Payment"`, and B1a was explicitly scoped to Payment vouchers only (`docs/specs/2026-04-04-set-b1a-expense-entry-plan.md` Task 7; Sales/Purchase builders parked for Sets B1b/B1c).
+
+**When B1b lands:**
+- Extraction should classify receipt type (expense receipt vs vendor invoice vs sales receipt) as part of the Vision extraction step.
+- Orchestrator should route to the appropriate voucher builder based on classification.
+- GST extraction becomes mandatory for Purchase vouchers (currently optional for Payment).
+- Today's smoke test invoice (Anthropic API) would be a good golden fixture for Purchase voucher extraction once B1b exists.
+
+**No action needed in B1a scope.** Documenting so it's not lost before B1b starts.
+
+---
 
 ## ⚠️ Follow-up: Tally "current date" write rejection → ROOT-CAUSED to license state (2026-04-09)
 
