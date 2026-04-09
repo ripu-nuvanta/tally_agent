@@ -125,6 +125,7 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
           entry,
           company ?? "",
           sessionId ?? "",
+          workspaceId ?? "",
         );
         const resultMsg: ChatMessage = {
           id: generateId(),
@@ -149,7 +150,7 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
         setLoading(false);
       }
     },
-    [company, sessionId]
+    [company, sessionId, workspaceId]
   );
 
   return (
