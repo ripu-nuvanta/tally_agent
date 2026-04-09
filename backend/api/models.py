@@ -199,3 +199,4 @@ class VoucherActionRequest(BaseModel):
     entry: dict[str, Any]
     company: str = ""
     session_id: str = ""
+    workspace_id: str = ""

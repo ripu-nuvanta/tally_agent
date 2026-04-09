@@ -35,6 +35,30 @@ async def _get_optional_db() -> AsyncGenerator[AsyncSession | None, None]:
         yield session
 
 
+_SAFE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".pdf", ".csv", ".xlsx", ".xls"}
+
+
+async def _verify_workspace_ownership(
+    workspace_id: str, user_id: str, db: AsyncSession,
+):
+    """Load workspace and verify it belongs to the current user.
+
+    Raises HTTPException(404) if not found or not owned.
+    """
+    from backend.db.models import Workspace
+    result = await db.execute(
+        select(Workspace).where(
+            Workspace.id == workspace_id,
+            Workspace.user_id == user_id,
+            Workspace.is_deleted.is_(False),
+        )
+    )
+    workspace = result.scalar_one_or_none()
+    if workspace is None:
+        raise HTTPException(status_code=404, detail="Workspace not found")
+    return workspace
+
+
 @router.post("/chat", response_model=ChatResponse)
 async def chat(
     request: ChatRequest,
@@ -57,6 +81,7 @@ async def chat_with_file(
     conversation_id: str = Form(default=""),
     client: TallyClient = Depends(get_client),
     user_id: str = Depends(get_current_user),
+    db: AsyncSession | None = Depends(_get_optional_db),
 ) -> ChatResponse:
     """Upload a document (receipt/invoice) for data entry.
 
@@ -90,10 +115,21 @@ async def chat_with_file(
     if file_size == 0:
         raise HTTPException(status_code=400, detail="File is empty")
 
-    # Save to local storage
+    # In DB mode, verify workspace ownership before running the pipeline.
+    if settings.db_mode:
+        if not workspace_id:
+            raise HTTPException(status_code=400, detail="workspace_id is required in DB mode")
+        if db is None:
+            raise HTTPException(status_code=500, detail="Database session not available")
+        await _verify_workspace_ownership(workspace_id, user_id, db)
+
+    # Save to local storage — sanitize the extension to a safe whitelist to
+    # avoid stashing arbitrary user-supplied suffixes (e.g. ".jpg.php").
     os.makedirs(settings.FILE_STORAGE_PATH, exist_ok=True)
     file_id = str(uuid_mod.uuid4())
-    ext = os.path.splitext(file.filename)[1]
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in _SAFE_EXTS:
+        ext = ""  # no extension is safer than trusting random input
     storage_path = os.path.join(settings.FILE_STORAGE_PATH, f"{file_id}{ext}")
     with open(storage_path, "wb") as f:
         f.write(contents)
@@ -113,8 +149,18 @@ async def chat_with_file(
             file_id=file_id,
         )
     except HTTPException:
+        # Clean up the uploaded file on pipeline failure.
+        try:
+            os.remove(storage_path)
+        except OSError:
+            pass
         raise
     except Exception as e:
+        # Clean up the uploaded file on pipeline failure.
+        try:
+            os.remove(storage_path)
+        except OSError:
+            pass
         logger.exception("Data entry pipeline failed")
         raise HTTPException(status_code=500, detail=f"Pipeline error: {e}")
 
@@ -130,6 +176,7 @@ async def voucher_action(
     request: VoucherActionRequest,
     client: TallyClient = Depends(get_client),
     user_id: str = Depends(get_current_user),
+    db: AsyncSession | None = Depends(_get_optional_db),
 ) -> ChatResponse:
     """Handle voucher approve/edit/discard actions from the review card.
 
@@ -139,8 +186,29 @@ async def voucher_action(
     from backend.tally_bridge.writer import TallyWriter, ValidationError
 
     entry = request.entry
-    company = request.company or "Default"
     session_id = request.session_id
+
+    # In DB mode, verify workspace ownership and prefer the workspace's
+    # configured company over the client-supplied value. This prevents a
+    # user from targeting another workspace's Tally company.
+    if settings.db_mode:
+        if not request.workspace_id:
+            raise HTTPException(status_code=400, detail="workspace_id is required in DB mode")
+        if db is None:
+            raise HTTPException(status_code=500, detail="Database session not available")
+        workspace = await _verify_workspace_ownership(request.workspace_id, user_id, db)
+        ws_config = workspace.config or {}
+        company = ws_config.get("tally_company") or workspace.name or "Default"
+        # Re-configure TallyClient from workspace config if present.
+        if ws_config.get("tally_host"):
+            client = TallyClient(
+                ws_config["tally_host"],
+                ws_config.get("tally_port", 9000),
+            )
+            if ws_config.get("mock_mode"):
+                client.mock_mode = True
+    else:
+        company = request.company or "Default"
 
     if request.action == "discard":
         return ChatResponse(

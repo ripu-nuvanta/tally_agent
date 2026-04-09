@@ -31,7 +31,7 @@ class Settings(BaseSettings):
     FILE_MAX_SIZE_MB: int = 10
 
     # Tally write (Set B1)
-    TALLY_WRITE_ENABLED: bool = True
+    TALLY_WRITE_ENABLED: bool = False
     TALLY_DRY_RUN: bool = False
 
     @property

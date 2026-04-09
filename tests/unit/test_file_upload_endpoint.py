@@ -14,6 +14,12 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "FILE_STORAGE_PATH", str(tmp_path))
     monkeypatch.setattr(settings, "TALLY_MODE", "mock")
     monkeypatch.setattr(settings, "ANTHROPIC_API_KEY", "test-key")
+    # Force legacy (non-DB) mode so auth dependency is a no-op, even if the
+    # developer has DATABASE_URL set in .env (Set A1 default).
+    monkeypatch.setattr(settings, "DATABASE_URL", None)
+    monkeypatch.setattr(settings, "JWT_SECRET", None)
+    # Tests that write vouchers need the write flag enabled (default is False).
+    monkeypatch.setattr(settings, "TALLY_WRITE_ENABLED", True)
     from backend.main import app
     with TestClient(app) as c:
         yield c

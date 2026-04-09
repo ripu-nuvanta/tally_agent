@@ -17,6 +17,8 @@ def client(tmp_path, monkeypatch):
     # developer has DATABASE_URL set in .env (Set A1 default).
     monkeypatch.setattr(settings, "DATABASE_URL", None)
     monkeypatch.setattr(settings, "JWT_SECRET", None)
+    # Tests that write vouchers need the write flag enabled (default is False).
+    monkeypatch.setattr(settings, "TALLY_WRITE_ENABLED", True)
     from backend.main import app
     with TestClient(app) as tc:
         yield tc
