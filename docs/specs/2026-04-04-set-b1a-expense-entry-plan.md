@@ -12,7 +12,18 @@
 > - Sales/Purchase voucher builders (Set B1b/B1c)
 > - Bulk upload for bank statements (Set B1d)
 
-## ⚠️ Follow-up: Tally "current date" write rejection (needs further experimentation)
+## ⚠️ Follow-up: Tally "current date" write rejection → ROOT-CAUSED to license state (2026-04-09)
+
+**Update 2026-04-09 (later the same day):** The issue was root-caused to **Tally license not being properly activated**. A boundary retest after the license was fixed showed writes at `20260303`, `20260405`, and `20260409` all succeed cleanly (CREATED=1, ERRORS=0). See `docs/tally-write-exploration.md` "License state affects writes" section and `scripts/retest_tally_write_boundary.py`.
+
+**Resolution:**
+- Not a code bug — environmental. Mitigation shipped in B1a (error translation + EditForm date field) is retained as a fallback/canary but the blocker itself is gone.
+- Ops checklist: verify Tally license is fully activated before enabling writes in production deployments.
+- If the misleading "Voucher date is missing" error reappears on a previously-working install, first check license state.
+
+The original investigation notes below are retained for historical reference.
+
+---
 
 **Discovered during smoke test on 2026-04-09 with live Tally.**
 

@@ -1,8 +1,40 @@
 # Tally Write Exploration — Findings
 
-**Date:** 2026-04-05
+**Date:** 2026-04-05 (original), updated 2026-04-09 (license retest)
 **Company:** NUVANTA AI TECHNOLOGIES PRIVATE LIMITED
 **Tally:** localhost:9000
+
+## ⚠️ Tally license state affects writes (verified 2026-04-09)
+
+When the Tally license is not properly activated, Tally silently clamps its internal "current date" and rejects any voucher whose `<DATE>` exceeds that clamped date. The error is misleading:
+
+```
+<LINEERROR>Voucher date is missing for: 'Payment' voucher 1. Verify the data, resolve errors (if any) and retry Split.</LINEERROR>
+```
+
+**The DATE field is present in the XML** — the error just means "DATE > internal current date".
+
+### Evidence
+
+On 2026-04-09 B1a smoke test (license not activated), writes failed with the above error for any DATE > 20260302. After re-activating the license, a boundary retest (same day, same Tally instance, same company) via `scripts/retest_tally_write_boundary.py` produced:
+
+| DATE      | CREATED | ERRORS | EXCEPTIONS | Result |
+|-----------|---------|--------|------------|--------|
+| 20260302  | 1       | 0      | 0          | OK     |
+| 20260303  | 1       | 0      | 0          | OK (was failing pre-fix) |
+| 20260405  | 1       | 0      | 0          | OK (was failing pre-fix) |
+| 20260409  | 1       | 0      | 0          | OK (was failing pre-fix) |
+
+All test vouchers were created with Rs 1.00 (Dr Bank Charges / Cr Cash) and cleaned up via `TAGNAME="Master ID"` + `LASTVCHID` delete.
+
+### Implication for the product
+
+- Not a code bug. The mitigation shipped in B1a (LINEERROR translation + EditForm date field) is still valuable as a fallback, but the underlying cause is environmental.
+- Ops checklist for production Tally installs: **verify license is fully activated** before enabling writes.
+- If writes start failing on a previously-working deployment with a `"Voucher date is missing"` error, first suspect license state (expired, deactivated, or lapsed sync).
+- The misleading-error translation in `parse_import_response` now also serves as a license-health canary.
+
+See `docs/specs/2026-04-04-set-b1a-expense-entry-plan.md` Follow-up section for the pre-fix investigation trail.
 
 ## Working XML Formats
 

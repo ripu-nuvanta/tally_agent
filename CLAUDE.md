@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime instance over LAN, lets users ask natural language questions about accounting data, and returns answers with charts and tables.
+TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime instance (default: `localhost:9000`; also works over LAN), lets users ask natural language questions about accounting data, and returns answers with charts and tables.
 
 **Stack**: Python (FastAPI) backend + React (Vite) frontend + Claude API (Anthropic SDK with tool-calling)
 **Tally Version**: TallyPrime 7.0+ (native JSON support, XML preferred for stability)
@@ -109,7 +109,7 @@ rm -rf tests/playwright/__screenshots__ && npm run test:playwright -- --update-s
 
 ### Three-Layer Backend
 
-1. **Tally Bridge** (`backend/tally_bridge/`) — HTTP client that communicates with TallyPrime's XML/JSON API on the LAN. Core modules:
+1. **Tally Bridge** (`backend/tally_bridge/`) — HTTP client that communicates with TallyPrime's XML/JSON API (default endpoint `localhost:9000`; also works across the LAN). Core modules:
    - `client.py` — Async HTTP client (httpx) posting to `http://<TALLY_HOST>:<TALLY_PORT>`
    - `request_builder.py` — Builds XML request payloads for each Tally operation
    - `response_parser.py` — Parses XML/JSON responses into normalized Python dicts
