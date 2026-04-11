@@ -557,7 +557,7 @@ async def test_trend_total_row_in_table_excluded_from_chart(e2e_client):
         patch("backend.agents.orchestrator.anthropic_client", mock_clients["orchestrator"]),
         patch("backend.agents.query_agent.anthropic_client", mock_clients["query_agent"]),
         patch("backend.agents.analysis_agent.anthropic_client", mock_clients["analysis_agent"]),
-        patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock, return_value=chart_advice),
+        patch("backend.agents.orchestrator.get_chart_advice", new_callable=AsyncMock, return_value=(chart_advice, {"agent": "chart_advisor", "model": "test", "input_tokens": 0, "output_tokens": 0})),
     ):
         response = await client.post(
             "/api/chat", json={"message": "Show monthly sales trend this FY"}

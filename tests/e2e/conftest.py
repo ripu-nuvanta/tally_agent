@@ -10,6 +10,15 @@ from backend.tally_bridge.client import TallyClient
 from tests.mocks.mock_claude_api import MockAnthropicClient
 
 
+@pytest.fixture(autouse=True)
+def _force_legacy_unless_db(request, monkeypatch):
+    """Force legacy mode for non-DB tests, even if .env has DATABASE_URL."""
+    module_name = request.node.module.__name__
+    if "test_db_" in module_name:
+        return  # DB tests manage their own config
+    monkeypatch.setattr("backend.config.settings.DATABASE_URL", None)
+
+
 @pytest.fixture
 def make_mock_claude():
     """Factory to create a MockAnthropicClient with given responses."""
