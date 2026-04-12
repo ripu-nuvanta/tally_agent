@@ -106,6 +106,26 @@ describe("Sidebar", () => {
     expect(screen.queryByRole("button", { name: "Trial Balance" })).not.toBeInTheDocument();
   });
 
+  it("test_active_workspace_has_highlight_class — active workspace container has bg-blue-50", async () => {
+    const { container } = renderSidebar({ activeWorkspaceId: "ws-1" });
+    await waitFor(() => {
+      expect(screen.getByText("Bharat Traders")).toBeInTheDocument();
+    });
+    // The active workspace wrapper div should have bg-blue-50
+    const highlighted = container.querySelector(".bg-blue-50");
+    expect(highlighted).not.toBeNull();
+  });
+
+  it("test_inactive_workspace_no_highlight — inactive workspaces do not have bg-blue-50", async () => {
+    const { container } = renderSidebar({ activeWorkspaceId: "ws-1" });
+    await waitFor(() => {
+      expect(screen.getByText("Nuvanta Co")).toBeInTheDocument();
+    });
+    const allHighlighted = container.querySelectorAll(".bg-blue-50");
+    // Only one workspace should be highlighted (ws-1, not ws-2)
+    expect(allHighlighted).toHaveLength(1);
+  });
+
   it("opens ConnectCompanyModal when Connect Company button is clicked", async () => {
     const user = userEvent.setup();
     renderSidebar();

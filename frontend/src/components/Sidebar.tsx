@@ -61,7 +61,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
           const isActive = ws.id === activeWorkspaceId;
           const isCollapsed = collapsed[ws.id] && !isActive;
           return (
-            <div key={ws.id}>
+            <div key={ws.id} className={isActive ? "bg-blue-50 rounded-lg px-1 py-0.5" : ""}>
               <button
                 onClick={() => toggleCollapse(ws.id)}
                 className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 ${
