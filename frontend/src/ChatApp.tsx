@@ -64,8 +64,8 @@ export default function ChatApp() {
 
   return (
     <div className="h-screen flex flex-col bg-white">
-      <header className="border-b border-gray-200 bg-white px-4 py-2 flex items-center justify-between">
-        <div className="flex items-center gap-3 min-w-0">
+      <header className="border-b border-gray-200 bg-white px-4 py-2 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0 flex-1">
           <button
             className="md:hidden p-1 rounded text-gray-600 hover:text-gray-900 hover:bg-gray-100 shrink-0"
             aria-label="Open sidebar"
@@ -77,37 +77,33 @@ export default function ChatApp() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 min-w-0">
-              <h1 className="text-lg font-semibold text-gray-900 shrink-0">TallyPrime AI</h1>
-              {activeWorkspaceName && (
-                <>
-                  <span className="text-gray-300 shrink-0">|</span>
-                  <span data-testid="header-chat-title" className={`text-lg truncate ${conversationId ? "text-gray-700" : "text-blue-600"}`}>
-                    {conversationId ? (activeConversationTitle || "Chat") : "New Chat"}
+          <h1 className="text-lg font-semibold text-gray-900 shrink-0">TallyPrime AI</h1>
+          {activeWorkspaceName && (
+            <>
+              <span className="text-gray-300 shrink-0">|</span>
+              <div className="min-w-0 flex-1">
+                <div data-testid="header-chat-title" className={`text-sm font-medium truncate ${conversationId ? "text-gray-700" : "text-blue-600"}`}>
+                  {conversationId ? (activeConversationTitle || "Chat") : "New Chat"}
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span data-testid="header-workspace-name" className="text-xs text-gray-500 truncate">
+                    {activeWorkspaceName}
                   </span>
-                </>
-              )}
-            </div>
-            {activeWorkspaceName && (
-              <div className="flex items-center gap-2">
-                <span data-testid="header-workspace-name" className="text-xs text-gray-500 truncate">
-                  {activeWorkspaceName}
-                </span>
-                {activeWorkspaceConfig.mock_mode === true ? (
-                  <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                    Demo
-                  </span>
-                ) : (
-                  <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">
-                    <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                    Live
-                  </span>
-                )}
+                  {activeWorkspaceConfig.mock_mode === true ? (
+                    <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                      Demo
+                    </span>
+                  ) : (
+                    <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      Live
+                    </span>
+                  )}
+                </div>
               </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
         <div className="flex items-center gap-3 shrink-0">
           <UserMenu />
