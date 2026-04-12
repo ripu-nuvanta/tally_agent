@@ -10,7 +10,7 @@
 
 **Spec:** `docs/specs/2026-04-12-group-b-voucher-types-design.md`
 
-**Pre-requisite (before starting):** Run a live Tally exploration script to verify the 6 pending items in `docs/tally-write-exploration.md` "Pending Exploration" section. Specifically: `LEDGERENTRIES.LIST` vs `ALLLEDGERENTRIES.LIST`, `Invoice Voucher View` PERSISTEDVIEW, `BILLALLOCATIONS.LIST`, `ISPARTYLEDGER`, and Debit Note / Credit Note creation. Update the exploration doc with findings. If any format differs from what's assumed in this plan, adjust the XML builders in Task 3 accordingly. This exploration is manual/interactive — not a plan task.
+**BLOCKING PRE-REQUISITE:** Task 0 (Live Tally Exploration) MUST complete before Task 3 (Import Builders). Tasks 1-2 can run in parallel with Task 0.
 
 ---
 
@@ -18,6 +18,7 @@
 
 ### New Files
 | File | Responsibility |
+| `scripts/explore_tally_invoice_formats.py` | Live exploration script — tests Purchase/Sales/DN/CN XML against real Tally |
 |------|---------------|
 | `tests/fixtures/vision/payment_petty_cash_inr.json` | Vision fixture: simple INR payment |
 | `tests/fixtures/vision/payment_with_gst_inr.json` | Vision fixture: payment with CGST+SGST |
@@ -67,6 +68,428 @@
 | `frontend/src/components/VoucherReviewCard.tsx` | Rewrite: collapsed card with type badge, progressive disclosure, delegates to VoucherReviewExpanded and VoucherEditForm. |
 | `frontend/src/components/ConnectCompanyModal.tsx` | Replace free-text name with Tally company dropdown. Add test-connection flow. |
 | `frontend/src/api/client.ts` | Add `testTallyConnection(host, port)` function. |
+
+---
+
+### Task 0: Live Tally Exploration — Verify Purchase/Sales/DN/CN XML Formats
+
+**Files:**
+- Create: `scripts/explore_tally_invoice_formats.py`
+- Modify: `docs/tally-write-exploration.md` (update "Pending Exploration" section + "Verified Operations Summary" table)
+
+**Purpose:** The plan's XML builders (Task 3) assume specific XML tag names, attribute values, and structures based on official Tally docs — but several of these have **never been tested against live TallyPrime 7.0+**. This task runs a controlled exploration against your live Tally (localhost:9000) to verify or correct these assumptions BEFORE writing production code.
+
+**Company:** NUVANTA AI TECHNOLOGIES PRIVATE LIMITED (localhost:9000)
+
+**What to test (6 experiments):**
+
+Each experiment creates a test voucher/entity, inspects the Tally response, and cleans up. All test entities use `_GroupB_Test_` prefix in names and Rs 1.00 amounts for safety.
+
+| # | Experiment | What we're verifying | Success = | Current assumption |
+|---|-----------|---------------------|-----------|-------------------|
+| E1 | Purchase voucher with `LEDGERENTRIES.LIST` | Does `LEDGERENTRIES.LIST` work for Purchase (vs `ALLLEDGERENTRIES.LIST`)? | CREATED=1, ERRORS=0 | Plan uses `LEDGERENTRIES.LIST` |
+| E2 | Purchase voucher with `ALLLEDGERENTRIES.LIST` | Fallback: does the B1a-verified format still work? | CREATED=1, ERRORS=0 | Known to work |
+| E3 | Purchase voucher with `PERSISTEDVIEW=Invoice Voucher View` | Does this PERSISTEDVIEW value work? | CREATED=1, ERRORS=0 | Plan uses `Invoice Voucher View` |
+| E4 | Purchase voucher with `ISPARTYLEDGER=Yes` + `BILLALLOCATIONS.LIST` | Do these tags work together? | CREATED=1, ERRORS=0 | Plan uses both |
+| E5 | Debit Note (`VCHTYPE="Debit Note"`) | Does DN creation work at all? With `Agst Ref` bill type? | CREATED=1, ERRORS=0 | Never tested |
+| E6 | Credit Note (`VCHTYPE="Credit Note"`) | Does CN creation work at all? With `Agst Ref` bill type? | CREATED=1, ERRORS=0 | Never tested |
+
+**Pre-requisites for running:**
+- Tally running on localhost:9000 with NUVANTA company loaded
+- Tally license activated (see `docs/tally-write-exploration.md` license section)
+- Existing ledgers: `Cash` (or any Cash-in-Hand ledger), any expense ledger under `Indirect Expenses`, any party ledger under `Sundry Creditors`
+
+- [ ] **Step 1: Write the exploration script**
+
+Create `scripts/explore_tally_invoice_formats.py`. Follow the pattern from `scripts/explore_tally_write_v2.py`:
+
+```python
+"""Tally Invoice Format Exploration — verify Purchase/Sales/DN/CN XML before Group B.
+
+Tests 6 specific XML format questions against live Tally.
+All test entities use _GroupB_Test_ prefix and Rs 1.00 amounts.
+Cleans up after each test (delete created vouchers).
+
+Usage:
+    PYTHONPATH=. python scripts/explore_tally_invoice_formats.py --host localhost --port 9000
+
+Output: prints results table + updates docs/tally-write-exploration.md
+"""
+import argparse
+import asyncio
+import json
+import xml.etree.ElementTree as ET
+from datetime import datetime
+
+from backend.tally_bridge.client import TallyClient
+from backend.tally_bridge.import_builder import (
+    _esc,
+    _wrap_import,
+    build_delete_voucher,
+)
+from backend.tally_bridge.response_parser import parse_import_response, sanitize_xml
+
+COMPANY = "NUVANTA AI TECHNOLOGIES PRIVATE LIMITED"
+# Use existing ledgers from NUVANTA company — check with list_ledgers first
+# Fallbacks: Cash, Bank Charges (Indirect Expenses), any Sundry Creditor
+TEST_DATE = datetime.now().strftime("%Y%m%d")
+RESULTS: list[dict] = []
+
+
+def parse_response(xml_text: str) -> dict:
+    try:
+        root = ET.fromstring(sanitize_xml(xml_text))
+    except ET.ParseError:
+        return {"raw": xml_text, "parse_error": True}
+    result = {}
+    for tag in ["CREATED", "ALTERED", "DELETED", "ERRORS", "LASTVCHID", "LASTMID",
+                "COMBINED", "IGNORED", "LINEERROR", "CANCELLED", "EXCEPTIONS"]:
+        el = root.find(tag) if root.find(tag) is not None else root.find(f".//{tag}")
+        if el is not None and el.text:
+            result[tag] = el.text.strip()
+    return result
+
+
+async def post_and_report(client: TallyClient, xml: str, label: str) -> dict:
+    print(f"\n{'='*60}")
+    print(f"  {label}")
+    print(f"{'='*60}")
+    # Print the XML being sent (truncated for readability)
+    xml_preview = xml[:500].replace("\n", " ")
+    print(f"  Sending: {xml_preview}...")
+    try:
+        resp = await client.post_xml(xml)
+        result = parse_response(resp)
+        print(f"  Result: {json.dumps(result, indent=4)}")
+        success = result.get("CREATED") == "1" or result.get("ALTERED") == "1"
+        print(f"  {'✅ SUCCESS' if success else '❌ FAILED'}")
+        return result
+    except Exception as e:
+        print(f"  ❌ ERROR: {type(e).__name__}: {e}")
+        return {"error": str(e)}
+
+
+async def cleanup_voucher(client: TallyClient, vch_type: str, master_id: str, label: str):
+    """Delete a test voucher by master_id."""
+    if not master_id or master_id == "0":
+        print(f"  [skip cleanup — no master_id for {label}]")
+        return
+    xml = build_delete_voucher(vch_type, master_id, TEST_DATE, COMPANY)
+    result = await post_and_report(client, xml, f"CLEANUP: Delete {label}")
+    if result.get("DELETED") != "1":
+        print(f"  ⚠️ WARNING: cleanup failed for {label} (master_id={master_id})")
+
+
+def record(experiment: str, description: str, result: dict, success: bool):
+    RESULTS.append({
+        "experiment": experiment,
+        "description": description,
+        "success": success,
+        "created": result.get("CREATED", "0"),
+        "errors": result.get("ERRORS", "0"),
+        "exceptions": result.get("EXCEPTIONS", "0"),
+        "lineerror": result.get("LINEERROR", ""),
+        "last_vch_id": result.get("LASTVCHID", ""),
+    })
+
+
+async def run(host: str, port: int):
+    client = TallyClient(host=host, port=port)
+    print(f"Group B Tally Exploration — {datetime.now().isoformat()}")
+    print(f"Target: {host}:{port} / {COMPANY}")
+    print(f"Test date: {TEST_DATE}")
+
+    # First, verify connectivity + find usable ledgers
+    from backend.tally_bridge.request_builder import build_list_ledgers
+    from backend.tally_bridge.response_parser import parse_ledger_list
+    ledger_xml = await client.post_xml(build_list_ledgers())
+    ledgers = parse_ledger_list(ledger_xml)
+    ledger_names = {l["name"] for l in ledgers}
+    print(f"Found {len(ledgers)} ledgers")
+
+    # Find test ledgers
+    cash_ledger = "Cash" if "Cash" in ledger_names else next(
+        (l["name"] for l in ledgers if l.get("parent_group", "").lower() == "cash-in-hand"), "Cash"
+    )
+    expense_ledger = "Bank Charges" if "Bank Charges" in ledger_names else next(
+        (l["name"] for l in ledgers if l.get("parent_group", "").lower() == "indirect expenses"), "Misc Expenses"
+    )
+    # Find a Sundry Creditor for party ledger tests
+    creditor_ledger = next(
+        (l["name"] for l in ledgers if l.get("parent_group", "").lower() == "sundry creditors"), None
+    )
+    if not creditor_ledger:
+        print("⚠️ No Sundry Creditor ledger found — will create _GroupB_Test_Supplier")
+        # Create a test creditor
+        from backend.tally_bridge.import_builder import build_create_ledger
+        xml = build_create_ledger("_GroupB_Test_Supplier", "Sundry Creditors", COMPANY)
+        await post_and_report(client, xml, "CREATE test supplier ledger")
+        creditor_ledger = "_GroupB_Test_Supplier"
+
+    # Find a Sundry Debtor for sales tests
+    debtor_ledger = next(
+        (l["name"] for l in ledgers if l.get("parent_group", "").lower() == "sundry debtors"), None
+    )
+    if not debtor_ledger:
+        from backend.tally_bridge.import_builder import build_create_ledger
+        xml = build_create_ledger("_GroupB_Test_Customer", "Sundry Debtors", COMPANY)
+        await post_and_report(client, xml, "CREATE test customer ledger")
+        debtor_ledger = "_GroupB_Test_Customer"
+
+    print(f"\nUsing ledgers: Cash={cash_ledger}, Expense={expense_ledger}")
+    print(f"  Creditor={creditor_ledger}, Debtor={debtor_ledger}")
+
+    # ─── E1: Purchase with LEDGERENTRIES.LIST ───
+    xml_e1 = _wrap_import("Vouchers", COMPANY, f"""<VOUCHER VCHTYPE="Purchase" ACTION="Create">
+<DATE>{TEST_DATE}</DATE>
+<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+<NARRATION>_GroupB_Test E1: LEDGERENTRIES.LIST</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(creditor_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>1.00</AMOUNT>
+</LEDGERENTRIES.LIST>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(expense_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>-1.00</AMOUNT>
+</LEDGERENTRIES.LIST>
+</VOUCHER>""")
+    r1 = await post_and_report(client, xml_e1, "E1: Purchase with LEDGERENTRIES.LIST")
+    record("E1", "Purchase with LEDGERENTRIES.LIST + Invoice Voucher View + ISPARTYLEDGER", r1, r1.get("CREATED") == "1")
+    await cleanup_voucher(client, "Purchase", r1.get("LASTVCHID", ""), "E1 Purchase")
+
+    # ─── E2: Purchase with ALLLEDGERENTRIES.LIST (fallback — known to work) ───
+    xml_e2 = _wrap_import("Vouchers", COMPANY, f"""<VOUCHER VCHTYPE="Purchase" ACTION="Create">
+<DATE>{TEST_DATE}</DATE>
+<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+<NARRATION>_GroupB_Test E2: ALLLEDGERENTRIES.LIST</NARRATION>
+<PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(creditor_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<AMOUNT>1.00</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(expense_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>-1.00</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+</VOUCHER>""")
+    r2 = await post_and_report(client, xml_e2, "E2: Purchase with ALLLEDGERENTRIES.LIST (control)")
+    record("E2", "Purchase with ALLLEDGERENTRIES.LIST + Accounting Voucher View (control)", r2, r2.get("CREATED") == "1")
+    await cleanup_voucher(client, "Purchase", r2.get("LASTVCHID", ""), "E2 Purchase")
+
+    # ─── E3: Purchase with Invoice Voucher View but ALLLEDGERENTRIES ───
+    # Isolates the PERSISTEDVIEW question from the entry tag question
+    xml_e3 = _wrap_import("Vouchers", COMPANY, f"""<VOUCHER VCHTYPE="Purchase" ACTION="Create">
+<DATE>{TEST_DATE}</DATE>
+<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+<NARRATION>_GroupB_Test E3: ALLLEDGER + Invoice View</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(creditor_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<AMOUNT>1.00</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(expense_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>-1.00</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+</VOUCHER>""")
+    r3 = await post_and_report(client, xml_e3, "E3: ALLLEDGERENTRIES + Invoice Voucher View")
+    record("E3", "ALLLEDGERENTRIES.LIST + Invoice Voucher View (isolate PERSISTEDVIEW)", r3, r3.get("CREATED") == "1")
+    await cleanup_voucher(client, "Purchase", r3.get("LASTVCHID", ""), "E3 Purchase")
+
+    # ─── E4: Purchase with BILLALLOCATIONS.LIST ───
+    xml_e4 = _wrap_import("Vouchers", COMPANY, f"""<VOUCHER VCHTYPE="Purchase" ACTION="Create">
+<DATE>{TEST_DATE}</DATE>
+<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+<NARRATION>_GroupB_Test E4: BILLALLOCATIONS</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(creditor_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>1.00</AMOUNT>
+<BILLALLOCATIONS.LIST>
+<NAME>TEST-INV-001</NAME>
+<BILLTYPE>New Ref</BILLTYPE>
+<AMOUNT>1.00</AMOUNT>
+</BILLALLOCATIONS.LIST>
+</LEDGERENTRIES.LIST>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(expense_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>-1.00</AMOUNT>
+</LEDGERENTRIES.LIST>
+</VOUCHER>""")
+    r4 = await post_and_report(client, xml_e4, "E4: Purchase with BILLALLOCATIONS.LIST")
+    record("E4", "Purchase with ISPARTYLEDGER + BILLALLOCATIONS.LIST (New Ref)", r4, r4.get("CREATED") == "1")
+    await cleanup_voucher(client, "Purchase", r4.get("LASTVCHID", ""), "E4 Purchase")
+
+    # ─── E5: Debit Note ───
+    xml_e5 = _wrap_import("Vouchers", COMPANY, f"""<VOUCHER VCHTYPE="Debit Note" ACTION="Create">
+<DATE>{TEST_DATE}</DATE>
+<VOUCHERTYPENAME>Debit Note</VOUCHERTYPENAME>
+<NARRATION>_GroupB_Test E5: Debit Note</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(creditor_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>1.00</AMOUNT>
+<BILLALLOCATIONS.LIST>
+<NAME>TEST-INV-001</NAME>
+<BILLTYPE>Agst Ref</BILLTYPE>
+<AMOUNT>1.00</AMOUNT>
+</BILLALLOCATIONS.LIST>
+</LEDGERENTRIES.LIST>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(expense_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>-1.00</AMOUNT>
+</LEDGERENTRIES.LIST>
+</VOUCHER>""")
+    r5 = await post_and_report(client, xml_e5, "E5: Debit Note creation")
+    record("E5", "Debit Note with LEDGERENTRIES.LIST + Agst Ref BILLALLOCATIONS", r5, r5.get("CREATED") == "1")
+    await cleanup_voucher(client, "Debit Note", r5.get("LASTVCHID", ""), "E5 Debit Note")
+
+    # ─── E6: Credit Note ───
+    xml_e6 = _wrap_import("Vouchers", COMPANY, f"""<VOUCHER VCHTYPE="Credit Note" ACTION="Create">
+<DATE>{TEST_DATE}</DATE>
+<VOUCHERTYPENAME>Credit Note</VOUCHERTYPENAME>
+<NARRATION>_GroupB_Test E6: Credit Note</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(debtor_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>-1.00</AMOUNT>
+<BILLALLOCATIONS.LIST>
+<NAME>TEST-SALE-001</NAME>
+<BILLTYPE>Agst Ref</BILLTYPE>
+<AMOUNT>-1.00</AMOUNT>
+</BILLALLOCATIONS.LIST>
+</LEDGERENTRIES.LIST>
+<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(expense_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<AMOUNT>1.00</AMOUNT>
+</LEDGERENTRIES.LIST>
+</VOUCHER>""")
+    r6 = await post_and_report(client, xml_e6, "E6: Credit Note creation")
+    record("E6", "Credit Note with LEDGERENTRIES.LIST + Agst Ref BILLALLOCATIONS", r6, r6.get("CREATED") == "1")
+    await cleanup_voucher(client, "Credit Note", r6.get("LASTVCHID", ""), "E6 Credit Note")
+
+    # ─── Cleanup test ledgers if we created them ───
+    if "_GroupB_Test_Supplier" in creditor_ledger:
+        from backend.tally_bridge.import_builder import build_delete_ledger
+        xml = build_delete_ledger("_GroupB_Test_Supplier", COMPANY)
+        await post_and_report(client, xml, "CLEANUP: Delete _GroupB_Test_Supplier")
+    if "_GroupB_Test_Customer" in debtor_ledger:
+        from backend.tally_bridge.import_builder import build_delete_ledger
+        xml = build_delete_ledger("_GroupB_Test_Customer", COMPANY)
+        await post_and_report(client, xml, "CLEANUP: Delete _GroupB_Test_Customer")
+
+    # ─── Summary ───
+    print(f"\n{'='*60}")
+    print("  RESULTS SUMMARY")
+    print(f"{'='*60}")
+    print(f"{'Exp':<5} {'Success':<8} {'Crt':<4} {'Err':<4} {'Exc':<4} {'Description'}")
+    print("-" * 80)
+    for r in RESULTS:
+        status = "✅" if r["success"] else "❌"
+        print(f"{r['experiment']:<5} {status:<8} {r['created']:<4} {r['errors']:<4} {r['exceptions']:<4} {r['description']}")
+
+    # Check for failures
+    failures = [r for r in RESULTS if not r["success"]]
+    if failures:
+        print(f"\n⚠️ {len(failures)} EXPERIMENT(S) FAILED — review results above.")
+        print("Plan adjustments needed in Task 3 (Import Builders):")
+        for f in failures:
+            print(f"  - {f['experiment']}: {f['description']}")
+            if f.get("lineerror"):
+                print(f"    LINEERROR: {f['lineerror']}")
+    else:
+        print(f"\n✅ ALL {len(RESULTS)} EXPERIMENTS PASSED — plan assumptions confirmed.")
+
+    print("\nNext steps:")
+    print("1. Update docs/tally-write-exploration.md 'Pending Exploration' → 'Verified' with results")
+    print("2. Update 'Verified Operations Summary' table with new entries")
+    print("3. If any experiment failed, adjust Task 3 XML builders before implementing")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Tally Invoice Format Exploration for Group B")
+    parser.add_argument("--host", default="localhost")
+    parser.add_argument("--port", type=int, default=9000)
+    args = parser.parse_args()
+    asyncio.run(run(args.host, args.port))
+```
+
+- [ ] **Step 2: Verify Tally is running**
+
+```bash
+curl -s http://localhost:9000 | head -5
+```
+
+Expected: Tally HTTP response (any HTML/XML). If connection refused, start Tally first.
+
+- [ ] **Step 3: Run the exploration script**
+
+```bash
+PYTHONPATH=. python scripts/explore_tally_invoice_formats.py --host localhost --port 9000 2>&1 | tee docs/group-b-exploration-results.log
+```
+
+**⚠️ Save the full output.** If any experiment fails, stop and investigate before proceeding.
+
+Expected output: 6 experiments, each showing CREATED=1 + successful cleanup.
+
+- [ ] **Step 4: Update `docs/tally-write-exploration.md`**
+
+Based on results, update three sections:
+
+**a) Replace "Pending Exploration" section** with verified results. For each of the 6 items, record:
+- The exact XML that was tested
+- The Tally response (CREATED/ERRORS/EXCEPTIONS)
+- Whether it passed or failed
+- If failed: what XML format DID work (from fallback experiments)
+
+**b) Update "Verified Operations Summary" table** — add rows:
+
+```markdown
+| Create Purchase (LEDGERENTRIES.LIST) | [result] | [key requirement] |
+| Create Purchase (Invoice Voucher View) | [result] | [key requirement] |
+| Create Purchase (BILLALLOCATIONS.LIST) | [result] | [key requirement] |
+| Create Debit Note | [result] | [key requirement] |
+| Create Credit Note | [result] | [key requirement] |
+```
+
+**c) Update "Sales/Purchase: Key Differences from Payment" section** with corrected information if any assumptions were wrong.
+
+- [ ] **Step 5: If any experiment failed — adjust the plan**
+
+If E1 fails (LEDGERENTRIES.LIST doesn't work): Task 3 must use `ALLLEDGERENTRIES.LIST` instead. Update the `_build_invoice_voucher` function and all tests.
+
+If E3 fails (Invoice Voucher View doesn't work): Task 3 must use `Accounting Voucher View`. Update the constant.
+
+If E5/E6 fail (DN/CN don't work): Investigate the error, try alternative XML formats, and adjust. Document findings.
+
+- [ ] **Step 6: Commit exploration script + updated docs**
+
+```bash
+git add scripts/explore_tally_invoice_formats.py docs/tally-write-exploration.md docs/group-b-exploration-results.log
+git commit -m "feat: live Tally exploration for Group B — verify Purchase/Sales/DN/CN XML"
+```
 
 ---
 
