@@ -141,7 +141,7 @@ test.describe("DB-mode visual tests", () => {
   });
 
   // Test 3: Sidebar with workspace list renders for logged-in user
-  test("sidebar-with-workspaces", async ({ page }) => {
+  test("sidebar-with-workspaces", async ({ page, viewport }) => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
@@ -156,18 +156,30 @@ test.describe("DB-mode visual tests", () => {
 
     await page.goto("/");
 
-    // Wait for sidebar with workspace names
-    await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
-
-    // Verify both workspaces are shown
-    await expect(page.locator("text=Bharat Traders")).toBeVisible();
-    await expect(page.locator("text=NUVANTA AI")).toBeVisible();
+    // On mobile (width < 768), sidebar is hidden behind hamburger drawer
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    if (isMobile) {
+      // Open the sidebar drawer first — on mobile the sidebar is hidden md:flex
+      const hamburger = page.locator('[aria-label="Open sidebar"]');
+      await hamburger.waitFor({ timeout: 10000 });
+      await hamburger.click();
+      // Wait for drawer sidebar content — use .last() because the desktop sidebar
+      // is also in the DOM (hidden) and Playwright picks the first (hidden) element
+      await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
+      await expect(page.locator("text=Bharat Traders").last()).toBeVisible();
+      await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
+    } else {
+      // Desktop/tablet: sidebar is always visible
+      await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
+      await expect(page.locator("text=Bharat Traders").first()).toBeVisible();
+      await expect(page.locator("text=NUVANTA AI").first()).toBeVisible();
+    }
 
     await expect(page).toHaveScreenshot("sidebar-with-workspaces.png");
   });
 
   // Test 4: Chat view with workspace name in header
-  test("chat-with-header", async ({ page }) => {
+  test("chat-with-header", async ({ page, viewport }) => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
@@ -224,14 +236,22 @@ test.describe("DB-mode visual tests", () => {
 
     await page.goto("/c/conv-1");
 
-    // Wait for conversation content to load
-    await page.waitForSelector("text=Trial Balance April", { timeout: 10000 });
+    // Wait for conversation content to load — use message body text which is always
+    // visible regardless of viewport (unlike sidebar content which is md:hidden on mobile)
+    await page.waitForSelector("text=Here is the trial balance for April 2025:", { timeout: 10000 });
 
-    // Verify workspace name appears in header
-    await expect(page.locator("text=Bharat Traders").first()).toBeVisible();
+    // Verify workspace name appears in header (data-testid is always in DOM)
+    await expect(page.locator('[data-testid="header-workspace-name"]')).toBeVisible();
+    await expect(page.locator('[data-testid="header-workspace-name"]')).toHaveText("Bharat Traders");
 
     // Verify TallyPrime AI header
     await expect(page.locator("text=TallyPrime AI").first()).toBeVisible();
+
+    // On desktop/tablet: also verify sidebar shows "Trial Balance April"
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    if (!isMobile) {
+      await expect(page.locator("text=Trial Balance April").first()).toBeVisible();
+    }
 
     await expect(page).toHaveScreenshot("chat-with-header.png");
   });
@@ -324,5 +344,109 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator("text=Write to Tally")).toBeVisible();
 
     await expect(page).toHaveScreenshot("voucher-review-card.png");
+  });
+
+  // Test 6: Mobile — hamburger button visible, sidebar hidden by default
+  test("mobile-hamburger-closed", async ({ page, viewport }) => {
+    // Skip on non-mobile viewports (hamburger is md:hidden)
+    if ((viewport?.width ?? 1280) >= 768) {
+      test.skip();
+      return;
+    }
+
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    await page.goto("/");
+
+    // Wait for app to load
+    await page.waitForSelector('[aria-label="Open sidebar"]', { timeout: 10000 });
+
+    // Hamburger button should be visible
+    await expect(page.locator('[aria-label="Open sidebar"]')).toBeVisible();
+
+    // Sidebar content (workspace names) should NOT be visible — hidden behind drawer
+    await expect(page.locator("text=Bharat Traders")).not.toBeVisible();
+
+    await expect(page).toHaveScreenshot("mobile-hamburger-closed.png");
+  });
+
+  // Test 7: Mobile — click hamburger opens sidebar drawer
+  test("mobile-hamburger-open", async ({ page, viewport }) => {
+    // Skip on non-mobile viewports
+    if ((viewport?.width ?? 1280) >= 768) {
+      test.skip();
+      return;
+    }
+
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    await page.goto("/");
+
+    // Click hamburger to open sidebar drawer
+    const hamburger = page.locator('[aria-label="Open sidebar"]');
+    await hamburger.waitFor({ timeout: 10000 });
+    await hamburger.click();
+
+    // Sidebar drawer with workspace names should now be visible.
+    // Use .last() because the desktop sidebar is also in the DOM (inside hidden md:flex)
+    // and Playwright picks the first (hidden) element. The drawer renders second.
+    await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
+    await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
+
+    await expect(page).toHaveScreenshot("mobile-hamburger-open.png");
+  });
+
+  // Test 8: Mobile — workspace landing page shows hamburger + hint text
+  test("mobile-landing-page", async ({ page, viewport }) => {
+    // Skip on non-mobile viewports
+    if ((viewport?.width ?? 1280) >= 768) {
+      test.skip();
+      return;
+    }
+
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    await page.goto("/w/ws-1");
+
+    // Wait for the TallyPrime AI header to load
+    await page.waitForSelector("text=TallyPrime AI", { timeout: 10000 });
+
+    // Hamburger should be visible on mobile
+    await expect(page.locator('[aria-label="Open sidebar"]')).toBeVisible();
+
+    // The app title should be visible
+    await expect(page.locator("text=TallyPrime AI").first()).toBeVisible();
+
+    // The chat window hint text should be visible (always visible regardless of sidebar)
+    await expect(page.locator("text=Ask me anything about your accounting data")).toBeVisible();
+
+    await expect(page).toHaveScreenshot("mobile-landing-page.png");
   });
 });
