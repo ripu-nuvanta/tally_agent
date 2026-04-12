@@ -144,8 +144,31 @@ describe("ChatApp", () => {
       expect(screen.queryByText("Bharat Traders")).not.toBeInTheDocument();
     });
 
-    // The Connect Company button should be visible
-    expect(screen.getByRole("button", { name: "+ Connect Company" })).toBeInTheDocument();
+    // The Connect Company button should be visible (may appear in sidebar and/or prompt)
+    const connectBtns = screen.getAllByRole("button", { name: "+ Connect Company" });
+    expect(connectBtns.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("shows connect company prompt when no workspaces exist", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([]);
+    mockedClient.getConversations.mockResolvedValue([]);
+
+    renderChatApp();
+
+    // Wait for data to load
+    await waitFor(() => {
+      expect(screen.getByTestId("no-workspaces-prompt")).toBeInTheDocument();
+    });
+
+    // Prompt text should be visible
+    expect(screen.getByText("Welcome to TallyPrime AI")).toBeInTheDocument();
+    expect(screen.getByText(/Connect your first Tally company to get started/i)).toBeInTheDocument();
+
+    // A connect company button in the main area
+    expect(screen.getByTestId("connect-company-button")).toBeInTheDocument();
+
+    // The chat input should NOT be rendered (no point typing without a workspace)
+    expect(screen.queryByPlaceholderText(/Ask about your Tally data/i)).not.toBeInTheDocument();
   });
 
   it("sidebar container has hidden md:flex classes for responsive layout", async () => {

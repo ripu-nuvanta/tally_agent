@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
+import ConnectCompanyModal from "./components/ConnectCompanyModal";
 import UserMenu from "./components/UserMenu";
 
 export default function ChatApp() {
@@ -13,6 +14,9 @@ export default function ChatApp() {
   const [activeConversationTitle, setActiveConversationTitle] = useState<string | null>(null);
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // null = loading, true = has workspaces, false = no workspaces
+  const [hasWorkspaces, setHasWorkspaces] = useState<boolean | null>(null);
+  const [showConnectModal, setShowConnectModal] = useState(false);
 
   // Sync activeWorkspaceId from URL param when on /w/:workspaceId route
   useEffect(() => {
@@ -61,6 +65,10 @@ export default function ChatApp() {
     },
     [],
   );
+
+  const handleWorkspacesLoaded = useCallback((count: number) => {
+    setHasWorkspaces(count > 0);
+  }, []);
 
   return (
     <div className="h-screen flex flex-col bg-white">
@@ -119,6 +127,7 @@ export default function ChatApp() {
             onNewChat={handleNewChat}
             refreshTrigger={sidebarRefresh}
             onWorkspaceResolved={handleWorkspaceResolved}
+            onWorkspacesLoaded={handleWorkspacesLoaded}
           />
         </div>
 
@@ -143,13 +152,38 @@ export default function ChatApp() {
                 }}
                 refreshTrigger={sidebarRefresh}
                 onWorkspaceResolved={handleWorkspaceResolved}
+                onWorkspacesLoaded={handleWorkspacesLoaded}
               />
             </div>
           </div>
         )}
 
         <main className="flex-1 overflow-hidden">
-          <ChatWindow conversationId={conversationId} workspaceId={activeWorkspaceId || undefined} workspaceName={activeWorkspaceName || undefined} onMessageSent={() => setSidebarRefresh((n) => n + 1)} onConversationCreated={handleConversationCreated} />
+          {hasWorkspaces === false ? (
+            <div data-testid="no-workspaces-prompt" className="flex flex-col items-center justify-center h-full gap-4 px-4">
+              <h2 className="text-2xl font-semibold text-gray-800">Welcome to TallyPrime AI</h2>
+              <p className="text-gray-500 text-center">Connect your first Tally company to get started</p>
+              <button
+                data-testid="connect-company-button"
+                onClick={() => setShowConnectModal(true)}
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700"
+              >
+                + Connect Company
+              </button>
+            </div>
+          ) : (
+            <ChatWindow conversationId={conversationId} workspaceId={activeWorkspaceId || undefined} workspaceName={activeWorkspaceName || undefined} onMessageSent={() => setSidebarRefresh((n) => n + 1)} onConversationCreated={handleConversationCreated} />
+          )}
+          {showConnectModal && (
+            <ConnectCompanyModal
+              onClose={() => setShowConnectModal(false)}
+              onCreated={() => {
+                setShowConnectModal(false);
+                setHasWorkspaces(true);
+                setSidebarRefresh((n) => n + 1);
+              }}
+            />
+          )}
         </main>
       </div>
     </div>

@@ -1348,4 +1348,47 @@ test.describe("DB-mode visual tests", () => {
 
     await expect(page).toHaveScreenshot("sidebar-new-chat-highlighted.png");
   });
+
+  // Test 21: No-workspaces landing — shows welcome prompt + Connect Company button instead of chat UI
+  test("no-workspaces-landing", async ({ page }) => {
+    await mockLoggedIn(page);
+
+    // Mock getWorkspaces to return empty array
+    await page.route("**/api/workspaces", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify([]),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: false }),
+      }),
+    );
+
+    await page.goto("/");
+
+    // Wait for the no-workspaces prompt to appear
+    await page.waitForSelector('[data-testid="no-workspaces-prompt"]', { timeout: 10000 });
+
+    // Verify welcome message
+    await expect(page.locator("text=Welcome to TallyPrime AI")).toBeVisible();
+    await expect(page.locator("text=Connect your first Tally company to get started")).toBeVisible();
+
+    // Verify the Connect Company button in the main area
+    await expect(page.locator('[data-testid="connect-company-button"]')).toBeVisible();
+
+    // Verify chat input is NOT visible (no workspace to chat with)
+    await expect(page.locator('textarea[placeholder="Ask about your Tally data..."]')).not.toBeVisible();
+
+    await expect(page).toHaveScreenshot("no-workspaces-landing.png");
+  });
 });

@@ -11,9 +11,10 @@ interface SidebarProps {
   onNewChat: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
   refreshTrigger?: number;
   onWorkspaceResolved?: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>, conversationTitle?: string | null) => void;
+  onWorkspacesLoaded?: (count: number) => void;
 }
 
-export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved }: SidebarProps) {
+export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved, onWorkspacesLoaded }: SidebarProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceData[]>([]);
   const [conversations, setConversations] = useState<Record<string, ConversationSummary[]>>({});
   const [showModal, setShowModal] = useState(false);
@@ -22,6 +23,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
   const loadData = async () => {
     const ws = await getWorkspaces();
     setWorkspaces(ws);
+    onWorkspacesLoaded?.(ws.length);
     const convResults = await Promise.all(ws.map((w) => getConversations(w.id)));
     const convMap: Record<string, ConversationSummary[]> = {};
     ws.forEach((w, i) => { convMap[w.id] = convResults[i]; });
