@@ -126,6 +126,25 @@ describe("Sidebar", () => {
     expect(allHighlighted).toHaveLength(1);
   });
 
+  it("highlights '+ New Chat' button when on landing page (no activeConversationId)", async () => {
+    renderSidebar({ activeWorkspaceId: "ws-1" });
+    await waitFor(() => {
+      expect(screen.getByText("Bharat Traders")).toBeInTheDocument();
+    });
+    // The "+ New Chat" button for the active workspace should be highlighted
+    const newChatBtns = screen.getAllByRole("button", { name: "+ New Chat" });
+    // First workspace (ws-1) is active — its "+ New Chat" should be highlighted
+    const ws1NewChat = newChatBtns[0];
+    expect(ws1NewChat.getAttribute("data-testid")).toBe("sidebar-new-chat-active");
+    expect(ws1NewChat.className).toContain("bg-blue-100");
+    expect(ws1NewChat.className).toContain("text-blue-700");
+
+    // Second workspace (ws-2) is not active — its "+ New Chat" should not be highlighted
+    const ws2NewChat = newChatBtns[1];
+    expect(ws2NewChat.getAttribute("data-testid")).toBe("sidebar-new-chat");
+    expect(ws2NewChat.className).not.toContain("bg-blue-100");
+  });
+
   it("opens ConnectCompanyModal when Connect Company button is clicked", async () => {
     const user = userEvent.setup();
     renderSidebar();

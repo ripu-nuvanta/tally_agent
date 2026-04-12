@@ -5,6 +5,17 @@
 **Scope:** F4 (New Chat flow), F5 (voucher button disable), F6 (responsive layout) + demo/live indicator in DB mode header.
 **Approach:** TDD — write tests first, then implement.
 
+## Post-Implementation Fixes (F4 follow-up)
+
+Gaps found during visual review of F4 implementation:
+
+1. **Header: conversation title** — Header now shows `TallyPrime AI | {Chat Title}` with workspace name + badge as subtitle. "New Chat" shown in blue on landing page. Title resolved from Sidebar's conversation list and passed through `onConversationSelect` and `onWorkspaceResolved`.
+2. **Demo/Live badge always visible** — Badge was previously gated on `mock_mode !== undefined`, meaning workspaces without explicit `mock_mode` showed no badge. Now shows green "Live" by default, orange "Demo" only when `mock_mode === true`.
+3. **"+ New Chat" highlight** — On landing page (`/w/:workspaceId`), the active workspace's "+ New Chat" button is highlighted with `bg-blue-100 text-blue-700` to indicate current state.
+4. **Playwright content assertions** — All existing specs now assert content (title, badge, etc.) before taking screenshots. Two new specs: `desktop-landing-page` and `sidebar-new-chat-highlighted`.
+
+---
+
 ## Overview
 
 Three follow-up enhancements from the B1a smoke test, packaged as one spec because they share the same components (ChatApp, Sidebar, Header, VoucherReviewCard, ChatWindow).

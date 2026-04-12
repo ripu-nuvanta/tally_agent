@@ -259,4 +259,48 @@ describe("ChatApp", () => {
       expect(screen.getByText("Live")).toBeInTheDocument();
     });
   });
+
+  it("header shows conversation title from sidebar selection", async () => {
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      const chatTitle = document.querySelector('[data-testid="header-chat-title"]');
+      expect(chatTitle).toBeInTheDocument();
+      expect(chatTitle!.textContent).toBe("Trial Balance");
+    });
+  });
+
+  it("header shows 'New Chat' on landing page", async () => {
+    renderChatApp("/w/ws-1");
+    await waitFor(() => {
+      const chatTitle = document.querySelector('[data-testid="header-chat-title"]');
+      expect(chatTitle).toBeInTheDocument();
+      expect(chatTitle!.textContent).toBe("New Chat");
+      expect(chatTitle!.className).toContain("text-blue-600");
+    });
+  });
+
+  it("header shows Live badge by default when mock_mode is not set", async () => {
+    // Default mockWorkspace has config: {} (no mock_mode)
+    mockedClient.getWorkspaces.mockResolvedValue([mockWorkspace]);
+    mockedClient.getConversations.mockResolvedValue([mockConversation]);
+
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      const badge = document.querySelector('[data-testid="header-workspace-badge"]');
+      expect(badge).toBeInTheDocument();
+      expect(badge!.textContent).toContain("Live");
+    });
+  });
+
+  it("header shows Demo badge with data-testid when mock_mode is true", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([mockWorkspaceDemo]);
+    mockedClient.getConversations.mockResolvedValue([mockConversation]);
+
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      const badge = document.querySelector('[data-testid="header-workspace-badge"]');
+      expect(badge).toBeInTheDocument();
+      expect(badge!.textContent).toContain("Demo");
+    });
+  });
 });

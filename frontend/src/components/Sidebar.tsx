@@ -7,10 +7,10 @@ import ConnectCompanyModal from "./ConnectCompanyModal";
 interface SidebarProps {
   activeConversationId?: string;
   activeWorkspaceId?: string;
-  onConversationSelect: (workspaceId: string, conversationId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
+  onConversationSelect: (workspaceId: string, conversationId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>, conversationTitle?: string | null) => void;
   onNewChat: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
   refreshTrigger?: number;
-  onWorkspaceResolved?: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
+  onWorkspaceResolved?: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>, conversationTitle?: string | null) => void;
 }
 
 export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved }: SidebarProps) {
@@ -30,8 +30,9 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
       if (activeConversationId) {
         for (const w of ws) {
           const convs = convMap[w.id] || [];
-          if (convs.some((c) => c.id === activeConversationId)) {
-            onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>);
+          const matchedConv = convs.find((c) => c.id === activeConversationId);
+          if (matchedConv) {
+            onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>, matchedConv.title);
             break;
           }
         }
@@ -39,7 +40,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
         // Resolve workspace name for /w/:workspaceId landing page
         const w = ws.find((w) => w.id === activeWorkspaceId);
         if (w) {
-          onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>);
+          onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>, null);
         }
       }
     }
@@ -53,6 +54,15 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
   };
 
   useEffect(() => { loadData(); }, [refreshTrigger]);
+
+  // Re-resolve workspace when activeWorkspaceId or workspaces change (e.g., navigating to /w/:workspaceId)
+  useEffect(() => {
+    if (!onWorkspaceResolved || !activeWorkspaceId || activeConversationId) return;
+    const ws = workspaces.find((w) => w.id === activeWorkspaceId);
+    if (ws) {
+      onWorkspaceResolved(ws.id, ws.name, ws.config as Record<string, unknown>, null);
+    }
+  }, [activeWorkspaceId, workspaces]);
 
   return (
     <aside className="w-70 border-r border-gray-200 bg-gray-50 flex flex-col h-full overflow-hidden">
@@ -76,7 +86,8 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
               {!isCollapsed && (
                 <ConversationList workspaceId={ws.id} conversations={conversations[ws.id] || []}
                   activeConversationId={activeConversationId}
-                  onSelect={(cid) => onConversationSelect(ws.id, cid, ws.name, ws.config as Record<string, unknown>)}
+                  isLandingPage={isActive && !activeConversationId}
+                  onSelect={(cid, title) => onConversationSelect(ws.id, cid, ws.name, ws.config as Record<string, unknown>, title)}
                   onNewChat={() => onNewChat(ws.id, ws.name, ws.config as Record<string, unknown>)} />
               )}
             </div>

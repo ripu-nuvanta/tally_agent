@@ -65,7 +65,7 @@ describe("ConversationList", () => {
     renderConversationList(mockConversations, undefined, onSelect);
 
     await user.click(screen.getByRole("button", { name: "Trial Balance Query" }));
-    expect(onSelect).toHaveBeenCalledWith("conv-1");
+    expect(onSelect).toHaveBeenCalledWith("conv-1", "Trial Balance Query");
   });
 
   it("calls onSelect with correct id for each conversation", async () => {
@@ -74,7 +74,7 @@ describe("ConversationList", () => {
     renderConversationList(mockConversations, undefined, onSelect);
 
     await user.click(screen.getByRole("button", { name: "P&L Analysis" }));
-    expect(onSelect).toHaveBeenCalledWith("conv-2");
+    expect(onSelect).toHaveBeenCalledWith("conv-2", "P&L Analysis");
   });
 
   it("has a '+ New Chat' button", () => {

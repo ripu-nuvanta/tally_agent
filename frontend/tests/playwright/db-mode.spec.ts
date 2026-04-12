@@ -178,6 +178,13 @@ test.describe("DB-mode visual tests", () => {
       await expect(page.locator("text=NUVANTA AI").first()).toBeVisible();
     }
 
+    // Verify "+ New Chat" button is visible in at least one workspace
+    if (isMobile) {
+      await expect(page.locator("text=+ New Chat").last()).toBeVisible();
+    } else {
+      await expect(page.locator("text=+ New Chat").first()).toBeVisible();
+    }
+
     await expect(page).toHaveScreenshot("sidebar-with-workspaces.png");
   });
 
@@ -246,6 +253,12 @@ test.describe("DB-mode visual tests", () => {
     // Verify workspace name appears in header (data-testid is always in DOM)
     await expect(page.locator('[data-testid="header-workspace-name"]')).toBeVisible();
     await expect(page.locator('[data-testid="header-workspace-name"]')).toHaveText("Bharat Traders");
+
+    // Verify conversation title in header
+    await expect(page.locator('[data-testid="header-chat-title"]')).toHaveText("Trial Balance April");
+
+    // Verify Live badge (workspace config has no mock_mode)
+    await expect(page.locator('[data-testid="header-workspace-badge"]')).toContainText("Live");
 
     // Verify TallyPrime AI header
     await expect(page.locator("text=TallyPrime AI").first()).toBeVisible();
@@ -448,7 +461,7 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator("text=TallyPrime AI").first()).toBeVisible();
 
     // The chat window hint text should be visible (always visible regardless of sidebar)
-    await expect(page.locator("text=Ask me anything about your accounting data")).toBeVisible();
+    await expect(page.locator("text=Type or upload to start a conversation")).toBeVisible();
 
     await expect(page).toHaveScreenshot("mobile-landing-page.png");
   });
@@ -1062,8 +1075,8 @@ test.describe("DB-mode visual tests", () => {
     // Wait for workspace name to appear in header
     await page.waitForSelector('[data-testid="header-workspace-name"]', { timeout: 10000 });
 
-    // Verify the orange "Demo" badge is visible
-    await expect(page.locator("text=Demo").first()).toBeVisible();
+    // Verify the orange "Demo" badge is visible via data-testid
+    await expect(page.locator('[data-testid="header-workspace-badge"]')).toContainText("Demo");
 
     await expect(page).toHaveScreenshot("header-demo-badge.png");
   });
@@ -1205,5 +1218,81 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator("button", { hasText: "Confirm & Write to Tally" })).toBeVisible();
 
     await expect(page).toHaveScreenshot("voucher-edit-form.png");
+  });
+
+  // Test 19: Desktop landing page — "New Chat" in header, Live badge, sidebar highlight
+  test("desktop-landing-page", async ({ page, viewport }) => {
+    // Skip on mobile (sidebar not visible)
+    if ((viewport?.width ?? 1280) < 768) {
+      test.skip();
+      return;
+    }
+
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    await page.goto("/w/ws-1");
+
+    // Wait for workspace to resolve
+    await page.waitForSelector('[data-testid="header-workspace-name"]', { timeout: 10000 });
+
+    // Verify "New Chat" shown in header chat title (blue)
+    await expect(page.locator('[data-testid="header-chat-title"]')).toHaveText("New Chat");
+
+    // Verify workspace name + Live badge in subtitle
+    await expect(page.locator('[data-testid="header-workspace-name"]')).toHaveText("Bharat Traders");
+    await expect(page.locator('[data-testid="header-workspace-badge"]')).toContainText("Live");
+
+    // Verify "+ New Chat" highlighted in sidebar for active workspace
+    await expect(page.locator('[data-testid="sidebar-new-chat-active"]').first()).toBeVisible();
+
+    // Verify hint text in chat area
+    await expect(page.locator("text=Type or upload to start a conversation")).toBeVisible();
+
+    await expect(page).toHaveScreenshot("desktop-landing-page.png");
+  });
+
+  // Test 20: Sidebar new chat highlighted — on landing page, active workspace's "+ New Chat" is highlighted
+  test("sidebar-new-chat-highlighted", async ({ page, viewport }) => {
+    // Sidebar only visible on tablet/desktop
+    if ((viewport?.width ?? 1280) < 768) {
+      test.skip();
+      return;
+    }
+
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+
+    await page.route("**/api/health", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    await page.goto("/w/ws-1");
+
+    // Wait for sidebar to load
+    await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
+
+    // The active workspace's "+ New Chat" should have highlighted styling
+    const highlightedBtn = page.locator('[data-testid="sidebar-new-chat-active"]').first();
+    await expect(highlightedBtn).toBeVisible();
+    await expect(highlightedBtn).toHaveText("+ New Chat");
+
+    // The inactive workspace's "+ New Chat" should NOT be highlighted
+    const normalBtn = page.locator('[data-testid="sidebar-new-chat"]').first();
+    await expect(normalBtn).toBeVisible();
+
+    await expect(page).toHaveScreenshot("sidebar-new-chat-highlighted.png");
   });
 });
