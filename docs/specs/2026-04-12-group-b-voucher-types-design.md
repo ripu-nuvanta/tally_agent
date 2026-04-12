@@ -291,19 +291,217 @@ This enables:
 
 ### 10.2 Test Plan
 
-| Layer | What | Type |
-|-------|------|------|
-| `import_builder.py` | XML correctness for 4 new builders — tags, polarity, PERSISTEDVIEW, BILLALLOCATIONS | Unit |
-| `voucher_builder.py` | Routing logic, VoucherData construction for each type, FX fields | Unit |
-| `document_parser.py` | Updated Vision prompt parsing, multi-currency fields, 5-type classification, FX validation | Unit |
-| `mock_handler.py` | Company list + party voucher lookup responses | Unit |
-| `ConnectCompanyModal` | Connection flow, dropdown population, mock mode fallback | Frontend Vitest |
-| `VoucherReviewCard` | Collapsed/expanded/edit states for all 5 types, FX override, DN/CN ref dropdown | Frontend Vitest |
-| `VoucherEditForm` | Mobile full-page vs desktop modal, line item add/remove, save round-trip | Frontend Vitest |
-| Orchestrator pipeline | File upload → extraction → correct builder → review card → write, for each type | Integration (mock Tally) |
-| Full E2E | DB mode: upload → review → write → verify, Purchase + DN scenarios minimum | E2E (mock Claude + mock Tally) |
-| Playwright visual | Review card states × 3 viewports, ConnectCompanyModal with dropdown × 3 viewports | Playwright |
-| Live exploration | Verify Purchase/Sales/DN/CN XML against real Tally before building final builders | Pre-implementation script |
+#### Backend Unit Tests
+
+**`import_builder.py` — XML builders (4 new × multiple scenarios):**
+
+| Builder | Scenario |
+|---------|----------|
+| Purchase | Basic: party + expense ledger, correct VCHTYPE/PERSISTEDVIEW/ISINVOICE/ISPARTYLEDGER |
+| Purchase | With GST: INPUT CGST/SGST entries, ISDEEMEDPOSITIVE=Yes |
+| Purchase | With IGST (interstate) |
+| Purchase | With BILLALLOCATIONS.LIST (New Ref) |
+| Sales | Basic: party + revenue ledger, reversed polarity from Purchase |
+| Sales | With GST: OUTPUT CGST/SGST, ISDEEMEDPOSITIVE=No |
+| Sales | With BILLALLOCATIONS.LIST (New Ref) |
+| Debit Note | Basic: VCHTYPE="Debit Note", BILLTYPE="Agst Ref" |
+| Debit Note | With original invoice reference |
+| Credit Note | Basic: VCHTYPE="Credit Note", BILLTYPE="Agst Ref" |
+| Credit Note | With original invoice reference |
+| All 4 types | Amount balance validation (entries sum to 0) |
+| All 4 types | XML escaping of special characters in party/ledger names |
+| All 4 types | Required field validation (empty date/ledger/company → ValueError) |
+
+**`voucher_builder.py` — VoucherData construction:**
+
+| Voucher Type | Scenario |
+|-------------|----------|
+| Payment | Existing tests (no changes expected) |
+| Purchase | INR doc → correct party_ledger, is_party_ledger=True, bill_type="New Ref" |
+| Purchase | USD doc → inr_amount used (not original_amount), FX fields set |
+| Sales | Correct polarity reversal from Purchase |
+| Debit Note | bill_reference set, bill_type="Agst Ref" |
+| Credit Note | bill_reference set, bill_type="Agst Ref" |
+| All types | Narration built from party_name (not vendor_name) |
+| All types | GST entries mapped to correct direction (input vs output) |
+
+**`document_parser.py` — extraction + validation:**
+
+| Scenario | What to verify |
+|----------|---------------|
+| 5-type classification | Each doc_type value parsed correctly from Vision JSON |
+| INR document | original_currency="INR", fx_rate=None, inr_amount=total_amount |
+| USD document with rate on doc | original_currency="USD", fx_rate extracted, inr_amount=original×rate |
+| USD document without rate | fx_rate=None, warning generated |
+| EUR document | Non-USD foreign currency handled |
+| FX validation pass | original_amount × fx_rate ≈ inr_amount within ₹1 |
+| FX validation fail | Warning: amounts don't reconcile |
+| DN with invoice ref | original_invoice_ref extracted from Vision JSON |
+| CN with invoice ref | original_invoice_ref extracted from Vision JSON |
+| party_name field | Parsed correctly, vendor_name backward compat |
+| Existing validation | Line items sum, GST rate checks still work |
+
+**`mock_handler.py`:**
+
+| Scenario | What to verify |
+|----------|---------------|
+| Company list query | Returns `["Bharat Traders Pvt Ltd"]` |
+| Party voucher lookup | Returns sample vouchers for known party |
+| Party voucher lookup (unknown party) | Returns empty list |
+| Write Purchase/Sales/DN/CN | Returns CREATED=1 with incrementing LASTVCHID |
+
+**DB audit trail (`uploaded_files` + `voucher_entries`):**
+
+| Scenario | What to verify |
+|----------|---------------|
+| File upload | UploadedFile row created with filename, mime_type, size, workspace_id, user_id |
+| Duplicate file upload | Same file hash detected, warned/blocked |
+| Successful write | VoucherEntry row created with voucher_type, amount, party, master_id, linked to uploaded_file_id |
+| Write all 5 types | VoucherEntry.voucher_type correct for each |
+| Cancel voucher | VoucherEntry status updated to "cancelled" |
+| Delete voucher | VoucherEntry status updated to "deleted" |
+| FX write | VoucherEntry stores original_currency, original_amount, fx_rate, inr_amount |
+| Query history | Fetch voucher entries by workspace_id returns correct records |
+
+#### Frontend Vitest Tests
+
+**`ConnectCompanyModal` — state matrix:**
+
+| State | Scenario |
+|-------|----------|
+| Initial | Shows host + port fields, "Connect" button, no dropdown |
+| Connecting | Loading spinner while test-connection API in flight |
+| Connected | Company dropdown populated, "Create Workspace" enabled after selection |
+| Connection failed | Error message, retry possible |
+| Mock mode on | Skip connection, auto-fill "Bharat Traders Pvt Ltd", no dropdown |
+| Mock mode toggle | Switching mock on/off resets connection state |
+| Single company | Dropdown with one option, auto-selected |
+| Multiple companies | Dropdown with multiple options, user must pick |
+
+**`VoucherReviewCard` — voucher type × state × currency matrix:**
+
+| Voucher Type | Card State | Currency | Scenario |
+|-------------|-----------|----------|----------|
+| Payment | Collapsed | INR | Basic: amount, narration, action buttons |
+| Payment | Collapsed | — | No party name shown |
+| Purchase | Collapsed | INR | Party name, amount, type badge |
+| Purchase | Collapsed | USD | Shows both USD + INR amounts |
+| Sales | Collapsed | INR | Party name, reversed polarity display |
+| Debit Note | Collapsed | INR | Shows "Against: Invoice #X" |
+| Credit Note | Collapsed | INR | Shows "Against: Invoice #X" |
+| All 5 types | Expanded | INR | Line items, GST breakdown, ledger mappings visible |
+| Purchase | Expanded | USD | FX rate + conversion shown |
+| Debit Note | Expanded | INR | Original invoice reference visible |
+| All 5 types | With warnings | — | Amber warning banner (FX estimate, amount mismatch) |
+
+**`VoucherReviewCard` — user action flow matrix:**
+
+| Flow | Steps | Expected outcome |
+|------|-------|-----------------|
+| Quick approve | Collapsed → Write to Tally | Write request sent, card shows success state |
+| Quick discard | Collapsed → Discard | Card shows discarded state |
+| Review then approve | Collapsed → Expand → Write to Tally | Write request sent |
+| Review then discard | Collapsed → Expand → Discard | Discarded |
+| Edit then approve | Collapsed → Expand → Edit → Save → Write to Tally | Updated values sent |
+| Edit then discard | Collapsed → Expand → Edit → Save → Discard | Discarded with edits lost |
+| Edit cancel | Collapsed → Expand → Edit → Cancel (back) | Returns to expanded, no changes |
+| Edit reclassify | Edit → change voucher type dropdown | Form fields update (party field appears/disappears) |
+| FX override | Edit → change INR amount | New INR amount used for write |
+| DN/CN ref select | Edit → select from "Against Invoice" dropdown | bill_reference set |
+| DN/CN ref manual | Edit → no matches → type manual reference | Free-text reference accepted |
+| Buttons disable | Write to Tally clicked | Buttons disable, spinner, no double-submit |
+| Write error | Tally returns error | Error shown, buttons re-enable |
+
+**`VoucherEditForm` — responsive + interaction:**
+
+| Scenario | What to verify |
+|----------|---------------|
+| Mobile (< 768px) | Full-page overlay, "← Back" nav, line items as stacked cards |
+| Desktop (≥ 768px) | Modal overlay, line items as table rows |
+| Add line item | New empty row/card added |
+| Remove line item | Row/card removed, totals recalculated |
+| Edit line item | Amount change → total updates, GST recalculates |
+| Ledger dropdown per line | Grouped by account group, searchable |
+| Party ledger dropdown | Filtered to Sundry Creditors (Purchase/DN) or Sundry Debtors (Sales/CN) |
+| Payment type selected | Party ledger field hidden |
+| GST breakdown | Editable rates + amounts, auto-recalculate on change |
+| FX override field | Shown only when currency ≠ INR, amber highlight |
+| Against Invoice dropdown | Shown only for DN/CN, populated from API response |
+| Save validation | Required fields check before closing form |
+
+#### Integration Tests (mock Tally)
+
+**Pipeline end-to-end per voucher type:**
+
+| Voucher Type | Currency | Scenario |
+|-------------|----------|----------|
+| Payment | INR | Existing flow (regression) |
+| Purchase | INR | File upload → classify as purchase → party ledger + expense ledger → write |
+| Purchase | USD | File upload → FX extraction → INR override → write with INR amount |
+| Sales | INR | File upload → classify as sales → party ledger + revenue ledger → write |
+| Debit Note | INR | File upload → classify as DN → fetch party vouchers → select ref → write |
+| Credit Note | INR | File upload → classify as CN → fetch party vouchers → select ref → write |
+| DN (no match) | INR | Party has no existing vouchers → manual ref fallback |
+
+**DB persistence integration:**
+
+| Scenario | What to verify |
+|----------|---------------|
+| Upload + write | Both UploadedFile and VoucherEntry rows created, linked correctly |
+| Upload + discard | UploadedFile created, no VoucherEntry |
+| Upload + edit + write | UploadedFile created, VoucherEntry has edited values |
+| Cancel after write | VoucherEntry status updated |
+| Delete after write | VoucherEntry status updated |
+
+**ConnectCompanyModal integration:**
+
+| Scenario | What to verify |
+|----------|---------------|
+| Real Tally connection | test-connection returns company list |
+| Mock mode | Returns fixture company |
+| Connection refused | Error response, frontend shows error |
+
+#### E2E Tests (mock Claude + mock Tally, DB mode)
+
+| Scenario | Flow |
+|----------|------|
+| Purchase invoice (USD) | Upload → Vision extracts Purchase + USD → FX shown → user edits INR → Write → success + DB row |
+| Debit Note with ref | Upload → Vision extracts DN → party vouchers fetched → user selects ref → Write → success |
+| Payment (regression) | Existing flow still works unchanged |
+| Discard flow | Upload → review → Discard → no Tally write, UploadedFile in DB |
+| Edit + reclassify | Upload → Vision says "payment" → user edits to "purchase" in form → adds party → Write |
+
+#### Playwright Visual Tests
+
+**State × viewport matrix (mobile 375px / tablet 768px / desktop 1280px):**
+
+| Component | State | Viewports |
+|-----------|-------|-----------|
+| VoucherReviewCard | Collapsed — Payment INR | 3 |
+| VoucherReviewCard | Collapsed — Purchase USD (dual currency) | 3 |
+| VoucherReviewCard | Collapsed — Debit Note with ref | 3 |
+| VoucherReviewCard | Collapsed — with warning banner | 3 |
+| VoucherReviewCard | Expanded — Purchase with GST + line items | 3 |
+| VoucherReviewCard | Expanded — DN with invoice ref | 3 |
+| VoucherEditForm | Purchase form — mobile full-page | 1 (mobile) |
+| VoucherEditForm | Purchase form — desktop modal | 1 (desktop) |
+| VoucherEditForm | DN form with "Against Invoice" dropdown | 1 (desktop) |
+| VoucherEditForm | FX override field highlighted | 1 (desktop) |
+| VoucherReviewCard | Success state (after write) | 3 |
+| VoucherReviewCard | Discarded state | 3 |
+| VoucherReviewCard | Error state (write failed) | 3 |
+| ConnectCompanyModal | Initial (host + port) | 3 |
+| ConnectCompanyModal | Connected — company dropdown | 3 |
+| ConnectCompanyModal | Connection error | 3 |
+| ConnectCompanyModal | Mock mode | 3 |
+
+Total: ~17 specs × 3 viewports (some mobile/desktop only) ≈ **45-50 Playwright screenshots**
+
+#### Pre-Implementation
+
+| Task | Purpose |
+|------|---------|
+| Live Tally exploration script | Verify items 1-6 from `docs/tally-write-exploration.md` "Pending Exploration" section before building XML builders |
 
 ### 10.3 Fixture Additions
 
