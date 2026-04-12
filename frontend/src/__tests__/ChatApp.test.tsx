@@ -25,6 +25,16 @@ const mockWorkspace = {
   updated_at: "2026-01-01T00:00:00Z",
 };
 
+const mockWorkspaceDemo = {
+  ...mockWorkspace,
+  config: { tally_host: "localhost", tally_port: 9000, mock_mode: true },
+};
+
+const mockWorkspaceLive = {
+  ...mockWorkspace,
+  config: { tally_host: "localhost", tally_port: 9000, mock_mode: false },
+};
+
 const mockConversation = {
   id: "conv-1",
   title: "Trial Balance",
@@ -201,5 +211,50 @@ describe("ChatApp", () => {
 
     // Drawer should close
     expect(document.querySelector(".fixed.inset-0.z-40")).not.toBeInTheDocument();
+  });
+
+  it("renders two-line header with title and workspace subtitle", async () => {
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      // Title line
+      expect(screen.getByText("TallyPrime AI")).toBeInTheDocument();
+      // Workspace subtitle line in header
+      const headerEl = document.querySelector("header")!;
+      expect(headerEl.textContent).toContain("Bharat Traders");
+    });
+  });
+
+  it("shows workspace subtitle with truncate class for long names", async () => {
+    const longNameWs = { ...mockWorkspace, name: "A Very Long Company Name That Should Truncate" };
+    mockedClient.getWorkspaces.mockResolvedValue([longNameWs]);
+    mockedClient.getConversations.mockResolvedValue([mockConversation]);
+
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      const header = document.querySelector("header")!;
+      const subtitle = header.querySelector('[data-testid="header-workspace-name"]');
+      expect(subtitle).toBeInTheDocument();
+      expect(subtitle!.className).toContain("truncate");
+    });
+  });
+
+  it("shows Demo badge when workspace mock_mode is true", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([mockWorkspaceDemo]);
+    mockedClient.getConversations.mockResolvedValue([mockConversation]);
+
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      expect(screen.getByText("Demo")).toBeInTheDocument();
+    });
+  });
+
+  it("shows Live badge when workspace mock_mode is false", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([mockWorkspaceLive]);
+    mockedClient.getConversations.mockResolvedValue([mockConversation]);
+
+    renderChatApp("/c/conv-1");
+    await waitFor(() => {
+      expect(screen.getByText("Live")).toBeInTheDocument();
+    });
   });
 });

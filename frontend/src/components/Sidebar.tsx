@@ -7,10 +7,10 @@ import ConnectCompanyModal from "./ConnectCompanyModal";
 interface SidebarProps {
   activeConversationId?: string;
   activeWorkspaceId?: string;
-  onConversationSelect: (workspaceId: string, conversationId: string, workspaceName: string) => void;
-  onNewChat: (workspaceId: string, workspaceName: string) => void;
+  onConversationSelect: (workspaceId: string, conversationId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
+  onNewChat: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
   refreshTrigger?: number;
-  onWorkspaceResolved?: (workspaceId: string, workspaceName: string) => void;
+  onWorkspaceResolved?: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
 }
 
 export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved }: SidebarProps) {
@@ -30,7 +30,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
       for (const w of ws) {
         const convs = convMap[w.id] || [];
         if (convs.some((c) => c.id === activeConversationId)) {
-          onWorkspaceResolved(w.id, w.name);
+          onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>);
           break;
         }
       }
@@ -68,8 +68,8 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
               {!isCollapsed && (
                 <ConversationList workspaceId={ws.id} conversations={conversations[ws.id] || []}
                   activeConversationId={activeConversationId}
-                  onSelect={(cid) => onConversationSelect(ws.id, cid, ws.name)}
-                  onNewChat={() => onNewChat(ws.id, ws.name)} />
+                  onSelect={(cid) => onConversationSelect(ws.id, cid, ws.name, ws.config as Record<string, unknown>)}
+                  onNewChat={() => onNewChat(ws.id, ws.name, ws.config as Record<string, unknown>)} />
               )}
             </div>
           );

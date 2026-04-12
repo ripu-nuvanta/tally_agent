@@ -10,33 +10,37 @@ export default function ChatApp() {
   const navigate = useNavigate();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeWorkspaceName, setActiveWorkspaceName] = useState<string | null>(null);
+  const [activeWorkspaceConfig, setActiveWorkspaceConfig] = useState<Record<string, unknown>>({});
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleConversationSelect = useCallback(
-    (workspaceId: string, convId: string, workspaceName: string) => {
+    (workspaceId: string, convId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => {
       setActiveWorkspaceId(workspaceId);
       setActiveWorkspaceName(workspaceName);
+      if (workspaceConfig) setActiveWorkspaceConfig(workspaceConfig);
       navigate(`/c/${convId}`);
     },
     [navigate],
   );
 
   const handleNewChat = useCallback(
-    async (workspaceId: string, workspaceName: string) => {
+    async (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => {
       const conv = await createConversation(workspaceId);
       setActiveWorkspaceId(workspaceId);
       setActiveWorkspaceName(workspaceName);
+      if (workspaceConfig) setActiveWorkspaceConfig(workspaceConfig);
       navigate(`/c/${conv.id}`);
     },
     [navigate],
   );
 
   const handleWorkspaceResolved = useCallback(
-    (wsId: string, wsName: string) => {
+    (wsId: string, wsName: string, wsConfig?: Record<string, unknown>) => {
       if (!activeWorkspaceId) {
         setActiveWorkspaceId(wsId);
         setActiveWorkspaceName(wsName);
+        if (wsConfig) setActiveWorkspaceConfig(wsConfig);
       }
     },
     [activeWorkspaceId],
@@ -44,10 +48,10 @@ export default function ChatApp() {
 
   return (
     <div className="h-screen flex flex-col bg-white">
-      <header className="border-b border-gray-200 bg-white px-4 py-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+      <header className="border-b border-gray-200 bg-white px-4 py-2 flex items-center justify-between">
+        <div className="flex items-center gap-3 min-w-0">
           <button
-            className="md:hidden p-1 rounded text-gray-600 hover:text-gray-900 hover:bg-gray-100"
+            className="md:hidden p-1 rounded text-gray-600 hover:text-gray-900 hover:bg-gray-100 shrink-0"
             aria-label="Open sidebar"
             onClick={() => setSidebarOpen(true)}
           >
@@ -57,12 +61,31 @@ export default function ChatApp() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <h1 className="text-lg font-semibold text-gray-900">TallyPrime AI</h1>
-          {activeWorkspaceName && (
-            <span className="text-sm text-gray-500 border-l border-gray-200 pl-3">{activeWorkspaceName}</span>
-          )}
+          <div className="min-w-0">
+            <h1 className="text-lg font-semibold text-gray-900 truncate">TallyPrime AI</h1>
+            {activeWorkspaceName && (
+              <div className="flex items-center gap-2">
+                <span data-testid="header-workspace-name" className="text-xs text-gray-500 truncate">
+                  {activeWorkspaceName}
+                </span>
+                {activeWorkspaceConfig.mock_mode !== undefined && (
+                  activeWorkspaceConfig.mock_mode ? (
+                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
+                      Demo
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
+                      Live
+                    </span>
+                  )
+                )}
+              </div>
+            )}
+          </div>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 shrink-0">
           <UserMenu />
         </div>
       </header>
