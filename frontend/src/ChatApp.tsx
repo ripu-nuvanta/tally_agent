@@ -1,18 +1,24 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { createConversation } from "./api/client";
 import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import UserMenu from "./components/UserMenu";
 
 export default function ChatApp() {
-  const { conversationId } = useParams();
+  const { conversationId, workspaceId: urlWorkspaceId } = useParams();
   const navigate = useNavigate();
   const [activeWorkspaceId, setActiveWorkspaceId] = useState<string | null>(null);
   const [activeWorkspaceName, setActiveWorkspaceName] = useState<string | null>(null);
   const [activeWorkspaceConfig, setActiveWorkspaceConfig] = useState<Record<string, unknown>>({});
   const [sidebarRefresh, setSidebarRefresh] = useState(0);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Sync activeWorkspaceId from URL param when on /w/:workspaceId route
+  useEffect(() => {
+    if (urlWorkspaceId && urlWorkspaceId !== activeWorkspaceId) {
+      setActiveWorkspaceId(urlWorkspaceId);
+    }
+  }, [urlWorkspaceId, activeWorkspaceId]);
 
   const handleConversationSelect = useCallback(
     (workspaceId: string, convId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => {
@@ -25,25 +31,31 @@ export default function ChatApp() {
   );
 
   const handleNewChat = useCallback(
-    async (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => {
-      const conv = await createConversation(workspaceId);
+    (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => {
       setActiveWorkspaceId(workspaceId);
       setActiveWorkspaceName(workspaceName);
       if (workspaceConfig) setActiveWorkspaceConfig(workspaceConfig);
-      navigate(`/c/${conv.id}`);
+      navigate(`/w/${workspaceId}`);
+      setSidebarOpen(false);
+    },
+    [navigate],
+  );
+
+  const handleConversationCreated = useCallback(
+    (convId: string) => {
+      navigate(`/c/${convId}`);
+      setSidebarRefresh((n) => n + 1);
     },
     [navigate],
   );
 
   const handleWorkspaceResolved = useCallback(
     (wsId: string, wsName: string, wsConfig?: Record<string, unknown>) => {
-      if (!activeWorkspaceId) {
-        setActiveWorkspaceId(wsId);
-        setActiveWorkspaceName(wsName);
-        if (wsConfig) setActiveWorkspaceConfig(wsConfig);
-      }
+      setActiveWorkspaceId(wsId);
+      setActiveWorkspaceName(wsName);
+      if (wsConfig) setActiveWorkspaceConfig(wsConfig);
     },
-    [activeWorkspaceId],
+    [],
   );
 
   return (
@@ -118,9 +130,8 @@ export default function ChatApp() {
                   handleConversationSelect(ws, conv, name);
                   setSidebarOpen(false);
                 }}
-                onNewChat={async (ws, name) => {
-                  await handleNewChat(ws, name);
-                  setSidebarOpen(false);
+                onNewChat={(ws, name, config) => {
+                  handleNewChat(ws, name, config);
                 }}
                 refreshTrigger={sidebarRefresh}
                 onWorkspaceResolved={handleWorkspaceResolved}
@@ -130,7 +141,7 @@ export default function ChatApp() {
         )}
 
         <main className="flex-1 overflow-hidden">
-          <ChatWindow conversationId={conversationId} workspaceId={activeWorkspaceId || undefined} onMessageSent={() => setSidebarRefresh((n) => n + 1)} />
+          <ChatWindow conversationId={conversationId} workspaceId={activeWorkspaceId || undefined} workspaceName={activeWorkspaceName || undefined} onMessageSent={() => setSidebarRefresh((n) => n + 1)} onConversationCreated={handleConversationCreated} />
         </main>
       </div>
     </div>

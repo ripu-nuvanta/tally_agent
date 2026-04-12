@@ -205,4 +205,161 @@ describe("ChatWindow", () => {
       expect(screen.getByText("TallyPrime AI Assistant")).toBeInTheDocument();
     });
   });
+
+  describe("workspace landing page (Task 5)", () => {
+    it("shows workspace name when workspaceName is provided without conversationId", () => {
+      render(
+        <SessionProvider>
+          <ChatWindow workspaceId="ws-1" workspaceName="Bharat Traders" />
+        </SessionProvider>
+      );
+      expect(screen.getByText("Bharat Traders")).toBeInTheDocument();
+      expect(screen.getByText(/Connected to/)).toBeInTheDocument();
+    });
+
+    it("shows hint text on landing page", () => {
+      render(
+        <SessionProvider>
+          <ChatWindow workspaceId="ws-1" workspaceName="Bharat Traders" />
+        </SessionProvider>
+      );
+      expect(screen.getByText("Type or upload to start a conversation")).toBeInTheDocument();
+    });
+
+    it("shows quick action buttons on landing page", () => {
+      render(
+        <SessionProvider>
+          <ChatWindow workspaceId="ws-1" workspaceName="Bharat Traders" />
+        </SessionProvider>
+      );
+      expect(screen.getByRole("button", { name: "Cash balance" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Top 10 customers" })).toBeInTheDocument();
+    });
+
+    it("does not show hint text when conversationId is set", () => {
+      mockedApi.getConversation.mockResolvedValue({
+        id: "conv-1",
+        title: "Test",
+        tag: null,
+        messages: [],
+      });
+      render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" workspaceId="ws-1" workspaceName="Bharat Traders" />
+        </SessionProvider>
+      );
+      expect(screen.queryByText("Type or upload to start a conversation")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("deferred conversation creation (Task 6)", () => {
+    it("creates conversation on first send when no conversationId", async () => {
+      const user = userEvent.setup();
+      const newConv = { id: "conv-new", title: null, tag: null, created_at: "2026-01-01", updated_at: "2026-01-01" };
+      mockedApi.createConversation.mockResolvedValue(newConv);
+      mockedApi.sendChat.mockResolvedValue({ message: "Response", session_id: "sess-1" });
+      const onCreated = vi.fn();
+
+      render(
+        <SessionProvider>
+          <ChatWindow workspaceId="ws-1" workspaceName="Test" onConversationCreated={onCreated} />
+        </SessionProvider>
+      );
+
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "Show trial balance{Enter}");
+
+      await waitFor(() => {
+        expect(mockedApi.createConversation).toHaveBeenCalledWith("ws-1");
+      });
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenCalledWith(
+          expect.objectContaining({ conversation_id: "conv-new" }),
+        );
+      });
+      expect(onCreated).toHaveBeenCalledWith("conv-new");
+    });
+
+    it("does not create conversation when conversationId is already set", async () => {
+      const user = userEvent.setup();
+      mockedApi.getConversation.mockResolvedValue({
+        id: "conv-1",
+        title: "Test",
+        tag: null,
+        messages: [],
+      });
+      mockedApi.sendChat.mockResolvedValue({ message: "Response", session_id: "sess-1" });
+      const onCreated = vi.fn();
+
+      render(
+        <SessionProvider>
+          <ChatWindow conversationId="conv-1" workspaceId="ws-1" onConversationCreated={onCreated} />
+        </SessionProvider>
+      );
+
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "Show trial balance{Enter}");
+
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenCalled();
+      });
+      expect(mockedApi.createConversation).not.toHaveBeenCalled();
+      expect(onCreated).not.toHaveBeenCalled();
+    });
+
+    it("quick action triggers deferred creation", async () => {
+      const user = userEvent.setup();
+      const newConv = { id: "conv-qa", title: null, tag: null, created_at: "2026-01-01", updated_at: "2026-01-01" };
+      mockedApi.createConversation.mockResolvedValue(newConv);
+      mockedApi.sendChat.mockResolvedValue({ message: "P&L data", session_id: "sess-1" });
+      const onCreated = vi.fn();
+
+      render(
+        <SessionProvider>
+          <ChatWindow workspaceId="ws-1" workspaceName="Test" onConversationCreated={onCreated} />
+        </SessionProvider>
+      );
+
+      await user.click(screen.getByRole("button", { name: "P&L last month" }));
+
+      await waitFor(() => {
+        expect(mockedApi.createConversation).toHaveBeenCalledWith("ws-1");
+      });
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenCalledWith(
+          expect.objectContaining({ conversation_id: "conv-qa" }),
+        );
+      });
+      expect(onCreated).toHaveBeenCalledWith("conv-qa");
+    });
+
+    it("loading prevents double creation on rapid sends", async () => {
+      const user = userEvent.setup();
+      // Make createConversation slow so we can test double-send prevention
+      const newConv = { id: "conv-once", title: null, tag: null, created_at: "2026-01-01", updated_at: "2026-01-01" };
+      mockedApi.createConversation.mockImplementation(
+        () => new Promise((resolve) => setTimeout(() => resolve(newConv), 100))
+      );
+      mockedApi.sendChat.mockResolvedValue({ message: "Response", session_id: "sess-1" });
+
+      render(
+        <SessionProvider>
+          <ChatWindow workspaceId="ws-1" workspaceName="Test" />
+        </SessionProvider>
+      );
+
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      // First send
+      await user.type(textarea, "Query 1{Enter}");
+
+      // The loading state should disable the send button, preventing second send
+      // The send button should be disabled while loading
+      const sendButton = screen.getByRole("button", { name: "Send message" });
+      expect(sendButton).toBeDisabled();
+
+      await waitFor(() => {
+        expect(mockedApi.createConversation).toHaveBeenCalledTimes(1);
+      });
+    });
+  });
 });

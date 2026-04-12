@@ -69,6 +69,7 @@ function renderChatApp(initialPath = "/") {
       <Routes>
         <Route path="/" element={<ChatApp />} />
         <Route path="/c/:conversationId" element={<ChatApp />} />
+        <Route path="/w/:workspaceId" element={<ChatApp />} />
       </Routes>
     </MemoryRouter>
   );
@@ -111,10 +112,7 @@ describe("ChatApp", () => {
     });
   });
 
-  it("navigates to new conversation URL when New Chat is clicked", async () => {
-    const newConv = { id: "conv-new", title: null, tag: null, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" };
-    mockedClient.createConversation.mockResolvedValue(newConv);
-
+  it("navigates to workspace landing page when New Chat is clicked (deferred creation)", async () => {
     const user = userEvent.setup();
     renderChatApp();
 
@@ -126,8 +124,12 @@ describe("ChatApp", () => {
     const newChatBtn = screen.getByRole("button", { name: "+ New Chat" });
     await user.click(newChatBtn);
 
+    // Should NOT call createConversation (deferred until first message)
+    expect(mockedClient.createConversation).not.toHaveBeenCalled();
+
+    // Should show the landing page with hint text
     await waitFor(() => {
-      expect(mockedClient.createConversation).toHaveBeenCalledWith("ws-1");
+      expect(screen.getByText("Type or upload to start a conversation")).toBeInTheDocument();
     });
   });
 

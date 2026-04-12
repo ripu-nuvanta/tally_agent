@@ -26,12 +26,20 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
     const convMap: Record<string, ConversationSummary[]> = {};
     ws.forEach((w, i) => { convMap[w.id] = convResults[i]; });
     setConversations(convMap);
-    if (activeConversationId && onWorkspaceResolved) {
-      for (const w of ws) {
-        const convs = convMap[w.id] || [];
-        if (convs.some((c) => c.id === activeConversationId)) {
+    if (onWorkspaceResolved) {
+      if (activeConversationId) {
+        for (const w of ws) {
+          const convs = convMap[w.id] || [];
+          if (convs.some((c) => c.id === activeConversationId)) {
+            onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>);
+            break;
+          }
+        }
+      } else if (activeWorkspaceId) {
+        // Resolve workspace name for /w/:workspaceId landing page
+        const w = ws.find((w) => w.id === activeWorkspaceId);
+        if (w) {
           onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>);
-          break;
         }
       }
     }

@@ -24,6 +24,7 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <LoginPage />} />
       <Route path="/register" element={user ? <Navigate to="/" replace /> : <RegisterPage />} />
       <Route path="/c/:conversationId" element={<ProtectedRoute><ChatApp /></ProtectedRoute>} />
+      <Route path="/w/:workspaceId" element={<ProtectedRoute><ChatApp /></ProtectedRoute>} />
       <Route path="/*" element={<ProtectedRoute><ChatApp /></ProtectedRoute>} />
     </Routes>
   );

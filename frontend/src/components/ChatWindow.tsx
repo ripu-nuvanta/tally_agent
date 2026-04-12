@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { getConversation, sendChat, sendChatWithFile, voucherAction, type VoucherAction } from "../api/client";
+import { createConversation, getConversation, sendChat, sendChatWithFile, voucherAction, type VoucherAction } from "../api/client";
 import { useSession } from "../context/SessionContext";
 import type { ChatMessage } from "../types";
 import { generateId } from "../utils/format";
@@ -10,10 +10,12 @@ import QuickActions from "./QuickActions";
 interface ChatWindowProps {
   conversationId?: string;
   workspaceId?: string;
+  workspaceName?: string;
   onMessageSent?: () => void;
+  onConversationCreated?: (convId: string) => void;
 }
 
-export default function ChatWindow({ conversationId, workspaceId, onMessageSent }: ChatWindowProps = {}) {
+export default function ChatWindow({ conversationId, workspaceId, workspaceName, onMessageSent, onConversationCreated }: ChatWindowProps = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
   const [pendingVoucherAction, setPendingVoucherAction] = useState<{
@@ -67,14 +69,23 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
       setLoading(true);
 
       try {
+        let activeConvId = conversationId;
+
+        // Deferred creation: create conversation on first send
+        if (!activeConvId && workspaceId) {
+          const conv = await createConversation(workspaceId);
+          activeConvId = conv.id;
+          onConversationCreated?.(conv.id);
+        }
+
         const response = file
-          ? await sendChatWithFile(file, text, workspaceId, conversationId)
+          ? await sendChatWithFile(file, text, workspaceId, activeConvId)
           : await sendChat({
               message: text,
               session_id: sessionId ?? undefined,
               company: company ?? undefined,
               workspace_id: workspaceId,
-              conversation_id: conversationId,
+              conversation_id: activeConvId,
             });
 
         setSessionId(response.session_id);
@@ -109,7 +120,7 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
         setLoading(false);
       }
     },
-    [sessionId, company, setSessionId, workspaceId, conversationId, onMessageSent]
+    [sessionId, company, setSessionId, workspaceId, conversationId, onMessageSent, onConversationCreated]
   );
 
   const handleVoucherAction = useCallback(
@@ -196,9 +207,20 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
                 <h2 className="text-2xl font-semibold text-gray-800 mb-2">
                   TallyPrime AI Assistant
                 </h2>
-                <p className="text-gray-500">
-                  Ask me anything about your accounting data
-                </p>
+                {workspaceName && !conversationId ? (
+                  <p className="text-gray-500">
+                    Connected to <strong>{workspaceName}</strong>
+                  </p>
+                ) : (
+                  <p className="text-gray-500">
+                    Ask me anything about your accounting data
+                  </p>
+                )}
+                {!conversationId && workspaceId && (
+                  <p className="text-sm text-gray-400 mt-1">
+                    Type or upload to start a conversation
+                  </p>
+                )}
               </div>
               <QuickActions onSelect={handleSend} disabled={loading} />
             </div>
