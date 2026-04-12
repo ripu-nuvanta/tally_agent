@@ -207,6 +207,15 @@ TEST_DATABASE_URL                    # for DB integration tests (separate DB rec
   ```
 - **Playwright screenshot regeneration**: Only delete `frontend/tests/playwright/__screenshots__/` for the specific test file being regenerated (e.g., `__screenshots__/*/db-mode.spec.ts/`), NOT the entire directory. Deleting everything removes responsive + eval-visual baselines that require a different frontend mode to regenerate.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
+- **Test plan thoroughness**: Every design spec MUST include a comprehensive test plan with:
+  1. **State matrix** — enumerate every `component × state × variant` combination. Cover all user action flows (e.g., approve/discard/edit→approve/edit→discard/edit→cancel). Include currency, GST, and error variants.
+  2. **Test fixture matrix** — list every fixture needed, organized by category:
+     - **Backend fixtures** (e.g., Vision JSON responses): one per doc type × currency × GST variant × edge case
+     - **Sample upload files**: one per supported file format (jpg, png, pdf, csv, xlsx) plus rejection cases (unsupported format, oversize, no extension)
+     - **Mock API responses**: every external service response the tests need
+     - **Frontend mock data**: TypeScript prop objects for component tests
+  3. **DB persistence scenarios** — if the feature writes to DB, enumerate: create/update/delete flows, linked records, status transitions, query-back verification
+  4. Fixtures must cover both new functionality AND regression of existing flows they extend.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
 
 ## Workflow Preferences
