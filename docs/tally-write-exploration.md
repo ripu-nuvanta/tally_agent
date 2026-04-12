@@ -379,6 +379,21 @@ The NAME.LIST requirement is undocumented but essential. Likely applies to GROUP
 - 7 GST ledgers under Duties & Taxes
 - Custom groups: Professional Creditors, Professional EXPENSES, EMAIL WEBSITE &RAZORPAY, etc.
 
+## Pending Exploration (Group B — 2026-04-12)
+
+The following need live verification before Group B implementation ships:
+
+1. **`LEDGERENTRIES.LIST` vs `ALLLEDGERENTRIES.LIST`** — Sales/Purchase were verified with `ALLLEDGERENTRIES.LIST` (same as Payment). Official docs use `LEDGERENTRIES.LIST`. Does it matter?
+2. **`Invoice Voucher View` vs `Accounting Voucher View`** — tested with `Accounting Voucher View`. Official docs show `Invoice Voucher View` for Sales/Purchase. Does the value affect behavior?
+3. **`BILLALLOCATIONS.LIST`** — present in official docs for Sales/Purchase. Does it work? Is it required?
+4. **`ISPARTYLEDGER`** — present in official docs. Does Tally reject without it?
+5. **Debit Note creation** — `VCHTYPE="Debit Note"`, `BILLTYPE="Agst Ref"`. Not tested at all.
+6. **Credit Note creation** — `VCHTYPE="Credit Note"`, `BILLTYPE="Agst Ref"`. Not tested at all.
+7. **Stock item creation XML** — `STOCKITEM ACTION="Create"` with `NAME.LIST` (assumed required). Not tested.
+8. **`ALLINVENTORYENTRIES.LIST` in vouchers** — `BATCHALLOCATIONS.LIST`, `RATE` format, `GODOWNNAME`. Not tested.
+
+Items 1-6 block Group B implementation. Items 7-8 block B1b-phase-2 (stock items).
+
 ## Scripts
 
 - `scripts/explore_tally_write.py` — v1 exploration (caused crash via REMOTEID delete)
