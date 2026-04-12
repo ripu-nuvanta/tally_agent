@@ -196,6 +196,15 @@ TEST_DATABASE_URL                    # for DB integration tests (separate DB rec
 - **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all components + utils. 237 tests.
 - **Frontend Playwright tests** (`frontend/tests/playwright/`): Visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) + db-mode (21 specs × 3 viewports, 11 skipped for viewport-specific) = 52 pass + 11 skip. **IMPORTANT: After running Playwright tests, the MAIN AGENT must visually inspect screenshots from ALL viewports** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/` before reporting pass/fail. Check for: blank space, content cutoff, sidebar/header overlap, missing text/tables/charts, unreadable elements. A test suite reporting "N passed" is NOT sufficient — screenshots must be visually verified. **Never delegate screenshot review to a subagent** — subagents cannot see images. The main orchestrating agent must use the Read tool on the PNG files itself.
 - **Playwright test design**: Before writing Playwright specs, enumerate a `component × state × viewport` matrix. Cover ALL visually distinct states (e.g., voucher: draft/pending/written/discarded, sidebar: active/collapsed/empty, header: live/demo badge). Each state needs a mock data variant and separate screenshot. Add content assertions (`expect(locator).toHaveText(...)`) BEFORE `toHaveScreenshot()` — screenshots catch regressions but assertions catch functional bugs.
+- **Playwright visual checklist**: Every `toHaveScreenshot()` call MUST be preceded by a `// VISUAL CHECKLIST:` comment block describing what the reviewer should verify in the screenshot: layout elements, specific text, colors/highlights, spacing/alignment, and what should NOT be visible. This guides the main agent's manual screenshot review and makes expected behavior explicit. Example:
+  ```typescript
+  // VISUAL CHECKLIST:
+  // - Header: "TallyPrime AI | Trial Balance April" first line
+  // - Subtitle: "Bharat Traders ● Live" below chat title
+  // - Sidebar: BHARAT TRADERS has bg-blue-50 highlight
+  // - NOT visible: no overlap between sidebar and chat content
+  await expect(page).toHaveScreenshot("chat-with-header.png");
+  ```
 - **Playwright screenshot regeneration**: Only delete `frontend/tests/playwright/__screenshots__/` for the specific test file being regenerated (e.g., `__screenshots__/*/db-mode.spec.ts/`), NOT the entire directory. Deleting everything removes responsive + eval-visual baselines that require a different frontend mode to regenerate.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).

@@ -1826,3 +1826,73 @@ Expected: All existing backend tests pass (no backend changes in this plan).
 | Playwright db-mode | 5 | 8 | +3 |
 | Backend (unchanged) | ~1000 | ~1000 | 0 |
 | **Total** | ~1186 | ~1213 | +27 |
+
+---
+
+## Post-Plan Implementation (Tasks 10-14, completed 2026-04-12)
+
+The following tasks were implemented ad-hoc during visual review and testing, outside the original 9-task plan. Documenting for completeness.
+
+### Task 10: Header shows conversation title next to "TallyPrime AI |"
+
+**Problem:** Header showed only "TallyPrime AI" with workspace as subtitle. Spec required chat title visible.
+
+**Fix:** Added `activeConversationTitle` state to ChatApp. Sidebar passes conversation title through `onConversationSelect` (5th arg). Header now shows `TallyPrime AI | {Chat Title}` with workspace + badge as subtitle aligned under the chat title (not under the product name).
+
+**Files:** ChatApp.tsx, Sidebar.tsx, ConversationList.tsx
+**Tests:** 4 new Vitest (header title, new chat, live badge, demo badge)
+
+### Task 11: Demo/Live badge always visible
+
+**Problem:** Badge only rendered when `mock_mode === true`. Workspaces without explicit `mock_mode` showed no badge.
+
+**Fix:** Badge now shows green "● Live" by default, orange "● Demo" only when `mock_mode === true`. Always rendered when workspace is active.
+
+**Files:** ChatApp.tsx
+**Tests:** Covered by Task 10 tests
+
+### Task 12: "+ New Chat" highlighted in sidebar on landing page
+
+**Problem:** No visual indication in sidebar that user is on the "New Chat" landing page.
+
+**Fix:** ConversationList accepts `isLandingPage` prop. When true, "+ New Chat" button gets `bg-blue-100 text-blue-700` highlight. `data-testid="sidebar-new-chat-active"` added.
+
+**Files:** Sidebar.tsx, ConversationList.tsx
+**Tests:** 1 new Vitest, 2 new Playwright specs (desktop-landing-page, sidebar-new-chat-highlighted)
+
+### Task 13: No-workspaces state shows Connect Company prompt
+
+**Problem:** First-login users with no workspaces saw the chat UI, which is useless without a Tally connection.
+
+**Fix:** Sidebar signals workspace count via `onWorkspacesLoaded` callback. ChatApp renders centered "Welcome to TallyPrime AI" + "+ Connect Company" button when `hasWorkspaces === false`. Modal opens on click, refreshes sidebar on create.
+
+**Files:** ChatApp.tsx, Sidebar.tsx
+**Tests:** 1 new Vitest, 1 new Playwright spec (no-workspaces-landing)
+
+### Task 14: Visual checklists + Playwright content assertions
+
+**Problem:** Playwright tests took screenshots without describing what "correct" looks like. Reviewer had to guess.
+
+**Fix:** Added `// VISUAL CHECKLIST:` comment blocks before all 21 `toHaveScreenshot()` calls. Each describes: layout elements, specific text, colors/highlights, spacing, and what should NOT be visible. Added content assertions (`expect(locator).toHaveText(...)`) before screenshots.
+
+**Files:** db-mode.spec.ts (+174 lines)
+**Tests:** No new tests, documentation only
+
+### Task 15: Mobile sidebar highlight fix
+
+**Problem:** Mobile drawer showed no workspace/conversation highlights because test navigated to `/` (no context).
+
+**Fix:** Updated mobile Playwright tests to navigate to `/c/conv-1` so drawer shows active workspace (bg-blue-50) and conversation (bg-blue-100) highlights.
+
+**Files:** db-mode.spec.ts
+**Tests:** Updated existing mobile specs
+
+## Actual Final Test Counts
+
+| Suite | Before | After | Delta |
+|-------|--------|-------|-------|
+| Frontend Vitest | 181 | **237** | **+56** |
+| Playwright db-mode specs | 5 | **21** | **+16** |
+| Playwright db-mode runs | 15 | **52 pass + 11 skip** | **+48** |
+| Backend (unchanged) | ~1067 | ~1067 | 0 |
+| **Total** | ~1263 | **~1450+** | **+187** |
