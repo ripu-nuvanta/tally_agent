@@ -114,6 +114,13 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator('button[type="submit"]')).toBeVisible();
     await expect(page.locator("text=TallyPrime AI")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Email and password input fields centered on the page
+    // - "Sign in" submit button is blue (primary color)
+    // - "Register" link visible below the form
+    // - Page title "TallyPrime AI" visible at top
+    // - NO sidebar visible (unauthenticated state)
+    // - Form card has proper padding and centering (no overflow)
     await expect(page).toHaveScreenshot("login-page.png");
   });
 
@@ -140,6 +147,13 @@ test.describe("DB-mode visual tests", () => {
     // Type a password to trigger password strength rendering
     await page.locator('input[type="password"]').first().fill("TestPass123!");
 
+    // VISUAL CHECKLIST:
+    // - Email and password input fields visible and centered
+    // - Password strength indicator bar visible below password field (triggered by "TestPass123!")
+    // - "Create account" submit button visible
+    // - "TallyPrime AI" heading visible
+    // - NO sidebar visible (unauthenticated state)
+    // - Confirm password field visible below the main password field
     await expect(page).toHaveScreenshot("register-page.png");
   });
 
@@ -212,6 +226,15 @@ test.describe("DB-mode visual tests", () => {
       await expect(page.locator("text=+ New Chat").first()).toBeVisible();
     }
 
+    // VISUAL CHECKLIST:
+    // - Two workspaces listed: "Bharat Traders" and "NUVANTA AI"
+    // - Conversations listed under each workspace (e.g., "Trial Balance April", "Expense Entry" under Bharat Traders; "P&L Summary" under NUVANTA AI)
+    // - "+ New Chat" buttons visible for each workspace
+    // - "+ Connect Company" button visible at the bottom of the sidebar
+    // - "Bharat Traders" section has bg-blue-50 background (active workspace)
+    // - "Trial Balance April" has bg-blue-100 background (active conversation)
+    // - On mobile: drawer overlay slides in from left, main content partially visible behind it
+    // - On mobile: backdrop dimming effect visible behind the drawer
     await expect(page).toHaveScreenshot("sidebar-with-workspaces.png");
   });
 
@@ -296,6 +319,16 @@ test.describe("DB-mode visual tests", () => {
       await expect(page.locator("text=Trial Balance April").first()).toBeVisible();
     }
 
+    // VISUAL CHECKLIST:
+    // - Header first line: "TallyPrime AI | Trial Balance April" (conversation title after pipe)
+    // - Header subtitle (second line): "Bharat Traders ● Live" — subtitle is under the chat title, NOT under "TallyPrime AI"
+    // - "Live" badge is green (not orange/demo)
+    // - Sidebar (desktop/tablet): "Bharat Traders" section has bg-blue-50 background
+    // - Sidebar (desktop/tablet): "Trial Balance April" item has bg-blue-100 background (active)
+    // - Data table visible in chat area with 3 rows: Sales Account, Purchase Account, Cash
+    // - Table headers: "Ledger", "Debit", "Credit"
+    // - User message bubble above the assistant response
+    // - NOT visible: no orange "Demo" badge
     await expect(page).toHaveScreenshot("chat-with-header.png");
   });
 
@@ -386,6 +419,15 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator("text=Staples India")).toBeVisible();
     await expect(page.locator("text=Write to Tally")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Voucher card has blue border (draft status styling)
+    // - Vendor field shows "Staples India"
+    // - Date field shows "10-Apr-2025" (formatted from 20250410)
+    // - Amount field shows ₹5,000
+    // - GST entries listed: "Input CGST 9%" ₹450 and "Input SGST 9%" ₹450
+    // - Three action buttons visible: "Write to Tally" (green), "Edit Entry" (white/outlined), "Discard" (red border)
+    // - "Expense Entry — Draft" status label visible in card header
+    // - NOT visible: no disabled/grayed buttons (draft state has all buttons enabled)
     await expect(page).toHaveScreenshot("voucher-review-card.png");
   });
 
@@ -419,6 +461,14 @@ test.describe("DB-mode visual tests", () => {
     // Sidebar content (workspace names) should NOT be visible — hidden behind drawer
     await expect(page.locator("text=Bharat Traders")).not.toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Hamburger ☰ icon visible in the top-left corner of the header
+    // - "TallyPrime AI" text visible in the header center/left
+    // - Avatar/user icon visible in the top-right corner
+    // - Quick action buttons visible in the main content area
+    // - Chat input box visible at the bottom
+    // - NOT visible: no sidebar workspace names (Bharat Traders, NUVANTA AI hidden)
+    // - NOT visible: no drawer overlay
     await expect(page).toHaveScreenshot("mobile-hamburger-closed.png");
   });
 
@@ -480,6 +530,14 @@ test.describe("DB-mode visual tests", () => {
     // Verify the active conversation is shown and highlighted (bg-blue-100) in the drawer
     await expect(page.locator("text=Trial Balance April").last()).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Sidebar drawer slides in from the left and is fully visible
+    // - Workspace list visible in the drawer: "Bharat Traders" and "NUVANTA AI"
+    // - "Bharat Traders" section has bg-blue-50 background (active workspace)
+    // - "Trial Balance April" conversation item has bg-blue-100 background (active)
+    // - Backdrop behind the drawer dims the main content
+    // - Main content partially visible behind the semi-transparent backdrop
+    // - "+ New Chat" and "+ Connect Company" visible in the drawer
     await expect(page).toHaveScreenshot("mobile-hamburger-open.png");
   });
 
@@ -516,6 +574,14 @@ test.describe("DB-mode visual tests", () => {
     // The chat window hint text should be visible (always visible regardless of sidebar)
     await expect(page.locator("text=Type or upload to start a conversation")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Hamburger ☰ icon visible in the top-left of the header
+    // - "TallyPrime AI" text visible in the header
+    // - "TallyPrime AI Assistant" heading centered in the main content area
+    // - Hint text "Type or upload to start a conversation" visible below the heading
+    // - Quick action buttons visible in the center
+    // - Chat input box visible at the bottom
+    // - NOT visible: no sidebar content (mobile drawer is closed)
     await expect(page).toHaveScreenshot("mobile-landing-page.png");
   });
 
@@ -601,6 +667,14 @@ test.describe("DB-mode visual tests", () => {
     // Verify "Pending" label is shown in the voucher card
     await expect(page.locator("text=Expense Entry — Pending")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Voucher card has yellow/amber border (pending status styling)
+    // - "Expense Entry — Pending" status label visible in the card header
+    // - Action buttons visible but DISABLED (opacity-50 / grayed appearance)
+    // - Spinner or loading indicator on the "Write to Tally" button area
+    // - Buttons should not look clickable (disabled cursor style)
+    // - Vendor "Staples India", amount ₹5,000 still readable in the card
+    // - NOT visible: no green border (not written), no gray (not discarded)
     await expect(page).toHaveScreenshot("voucher-pending.png");
   });
 
@@ -684,6 +758,14 @@ test.describe("DB-mode visual tests", () => {
     await expect(writtenCard.locator("button", { hasText: "Write to Tally" })).not.toBeVisible();
     await expect(writtenCard.locator("button", { hasText: "Discard" })).not.toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Voucher card has green border and/or green background tint (written status styling)
+    // - "Expense Entry — Written" status label visible in the card header
+    // - Entry fields still readable: "Amazon India", ₹12,000, date 11-Apr-2025
+    // - NOT visible: no "Write to Tally" action button
+    // - NOT visible: no "Edit Entry" action button
+    // - NOT visible: no "Discard" action button
+    // - Card appears settled/final (no interactive elements)
     await expect(page).toHaveScreenshot("voucher-written.png");
   });
 
@@ -767,6 +849,14 @@ test.describe("DB-mode visual tests", () => {
     await expect(discardedCard.locator("button", { hasText: "Write to Tally" })).not.toBeVisible();
     await expect(discardedCard.locator("button", { hasText: "Edit Entry" })).not.toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Voucher card has gray border and/or reduced opacity (discarded/deleted status styling)
+    // - "Expense Entry — Discarded" status label visible in the card header
+    // - Entry fields dimmed/muted: "Flipkart India", ₹8,500, date 12-Apr-2025
+    // - NOT visible: no "Write to Tally" action button
+    // - NOT visible: no "Edit Entry" action button
+    // - NOT visible: no "Discard" action button
+    // - Card appears finalized with no interactive controls
     await expect(page).toHaveScreenshot("voucher-discarded.png");
   });
 
@@ -823,6 +913,13 @@ test.describe("DB-mode visual tests", () => {
     await expect(activeWsSection).toBeVisible();
     await expect(activeWsSection.locator("text=Bharat Traders")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - "Bharat Traders" workspace section has bg-blue-50 light blue background
+    // - "Trial Balance April" conversation item has bg-blue-100 slightly darker blue background
+    // - "NUVANTA AI" workspace section has NO blue highlight (plain/white background)
+    // - Conversations under Bharat Traders visible: Trial Balance April, Expense Entry, etc.
+    // - Conversations under NUVANTA AI visible: P&L Summary
+    // - Both workspace sections expanded with their conversation lists
     await expect(page).toHaveScreenshot("sidebar-active-highlight.png");
   });
 
@@ -920,6 +1017,14 @@ test.describe("DB-mode visual tests", () => {
     // Verify collapsed arrows are visible
     await expect(page.locator("text=▸").first()).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Three workspaces visible: Bharat Traders (expanded/active), NUVANTA AI (collapsed), Sunrise Corp (collapsed)
+    // - Bharat Traders: expanded with conversation list visible, bg-blue-50 background
+    // - NUVANTA AI: collapsed, shows only workspace name + ▸ right-pointing arrow
+    // - Sunrise Corp: collapsed, shows only workspace name + ▸ right-pointing arrow
+    // - "Trial Balance April" has bg-blue-100 highlight (active conversation under Bharat Traders)
+    // - Collapsed workspace rows show NO conversation items listed below them
+    // - ▸ arrow aligns to the right of the workspace name button
     await expect(page).toHaveScreenshot("sidebar-collapsed-workspace.png");
   });
 
@@ -970,6 +1075,13 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator("text=Empty Company").first()).toBeVisible();
     await expect(page.locator("text=+ New Chat").first()).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - "Empty Company" workspace name visible in the sidebar
+    // - "+ New Chat" button visible directly below the workspace name
+    // - NO conversation items listed under the workspace (empty list)
+    // - Workspace section is expanded (no collapse arrow, or expanded state)
+    // - Proper spacing between workspace header and "+ New Chat" button
+    // - "+ Connect Company" button visible at the bottom of the sidebar
     await expect(page).toHaveScreenshot("sidebar-empty-workspace.png");
   });
 
@@ -1054,6 +1166,13 @@ test.describe("DB-mode visual tests", () => {
     // Verify the long workspace name is rendered (may be truncated visually)
     await expect(page.locator('[data-testid="header-workspace-name"]')).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Header subtitle line: "NUVANTA AI TECHNOLOGIES PRIVATE LIMITED" truncated with "..." (ellipsis)
+    // - Header title line: "What is the trial balance for April 2025 to March 2026?" truncated with "..."
+    // - Both lines truncated independently — no text overflow beyond the header width
+    // - Truncation does not cause text to overlap the avatar or other header elements
+    // - The "..." appears at the end of the truncated text (not mid-word if possible)
+    // - "Live" badge visible in the subtitle without being pushed off screen
     await expect(page).toHaveScreenshot("header-long-names.png");
   });
 
@@ -1131,6 +1250,13 @@ test.describe("DB-mode visual tests", () => {
     // Verify the orange "Demo" badge is visible via data-testid
     await expect(page.locator('[data-testid="header-workspace-badge"]')).toContainText("Demo");
 
+    // VISUAL CHECKLIST:
+    // - Header subtitle shows "Demo Company" as the workspace name
+    // - Orange "● Demo" badge visible next to the workspace name in the subtitle
+    // - Badge text reads "Demo" (not "Live")
+    // - Orange color clearly distinguishable from the green "Live" badge color
+    // - NOT visible: no green "Live" badge
+    // - Header title: "Demo Chat" (the conversation title)
     await expect(page).toHaveScreenshot("header-demo-badge.png");
   });
 
@@ -1176,6 +1302,15 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator("text=Tally Host")).toBeVisible();
     await expect(page.locator("text=Tally Port")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Modal overlay visible with semi-transparent backdrop behind it
+    // - Modal title "Connect Tally Company" visible at the top
+    // - Form fields visible: "Company Name" input, "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
+    // - "Demo Mode" toggle switch visible in the form
+    // - "Cancel" and "Connect" buttons visible at the bottom of the modal
+    // - Modal is centered on the screen with appropriate width (not full screen)
+    // - Backdrop dims the sidebar and main content behind the modal
+    // - Proper vertical spacing between form fields (no cramping)
     await expect(page).toHaveScreenshot("connect-company-modal.png");
   });
 
@@ -1270,6 +1405,18 @@ test.describe("DB-mode visual tests", () => {
     await expect(page.locator('select[aria-label="Payment Ledger"]')).toBeVisible();
     await expect(page.locator("button", { hasText: "Confirm & Write to Tally" })).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Inline edit form visible within the voucher card (replaces the review display)
+    // - "Vendor" input field visible and editable (pre-filled "Staples India")
+    // - "Date" input field visible (pre-filled "2025-04-10" or formatted equivalent)
+    // - "Amount" input field visible (pre-filled "5000")
+    // - "Expense Ledger" dropdown/select visible (pre-selected "Office Supplies")
+    // - "Payment Ledger" dropdown/select visible (pre-selected "ICICI Bank")
+    // - "Narration" text input visible
+    // - "Confirm & Write to Tally" button visible (green)
+    // - "Edit Again" button visible (secondary styling)
+    // - NOT visible: "Write to Tally" standalone button (replaced by inline form)
+    // - NOT visible: "Discard" button
     await expect(page).toHaveScreenshot("voucher-edit-form.png");
   });
 
@@ -1310,6 +1457,17 @@ test.describe("DB-mode visual tests", () => {
     // Verify hint text in chat area
     await expect(page.locator("text=Type or upload to start a conversation")).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Header first line: "TallyPrime AI | New Chat" — "New Chat" rendered in blue text
+    // - Header subtitle: "Bharat Traders ● Live" — workspace name + green Live badge
+    // - Sidebar: "Bharat Traders" section expanded, "+ New Chat" button highlighted bg-blue-100
+    // - Sidebar: NUVANTA AI section visible but NOT highlighted
+    // - Main content: "TallyPrime AI Assistant" heading centered
+    // - Main content: "Connected to Bharat Traders" subtitle text visible
+    // - Hint text "Type or upload to start a conversation" visible below heading
+    // - Quick action buttons visible
+    // - Chat input box visible at the bottom
+    // - NOT visible: no message bubbles (fresh new chat)
     await expect(page).toHaveScreenshot("desktop-landing-page.png");
   });
 
@@ -1346,6 +1504,13 @@ test.describe("DB-mode visual tests", () => {
     const normalBtn = page.locator('[data-testid="sidebar-new-chat"]').first();
     await expect(normalBtn).toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - "Bharat Traders" workspace section: "+ New Chat" button has bg-blue-100 blue background (active/highlighted)
+    // - "NUVANTA AI" workspace section: "+ New Chat" button has normal gray/white background (inactive)
+    // - The highlighted "+ New Chat" button is clearly visually distinct from the plain one
+    // - Both workspaces are expanded showing their "+ New Chat" buttons
+    // - Conversations listed under each workspace (Trial Balance April, Expense Entry, etc. under Bharat Traders)
+    // - No conversation item is highlighted with bg-blue-100 (landing page, no active conversation)
     await expect(page).toHaveScreenshot("sidebar-new-chat-highlighted.png");
   });
 
@@ -1389,6 +1554,15 @@ test.describe("DB-mode visual tests", () => {
     // Verify chat input is NOT visible (no workspace to chat with)
     await expect(page.locator('textarea[placeholder="Ask about your Tally data..."]')).not.toBeVisible();
 
+    // VISUAL CHECKLIST:
+    // - Header shows "TallyPrime AI" only — NO workspace name subtitle, NO Live/Demo badge
+    // - Main content: "Welcome to TallyPrime AI" heading centered on page
+    // - Main content: "Connect your first Tally company to get started" subtitle text visible
+    // - Blue "+ Connect Company" button centered below the subtitle text
+    // - NO sidebar content visible (no workspace list, no conversations)
+    // - NOT visible: chat input box (no workspace to chat with)
+    // - NOT visible: quick action buttons
+    // - NOT visible: any conversation messages
     await expect(page).toHaveScreenshot("no-workspaces-landing.png");
   });
 });
