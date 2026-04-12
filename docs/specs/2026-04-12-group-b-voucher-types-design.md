@@ -505,12 +505,58 @@ Total: ~17 specs × 3 viewports (some mobile/desktop only) ≈ **45-50 Playwrigh
 
 ### 10.3 Fixture Additions
 
-Sample Vision responses for each of 5 doc types:
-- Payment: petty cash receipt (INR)
-- Purchase: SaaS vendor invoice (USD — tests FX flow)
-- Sales: service invoice to client (INR)
-- Debit Note: purchase return referencing an existing invoice
-- Credit Note: sales return referencing an existing invoice
+Three categories of test fixtures needed:
+
+#### A. Vision JSON Response Fixtures (`tests/fixtures/vision/`)
+
+These are the JSON responses that Claude Vision returns after analyzing a document. Used by unit tests (document_parser, voucher_builder) and integration tests (mock Claude returns these).
+
+| Fixture | Doc Type | Currency | GST | Special |
+|---------|----------|----------|-----|---------|
+| `payment_petty_cash_inr.json` | payment | INR | None | Simple single-line expense |
+| `payment_with_gst_inr.json` | payment | INR | CGST+SGST | Expense with intra-state GST |
+| `purchase_saas_usd.json` | purchase | USD | IGST | FX: rate visible on doc, tests multi-currency flow |
+| `purchase_saas_usd_no_rate.json` | purchase | USD | IGST | FX: no rate on doc, agent must estimate |
+| `purchase_office_inr.json` | purchase | INR | CGST+SGST | INR purchase, multiple line items |
+| `purchase_interstate_inr.json` | purchase | INR | IGST | Interstate purchase (IGST instead of CGST+SGST) |
+| `sales_service_inr.json` | sales | INR | CGST+SGST | Service invoice to client |
+| `sales_service_eur.json` | sales | EUR | None | Foreign currency sales (export, no GST) |
+| `debit_note_return_inr.json` | debit_note | INR | CGST+SGST | Purchase return with original invoice ref |
+| `credit_note_return_inr.json` | credit_note | INR | CGST+SGST | Sales return with original invoice ref |
+| `debit_note_no_ref.json` | debit_note | INR | None | DN without original invoice reference on document |
+| `ambiguous_type.json` | purchase | INR | None | Edge case: could be payment or purchase, tests classification |
+
+#### B. Sample Upload Files (`tests/fixtures/uploads/`)
+
+Actual files used by integration/E2E tests to test the upload endpoint and file type routing. Mock Claude intercepts the Vision call, so file content doesn't need to be real — but file format must be valid.
+
+| File | Format | Purpose |
+|------|--------|---------|
+| `sample_receipt.jpg` | JPEG image | Tests image upload path, `detect_file_type → "vision"` |
+| `sample_receipt.png` | PNG image | Tests PNG handling |
+| `sample_invoice.pdf` | PDF (text) | Tests PDF upload path, `detect_file_type → "vision"` |
+| `sample_scanned.pdf` | PDF (image) | Tests scanned PDF (same path as image PDF) |
+| `sample_statement.csv` | CSV | Tests `detect_file_type → "structured"` (not processed this cycle, but routing must work) |
+| `sample_file.xlsx` | Excel | Tests `detect_file_type → "structured"` routing |
+| `unsupported.docx` | Word | Tests `detect_file_type → "unsupported"` rejection |
+| `large_file.jpg` | JPEG (>10MB) | Tests file size limit rejection |
+| `no_extension` | No extension | Tests missing extension handling |
+
+Note: These can be minimal valid files (1×1 pixel image, single-page PDF with "test" text, etc.). They don't need realistic content since Vision is mocked.
+
+#### C. Mock Tally Response Fixtures
+
+| Fixture | Purpose |
+|---------|---------|
+| Company list response | For F1 ConnectCompanyModal — returns company names |
+| Party voucher list (Purchase) | For DN flow — sample Purchase vouchers for a party |
+| Party voucher list (Sales) | For CN flow — sample Sales vouchers for a party |
+| Party voucher list (empty) | For fallback — no matching vouchers found |
+| Write success (Purchase/Sales/DN/CN) | Already covered by generic `_handle_import()` |
+
+#### D. Frontend Mock Data (`frontend/src/__tests__/fixtures/`)
+
+Pre-built review card props for Vitest component tests — one per voucher type × currency × state combination from the Vitest state matrix above. These are TypeScript objects, not JSON files.
 
 ## Appendix A: Stock Item Support (Deferred — B1b Phase 2)
 
