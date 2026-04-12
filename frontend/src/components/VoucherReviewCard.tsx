@@ -122,7 +122,7 @@ export default function VoucherReviewCard({
             />
           ) : (
             <>
-              <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-3">
                 <Field label="Vendor" value={entry.vendor_name || "—"} />
                 <Field label="Date" value={formatDate(entry.date)} />
                 <Field label="Amount" value={formatAmount(entry.amount)} />

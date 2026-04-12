@@ -30,7 +30,7 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+      <div className="bg-white rounded-lg shadow-lg p-6 w-full mx-4 md:mx-auto md:max-w-md">
         <h2 className="text-lg font-semibold text-gray-900 mb-4">Connect Tally Company</h2>
         <form onSubmit={handleSubmit} className="space-y-4">
           {error && <div className="bg-red-50 text-red-700 p-3 rounded text-sm">{error}</div>}

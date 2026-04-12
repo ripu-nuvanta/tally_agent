@@ -239,4 +239,36 @@ describe("VoucherReviewCard", () => {
     );
     expect(screen.getByText(/Pending/)).toBeInTheDocument();
   });
+
+  it("uses responsive grid classes on field grid", () => {
+    render(
+      <VoucherReviewCard
+        entries={[mockEntry]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    const grid = screen.getByText("Vendor:").closest("div")!.parentElement!;
+    expect(grid.className).toContain("grid-cols-1");
+    expect(grid.className).toContain("md:grid-cols-2");
+  });
+
+  it("uses flex-wrap on action buttons container", () => {
+    render(
+      <VoucherReviewCard
+        entries={[mockEntry]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    const writeBtn = screen.getByText("Write to Tally");
+    const btnContainer = writeBtn.closest("button")!.parentElement!;
+    expect(btnContainer.className).toContain("flex-wrap");
+  });
 });

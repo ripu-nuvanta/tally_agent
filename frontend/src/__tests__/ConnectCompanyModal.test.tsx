@@ -91,4 +91,12 @@ describe("ConnectCompanyModal", () => {
 
     expect(onClose).toHaveBeenCalledTimes(1);
   });
+
+  it("renders modal with mobile-safe width classes", () => {
+    renderModal();
+    const modalPanel = screen.getByText("Connect Tally Company").closest("div")!;
+    expect(modalPanel.className).toContain("mx-4");
+    expect(modalPanel.className).toContain("md:mx-auto");
+    expect(modalPanel.className).toContain("md:max-w-md");
+  });
 });
