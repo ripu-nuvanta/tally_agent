@@ -135,4 +135,71 @@ describe("ChatApp", () => {
     // The Connect Company button should be visible
     expect(screen.getByRole("button", { name: "+ Connect Company" })).toBeInTheDocument();
   });
+
+  it("sidebar container has hidden md:flex classes for responsive layout", async () => {
+    renderChatApp();
+
+    await waitFor(() => {
+      expect(screen.getByText("Bharat Traders")).toBeInTheDocument();
+    });
+
+    // The desktop sidebar wrapper should have hidden md:flex classes
+    const desktopSidebarWrapper = document.querySelector(".hidden.md\\:flex");
+    expect(desktopSidebarWrapper).toBeInTheDocument();
+  });
+
+  it("hamburger button has md:hidden class and is present in the DOM", async () => {
+    renderChatApp();
+
+    await waitFor(() => {
+      expect(screen.getByText("TallyPrime AI")).toBeInTheDocument();
+    });
+
+    // Hamburger button should exist and have md:hidden class
+    const hamburger = screen.getByRole("button", { name: /open sidebar/i });
+    expect(hamburger).toBeInTheDocument();
+    expect(hamburger.className).toContain("md:hidden");
+  });
+
+  it("clicking hamburger opens mobile drawer overlay", async () => {
+    const user = userEvent.setup();
+    renderChatApp();
+
+    await waitFor(() => {
+      expect(screen.getByText("TallyPrime AI")).toBeInTheDocument();
+    });
+
+    // Drawer should not be visible initially
+    expect(document.querySelector(".fixed.inset-0.z-40")).not.toBeInTheDocument();
+
+    // Click hamburger
+    const hamburger = screen.getByRole("button", { name: /open sidebar/i });
+    await user.click(hamburger);
+
+    // Drawer overlay should appear
+    expect(document.querySelector(".fixed.inset-0.z-40")).toBeInTheDocument();
+  });
+
+  it("clicking backdrop closes mobile drawer", async () => {
+    const user = userEvent.setup();
+    renderChatApp();
+
+    await waitFor(() => {
+      expect(screen.getByText("TallyPrime AI")).toBeInTheDocument();
+    });
+
+    // Open drawer
+    const hamburger = screen.getByRole("button", { name: /open sidebar/i });
+    await user.click(hamburger);
+
+    expect(document.querySelector(".fixed.inset-0.z-40")).toBeInTheDocument();
+
+    // Click backdrop
+    const backdrop = document.querySelector(".bg-black\\/50") as HTMLElement;
+    expect(backdrop).toBeInTheDocument();
+    await user.click(backdrop);
+
+    // Drawer should close
+    expect(document.querySelector(".fixed.inset-0.z-40")).not.toBeInTheDocument();
+  });
 });
