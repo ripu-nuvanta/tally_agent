@@ -16,6 +16,10 @@ interface ChatWindowProps {
 export default function ChatWindow({ conversationId, workspaceId, onMessageSent }: ChatWindowProps = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [loading, setLoading] = useState(false);
+  const [pendingVoucherAction, setPendingVoucherAction] = useState<{
+    entryId: string;
+    action: "approve" | "discard";
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const { sessionId, setSessionId, company } = useSession();
 
@@ -110,6 +114,22 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
 
   const handleVoucherAction = useCallback(
     async (action: VoucherAction, entry: Record<string, unknown>) => {
+      const entryId = entry.id as string;
+
+      // Set entry status to pending (optimistic UI) and track pending action
+      setPendingVoucherAction({ entryId, action: action as "approve" | "discard" });
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (!m.data || !("entries" in (m.data as Record<string, unknown>))) return m;
+          const d = m.data as Record<string, unknown>;
+          const entries = d.entries as Array<Record<string, unknown>>;
+          const updated = entries.map((e) =>
+            e.id === entryId ? { ...e, status: "pending" } : e
+          );
+          return { ...m, data: { ...d, entries: updated } };
+        })
+      );
+
       const loadingMsg: ChatMessage = {
         id: generateId(),
         role: "assistant",
@@ -137,6 +157,18 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
           prev.map((m) => (m.id === loadingMsg.id ? resultMsg : m))
         );
       } catch {
+        // Revert entry status to draft on error
+        setMessages((prev) =>
+          prev.map((m) => {
+            if (!m.data || !("entries" in (m.data as Record<string, unknown>))) return m;
+            const d = m.data as Record<string, unknown>;
+            const entries = d.entries as Array<Record<string, unknown>>;
+            const updated = entries.map((e) =>
+              e.id === entryId ? { ...e, status: "draft" } : e
+            );
+            return { ...m, data: { ...d, entries: updated } };
+          })
+        );
         const errorMsg: ChatMessage = {
           id: generateId(),
           role: "assistant",
@@ -148,6 +180,7 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
         );
       } finally {
         setLoading(false);
+        setPendingVoucherAction(null);
       }
     },
     [company, sessionId, workspaceId]
@@ -171,7 +204,7 @@ export default function ChatWindow({ conversationId, workspaceId, onMessageSent 
             </div>
           )}
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} onVoucherAction={handleVoucherAction} />
+            <MessageBubble key={msg.id} message={msg} onVoucherAction={handleVoucherAction} pendingVoucherAction={pendingVoucherAction} />
           ))}
           <div ref={bottomRef} />
         </div>

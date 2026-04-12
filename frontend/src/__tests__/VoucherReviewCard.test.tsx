@@ -175,4 +175,68 @@ describe("VoucherReviewCard", () => {
       expect.objectContaining({ vendor_name: "Ola" })
     );
   });
+
+  it("disables all buttons when status is pending", () => {
+    render(
+      <VoucherReviewCard
+        entries={[{ ...mockEntry, status: "pending" }]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    expect(screen.getByText("Write to Tally").closest("button")).toBeDisabled();
+    expect(screen.getByText("Edit Entry").closest("button")).toBeDisabled();
+    expect(screen.getByText("Discard").closest("button")).toBeDisabled();
+  });
+
+  it("shows spinner on approve button when pendingAction is approve", () => {
+    render(
+      <VoucherReviewCard
+        entries={[{ ...mockEntry, status: "pending" }]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+        pendingAction={{ entryId: "test-1", action: "approve" }}
+      />
+    );
+    const writeBtn = screen.getByText("Write to Tally").closest("button")!;
+    expect(writeBtn.querySelector('[data-testid="spinner"]')).toBeInTheDocument();
+    expect(writeBtn).toBeDisabled();
+  });
+
+  it("shows spinner on discard button when pendingAction is discard", () => {
+    render(
+      <VoucherReviewCard
+        entries={[{ ...mockEntry, status: "pending" }]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+        pendingAction={{ entryId: "test-1", action: "discard" }}
+      />
+    );
+    const discardBtn = screen.getByText("Discard").closest("button")!;
+    expect(discardBtn.querySelector('[data-testid="spinner"]')).toBeInTheDocument();
+    expect(discardBtn).toBeDisabled();
+  });
+
+  it("shows Pending label in status when status is pending", () => {
+    render(
+      <VoucherReviewCard
+        entries={[{ ...mockEntry, status: "pending" }]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    expect(screen.getByText(/Pending/)).toBeInTheDocument();
+  });
 });

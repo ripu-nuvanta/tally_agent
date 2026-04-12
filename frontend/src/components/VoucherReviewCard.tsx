@@ -23,6 +23,7 @@ interface VoucherReviewCardProps {
   onApprove: (entryId: string) => void;
   onDiscard: (entryId: string) => void;
   onEdit: (entryId: string, updates: Partial<VoucherEntry>) => void;
+  pendingAction?: { entryId: string; action: "approve" | "discard" } | null;
 }
 
 function formatDateForInput(yyyymmdd: string): string {
@@ -58,6 +59,15 @@ function formatAmount(amount: number): string {
   }).format(amount);
 }
 
+function Spinner() {
+  return (
+    <svg data-testid="spinner" className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+    </svg>
+  );
+}
+
 export default function VoucherReviewCard({
   entries,
   availableLedgers,
@@ -65,6 +75,7 @@ export default function VoucherReviewCard({
   onApprove,
   onDiscard,
   onEdit,
+  pendingAction,
 }: VoucherReviewCardProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -78,6 +89,8 @@ export default function VoucherReviewCard({
               ? "border-green-200 bg-green-50"
               : entry.status === "deleted"
               ? "border-gray-200 bg-gray-50 opacity-60"
+              : entry.status === "pending"
+              ? "border-yellow-200 bg-yellow-50"
               : "border-blue-200 bg-blue-50"
           }`}
           data-testid={`voucher-review-${entry.id}`}
@@ -89,6 +102,8 @@ export default function VoucherReviewCard({
                   ? "Written"
                   : entry.status === "deleted"
                   ? "Discarded"
+                  : entry.status === "pending"
+                  ? "Pending"
                   : "Draft"
               }
             </span>
@@ -139,27 +154,38 @@ export default function VoucherReviewCard({
                 </div>
               )}
 
-              {entry.status === "draft" && (
-                <div className="flex gap-2 mt-3">
+              {(entry.status === "draft" || entry.status === "pending") && (
+                <div className="flex flex-wrap gap-2 mt-3">
                   <button
                     type="button"
                     onClick={() => onApprove(entry.id)}
-                    className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 transition-colors"
+                    disabled={entry.status === "pending"}
+                    className={`px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm transition-colors flex items-center gap-1.5 ${
+                      entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-green-700"
+                    }`}
                   >
+                    {pendingAction?.entryId === entry.id && pendingAction.action === "approve" && <Spinner />}
                     Write to Tally
                   </button>
                   <button
                     type="button"
                     onClick={() => setEditingId(entry.id)}
-                    className="px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm hover:bg-gray-50 transition-colors"
+                    disabled={entry.status === "pending"}
+                    className={`px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm transition-colors ${
+                      entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
+                    }`}
                   >
                     Edit Entry
                   </button>
                   <button
                     type="button"
                     onClick={() => onDiscard(entry.id)}
-                    className="px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm hover:bg-red-50 transition-colors"
+                    disabled={entry.status === "pending"}
+                    className={`px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm transition-colors flex items-center gap-1.5 ${
+                      entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-50"
+                    }`}
                   >
+                    {pendingAction?.entryId === entry.id && pendingAction.action === "discard" && <Spinner />}
                     Discard
                   </button>
                 </div>

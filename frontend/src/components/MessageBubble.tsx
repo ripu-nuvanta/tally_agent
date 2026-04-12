@@ -18,9 +18,10 @@ function isTableData(d: unknown): d is TableData {
 interface MessageBubbleProps {
   message: ChatMessage;
   onVoucherAction?: (action: VoucherAction, entry: Record<string, unknown>) => void;
+  pendingVoucherAction?: { entryId: string; action: "approve" | "discard" } | null;
 }
 
-export default function MessageBubble({ message, onVoucherAction }: MessageBubbleProps) {
+export default function MessageBubble({ message, onVoucherAction, pendingVoucherAction }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   if (message.isLoading) {
@@ -118,6 +119,7 @@ export default function MessageBubble({ message, onVoucherAction }: MessageBubbl
               entries={entries}
               availableLedgers={(voucherData.available_ledgers as string[]) || []}
               availablePaymentLedgers={(voucherData.available_payment_ledgers as string[]) || []}
+              pendingAction={pendingVoucherAction}
               onApprove={(id) => {
                 const entry = entries.find((e) => e.id === id);
                 if (entry && onVoucherAction) {
