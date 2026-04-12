@@ -157,7 +157,30 @@ test.describe("DB-mode visual tests", () => {
       }),
     );
 
-    await page.goto("/");
+    // Mock the specific conversation endpoint so /c/conv-1 loads correctly
+    await page.route("**/api/workspaces/ws-1/conversations/conv-1", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "conv-1",
+            title: "Trial Balance April",
+            workspace_id: "ws-1",
+            messages: [],
+            created_at: "2025-04-10T10:00:00Z",
+            updated_at: "2025-04-10T10:05:00Z",
+          }),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    // Navigate to /c/conv-1 so there is clear workspace + conversation context
+    // This ensures both the active workspace (bg-blue-50) and active conversation
+    // (bg-blue-100) highlights are visible in the sidebar.
+    await page.goto("/c/conv-1");
 
     // On mobile (width < 768), sidebar is hidden behind hamburger drawer
     const isMobile = (viewport?.width ?? 1280) < 768;
@@ -171,11 +194,15 @@ test.describe("DB-mode visual tests", () => {
       await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
       await expect(page.locator("text=Bharat Traders").last()).toBeVisible();
       await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
+      // Verify active conversation highlight is visible in the drawer sidebar
+      await expect(page.locator("text=Trial Balance April").last()).toBeVisible();
     } else {
       // Desktop/tablet: sidebar is always visible
       await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
       await expect(page.locator("text=Bharat Traders").first()).toBeVisible();
       await expect(page.locator("text=NUVANTA AI").first()).toBeVisible();
+      // Verify active conversation is visible and highlighted
+      await expect(page.locator("text=Trial Balance April").first()).toBeVisible();
     }
 
     // Verify "+ New Chat" button is visible in at least one workspace
@@ -395,7 +422,7 @@ test.describe("DB-mode visual tests", () => {
     await expect(page).toHaveScreenshot("mobile-hamburger-closed.png");
   });
 
-  // Test 7: Mobile — click hamburger opens sidebar drawer
+  // Test 7: Mobile — click hamburger opens sidebar drawer with highlights
   test("mobile-hamburger-open", async ({ page, viewport }) => {
     // Skip on non-mobile viewports
     if ((viewport?.width ?? 1280) >= 768) {
@@ -414,7 +441,30 @@ test.describe("DB-mode visual tests", () => {
       }),
     );
 
-    await page.goto("/");
+    // Mock the conversation endpoint so /c/conv-1 loads correctly
+    await page.route("**/api/workspaces/ws-1/conversations/conv-1", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "conv-1",
+            title: "Trial Balance April",
+            workspace_id: "ws-1",
+            messages: [],
+            created_at: "2025-04-10T10:00:00Z",
+            updated_at: "2025-04-10T10:05:00Z",
+          }),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    // Navigate to /c/conv-1 so there is clear workspace + conversation context.
+    // On /, activeWorkspaceId starts null — navigating to a conversation URL ensures
+    // the sidebar resolves the active workspace and conversation before the drawer opens.
+    await page.goto("/c/conv-1");
 
     // Click hamburger to open sidebar drawer
     const hamburger = page.locator('[aria-label="Open sidebar"]');
@@ -426,6 +476,9 @@ test.describe("DB-mode visual tests", () => {
     // and Playwright picks the first (hidden) element. The drawer renders second.
     await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
     await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
+
+    // Verify the active conversation is shown and highlighted (bg-blue-100) in the drawer
+    await expect(page.locator("text=Trial Balance April").last()).toBeVisible();
 
     await expect(page).toHaveScreenshot("mobile-hamburger-open.png");
   });
