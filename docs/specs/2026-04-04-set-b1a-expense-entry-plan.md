@@ -50,6 +50,14 @@ The Playwright-driven UI smoke test against live NUVANTA Tally succeeded end-to-
 
 **No action needed in B1a scope.** Documenting so it's not lost before B1b starts.
 
+### F4. New Chat flow is confusing — redesign UI
+
+The current "New Chat" button and workspace navigation is confusing to users. The flow of creating a new conversation within a workspace needs to be redesigned for clarity. (Enhancement, not a bug — surfaces during DB-mode usage with sidebar.)
+
+### F5. VoucherReviewCard buttons should disable after action
+
+After the user clicks "Write to Tally" or "Discard", the buttons remain active and can be clicked again, leading to duplicate actions or confusing error messages. Buttons should disable once an action is taken and the response is received (whether success or error).
+
 ---
 
 ## ⚠️ Follow-up: Tally "current date" write rejection → ROOT-CAUSED to license state (2026-04-09)

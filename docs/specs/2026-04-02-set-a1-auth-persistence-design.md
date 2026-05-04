@@ -613,6 +613,32 @@ frontend/src/
 | Team management (multi-user per workspace) | Set A2 |
 | pgvector / semantic memory | Set C |
 | Tally data sync to cloud DB | Set C |
-| File upload / compliance features | Set B |
+| File upload / compliance features | Set B (see below) |
 | OAuth (Google/Microsoft) | Future |
 | Email verification | Future |
+
+### Set B: Compliance & Automation (Deferred)
+
+Tally Bridge is currently **read-only** (18 query tools). Set B adds **write operations** and **file-driven workflows**:
+
+**File Upload & Processing:**
+- Upload bank statements (CSV/PDF/Excel), invoices, employee expense reports
+- AI parses uploaded files, extracts structured data (amounts, dates, parties, GST numbers)
+- User reviews and approves extracted data before any Tally write
+
+**Tally Write Operations (new tools):**
+- Ledger creation — auto-create ledgers for new parties/expense heads found in uploads
+- Voucher posting — create sales/purchase invoices, payment/receipt entries, journal entries
+- Expense entry — employee expenses → vouchers with appropriate ledger mappings
+
+**Reconciliation:**
+- Bank reconciliation — match bank statement entries against Tally receipts/payments, flag unmatched
+- Purchase reconciliation — match purchase invoices against GRNs and vendor statements
+- Auto-suggest matches, user confirms
+
+**GST Compliance:**
+- Update invoices with ITC (Input Tax Credit) classification
+- GSTR-1 / GSTR-3B preparation assistance
+- Flag mismatches between purchase register and GST portal data
+
+**Dependency on Set A1:** Requires auth (multi-user access control for write operations), persistent chat history (audit trail of what was posted), and workspace config (Tally connection for writes).
