@@ -15,7 +15,7 @@ TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime
 ### Backend (Python)
 ```bash
 # Install dependencies
-uv sync --extra dev --extra langfuse --extra db  # or: pip install -r requirements.txt
+uv sync --extra dev --extra langfuse --extra db
 
 # Run the FastAPI server (legacy mode — no auth, in-memory sessions)
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
