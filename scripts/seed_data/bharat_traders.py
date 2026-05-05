@@ -49,7 +49,7 @@ GST_LEDGERS = [
     ("IGST Input",  "Integrated Tax"),
 ]
 
-# ── Ledgers (33) ──────────────────────────────────────────────────────
+# ── Ledgers (34) ──────────────────────────────────────────────────────
 # (name, parent_group, opening_balance, state, gstin, gst_reg_type)
 # Negative opening_balance = debit in Tally convention.
 # Sundry Debtors/Creditors get Maharashtra GSTINs; all others get None.
@@ -98,7 +98,8 @@ LEDGERS = [
     ("CGST Input",  "Duties & Taxes", 0, None, None, None),
     ("SGST Input",  "Duties & Taxes", 0, None, None, None),
     ("IGST Input",  "Duties & Taxes", 0, None, None, None),
-    # Capital — omitted; Tally ships "Capital Account" under "Capital Account" by default
+    # Capital (1)
+    ("Capital Account", "Capital Account", 750000, None, None, None),
 ]
 
 # ── Stock Items (15) ──────────────────────────────────────────────────
