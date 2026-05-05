@@ -106,23 +106,23 @@ LEDGERS = [
 # (name, group, uom, selling_rate, opening_qty, opening_rate, opening_value, hsn, gst_rate)
 STOCK_ITEMS = [
     # Electronics (5)
-    ("Samsung 24 inch Monitor",  "Electronics", "Nos", 12500, 20, 11000, 220000, 8528, 18),
-    ("HP Laptop 15s",            "Electronics", "Nos", 45000, 10, 38000, 380000, 8471, 18),
-    ("Samsung Galaxy Tab A8",    "Electronics", "Nos", 16000, 15, 13500, 202500, 8471, 18),
-    ("Dell Desktop Optiplex",    "Electronics", "Nos", 35000,  8, 29000, 232000, 8471, 18),
-    ("Lenovo Ideapad Slim 3",    "Electronics", "Nos", 42000, 12, 36000, 432000, 8471, 18),
+    ("Samsung 24 inch Monitor",  "Electronics", "Nos", 12500, 20, 11000, 220000, "8528", 18),
+    ("HP Laptop 15s",            "Electronics", "Nos", 45000, 10, 38000, 380000, "8471", 18),
+    ("Samsung Galaxy Tab A8",    "Electronics", "Nos", 16000, 15, 13500, 202500, "8471", 18),
+    ("Dell Desktop Optiplex",    "Electronics", "Nos", 35000,  8, 29000, 232000, "8471", 18),
+    ("Lenovo Ideapad Slim 3",    "Electronics", "Nos", 42000, 12, 36000, 432000, "8471", 18),
     # Peripherals (5)
-    ("Logitech Wireless Mouse",      "Peripherals", "Nos",  800, 100,  550,  55000, 8471, 18),
-    ("Logitech Keyboard K380",       "Peripherals", "Nos", 2500,  60, 1800, 108000, 8471, 18),
-    ("HP DeskJet Printer 2723",      "Peripherals", "Nos", 5500,  10, 4200,  42000, 8443, 18),
-    ("TP-Link WiFi Router AC750",    "Peripherals", "Nos", 1800,  25, 1300,  32500, 8517, 18),
-    ("USB-C Hub 7-in-1",             "Peripherals", "Nos", 1500,  40,  950,  38000, 8471, 18),
+    ("Logitech Wireless Mouse",      "Peripherals", "Nos",  800, 100,  550,  55000, "8471", 18),
+    ("Logitech Keyboard K380",       "Peripherals", "Nos", 2500,  60, 1800, 108000, "8471", 18),
+    ("HP DeskJet Printer 2723",      "Peripherals", "Nos", 5500,  10, 4200,  42000, "8443", 18),
+    ("TP-Link WiFi Router AC750",    "Peripherals", "Nos", 1800,  25, 1300,  32500, "8517", 18),
+    ("USB-C Hub 7-in-1",             "Peripherals", "Nos", 1500,  40,  950,  38000, "8471", 18),
     # Office Supplies (5)
-    ("A4 Paper Ream 500 sheets", "Office Supplies", "Pcs",  350, 200, 280, 56000, 4802, 12),
-    ("Whiteboard Marker Set",    "Office Supplies", "Pcs",  250,  50, 180,  9000, 9608, 12),
-    ("Stapler Heavy Duty",       "Office Supplies", "Nos",  450,  30, 320,  9600, 8205, 18),
-    ("Box File Pack of 10",      "Office Supplies", "Pcs",  600,  40, 420, 16800, 4820, 12),
-    ("Pen Drive 32GB",           "Office Supplies", "Nos",  400,  80, 280, 22400, 8523, 18),
+    ("A4 Paper Ream 500 sheets", "Office Supplies", "Pcs",  350, 200, 280, 56000, "4802", 12),
+    ("Whiteboard Marker Set",    "Office Supplies", "Pcs",  250,  50, 180,  9000, "9608", 12),
+    ("Stapler Heavy Duty",       "Office Supplies", "Nos",  450,  30, 320,  9600, "8205", 18),
+    ("Box File Pack of 10",      "Office Supplies", "Pcs",  600,  40, 420, 16800, "4820", 12),
+    ("Pen Drive 32GB",           "Office Supplies", "Nos",  400,  80, 280, 22400, "8523", 18),
 ]
 
 # ── Office Supply Items set (for sales ledger routing) ────────────────
