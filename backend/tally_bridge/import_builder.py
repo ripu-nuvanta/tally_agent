@@ -215,3 +215,62 @@ def build_create_unit(name: str, formal_name: str, company: str) -> str:
 </UNIT>"""
     return _wrap_import("All Masters", company, unit_xml)
 
+
+def build_create_stock_group(name: str, parent: str, company: str) -> str:
+    """Build XML to create a stock group. Empty parent = top-level (under Primary)."""
+    _require(name, "name")
+    _require(company, "company")
+
+    parent_xml = f"<PARENT>{_esc(parent)}</PARENT>" if parent else "<PARENT/>"
+    sg_xml = f"""<STOCKGROUP NAME="{_esc(name)}" ACTION="Create">
+<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
+{parent_xml}
+<ISADDABLE>No</ISADDABLE>
+</STOCKGROUP>"""
+    return _wrap_import("All Masters", company, sg_xml)
+
+
+def build_create_ledger(
+    name: str,
+    parent: str,
+    company: str,
+    gstin: str | None = None,
+    state: str | None = None,
+    gst_reg_type: str | None = None,
+    opening_balance: float | None = None,
+    is_billwise: bool = False,
+) -> str:
+    """Build XML to create a ledger master in Tally.
+
+    CRITICAL: NAME.LIST is required — without it Tally crashes with memory violation.
+
+    Args:
+        opening_balance: Positive value; sign inferred from parent group nature
+            (Capital → credit; Cash-in-Hand → debit). Pass None or 0 to omit.
+        is_billwise: Set True for Sundry Debtors/Creditors (otherwise voucher
+            bill-allocation fails).
+    """
+    _require(name, "name")
+    _require(parent, "parent")
+    _require(company, "company")
+
+    extras = []
+    if gstin:
+        extras.append(f"<PARTYGSTIN>{_esc(gstin)}</PARTYGSTIN>")
+    if state:
+        extras.append(f"<LEDSTATENAME>{_esc(state)}</LEDSTATENAME>")
+    if gst_reg_type:
+        extras.append(f"<GSTREGISTRATIONTYPE>{_esc(gst_reg_type)}</GSTREGISTRATIONTYPE>")
+    if opening_balance is not None and opening_balance != 0:
+        extras.append(f"<OPENINGBALANCE>{abs(float(opening_balance)):.2f}</OPENINGBALANCE>")
+    if is_billwise:
+        extras.append("<ISBILLWISEON>Yes</ISBILLWISEON>")
+    extras_xml = ("\n" + "\n".join(extras)) if extras else ""
+
+    ledger_xml = f"""<LEDGER NAME="{_esc(name)}" ACTION="Create">
+<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
+<PARENT>{_esc(parent)}</PARENT>{extras_xml}
+</LEDGER>"""
+    return _wrap_import("All Masters", company, ledger_xml)
+
+
