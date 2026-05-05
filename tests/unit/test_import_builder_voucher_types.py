@@ -104,4 +104,62 @@ def test_build_create_stock_item_12pct_rate_splits_correctly():
     assert gd.findtext("CGSTRATE") == "6"
     assert gd.findtext("SGSTRATE") == "6"
 
+def test_build_create_ledger_with_opening_state_gstin():
+    from backend.tally_bridge.import_builder import build_create_ledger
+    xml = build_create_ledger(
+        name="Apex Technologies Pvt Ltd",
+        parent="North Zone Debtors",
+        company="X",
+        gstin="27AAACA0000A1Z5",
+        state="Maharashtra",
+        gst_reg_type="Regular",
+        opening_balance=0,
+        is_billwise=True,
+    )
+    root = _root(xml)
+    led = root.find(".//LEDGER")
+    assert led.findtext("PARTYGSTIN") == "27AAACA0000A1Z5"
+    assert led.findtext("LEDSTATENAME") == "Maharashtra"
+    assert led.findtext("GSTREGISTRATIONTYPE") == "Regular"
+    assert led.findtext("ISBILLWISEON") == "Yes"
+
+
+def test_build_create_ledger_with_opening_balance_only():
+    from backend.tally_bridge.import_builder import build_create_ledger
+    xml = build_create_ledger(
+        name="Capital Account",
+        parent="Capital Account",
+        company="X",
+        opening_balance=750000,
+    )
+    root = _root(xml)
+    assert root.find(".//LEDGER").findtext("OPENINGBALANCE") == "750000.00"
+
+
+def test_build_create_ledger_back_compat():
+    """Existing call signature (positional + gstin only) still works."""
+    from backend.tally_bridge.import_builder import build_create_ledger
+    xml = build_create_ledger("Travel", "Indirect Expenses", "X")
+    root = _root(xml)
+    led = root.find(".//LEDGER")
+    assert led.findtext("PARENT") == "Indirect Expenses"
+    assert led.find("OPENINGBALANCE") is None  # not emitted when 0/None
+
+
+def test_build_create_gst_ledger():
+    from backend.tally_bridge.import_builder import build_create_gst_ledger
+    xml = build_create_gst_ledger(
+        name="CGST Output",
+        duty_head="Central Tax",
+        company="X",
+    )
+    root = _root(xml)
+    led = root.find(".//LEDGER")
+    assert led.get("NAME") == "CGST Output"
+    assert led.findtext("PARENT") == "Duties & Taxes"
+    assert led.findtext("TAXTYPE") == "GST"
+    assert led.findtext("GSTDUTYHEAD") == "Central Tax"
+    assert led.findtext("ISBILLWISEON") == "No"
+    assert led.findtext("AFFECTSSTOCK") == "No"
+
 

@@ -341,3 +341,30 @@ def build_create_ledger(
     return _wrap_import("All Masters", company, ledger_xml)
 
 
+def build_create_gst_ledger(name: str, duty_head: str, company: str) -> str:
+    """Build XML to create a GST tax ledger under Duties & Taxes.
+
+    duty_head: one of "Central Tax", "State Tax", "Integrated Tax".
+    Same envelope serves both Output and Input ledgers — Tally infers direction
+    from voucher usage. See docs/tally-write-exploration-v4.md Op 4.
+    """
+    _require(name, "name")
+    _require(company, "company")
+    if duty_head not in ("Central Tax", "State Tax", "Integrated Tax"):
+        raise ValueError(f"invalid duty_head: {duty_head}")
+
+    led_xml = f"""<LEDGER NAME="{_esc(name)}" ACTION="Create">
+<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
+<PARENT>Duties &amp; Taxes</PARENT>
+<TAXTYPE>GST</TAXTYPE>
+<GSTDUTYHEAD>{_esc(duty_head)}</GSTDUTYHEAD>
+<RATEOFTAXCALCULATION>0</RATEOFTAXCALCULATION>
+<ROUNDINGMETHOD/>
+<ROUNDINGLIMIT>0</ROUNDINGLIMIT>
+<ISBILLWISEON>No</ISBILLWISEON>
+<AFFECTSSTOCK>No</AFFECTSSTOCK>
+<ISCOSTCENTRESON>No</ISCOSTCENTRESON>
+</LEDGER>"""
+    return _wrap_import("All Masters", company, led_xml)
+
+
