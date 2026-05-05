@@ -1,0 +1,40 @@
+Seeding Bharat Traders Private Limited @ localhost:9000
+
+=== Phase: GST Ledgers (6) ===
+  + CGST Output (Central Tax)
+  + SGST Output (State Tax)
+  + IGST Output (Integrated Tax)
+  + CGST Input (Central Tax)
+  + SGST Input (State Tax)
+  + IGST Input (Integrated Tax)
+
+=== Phase: Ledgers (27) ===
+  + Apex Technologies Pvt Ltd (parent: North Zone Debtors, opening: 0)
+  + Sunrise Electronics Mumbai (parent: South Zone Debtors, opening: 0)
+  + Global IT Solutions (parent: North Zone Debtors, opening: 0)
+  + Sharma & Sons Traders (parent: South Zone Debtors, opening: 0)
+  + Patel Enterprises (parent: North Zone Debtors, opening: 0)
+  + Rajesh Computers (parent: South Zone Debtors, opening: 0)
+  + Eastern Digital Hub (parent: North Zone Debtors, opening: 0)
+  + Samsung India Electronics (parent: National Creditors, opening: 0)
+  + HP India Sales Pvt Ltd (parent: National Creditors, opening: 0)
+  + Logitech India Pvt Ltd (parent: National Creditors, opening: 0)
+  + Local Stationery Mart (parent: Local Creditors, opening: 0)
+  + Bharat Paper Supplies (parent: Local Creditors, opening: 0)
+  + HDFC Bank - Current A/c (parent: Bank Accounts, opening: -500000)
+  + SBI Savings A/c (parent: Bank Accounts, opening: -200000)
+  + Sales - Electronics (parent: Sales Accounts, opening: 0)
+  + Sales - Office Supplies (parent: Sales Accounts, opening: 0)
+  + Purchase - Electronics (parent: Purchase Accounts, opening: 0)
+  + Purchase - Office Supplies (parent: Purchase Accounts, opening: 0)
+  + Rent (parent: Indirect Expenses, opening: 0)
+  + Salaries (parent: Indirect Expenses, opening: 0)
+  + Electricity (parent: Indirect Expenses, opening: 0)
+  + Internet & Phone (parent: Indirect Expenses, opening: 0)
+  + Office Maintenance (parent: Indirect Expenses, opening: 0)
+  + Travel & Conveyance (parent: Indirect Expenses, opening: 0)
+  + Courier & Freight (parent: Direct Expenses, opening: 0)
+  + Packing Charges (parent: Direct Expenses, opening: 0)
+  + Capital Account (parent: Capital Account, opening: 750000)
+
+Done.

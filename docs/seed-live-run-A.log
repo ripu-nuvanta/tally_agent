@@ -1,0 +1,18 @@
+Seeding Bharat Traders Private Limited @ localhost:9000
+
+=== Phase: Groups (4) ===
+  + North Zone Debtors (parent: Sundry Debtors)
+  + South Zone Debtors (parent: Sundry Debtors)
+  + National Creditors (parent: Sundry Creditors)
+  + Local Creditors (parent: Sundry Creditors)
+
+=== Phase: Units (2) ===
+  + Nos (Numbers)
+  + Pcs (Pieces)
+
+=== Phase: Stock Groups (3) ===
+  + Electronics
+  + Peripherals
+  + Office Supplies
+
+Done.

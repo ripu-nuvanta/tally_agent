@@ -1,0 +1,55 @@
+Seeding Bharat Traders Private Limited @ localhost:9000
+
+=== Phase: Vouchers (50) ===
+  + Purchase P001 20250928 Samsung India Electronics (2 lines)
+  + Sales S001 20251001 Apex Technologies Pvt Ltd (2 lines)
+  + Sales S002 20251008 Sunrise Electronics Mumbai (2 lines)
+  + Payment PMT001 20251010 Samsung India Electronics ₹400000
+  + Sales S003 20251015 Global IT Solutions (2 lines)
+  + Purchase P002 20251020 HP India Sales Pvt Ltd (2 lines)
+  + Receipt RCT001 20251020 Apex Technologies Pvt Ltd ₹94000
+  + Sales S004 20251022 Sharma & Sons Traders (2 lines)
+  + Sales S005 20251030 Patel Enterprises (2 lines)
+  + Sales S006 20251105 Rajesh Computers (2 lines)
+  + Payment PMT002 20251105 HP India Sales Pvt Ltd ₹500000
+  + Receipt RCT002 20251105 Sunrise Electronics Mumbai ₹110500
+  + Purchase P003 20251110 Logitech India Pvt Ltd (2 lines)
+  + Sales S007 20251115 Eastern Digital Hub (2 lines)
+  + Sales S008 20251125 Apex Technologies Pvt Ltd (2 lines)
+  + Receipt RCT003 20251125 Global IT Solutions ₹130000
+  + Purchase P004 20251128 Samsung India Electronics (2 lines)
+  + Payment PMT003 20251130 Rent ₹75000
+  + Payment PMT004 20251130 Salaries ₹250000
+  + Sales S009 20251205 Global IT Solutions (2 lines)
+  + Payment PMT005 20251205 Logitech India Pvt Ltd ₹150000
+  + Receipt RCT004 20251210 Sharma & Sons Traders ₹29500
+  + Sales S010 20251215 Sunrise Electronics Mumbai (2 lines)
+  + Purchase P005 20251215 HP India Sales Pvt Ltd (2 lines)
+  + Sales S011 20251228 Sharma & Sons Traders (2 lines)
+  + Receipt RCT005 20251228 Patel Enterprises ₹180000
+  + Payment PMT006 20251231 Rent ₹75000
+  + Payment PMT007 20251231 Salaries ₹250000
+  + Payment PMT008 20251231 Electricity ₹12000
+  + Purchase P006 20260105 Local Stationery Mart (3 lines)
+  + Sales S012 20260110 Patel Enterprises (2 lines)
+  + Receipt RCT006 20260110 Rajesh Computers ₹25500
+  + Payment PMT009 20260115 Local Stationery Mart ₹80000
+  + Sales S013 20260120 Rajesh Computers (2 lines)
+  + Receipt RCT007 20260120 Eastern Digital Hub ₹116000
+  + Purchase P007 20260125 Logitech India Pvt Ltd (2 lines)
+  + Payment PMT010 20260131 Rent ₹75000
+  + Payment PMT011 20260131 Salaries ₹250000
+  + Payment PMT012 20260131 Internet & Phone ₹8000
+  + Sales S014 20260205 Eastern Digital Hub (2 lines)
+  + Receipt RCT008 20260205 Apex Technologies Pvt Ltd ₹88000
+  + Purchase P008 20260210 Bharat Paper Supplies (2 lines)
+  + Sales S015 20260215 Apex Technologies Pvt Ltd (2 lines)
+  + Payment PMT015 20260215 Travel & Conveyance ₹15000
+  + Payment PMT016 20260220 Office Maintenance ₹8000
+  + Receipt RCT009 20260220 Global IT Solutions ₹262500
+  + Payment PMT013 20260228 Rent ₹75000
+  + Payment PMT014 20260228 Salaries ₹250000
+  + Sales S016 20260301 Global IT Solutions (2 lines)
+  + Receipt RCT010 20260301 Patel Enterprises ₹197000
+
+Done.
