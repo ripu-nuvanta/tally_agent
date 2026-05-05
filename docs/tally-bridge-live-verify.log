@@ -1,0 +1,18 @@
+Verifying Bharat Traders Private Limited @ localhost:9000
+
+  [OK] list_companies includes target — got ['Bharat Traders Private Limited', 'Bharat Traders V0']
+  [OK] list_ledgers >= 35 — got 35
+  [OK] Capital Account present
+  [OK] Apex Technologies Pvt Ltd present
+  [OK] CGST Output present
+  [OK] list_groups >= 30 — got 32
+  [OK] North Zone Debtors present
+  [OK] list_stock_items == 15 — got 15
+  [OK] trial_balance non-empty rows — got 5 rows
+  [FAIL] day_book >= 50 vouchers — got 9
+  [FAIL] sales_register >= 16 — got 2
+  [FAIL] purchase_register >= 8 — got 0
+  [FAIL] bills_receivable non-empty — got 0 bills
+  [FAIL] bills_payable non-empty — got 0 bills
+
+FAIL: 5 check(s) failed: ['day_book >= 50 vouchers', 'sales_register >= 16', 'purchase_register >= 8', 'bills_receivable non-empty', 'bills_payable non-empty']
