@@ -230,6 +230,73 @@ def build_create_stock_group(name: str, parent: str, company: str) -> str:
     return _wrap_import("All Masters", company, sg_xml)
 
 
+def build_create_stock_item(
+    name: str,
+    group: str,
+    uom: str,
+    opening_qty: float,
+    opening_rate: float,
+    hsn_code: str,
+    gst_rate: int,
+    company: str,
+    applicable_from: str = "20250401",
+) -> str:
+    """Build XML to create a stock item with HSN + per-item GST rate.
+
+    Splits gst_rate evenly across CGST/SGST (intra-state) and uses full rate for IGST
+    (inter-state). E.g. 18% → 9 CGST + 9 SGST + 18 IGST.
+    See docs/tally-write-exploration-v4.md Op 3.
+    """
+    _require(name, "name")
+    _require(group, "group")
+    _require(uom, "uom")
+    _require(hsn_code, "hsn_code")
+    _require(company, "company")
+    if opening_qty < 0 or opening_rate < 0:
+        raise ValueError("opening_qty and opening_rate must be non-negative")
+    if gst_rate not in (0, 5, 12, 18, 28):
+        raise ValueError(f"gst_rate must be one of (0, 5, 12, 18, 28); got {gst_rate}")
+
+    half = gst_rate / 2
+    half_str = f"{half:g}"  # 9 not 9.0; 2.5 stays 2.5
+    igst_str = f"{gst_rate:g}"
+    opening_value = opening_qty * opening_rate
+
+    si_xml = f"""<STOCKITEM NAME="{_esc(name)}" ACTION="Create">
+<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
+<PARENT>{_esc(group)}</PARENT>
+<BASEUNITS>{_esc(uom)}</BASEUNITS>
+<GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
+<GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY>
+<HSNCODE>{_esc(hsn_code)}</HSNCODE>
+<HSN>{_esc(hsn_code)}</HSN>
+<HSNDETAILS.LIST>
+<APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
+<HSNCODE>{_esc(hsn_code)}</HSNCODE>
+<HSN>{_esc(hsn_code)}</HSN>
+</HSNDETAILS.LIST>
+<GSTDETAILS.LIST>
+<APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
+<TAXABILITY>Taxable</TAXABILITY>
+<IGSTRATE>{igst_str}</IGSTRATE>
+<CGSTRATE>{half_str}</CGSTRATE>
+<SGSTRATE>{half_str}</SGSTRATE>
+<STATEWISEDETAILS.LIST>
+<STATENAME>Any</STATENAME>
+<RATEDETAILS.LIST><GSTRATEDUTYHEAD>Central Tax</GSTRATEDUTYHEAD><GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE>{half_str}</GSTRATE></RATEDETAILS.LIST>
+<RATEDETAILS.LIST><GSTRATEDUTYHEAD>State Tax</GSTRATEDUTYHEAD><GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE>{half_str}</GSTRATE></RATEDETAILS.LIST>
+<RATEDETAILS.LIST><GSTRATEDUTYHEAD>Integrated Tax</GSTRATEDUTYHEAD><GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE>{igst_str}</GSTRATE></RATEDETAILS.LIST>
+<RATEDETAILS.LIST><GSTRATEDUTYHEAD>Cess</GSTRATEDUTYHEAD><GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE>0</GSTRATE></RATEDETAILS.LIST>
+</STATEWISEDETAILS.LIST>
+</GSTDETAILS.LIST>
+<OPENINGBALANCE>{opening_qty:g} {_esc(uom)}</OPENINGBALANCE>
+<OPENINGRATE>{opening_rate:.2f}/{_esc(uom)}</OPENINGRATE>
+<OPENINGVALUE>{opening_value:.2f}</OPENINGVALUE>
+</STOCKITEM>"""
+    return _wrap_import("All Masters", company, si_xml)
+
+
+
 def build_create_ledger(
     name: str,
     parent: str,
