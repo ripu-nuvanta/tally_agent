@@ -11,7 +11,7 @@ from backend.tally_bridge.request_builder import build_list_companies
 class TallyClient:
     def __init__(self, host: str = "localhost", port: int = 9000):
         self.base_url = f"http://{host}:{port}"
-        self.timeout = httpx.Timeout(30.0, connect=5.0)
+        self.timeout = httpx.Timeout(90.0, connect=5.0)  # 90s — writes can be slow per docs/tally-write-exploration-v4.md
         self._client = httpx.AsyncClient(timeout=self.timeout)
         self.mock_mode: bool = False
 

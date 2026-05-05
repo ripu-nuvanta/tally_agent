@@ -16,8 +16,16 @@ from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.import_builder import (
     build_cancel_voucher,
     build_create_group,
+    build_create_gst_ledger,
+    build_create_journal_voucher,
     build_create_ledger,
     build_create_payment_voucher,
+    build_create_purchase_voucher,
+    build_create_receipt_voucher,
+    build_create_sales_voucher,
+    build_create_stock_group,
+    build_create_stock_item,
+    build_create_unit,
     build_delete_group,
     build_delete_ledger,
     build_delete_voucher,
@@ -137,9 +145,88 @@ class TallyWriter:
 
     async def create_ledger(
         self, name: str, parent: str, gstin: str | None = None,
+        state: str | None = None, gst_reg_type: str | None = None,
+        opening_balance: float | None = None, is_billwise: bool = False,
     ) -> dict:
         """Create a ledger master in Tally."""
-        xml = build_create_ledger(name, parent, self.company, gstin)
+        xml = build_create_ledger(
+            name, parent, self.company, gstin=gstin, state=state,
+            gst_reg_type=gst_reg_type, opening_balance=opening_balance,
+            is_billwise=is_billwise,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_unit(self, name: str, formal_name: str) -> dict:
+        """Create a unit of measure in Tally."""
+        xml = build_create_unit(name, formal_name, self.company)
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_stock_group(self, name: str, parent: str = "") -> dict:
+        """Create a stock group in Tally."""
+        xml = build_create_stock_group(name, parent, self.company)
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_stock_item(
+        self, name: str, group: str, uom: str, opening_qty: float,
+        opening_rate: float, hsn_code: str, gst_rate: int,
+    ) -> dict:
+        """Create a stock item in Tally."""
+        xml = build_create_stock_item(
+            name, group, uom, opening_qty, opening_rate, hsn_code, gst_rate, self.company,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_gst_ledger(self, name: str, duty_head: str) -> dict:
+        """Create a GST duty ledger in Tally."""
+        xml = build_create_gst_ledger(name, duty_head, self.company)
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_sales_voucher(
+        self, date: str, voucher_number: str, party: str, items: list[tuple],
+        narration: str, gst_mode: str = "intra",
+    ) -> dict:
+        """Create a Sales voucher in Tally."""
+        xml = build_create_sales_voucher(
+            date, voucher_number, party, items, narration, gst_mode, self.company,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_purchase_voucher(
+        self, date: str, voucher_number: str, party: str, items: list[tuple],
+        narration: str, gst_mode: str = "intra",
+    ) -> dict:
+        """Create a Purchase voucher in Tally."""
+        xml = build_create_purchase_voucher(
+            date, voucher_number, party, items, narration, gst_mode, self.company,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_receipt_voucher(
+        self, date: str, voucher_number: str, party: str, bank_ledger: str,
+        amount: float, narration: str,
+    ) -> dict:
+        """Create a Receipt voucher in Tally."""
+        xml = build_create_receipt_voucher(
+            date, voucher_number, party, bank_ledger, amount, narration, self.company,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return parse_import_response(response_xml)
+
+    async def create_journal_voucher(
+        self, date: str, voucher_number: str, debit_ledger: str, credit_ledger: str,
+        amount: float, narration: str,
+    ) -> dict:
+        """Create a Journal voucher in Tally."""
+        xml = build_create_journal_voucher(
+            date, voucher_number, debit_ledger, credit_ledger, amount, narration, self.company,
+        )
         response_xml = await self.client.post_xml(xml)
         return parse_import_response(response_xml)
 
