@@ -41,6 +41,29 @@ class ValidationError(Exception):
         super().__init__(f"Validation failed: {'; '.join(errors)}")
 
 
+class TallyWriteError(Exception):
+    """Raised when Tally accepts the request but doesn't actually persist
+    the entity (silent drop) — distinct from connection/transport failures."""
+
+
+def _assert_created(parsed: dict, op: str) -> dict:
+    """Raise TallyWriteError if Tally returned CREATED=0 or success=False.
+
+    Tally accepts malformed envelopes with EXCEPTIONS=1, ERRORS=0, CREATED=0
+    — i.e. the request was syntactically OK but no entity got persisted.
+    Without this guard, callers can't distinguish 'wrote 1 entity' from
+    'silently dropped'.
+    """
+    if not parsed.get("success", False):
+        msg = parsed.get("error_message") or "Tally returned EXCEPTIONS=1 with no error message"
+        raise TallyWriteError(f"{op} silently failed: {msg} (parsed={parsed})")
+    if parsed.get("created", 0) < 1:
+        raise TallyWriteError(
+            f"{op} did not create an entity (CREATED=0). parsed={parsed}"
+        )
+    return parsed
+
+
 class TallyWriter:
     """Validates and writes vouchers/masters to Tally."""
 
@@ -141,7 +164,7 @@ class TallyWriter:
             gst_entries=gst_entries,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_payment_voucher")
 
     async def create_ledger(
         self, name: str, parent: str, gstin: str | None = None,
@@ -155,19 +178,19 @@ class TallyWriter:
             is_billwise=is_billwise,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_ledger")
 
     async def create_unit(self, name: str, formal_name: str) -> dict:
         """Create a unit of measure in Tally."""
         xml = build_create_unit(name, formal_name, self.company)
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_unit")
 
     async def create_stock_group(self, name: str, parent: str = "") -> dict:
         """Create a stock group in Tally."""
         xml = build_create_stock_group(name, parent, self.company)
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_stock_group")
 
     async def create_stock_item(
         self, name: str, group: str, uom: str, opening_qty: float,
@@ -178,13 +201,13 @@ class TallyWriter:
             name, group, uom, opening_qty, opening_rate, hsn_code, gst_rate, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_stock_item")
 
     async def create_gst_ledger(self, name: str, duty_head: str) -> dict:
         """Create a GST duty ledger in Tally."""
         xml = build_create_gst_ledger(name, duty_head, self.company)
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_gst_ledger")
 
     async def create_sales_voucher(
         self, date: str, voucher_number: str, party: str, items: list[tuple],
@@ -195,7 +218,7 @@ class TallyWriter:
             date, voucher_number, party, items, narration, gst_mode, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_sales_voucher")
 
     async def create_purchase_voucher(
         self, date: str, voucher_number: str, party: str, items: list[tuple],
@@ -206,7 +229,7 @@ class TallyWriter:
             date, voucher_number, party, items, narration, gst_mode, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_purchase_voucher")
 
     async def create_receipt_voucher(
         self, date: str, voucher_number: str, party: str, bank_ledger: str,
@@ -217,7 +240,7 @@ class TallyWriter:
             date, voucher_number, party, bank_ledger, amount, narration, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_receipt_voucher")
 
     async def create_journal_voucher(
         self, date: str, voucher_number: str, debit_ledger: str, credit_ledger: str,
@@ -228,13 +251,13 @@ class TallyWriter:
             date, voucher_number, debit_ledger, credit_ledger, amount, narration, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_journal_voucher")
 
     async def create_group(self, name: str, parent: str) -> dict:
         """Create an account group in Tally."""
         xml = build_create_group(name, parent, self.company)
         response_xml = await self.client.post_xml(xml)
-        return parse_import_response(response_xml)
+        return _assert_created(parse_import_response(response_xml), "create_group")
 
     async def cancel_voucher(
         self, voucher_type: str, master_id: str, date: str, narration: str = "",

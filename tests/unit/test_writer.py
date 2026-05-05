@@ -2,7 +2,7 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock
 
-from backend.tally_bridge.writer import TallyWriter, ValidationError
+from backend.tally_bridge.writer import TallyWriter, TallyWriteError, ValidationError
 
 
 class TestDryRunValidation:
@@ -186,8 +186,8 @@ class TestWriteVoucher:
         mock_client.post_xml.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_exceptions_response_marked_as_failure(self):
-        """EXCEPTIONS=1 from Tally (silent failure) must surface as success=False through the writer."""
+    async def test_exceptions_response_raises_write_error(self):
+        """EXCEPTIONS=1 from Tally (silent failure) must now raise TallyWriteError."""
         mock_client = AsyncMock()
         mock_client.post_xml.return_value = """<RESPONSE>
 <CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>
@@ -196,22 +196,20 @@ class TestWriteVoucher:
 <CANCELLED>0</CANCELLED><EXCEPTIONS>1</EXCEPTIONS>
 </RESPONSE>"""
         writer = TallyWriter(client=mock_client, company="Test Co")
-        result = await writer.create_payment_voucher(
-            date="20260404",
-            debit_ledger="Travel Expenses",
-            credit_ledger="Cash",
-            amount=500.00,
-            narration="Test",
-        )
-        assert result["success"] is False
-        assert result["exceptions"] == 1
-        assert "exception" in result["error_message"].lower()
+        with pytest.raises(TallyWriteError, match="silently failed"):
+            await writer.create_payment_voucher(
+                date="20260404",
+                debit_ledger="Travel Expenses",
+                credit_ledger="Cash",
+                amount=500.00,
+                narration="Test",
+            )
         # Tally was still called (validation passed; the failure came from Tally)
         mock_client.post_xml.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_line_error_response_marked_as_failure(self):
-        """ERRORS + LINEERROR from Tally must surface as success=False with the error message."""
+    async def test_line_error_response_raises_write_error(self):
+        """LINEERROR + EXCEPTIONS=1 from Tally must raise TallyWriteError with the error detail."""
         mock_client = AsyncMock()
         mock_client.post_xml.return_value = """<RESPONSE>
 <LINEERROR>Ledger 'Nonexistent' does not exist!</LINEERROR>
@@ -221,12 +219,85 @@ class TestWriteVoucher:
 <CANCELLED>0</CANCELLED><EXCEPTIONS>1</EXCEPTIONS>
 </RESPONSE>"""
         writer = TallyWriter(client=mock_client, company="Test Co")
-        result = await writer.create_payment_voucher(
-            date="20260404",
-            debit_ledger="Travel Expenses",
-            credit_ledger="Cash",
-            amount=500.00,
-            narration="Test",
-        )
-        assert result["success"] is False
-        assert "Nonexistent" in result["error_message"]
+        with pytest.raises(TallyWriteError, match="silently failed"):
+            await writer.create_payment_voucher(
+                date="20260404",
+                debit_ledger="Travel Expenses",
+                credit_ledger="Cash",
+                amount=500.00,
+                narration="Test",
+            )
+
+
+class TestWriteErrorAssertion:
+    """Tests for the _assert_created guard — the fix for silent-drop incidents."""
+
+    @pytest.mark.asyncio
+    async def test_create_unit_raises_on_silent_drop(self):
+        """Tally returns EXCEPTIONS=1, CREATED=0 → writer must raise TallyWriteError."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<LINEERROR>Voucher date is missing</LINEERROR>'
+                    '<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>1</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError, match="silently failed"):
+            await writer.create_unit("Nos", "Numbers")
+
+    @pytest.mark.asyncio
+    async def test_create_unit_raises_on_zero_created(self):
+        """Tally returns success=False equivalent but CREATED=0 → writer must raise."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError):
+            await writer.create_unit("Nos", "Numbers")
+
+    @pytest.mark.asyncio
+    async def test_create_unit_succeeds_when_created(self):
+        """Sanity: CREATED=1 → no exception, returns parsed dict."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>1</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        result = await writer.create_unit("Nos", "Numbers")
+        assert result["created"] == 1
+
+    @pytest.mark.asyncio
+    async def test_create_sales_voucher_raises_on_silent_drop(self):
+        """Specifically the failure mode hit live: voucher silently dropped."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    "<LINEERROR>Voucher date is missing for: 'Sales' voucher S010</LINEERROR>"
+                    '<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>1</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError, match="silently failed"):
+            await writer.create_sales_voucher(
+                date="20251215", voucher_number="S010", party="Sunrise Electronics Mumbai",
+                items=[("HP Laptop 15s", 1, 45000, "Sales - Electronics", "Nos", 18)],
+                narration="X",
+            )
