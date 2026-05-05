@@ -1,0 +1,133 @@
+Seeding Bharat Traders Private Limited @ localhost:9000
+(DRY-RUN — no POST)
+
+
+=== Phase: Groups (4) ===
+  + North Zone Debtors (parent: Sundry Debtors)
+  + South Zone Debtors (parent: Sundry Debtors)
+  + National Creditors (parent: Sundry Creditors)
+  + Local Creditors (parent: Sundry Creditors)
+
+=== Phase: Units (2) ===
+  + Nos (Numbers)
+  + Pcs (Pieces)
+
+=== Phase: Stock Groups (3) ===
+  + Electronics
+  + Peripherals
+  + Office Supplies
+
+=== Phase: GST Ledgers (6) ===
+  + CGST Output (Central Tax)
+  + SGST Output (State Tax)
+  + IGST Output (Integrated Tax)
+  + CGST Input (Central Tax)
+  + SGST Input (State Tax)
+  + IGST Input (Integrated Tax)
+
+=== Phase: Ledgers (34) ===
+  + Apex Technologies Pvt Ltd (parent: North Zone Debtors, opening: 0)
+  + Sunrise Electronics Mumbai (parent: South Zone Debtors, opening: 0)
+  + Global IT Solutions (parent: North Zone Debtors, opening: 0)
+  + Sharma & Sons Traders (parent: South Zone Debtors, opening: 0)
+  + Patel Enterprises (parent: North Zone Debtors, opening: 0)
+  + Rajesh Computers (parent: South Zone Debtors, opening: 0)
+  + Eastern Digital Hub (parent: North Zone Debtors, opening: 0)
+  + Samsung India Electronics (parent: National Creditors, opening: 0)
+  + HP India Sales Pvt Ltd (parent: National Creditors, opening: 0)
+  + Logitech India Pvt Ltd (parent: National Creditors, opening: 0)
+  + Local Stationery Mart (parent: Local Creditors, opening: 0)
+  + Bharat Paper Supplies (parent: Local Creditors, opening: 0)
+  + HDFC Bank - Current A/c (parent: Bank Accounts, opening: -500000)
+  + SBI Savings A/c (parent: Bank Accounts, opening: -200000)
+  + Cash (parent: Cash-in-Hand, opening: -50000)
+  + Sales - Electronics (parent: Sales Accounts, opening: 0)
+  + Sales - Office Supplies (parent: Sales Accounts, opening: 0)
+  + Purchase - Electronics (parent: Purchase Accounts, opening: 0)
+  + Purchase - Office Supplies (parent: Purchase Accounts, opening: 0)
+  + Rent (parent: Indirect Expenses, opening: 0)
+  + Salaries (parent: Indirect Expenses, opening: 0)
+  + Electricity (parent: Indirect Expenses, opening: 0)
+  + Internet & Phone (parent: Indirect Expenses, opening: 0)
+  + Office Maintenance (parent: Indirect Expenses, opening: 0)
+  + Travel & Conveyance (parent: Indirect Expenses, opening: 0)
+  + Courier & Freight (parent: Direct Expenses, opening: 0)
+  + Packing Charges (parent: Direct Expenses, opening: 0)
+  + CGST Output (parent: Duties & Taxes, opening: 0)
+  + SGST Output (parent: Duties & Taxes, opening: 0)
+  + IGST Output (parent: Duties & Taxes, opening: 0)
+  + CGST Input (parent: Duties & Taxes, opening: 0)
+  + SGST Input (parent: Duties & Taxes, opening: 0)
+  + IGST Input (parent: Duties & Taxes, opening: 0)
+  + Capital Account (parent: Capital Account, opening: 750000)
+
+=== Phase: Stock Items (15) ===
+  + Samsung 24 inch Monitor (HSN 8528, GST 18%)
+  + HP Laptop 15s (HSN 8471, GST 18%)
+  + Samsung Galaxy Tab A8 (HSN 8471, GST 18%)
+  + Dell Desktop Optiplex (HSN 8471, GST 18%)
+  + Lenovo Ideapad Slim 3 (HSN 8471, GST 18%)
+  + Logitech Wireless Mouse (HSN 8471, GST 18%)
+  + Logitech Keyboard K380 (HSN 8471, GST 18%)
+  + HP DeskJet Printer 2723 (HSN 8443, GST 18%)
+  + TP-Link WiFi Router AC750 (HSN 8517, GST 18%)
+  + USB-C Hub 7-in-1 (HSN 8471, GST 18%)
+  + A4 Paper Ream 500 sheets (HSN 4802, GST 12%)
+  + Whiteboard Marker Set (HSN 9608, GST 12%)
+  + Stapler Heavy Duty (HSN 8205, GST 18%)
+  + Box File Pack of 10 (HSN 4820, GST 12%)
+  + Pen Drive 32GB (HSN 8523, GST 18%)
+
+=== Phase: Vouchers (50) ===
+  + Purchase P001 20250928 Samsung India Electronics (2 lines)
+  + Sales S001 20251001 Apex Technologies Pvt Ltd (2 lines)
+  + Sales S002 20251008 Sunrise Electronics Mumbai (2 lines)
+  + Payment PMT001 20251010 Samsung India Electronics ₹400000
+  + Sales S003 20251015 Global IT Solutions (2 lines)
+  + Purchase P002 20251020 HP India Sales Pvt Ltd (2 lines)
+  + Receipt RCT001 20251020 Apex Technologies Pvt Ltd ₹94000
+  + Sales S004 20251022 Sharma & Sons Traders (2 lines)
+  + Sales S005 20251030 Patel Enterprises (2 lines)
+  + Sales S006 20251105 Rajesh Computers (2 lines)
+  + Payment PMT002 20251105 HP India Sales Pvt Ltd ₹500000
+  + Receipt RCT002 20251105 Sunrise Electronics Mumbai ₹110500
+  + Purchase P003 20251110 Logitech India Pvt Ltd (2 lines)
+  + Sales S007 20251115 Eastern Digital Hub (2 lines)
+  + Sales S008 20251125 Apex Technologies Pvt Ltd (2 lines)
+  + Receipt RCT003 20251125 Global IT Solutions ₹130000
+  + Purchase P004 20251128 Samsung India Electronics (2 lines)
+  + Payment PMT003 20251130 Rent ₹75000
+  + Payment PMT004 20251130 Salaries ₹250000
+  + Sales S009 20251205 Global IT Solutions (2 lines)
+  + Payment PMT005 20251205 Logitech India Pvt Ltd ₹150000
+  + Receipt RCT004 20251210 Sharma & Sons Traders ₹29500
+  + Sales S010 20251215 Sunrise Electronics Mumbai (2 lines)
+  + Purchase P005 20251215 HP India Sales Pvt Ltd (2 lines)
+  + Sales S011 20251228 Sharma & Sons Traders (2 lines)
+  + Receipt RCT005 20251228 Patel Enterprises ₹180000
+  + Payment PMT006 20251231 Rent ₹75000
+  + Payment PMT007 20251231 Salaries ₹250000
+  + Payment PMT008 20251231 Electricity ₹12000
+  + Purchase P006 20260105 Local Stationery Mart (3 lines)
+  + Sales S012 20260110 Patel Enterprises (2 lines)
+  + Receipt RCT006 20260110 Rajesh Computers ₹25500
+  + Payment PMT009 20260115 Local Stationery Mart ₹80000
+  + Sales S013 20260120 Rajesh Computers (2 lines)
+  + Receipt RCT007 20260120 Eastern Digital Hub ₹116000
+  + Purchase P007 20260125 Logitech India Pvt Ltd (2 lines)
+  + Payment PMT010 20260131 Rent ₹75000
+  + Payment PMT011 20260131 Salaries ₹250000
+  + Payment PMT012 20260131 Internet & Phone ₹8000
+  + Sales S014 20260205 Eastern Digital Hub (2 lines)
+  + Receipt RCT008 20260205 Apex Technologies Pvt Ltd ₹88000
+  + Purchase P008 20260210 Bharat Paper Supplies (2 lines)
+  + Sales S015 20260215 Apex Technologies Pvt Ltd (2 lines)
+  + Payment PMT015 20260215 Travel & Conveyance ₹15000
+  + Payment PMT016 20260220 Office Maintenance ₹8000
+  + Receipt RCT009 20260220 Global IT Solutions ₹262500
+  + Payment PMT013 20260228 Rent ₹75000
+  + Payment PMT014 20260228 Salaries ₹250000
+  + Sales S016 20260301 Global IT Solutions (2 lines)
+  + Receipt RCT010 20260301 Patel Enterprises ₹197000
+
+Done.
