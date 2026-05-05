@@ -467,3 +467,99 @@ def _sales_tax_line(ledger: str, amount: float) -> str:
 </LEDGERENTRIES.LIST>"""
 
 
+def build_create_purchase_voucher(
+    date: str,
+    voucher_number: str,
+    party: str,
+    items: list[tuple],
+    narration: str,
+    gst_mode: str,
+    company: str,
+) -> str:
+    """Build XML to create a Purchase voucher with stock + GST.
+
+    items: list of (item_name, qty, rate, purchase_ledger, uom, gst_rate) tuples.
+
+    INVERSE sign convention from sales (v4 Op 7):
+      party No/+tot, GST Yes/-tax, inv/alloc Yes/-goods.
+    """
+    _require(date, "date")
+    _require(voucher_number, "voucher_number")
+    _require(party, "party")
+    _require(narration, "narration")
+    _require(company, "company")
+    if gst_mode not in ("intra", "inter"):
+        raise ValueError(f"gst_mode must be 'intra' or 'inter'; got {gst_mode!r}")
+    if not items:
+        raise ValueError("items must be non-empty")
+
+    rate_buckets: dict[int, float] = {}
+    for _name, qty, rate, _ledger, _uom, gst_rate in items:
+        rate_buckets[gst_rate] = rate_buckets.get(gst_rate, 0.0) + (qty * rate)
+
+    base_total = sum(rate_buckets.values())
+    tax_lines: list[str] = []
+    tax_total = 0.0
+    for rate, base in sorted(rate_buckets.items()):
+        if rate == 0:
+            continue
+        if gst_mode == "intra":
+            half = base * (rate / 2) / 100
+            tax_total += 2 * half
+            tax_lines.append(_purchase_tax_line("CGST Input", half))
+            tax_lines.append(_purchase_tax_line("SGST Input", half))
+        else:
+            full = base * rate / 100
+            tax_total += full
+            tax_lines.append(_purchase_tax_line("IGST Input", full))
+
+    party_total = base_total + tax_total
+    party_block = f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(party)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>{party_total:.2f}</AMOUNT>
+</LEDGERENTRIES.LIST>"""
+
+    inventory_blocks: list[str] = []
+    for item_name, qty, rate, purchase_ledger, uom, _gst_rate in items:
+        amount = qty * rate
+        inventory_blocks.append(f"""<ALLINVENTORYENTRIES.LIST>
+<STOCKITEMNAME>{_esc(item_name)}</STOCKITEMNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<RATE>{rate:.2f}/{_esc(uom)}</RATE>
+<AMOUNT>{-amount:.2f}</AMOUNT>
+<ACTUALQTY>{qty:g} {_esc(uom)}</ACTUALQTY>
+<BILLEDQTY>{qty:g} {_esc(uom)}</BILLEDQTY>
+<ACCOUNTINGALLOCATIONS.LIST>
+<LEDGERNAME>{_esc(purchase_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>{-amount:.2f}</AMOUNT>
+</ACCOUNTINGALLOCATIONS.LIST>
+</ALLINVENTORYENTRIES.LIST>""")
+
+    voucher_xml = f"""<VOUCHER VCHTYPE="Purchase" ACTION="Create">
+<DATE>{_esc(date)}</DATE>
+<NARRATION>{_esc(narration)}</NARRATION>
+<VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
+<VOUCHERNUMBER>{_esc(voucher_number)}</VOUCHERNUMBER>
+<PARTYLEDGERNAME>{_esc(party)}</PARTYLEDGERNAME>
+<PARTYNAME>{_esc(party)}</PARTYNAME>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+<EFFECTIVEDATE>{_esc(date)}</EFFECTIVEDATE>
+{party_block}
+{chr(10).join(tax_lines)}
+{chr(10).join(inventory_blocks)}
+</VOUCHER>"""
+    return _wrap_import("Vouchers", company, voucher_xml)
+
+
+def _purchase_tax_line(ledger: str, amount: float) -> str:
+    return f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>{-amount:.2f}</AMOUNT>
+</LEDGERENTRIES.LIST>"""
+
+

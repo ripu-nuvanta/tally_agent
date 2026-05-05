@@ -266,4 +266,47 @@ def test_build_create_sales_voucher_inter_state_uses_igst():
     assert ledger_entries[1].findtext("LEDGERNAME") == "IGST Output"
     assert float(ledger_entries[1].findtext("AMOUNT")) == 8100.00  # 45000 * 18%
 
+def test_build_create_purchase_voucher_intra_state_signs():
+    from backend.tally_bridge.import_builder import build_create_purchase_voucher
+    xml = build_create_purchase_voucher(
+        date="20250928",
+        voucher_number="P001",
+        party="Samsung India Electronics",
+        items=[
+            ("Samsung 24 inch Monitor", 25, 11000, "Purchase - Electronics", "Nos", 18),
+        ],
+        narration="P001",
+        gst_mode="intra",
+        company="X",
+    )
+    root = _root(xml)
+    v = root.find(".//VOUCHER")
+    assert v.get("VCHTYPE") == "Purchase"
+    assert v.findtext("PERSISTEDVIEW") == "Invoice Voucher View"
+    assert v.findtext("ISINVOICE") == "Yes"
+
+    ledger_entries = v.findall("LEDGERENTRIES.LIST")
+    # 1 party + 1 CGST + 1 SGST
+    assert len(ledger_entries) == 3
+
+    # Party: ISDEEMEDPOSITIVE=No, AMOUNT = +275000 + 18% = +324500
+    party = ledger_entries[0]
+    assert party.findtext("ISDEEMEDPOSITIVE") == "No"
+    assert party.findtext("ISPARTYLEDGER") == "Yes"
+    assert float(party.findtext("AMOUNT")) == 324500.00
+
+    # GST input: ISDEEMEDPOSITIVE=Yes, AMOUNT NEGATIVE
+    cgst = ledger_entries[1]
+    assert cgst.findtext("LEDGERNAME") == "CGST Input"
+    assert cgst.findtext("ISDEEMEDPOSITIVE") == "Yes"
+    assert float(cgst.findtext("AMOUNT")) == -24750.00  # -(275000 * 9%)
+
+    # Inventory: ISDEEMEDPOSITIVE=Yes, AMOUNT NEGATIVE
+    inv = v.find("ALLINVENTORYENTRIES.LIST")
+    assert inv.findtext("ISDEEMEDPOSITIVE") == "Yes"
+    assert float(inv.findtext("AMOUNT")) == -275000.00
+    alloc = inv.find("ACCOUNTINGALLOCATIONS.LIST")
+    assert alloc.findtext("ISDEEMEDPOSITIVE") == "Yes"
+    assert float(alloc.findtext("AMOUNT")) == -275000.00
+
 
