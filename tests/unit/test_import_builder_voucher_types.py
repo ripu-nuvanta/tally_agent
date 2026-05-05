@@ -309,4 +309,55 @@ def test_build_create_purchase_voucher_intra_state_signs():
     assert alloc.findtext("ISDEEMEDPOSITIVE") == "Yes"
     assert float(alloc.findtext("AMOUNT")) == -275000.00
 
+def test_build_create_receipt_voucher():
+    from backend.tally_bridge.import_builder import build_create_receipt_voucher
+    xml = build_create_receipt_voucher(
+        date="20251020",
+        voucher_number="RCT001",
+        party="Apex Technologies Pvt Ltd",
+        bank_ledger="HDFC Bank - Current A/c",
+        amount=94000,
+        narration="Receipt against S001",
+        company="X",
+    )
+    root = _root(xml)
+    v = root.find(".//VOUCHER")
+    assert v.get("VCHTYPE") == "Receipt"
+    assert v.findtext("PERSISTEDVIEW") == "Accounting Voucher View"
+    assert v.findtext("VOUCHERNUMBER") == "RCT001"
 
+    entries = v.findall("ALLLEDGERENTRIES.LIST")
+    assert len(entries) == 2
+    bank, party = entries[0], entries[1]
+    assert bank.findtext("LEDGERNAME") == "HDFC Bank - Current A/c"
+    assert bank.findtext("ISDEEMEDPOSITIVE") == "Yes"
+    assert float(bank.findtext("AMOUNT")) == -94000.00
+    assert party.findtext("LEDGERNAME") == "Apex Technologies Pvt Ltd"
+    assert party.findtext("ISDEEMEDPOSITIVE") == "No"
+    assert float(party.findtext("AMOUNT")) == 94000.00
+
+
+def test_build_create_journal_voucher():
+    from backend.tally_bridge.import_builder import build_create_journal_voucher
+    xml = build_create_journal_voucher(
+        date="20251031",
+        voucher_number="J001",
+        debit_ledger="Rent",
+        credit_ledger="HDFC Bank - Current A/c",
+        amount=75000,
+        narration="Adjusting entry",
+        company="X",
+    )
+    root = _root(xml)
+    v = root.find(".//VOUCHER")
+    assert v.get("VCHTYPE") == "Journal"
+    assert v.findtext("PERSISTEDVIEW") == "Accounting Voucher View"
+    entries = v.findall("ALLLEDGERENTRIES.LIST")
+    assert len(entries) == 2
+    debit, credit = entries[0], entries[1]
+    assert debit.findtext("LEDGERNAME") == "Rent"
+    assert debit.findtext("ISDEEMEDPOSITIVE") == "Yes"
+    assert float(debit.findtext("AMOUNT")) == -75000.00
+    assert credit.findtext("LEDGERNAME") == "HDFC Bank - Current A/c"
+    assert credit.findtext("ISDEEMEDPOSITIVE") == "No"
+    assert float(credit.findtext("AMOUNT")) == 75000.00

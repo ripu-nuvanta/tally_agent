@@ -563,3 +563,85 @@ def _purchase_tax_line(ledger: str, amount: float) -> str:
 </LEDGERENTRIES.LIST>"""
 
 
+def build_create_receipt_voucher(
+    date: str,
+    voucher_number: str,
+    party: str,
+    bank_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+) -> str:
+    """Build XML to create a Receipt voucher (party → bank).
+
+    Bank debit (Yes/-amount), party credit (No/+amount). See v4 Op 8.
+    """
+    _require(date, "date")
+    _require(voucher_number, "voucher_number")
+    _require(party, "party")
+    _require(bank_ledger, "bank_ledger")
+    _require(narration, "narration")
+    _require(company, "company")
+    if amount <= 0:
+        raise ValueError(f"amount must be positive, got {amount}")
+
+    voucher_xml = f"""<VOUCHER VCHTYPE="Receipt" ACTION="Create">
+<DATE>{_esc(date)}</DATE>
+<NARRATION>{_esc(narration)}</NARRATION>
+<VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>
+<VOUCHERNUMBER>{_esc(voucher_number)}</VOUCHERNUMBER>
+<PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(bank_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>{-amount:.2f}</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(party)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<AMOUNT>{amount:.2f}</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+</VOUCHER>"""
+    return _wrap_import("Vouchers", company, voucher_xml)
+
+
+def build_create_journal_voucher(
+    date: str,
+    voucher_number: str,
+    debit_ledger: str,
+    credit_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+) -> str:
+    """Build XML to create a Journal voucher.
+
+    Debit (Yes/-amount), credit (No/+amount). See v4 Op 9.
+    """
+    _require(date, "date")
+    _require(voucher_number, "voucher_number")
+    _require(debit_ledger, "debit_ledger")
+    _require(credit_ledger, "credit_ledger")
+    _require(narration, "narration")
+    _require(company, "company")
+    if amount <= 0:
+        raise ValueError(f"amount must be positive, got {amount}")
+
+    voucher_xml = f"""<VOUCHER VCHTYPE="Journal" ACTION="Create">
+<DATE>{_esc(date)}</DATE>
+<NARRATION>{_esc(narration)}</NARRATION>
+<VOUCHERTYPENAME>Journal</VOUCHERTYPENAME>
+<VOUCHERNUMBER>{_esc(voucher_number)}</VOUCHERNUMBER>
+<PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(debit_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+<AMOUNT>{-amount:.2f}</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+<ALLLEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(credit_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+<AMOUNT>{amount:.2f}</AMOUNT>
+</ALLLEDGERENTRIES.LIST>
+</VOUCHER>"""
+    return _wrap_import("Vouchers", company, voucher_xml)
