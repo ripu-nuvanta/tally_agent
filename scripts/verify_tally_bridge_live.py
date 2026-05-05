@@ -72,11 +72,14 @@ async def run(host: str, port: int, company: str) -> int:
     pr = await vouchers.purchase_register(client, "01-04-2025", "31-03-2026", company=company)
     check("purchase_register >= 8", len(pr) >= 8, f"got {len(pr)}")
 
-    # 8. Bills receivable / payable
+    # 8. Bills receivable / payable.
+    # Seed has 6 outstanding receivables and 5 outstanding payables
+    # (see scripts/seed_data/bharat_traders.py:EXPECTED_RECEIVABLES/PAYABLES).
+    # Tight counts catch silent voucher drops that don't affect the master tables.
     br = await reports.bills_receivable(client, "31-03-2026", company=company)
-    check("bills_receivable non-empty", len(br) > 0, f"got {len(br)} bills")
+    check("bills_receivable >= 6", len(br) >= 6, f"got {len(br)} bills")
     bp = await reports.bills_payable(client, "31-03-2026", company=company)
-    check("bills_payable non-empty", len(bp) > 0, f"got {len(bp)} bills")
+    check("bills_payable >= 5", len(bp) >= 5, f"got {len(bp)} bills")
 
     print()
     if failures:

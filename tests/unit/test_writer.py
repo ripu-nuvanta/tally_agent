@@ -301,3 +301,67 @@ class TestWriteErrorAssertion:
                 items=[("HP Laptop 15s", 1, 45000, "Sales - Electronics", "Nos", 18)],
                 narration="X",
             )
+
+
+def _silent_drop_client():
+    """Returns a fake client that always returns the live silent-drop response."""
+    class FakeClient:
+        async def post_xml(self, xml):
+            return (
+                '<RESPONSE>'
+                '<LINEERROR>Silent drop</LINEERROR>'
+                '<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                '<ERRORS>0</ERRORS><EXCEPTIONS>1</EXCEPTIONS>'
+                '<LASTVCHID>0</LASTVCHID>'
+                '</RESPONSE>'
+            )
+    return FakeClient()
+
+
+# Each entry: (method_name, args_tuple, kwargs_dict).
+# Covers every TallyWriter.create_* method so a regression that drops
+# _assert_created from any of them is caught.
+ALL_CREATE_METHODS = [
+    ("create_unit",         ("Nos", "Numbers"),                         {}),
+    ("create_group",        ("Test Group", "Sundry Debtors"),            {}),
+    ("create_stock_group",  ("TestSG",), {"parent": ""}),
+    ("create_stock_item",   ("Item",),
+        {"group": "Electronics", "uom": "Nos", "opening_qty": 1,
+         "opening_rate": 100, "hsn_code": "8528", "gst_rate": 18}),
+    ("create_gst_ledger",   ("CGST Output",), {"duty_head": "Central Tax"}),
+    ("create_ledger",       ("Test Ledger", "Sundry Debtors"),           {}),
+    ("create_payment_voucher", (),
+        {"date": "20260101", "debit_ledger": "Travel", "credit_ledger": "Cash",
+         "amount": 100.0, "narration": "Test"}),
+    ("create_sales_voucher", (),
+        {"date": "20260101", "voucher_number": "S001", "party": "Apex",
+         "items": [("Item", 1, 100, "Sales - Electronics", "Nos", 18)],
+         "narration": "T"}),
+    ("create_purchase_voucher", (),
+        {"date": "20260101", "voucher_number": "P001", "party": "Samsung",
+         "items": [("Item", 1, 100, "Purchase - Electronics", "Nos", 18)],
+         "narration": "T"}),
+    ("create_receipt_voucher", (),
+        {"date": "20260101", "voucher_number": "R001", "party": "Apex",
+         "bank_ledger": "HDFC", "amount": 100.0, "narration": "T"}),
+    ("create_journal_voucher", (),
+        {"date": "20260101", "voucher_number": "J001", "debit_ledger": "Rent",
+         "credit_ledger": "HDFC", "amount": 100.0, "narration": "T"}),
+]
+
+
+@pytest.mark.parametrize("method,args,kwargs", ALL_CREATE_METHODS,
+                         ids=[m[0] for m in ALL_CREATE_METHODS])
+@pytest.mark.asyncio
+async def test_every_create_method_raises_on_silent_drop(method, args, kwargs):
+    """Regression guard: every TallyWriter.create_* method must raise
+    TallyWriteError on EXCEPTIONS=1/CREATED=0.
+
+    The Stage 1 incident (2026-05-05) was caused by writers returning the
+    parsed dict instead of asserting CREATED >= 1. This test ensures every
+    create_* method now goes through _assert_created.
+    """
+    writer = TallyWriter(client=_silent_drop_client(), company="X")
+    fn = getattr(writer, method)
+    with pytest.raises(TallyWriteError):
+        await fn(*args, **kwargs)
