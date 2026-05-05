@@ -114,28 +114,6 @@ def build_create_payment_voucher(
     return _wrap_import("Vouchers", company, voucher_xml)
 
 
-def build_create_ledger(
-    name: str,
-    parent: str,
-    company: str,
-    gstin: str | None = None,
-) -> str:
-    """Build XML to create a ledger master in Tally.
-
-    CRITICAL: NAME.LIST is required — without it Tally crashes with memory violation.
-    """
-    _require(name, "name")
-    _require(parent, "parent")
-    _require(company, "company")
-
-    gstin_xml = f"\n<PARTYGSTIN>{_esc(gstin)}</PARTYGSTIN>" if gstin else ""
-    ledger_xml = f"""<LEDGER NAME="{_esc(name)}" ACTION="Create">
-<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
-<PARENT>{_esc(parent)}</PARENT>{gstin_xml}
-</LEDGER>"""
-    return _wrap_import("All Masters", company, ledger_xml)
-
-
 def build_create_group(name: str, parent: str, company: str) -> str:
     """Build XML to create an account group in Tally."""
     _require(name, "name")
@@ -218,3 +196,22 @@ def build_delete_group(name: str, company: str) -> str:
 <NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
 </GROUP>"""
     return _wrap_import("All Masters", company, group_xml)
+
+
+def build_create_unit(name: str, formal_name: str, company: str) -> str:
+    """Build XML to create a unit (UOM) master in Tally.
+
+    NOTE: UNIT does NOT take NAME.LIST — that triggers "BAD UNIT NAME".
+    Stick to short ASCII names (Nos, Pcs). See docs/tally-write-exploration-v4.md Op 1.
+    """
+    _require(name, "name")
+    _require(formal_name, "formal_name")
+    _require(company, "company")
+
+    unit_xml = f"""<UNIT ACTION="Create">
+<NAME>{_esc(name)}</NAME>
+<ISSIMPLEUNIT>Yes</ISSIMPLEUNIT>
+<FORMALNAME>{_esc(formal_name)}</FORMALNAME>
+</UNIT>"""
+    return _wrap_import("All Masters", company, unit_xml)
+
