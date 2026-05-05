@@ -96,8 +96,17 @@ async def _phase_gst_ledgers(writer: TallyWriter, dry_run: bool):
 
 
 async def _phase_ledgers(writer: TallyWriter, dry_run: bool):
-    print(f"\n=== Phase: Ledgers ({len(bt.LEDGERS)}) ===")
-    for name, parent, opening, state, gstin, gst_reg in bt.LEDGERS:
+    # Skip:
+    # - GST ledgers (parent "Duties & Taxes"): handled by _phase_gst_ledgers
+    #   which emits TAXTYPE/GSTDUTYHEAD.
+    # - "Cash": ships by default in Tally; recreating fails. Opening balance
+    #   stays 0 in the seeded company (set manually if needed).
+    plain_ledgers = [
+        l for l in bt.LEDGERS
+        if l[1] != "Duties & Taxes" and l[0] != "Cash"
+    ]
+    print(f"\n=== Phase: Ledgers ({len(plain_ledgers)}) ===")
+    for name, parent, opening, state, gstin, gst_reg in plain_ledgers:
         is_billwise = parent in (
             "North Zone Debtors", "South Zone Debtors",
             "National Creditors", "Local Creditors",

@@ -25,7 +25,7 @@ Seeding Bharat Traders Private Limited @ localhost:9000
   + SGST Input (State Tax)
   + IGST Input (Integrated Tax)
 
-=== Phase: Ledgers (34) ===
+=== Phase: Ledgers (27) ===
   + Apex Technologies Pvt Ltd (parent: North Zone Debtors, opening: 0)
   + Sunrise Electronics Mumbai (parent: South Zone Debtors, opening: 0)
   + Global IT Solutions (parent: North Zone Debtors, opening: 0)
@@ -40,7 +40,6 @@ Seeding Bharat Traders Private Limited @ localhost:9000
   + Bharat Paper Supplies (parent: Local Creditors, opening: 0)
   + HDFC Bank - Current A/c (parent: Bank Accounts, opening: -500000)
   + SBI Savings A/c (parent: Bank Accounts, opening: -200000)
-  + Cash (parent: Cash-in-Hand, opening: -50000)
   + Sales - Electronics (parent: Sales Accounts, opening: 0)
   + Sales - Office Supplies (parent: Sales Accounts, opening: 0)
   + Purchase - Electronics (parent: Purchase Accounts, opening: 0)
@@ -53,12 +52,6 @@ Seeding Bharat Traders Private Limited @ localhost:9000
   + Travel & Conveyance (parent: Indirect Expenses, opening: 0)
   + Courier & Freight (parent: Direct Expenses, opening: 0)
   + Packing Charges (parent: Direct Expenses, opening: 0)
-  + CGST Output (parent: Duties & Taxes, opening: 0)
-  + SGST Output (parent: Duties & Taxes, opening: 0)
-  + IGST Output (parent: Duties & Taxes, opening: 0)
-  + CGST Input (parent: Duties & Taxes, opening: 0)
-  + SGST Input (parent: Duties & Taxes, opening: 0)
-  + IGST Input (parent: Duties & Taxes, opening: 0)
   + Capital Account (parent: Capital Account, opening: 750000)
 
 === Phase: Stock Items (15) ===
