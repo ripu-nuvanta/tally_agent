@@ -162,4 +162,108 @@ def test_build_create_gst_ledger():
     assert led.findtext("ISBILLWISEON") == "No"
     assert led.findtext("AFFECTSSTOCK") == "No"
 
+def test_build_create_sales_voucher_intra_state_18pct():
+    from backend.tally_bridge.import_builder import build_create_sales_voucher
+    xml = build_create_sales_voucher(
+        date="20251001",
+        voucher_number="S001",
+        party="Apex Technologies Pvt Ltd",
+        items=[
+            # (item_name, qty, rate, sales_ledger, uom, gst_rate)
+            ("HP Laptop 15s", 2, 45000, "Sales - Electronics", "Nos", 18),
+            ("Logitech Wireless Mouse", 5, 800, "Sales - Electronics", "Nos", 18),
+        ],
+        narration="Invoice #S001 - Laptops and peripherals",
+        gst_mode="intra",
+        company="Bharat Traders Private Limited",
+    )
+    root = _root(xml)
+    v = root.find(".//VOUCHER")
+    assert v.get("VCHTYPE") == "Sales"
+    assert v.get("ACTION") == "Create"
+    assert v.findtext("DATE") == "20251001"
+    assert v.findtext("VOUCHERNUMBER") == "S001"
+    assert v.findtext("PARTYLEDGERNAME") == "Apex Technologies Pvt Ltd"
+    assert v.findtext("PERSISTEDVIEW") == "Invoice Voucher View"
+    assert v.findtext("ISINVOICE") == "Yes"
+
+    ledger_entries = v.findall("LEDGERENTRIES.LIST")
+    # Expected: 1 party + 1 CGST + 1 SGST = 3
+    assert len(ledger_entries) == 3
+
+    # Party: ISDEEMEDPOSITIVE=Yes, AMOUNT = -94000.00 - 18% = -110920.00
+    party = ledger_entries[0]
+    assert party.findtext("LEDGERNAME") == "Apex Technologies Pvt Ltd"
+    assert party.findtext("ISDEEMEDPOSITIVE") == "Yes"
+    assert party.findtext("ISPARTYLEDGER") == "Yes"
+    assert float(party.findtext("AMOUNT")) == -110920.00
+
+    # CGST: +8460 (94000 * 9% = 8460)
+    cgst = ledger_entries[1]
+    assert cgst.findtext("LEDGERNAME") == "CGST Output"
+    assert cgst.findtext("ISDEEMEDPOSITIVE") == "No"
+    assert float(cgst.findtext("AMOUNT")) == 8460.00
+
+    sgst = ledger_entries[2]
+    assert sgst.findtext("LEDGERNAME") == "SGST Output"
+    assert float(sgst.findtext("AMOUNT")) == 8460.00
+
+    inv_entries = v.findall("ALLINVENTORYENTRIES.LIST")
+    assert len(inv_entries) == 2
+    laptop = inv_entries[0]
+    assert laptop.findtext("STOCKITEMNAME") == "HP Laptop 15s"
+    assert laptop.findtext("ISDEEMEDPOSITIVE") == "No"
+    assert float(laptop.findtext("AMOUNT")) == 90000.00  # 2 * 45000
+    assert laptop.findtext("ACTUALQTY") == "2 Nos"
+    alloc = laptop.find("ACCOUNTINGALLOCATIONS.LIST")
+    assert alloc.findtext("LEDGERNAME") == "Sales - Electronics"
+    assert float(alloc.findtext("AMOUNT")) == 90000.00
+
+
+def test_build_create_sales_voucher_mixed_rate_18_and_12():
+    from backend.tally_bridge.import_builder import build_create_sales_voucher
+    xml = build_create_sales_voucher(
+        date="20251001",
+        voucher_number="S004",
+        party="Sharma & Sons Traders",
+        items=[
+            ("A4 Paper Ream 500 sheets", 50, 350, "Sales - Office Supplies", "Pcs", 12),  # 17500 @ 12% → 2100 GST
+            ("Box File Pack of 10",       20, 600, "Sales - Office Supplies", "Pcs", 12),  # 12000 @ 12% → 1440 GST
+        ],
+        narration="Invoice #S004",
+        gst_mode="intra",
+        company="X",
+    )
+    root = _root(xml)
+    v = root.find(".//VOUCHER")
+    ledger_entries = v.findall("LEDGERENTRIES.LIST")
+    # Both lines at 12% → grouped into ONE bucket → 1 party + 1 CGST + 1 SGST
+    assert len(ledger_entries) == 3
+    cgst = ledger_entries[1]
+    sgst = ledger_entries[2]
+    # (17500+12000) * 6% = 1770 each
+    assert float(cgst.findtext("AMOUNT")) == 1770.00
+    assert float(sgst.findtext("AMOUNT")) == 1770.00
+    # Party = -(29500 + 2*1770) = -33040
+    assert float(ledger_entries[0].findtext("AMOUNT")) == -33040.00
+
+
+def test_build_create_sales_voucher_inter_state_uses_igst():
+    from backend.tally_bridge.import_builder import build_create_sales_voucher
+    xml = build_create_sales_voucher(
+        date="20251001",
+        voucher_number="S100",
+        party="Out of State Buyer",
+        items=[("HP Laptop 15s", 1, 45000, "Sales - Electronics", "Nos", 18)],
+        narration="Inter-state",
+        gst_mode="inter",
+        company="X",
+    )
+    root = _root(xml)
+    ledger_entries = root.find(".//VOUCHER").findall("LEDGERENTRIES.LIST")
+    # 1 party + 1 IGST (no CGST/SGST)
+    assert len(ledger_entries) == 2
+    assert ledger_entries[1].findtext("LEDGERNAME") == "IGST Output"
+    assert float(ledger_entries[1].findtext("AMOUNT")) == 8100.00  # 45000 * 18%
+
 
