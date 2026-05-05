@@ -25,10 +25,51 @@ import asyncio
 import sys
 from typing import Iterable
 
+import re
+
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.exceptions import TallyResponseError
 from backend.tally_bridge.writer import TallyWriter
 from scripts.seed_data import bharat_traders as bt
+
+async def _tally_current_date(client: TallyClient, company: str) -> str:
+    """Query Tally's internal 'current date' (the F2 date). Returns YYYYMMDD."""
+    xml = (
+        '<ENVELOPE>'
+        '<HEADER><VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>'
+        '<TYPE>Function</TYPE><ID>$$CurrentDate</ID></HEADER>'
+        f'<BODY><DESC><STATICVARIABLES><SVCURRENTCOMPANY>{company}</SVCURRENTCOMPANY>'
+        '</STATICVARIABLES></DESC></BODY></ENVELOPE>'
+    )
+    raw = await client.post_xml(xml)
+    # Response shape: <RESPONSE><RESULT>DD-MM-YYYY</RESULT>...</RESPONSE>
+    m = re.search(r"<RESULT>\s*(\d{1,2})-(\d{1,2})-(\d{4})\s*</RESULT>", raw)
+    if not m:
+        raise RuntimeError(f"Couldn't parse Tally current date from: {raw[:200]!r}")
+    dd, mm, yyyy = m.groups()
+    return f"{int(yyyy):04d}{int(mm):02d}{int(dd):02d}"
+
+
+async def _preflight_check(client: TallyClient, company: str) -> None:
+    """Halt early if Tally's current date is earlier than the seed's latest
+    voucher date. Otherwise vouchers silently drop with a misleading
+    'Voucher date is missing' error (license-clamp behavior)."""
+    latest = max(
+        [v[1] for v in bt.SALES_INVOICES]
+        + [v[1] for v in bt.PURCHASE_INVOICES]
+        + [v[1] for v in bt.PAYMENTS]
+        + [v[1] for v in bt.RECEIPTS]
+    )
+    current = await _tally_current_date(client, company)
+    print(f"Pre-flight: Tally current date = {current}, latest seed voucher = {latest}")
+    if current < latest:
+        raise RuntimeError(
+            f"Tally's current date ({current}) is earlier than the latest seed "
+            f"voucher date ({latest}). Vouchers after {current} would silently "
+            "drop. Fix: at Gateway of Tally, press F2 and set the current date "
+            f"to {latest} or later, then retry."
+        )
+
 
 OFFICE_SUPPLY_ITEMS = {
     "A4 Paper Ream 500 sheets", "Whiteboard Marker Set",
@@ -200,6 +241,9 @@ async def run(host: str, port: int, company: str, phases: list[str], dry_run: bo
     print(f"Seeding {company} @ {host}:{port}")
     if dry_run:
         print("(DRY-RUN — no POST)\n")
+
+    if "vouchers" in phases and not dry_run:
+        await _preflight_check(client, company)
 
     for phase in phases:
         if phase not in PHASE_FNS:
