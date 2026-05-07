@@ -8,8 +8,36 @@ CRITICAL (from live Tally exploration — docs/tally-write-exploration.md):
 - Voucher delete/cancel uses TAGNAME="Master ID" + TAGVALUE=LASTVCHID (not VCHKEY).
 - PERSISTEDVIEW is required for Sales/Purchase vouchers.
 """
+import re
 from typing import Literal
 from xml.sax.saxutils import escape as xml_escape
+
+_YYYYMMDD_RE = re.compile(r"^\d{8}$")
+
+
+def _validate_reference_date(reference_date: str | None) -> None:
+    """Validate REFERENCEDATE is YYYYMMDD. Tally rejects other formats
+    (see LESSONS.md §14)."""
+    if reference_date is None:
+        return
+    if not _YYYYMMDD_RE.match(reference_date):
+        raise ValueError(
+            f"reference_date must be YYYYMMDD (8 digits); got {reference_date!r}. "
+            "Tally rejects other formats — see LESSONS.md §14."
+        )
+
+
+def _render_reference_block(reference: str | None, reference_date: str | None) -> str:
+    """Render <REFERENCE> + <REFERENCEDATE> elements (each emitted only when
+    its arg is provided). Returns leading-newline string ready to inline."""
+    parts: list[str] = []
+    if reference:
+        parts.append(f"<REFERENCE>{_esc(reference)}</REFERENCE>")
+    if reference_date:
+        parts.append(f"<REFERENCEDATE>{_esc(reference_date)}</REFERENCEDATE>")
+    if not parts:
+        return ""
+    return "\n" + "\n".join(parts)
 
 
 def _esc(s: str) -> str:
@@ -26,6 +54,54 @@ def _require(value: str, name: str) -> str:
     if not value or not value.strip():
         raise ValueError(f"{name} is required")
     return value
+
+
+def _render_bill_allocations(allocs: list[dict] | None, party_line_sign: int) -> str:
+    """Render BILLALLOCATIONS.LIST blocks for a party LEDGERENTRY.
+
+    Each alloc dict: {"name": str, "type": "New Ref"|"Agst Ref"|"On Account",
+                      "amount": float (positive magnitude),
+                      "credit_period": Optional[str]}.
+
+    `party_line_sign` is +1 or -1 — the sign of the AMOUNT on the parent
+    party LEDGERENTRY. BILLALLOCATIONS.AMOUNT mirrors that sign. The caller
+    passes the magnitude (positive) in `amount`; we apply the sign here.
+
+    Returns "" when allocs is None or empty (caller emits nothing).
+    """
+    if not allocs:
+        return ""
+    if party_line_sign not in (1, -1):
+        raise ValueError(f"party_line_sign must be 1 or -1, got {party_line_sign}")
+
+    blocks: list[str] = []
+    for alloc in allocs:
+        name = _require(alloc.get("name", ""), "bill_allocation.name")
+        btype = alloc.get("type", "")
+        if btype not in ("New Ref", "Agst Ref", "On Account"):
+            raise ValueError(
+                f"bill_allocation.type must be 'New Ref'|'Agst Ref'|'On Account'; got {btype!r}"
+            )
+        amount = float(alloc.get("amount", 0))
+        if amount < 0:
+            raise ValueError(
+                f"bill_allocation.amount must be a positive magnitude; got {amount}. "
+                "Sign is mirrored from the party ledger entry automatically."
+            )
+        signed = party_line_sign * amount
+        credit_period = alloc.get("credit_period")
+        cp_xml = (
+            f"\n<BILLCREDITPERIOD>{_esc(credit_period)}</BILLCREDITPERIOD>"
+            if credit_period else ""
+        )
+        blocks.append(
+            f"""<BILLALLOCATIONS.LIST>
+<NAME>{_esc(name)}</NAME>
+<BILLTYPE>{_esc(btype)}</BILLTYPE>
+<AMOUNT>{signed:.2f}</AMOUNT>{cp_xml}
+</BILLALLOCATIONS.LIST>"""
+        )
+    return "\n" + "\n".join(blocks)
 
 
 def _wrap_import(report_name: Literal["Vouchers", "All Masters"], company: str, inner_xml: str) -> str:
@@ -53,6 +129,7 @@ def build_create_payment_voucher(
     narration: str,
     company: str,
     gst_entries: list[dict] | None = None,
+    bill_allocations: list[dict] | None = None,
 ) -> str:
     """Build XML to create a Payment voucher in Tally.
 
@@ -80,11 +157,12 @@ def build_create_payment_voucher(
     base_amount = amount - gst_total
 
     entries = []
+    debit_bill_alloc_xml = _render_bill_allocations(bill_allocations, party_line_sign=-1)
     entries.append(
         f"""<ALLLEDGERENTRIES.LIST>
 <LEDGERNAME>{_esc(debit_ledger)}</LEDGERNAME>
 <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
-<AMOUNT>-{base_amount:.2f}</AMOUNT>
+<AMOUNT>-{base_amount:.2f}</AMOUNT>{debit_bill_alloc_xml}
 </ALLLEDGERENTRIES.LIST>"""
     )
     for gst in gst_entries or []:
@@ -376,6 +454,9 @@ def build_create_sales_voucher(
     narration: str,
     gst_mode: str,  # "intra" or "inter"
     company: str,
+    bill_allocations: list[dict] | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML to create a Sales voucher with stock + GST.
 
@@ -395,6 +476,7 @@ def build_create_sales_voucher(
         raise ValueError(f"gst_mode must be 'intra' or 'inter'; got {gst_mode!r}")
     if not items:
         raise ValueError("items must be non-empty")
+    _validate_reference_date(reference_date)
 
     # Group line totals by GST rate (taxable_base per rate)
     rate_buckets: dict[int, float] = {}
@@ -418,11 +500,12 @@ def build_create_sales_voucher(
             tax_lines.append(_sales_tax_line("IGST Output", full))
 
     party_total = base_total + tax_total
+    bill_alloc_xml = _render_bill_allocations(bill_allocations, party_line_sign=-1)
     party_block = f"""<LEDGERENTRIES.LIST>
 <LEDGERNAME>{_esc(party)}</LEDGERNAME>
 <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
 <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
-<AMOUNT>{-party_total:.2f}</AMOUNT>
+<AMOUNT>{-party_total:.2f}</AMOUNT>{bill_alloc_xml}
 </LEDGERENTRIES.LIST>"""
 
     inventory_blocks: list[str] = []
@@ -442,8 +525,9 @@ def build_create_sales_voucher(
 </ACCOUNTINGALLOCATIONS.LIST>
 </ALLINVENTORYENTRIES.LIST>""")
 
+    ref_xml = _render_reference_block(reference, reference_date)
     voucher_xml = f"""<VOUCHER VCHTYPE="Sales" ACTION="Create">
-<DATE>{_esc(date)}</DATE>
+<DATE>{_esc(date)}</DATE>{ref_xml}
 <NARRATION>{_esc(narration)}</NARRATION>
 <VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>
 <VOUCHERNUMBER>{_esc(voucher_number)}</VOUCHERNUMBER>
@@ -475,6 +559,9 @@ def build_create_purchase_voucher(
     narration: str,
     gst_mode: str,
     company: str,
+    bill_allocations: list[dict] | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML to create a Purchase voucher with stock + GST.
 
@@ -492,6 +579,7 @@ def build_create_purchase_voucher(
         raise ValueError(f"gst_mode must be 'intra' or 'inter'; got {gst_mode!r}")
     if not items:
         raise ValueError("items must be non-empty")
+    _validate_reference_date(reference_date)
 
     rate_buckets: dict[int, float] = {}
     for _name, qty, rate, _ledger, _uom, gst_rate in items:
@@ -514,11 +602,12 @@ def build_create_purchase_voucher(
             tax_lines.append(_purchase_tax_line("IGST Input", full))
 
     party_total = base_total + tax_total
+    bill_alloc_xml = _render_bill_allocations(bill_allocations, party_line_sign=1)
     party_block = f"""<LEDGERENTRIES.LIST>
 <LEDGERNAME>{_esc(party)}</LEDGERNAME>
 <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
 <ISPARTYLEDGER>Yes</ISPARTYLEDGER>
-<AMOUNT>{party_total:.2f}</AMOUNT>
+<AMOUNT>{party_total:.2f}</AMOUNT>{bill_alloc_xml}
 </LEDGERENTRIES.LIST>"""
 
     inventory_blocks: list[str] = []
@@ -538,8 +627,9 @@ def build_create_purchase_voucher(
 </ACCOUNTINGALLOCATIONS.LIST>
 </ALLINVENTORYENTRIES.LIST>""")
 
+    ref_xml = _render_reference_block(reference, reference_date)
     voucher_xml = f"""<VOUCHER VCHTYPE="Purchase" ACTION="Create">
-<DATE>{_esc(date)}</DATE>
+<DATE>{_esc(date)}</DATE>{ref_xml}
 <NARRATION>{_esc(narration)}</NARRATION>
 <VOUCHERTYPENAME>Purchase</VOUCHERTYPENAME>
 <VOUCHERNUMBER>{_esc(voucher_number)}</VOUCHERNUMBER>
@@ -571,10 +661,14 @@ def build_create_receipt_voucher(
     amount: float,
     narration: str,
     company: str,
+    bill_allocations: list[dict] | None = None,
 ) -> str:
     """Build XML to create a Receipt voucher (party → bank).
 
     Bank debit (Yes/-amount), party credit (No/+amount). See v4 Op 8.
+
+    `bill_allocations` (optional): renders BILLALLOCATIONS.LIST inside the
+    party LEDGERENTRY. Sign is mirrored (+ on receipt party line).
     """
     _require(date, "date")
     _require(voucher_number, "voucher_number")
@@ -585,6 +679,7 @@ def build_create_receipt_voucher(
     if amount <= 0:
         raise ValueError(f"amount must be positive, got {amount}")
 
+    bill_alloc_xml = _render_bill_allocations(bill_allocations, party_line_sign=1)
     voucher_xml = f"""<VOUCHER VCHTYPE="Receipt" ACTION="Create">
 <DATE>{_esc(date)}</DATE>
 <NARRATION>{_esc(narration)}</NARRATION>
@@ -599,7 +694,7 @@ def build_create_receipt_voucher(
 <ALLLEDGERENTRIES.LIST>
 <LEDGERNAME>{_esc(party)}</LEDGERNAME>
 <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
-<AMOUNT>{amount:.2f}</AMOUNT>
+<AMOUNT>{amount:.2f}</AMOUNT>{bill_alloc_xml}
 </ALLLEDGERENTRIES.LIST>
 </VOUCHER>"""
     return _wrap_import("Vouchers", company, voucher_xml)

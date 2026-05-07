@@ -132,6 +132,7 @@ class TallyWriter:
         narration: str,
         gst_entries: list[dict] | None = None,
         known_ledgers: list[str] | None = None,
+        bill_allocations: list[dict] | None = None,
     ) -> dict:
         """Create a Payment voucher in Tally with validation."""
         # Build voucher dict for validation
@@ -162,6 +163,7 @@ class TallyWriter:
             narration=narration,
             company=self.company,
             gst_entries=gst_entries,
+            bill_allocations=bill_allocations,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_payment_voucher")
@@ -212,10 +214,15 @@ class TallyWriter:
     async def create_sales_voucher(
         self, date: str, voucher_number: str, party: str, items: list[tuple],
         narration: str, gst_mode: str = "intra",
+        bill_allocations: list[dict] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a Sales voucher in Tally."""
         xml = build_create_sales_voucher(
             date, voucher_number, party, items, narration, gst_mode, self.company,
+            bill_allocations=bill_allocations,
+            reference=reference, reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_sales_voucher")
@@ -223,10 +230,15 @@ class TallyWriter:
     async def create_purchase_voucher(
         self, date: str, voucher_number: str, party: str, items: list[tuple],
         narration: str, gst_mode: str = "intra",
+        bill_allocations: list[dict] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a Purchase voucher in Tally."""
         xml = build_create_purchase_voucher(
             date, voucher_number, party, items, narration, gst_mode, self.company,
+            bill_allocations=bill_allocations,
+            reference=reference, reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_purchase_voucher")
@@ -234,10 +246,12 @@ class TallyWriter:
     async def create_receipt_voucher(
         self, date: str, voucher_number: str, party: str, bank_ledger: str,
         amount: float, narration: str,
+        bill_allocations: list[dict] | None = None,
     ) -> dict:
         """Create a Receipt voucher in Tally."""
         xml = build_create_receipt_voucher(
             date, voucher_number, party, bank_ledger, amount, narration, self.company,
+            bill_allocations=bill_allocations,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_receipt_voucher")

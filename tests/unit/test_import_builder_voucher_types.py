@@ -3,6 +3,8 @@ Sales/Purchase/Receipt/Journal vouchers). Each test asserts XML structure only �
 no live Tally calls."""
 import xml.etree.ElementTree as ET
 
+import pytest
+
 from backend.tally_bridge.import_builder import build_create_unit
 
 
@@ -361,3 +363,138 @@ def test_build_create_journal_voucher():
     assert credit.findtext("LEDGERNAME") == "HDFC Bank - Current A/c"
     assert credit.findtext("ISDEEMEDPOSITIVE") == "No"
     assert float(credit.findtext("AMOUNT")) == 75000.00
+
+
+# ---------------------------------------------------------------------------
+# REFERENCE / REFERENCEDATE (supplier invoice no + date) — LESSONS §14
+# ---------------------------------------------------------------------------
+
+def _sales_xml(**kwargs):
+    from backend.tally_bridge.import_builder import build_create_sales_voucher
+    base = dict(
+        date="20251001",
+        voucher_number="S001",
+        party="Apex Technologies Pvt Ltd",
+        items=[("HP Laptop 15s", 1, 45000, "Sales - Electronics", "Nos", 18)],
+        narration="Invoice S001",
+        gst_mode="intra",
+        company="X",
+    )
+    base.update(kwargs)
+    return build_create_sales_voucher(**base)
+
+
+def _purchase_xml(**kwargs):
+    from backend.tally_bridge.import_builder import build_create_purchase_voucher
+    base = dict(
+        date="20250928",
+        voucher_number="P001",
+        party="Samsung India Electronics",
+        items=[("Samsung 24 inch Monitor", 1, 11000, "Purchase - Electronics", "Nos", 18)],
+        narration="P001",
+        gst_mode="intra",
+        company="X",
+    )
+    base.update(kwargs)
+    return build_create_purchase_voucher(**base)
+
+
+# Sales
+
+def test_sales_reference_and_referencedate_both_present():
+    xml = _sales_xml(reference="S001", reference_date="20251001")
+    v = _root(xml).find(".//VOUCHER")
+    refs = v.findall("REFERENCE")
+    rdates = v.findall("REFERENCEDATE")
+    assert len(refs) == 1 and refs[0].text == "S001"
+    assert len(rdates) == 1 and rdates[0].text == "20251001"
+    # sibling of DATE
+    children = [c.tag for c in v]
+    assert "DATE" in children and "REFERENCE" in children and "REFERENCEDATE" in children
+
+
+def test_sales_reference_omitted_emits_nothing():
+    xml = _sales_xml()
+    v = _root(xml).find(".//VOUCHER")
+    assert v.find("REFERENCE") is None
+    assert v.find("REFERENCEDATE") is None
+
+
+def test_sales_reference_only_no_date():
+    xml = _sales_xml(reference="S001")
+    v = _root(xml).find(".//VOUCHER")
+    assert v.findtext("REFERENCE") == "S001"
+    assert v.find("REFERENCEDATE") is None
+
+
+def test_sales_reference_date_only_no_reference():
+    xml = _sales_xml(reference_date="20251001")
+    v = _root(xml).find(".//VOUCHER")
+    assert v.find("REFERENCE") is None
+    assert v.findtext("REFERENCEDATE") == "20251001"
+
+
+def test_sales_reference_date_invalid_format_raises():
+    with pytest.raises(ValueError, match="reference_date"):
+        _sales_xml(reference="S001", reference_date="2025-10-01")
+    with pytest.raises(ValueError, match="reference_date"):
+        _sales_xml(reference="S001", reference_date="01-10-2025")
+    with pytest.raises(ValueError, match="reference_date"):
+        _sales_xml(reference="S001", reference_date="2025101")  # 7 digits
+
+
+# Purchase
+
+def test_purchase_reference_and_referencedate_both_present():
+    xml = _purchase_xml(reference="P001", reference_date="20250926")
+    v = _root(xml).find(".//VOUCHER")
+    refs = v.findall("REFERENCE")
+    rdates = v.findall("REFERENCEDATE")
+    assert len(refs) == 1 and refs[0].text == "P001"
+    assert len(rdates) == 1 and rdates[0].text == "20250926"
+
+
+def test_purchase_reference_omitted_emits_nothing():
+    xml = _purchase_xml()
+    v = _root(xml).find(".//VOUCHER")
+    assert v.find("REFERENCE") is None
+    assert v.find("REFERENCEDATE") is None
+
+
+def test_purchase_reference_only_no_date():
+    xml = _purchase_xml(reference="P001")
+    v = _root(xml).find(".//VOUCHER")
+    assert v.findtext("REFERENCE") == "P001"
+    assert v.find("REFERENCEDATE") is None
+
+
+def test_purchase_reference_date_only_no_reference():
+    xml = _purchase_xml(reference_date="20250926")
+    v = _root(xml).find(".//VOUCHER")
+    assert v.find("REFERENCE") is None
+    assert v.findtext("REFERENCEDATE") == "20250926"
+
+
+def test_purchase_reference_date_invalid_format_raises():
+    with pytest.raises(ValueError, match="reference_date"):
+        _purchase_xml(reference="P001", reference_date="20250-926")
+    with pytest.raises(ValueError, match="reference_date"):
+        _purchase_xml(reference_date="abcdefgh")
+
+
+# Receipt / Payment must NOT accept these kwargs (signature check)
+
+def test_receipt_does_not_accept_reference_kwargs():
+    import inspect
+    from backend.tally_bridge.import_builder import build_create_receipt_voucher
+    params = inspect.signature(build_create_receipt_voucher).parameters
+    assert "reference" not in params
+    assert "reference_date" not in params
+
+
+def test_payment_does_not_accept_reference_kwargs():
+    import inspect
+    from backend.tally_bridge.import_builder import build_create_payment_voucher
+    params = inspect.signature(build_create_payment_voucher).parameters
+    assert "reference" not in params
+    assert "reference_date" not in params

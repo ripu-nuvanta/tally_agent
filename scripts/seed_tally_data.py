@@ -26,6 +26,7 @@ import sys
 from typing import Iterable
 
 import re
+from datetime import date, datetime, timedelta
 
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.exceptions import TallyResponseError
@@ -42,10 +43,16 @@ async def _tally_current_date(client: TallyClient, company: str) -> str:
         '</STATICVARIABLES></DESC></BODY></ENVELOPE>'
     )
     raw = await client.post_xml(xml)
-    # Response shape: <RESPONSE><RESULT>DD-MM-YYYY</RESULT>...</RESPONSE>
-    m = re.search(r"<RESULT>\s*(\d{1,2})-(\d{1,2})-(\d{4})\s*</RESULT>", raw)
+    # Tally returns either <RESULT>DD-MM-YYYY</RESULT> or
+    # <RESULT TYPE="Date" JD="<julian>"></RESULT> (empty text, JD attribute).
+    # Tally Julian: JD 1 = 1900-01-01, so date = 1899-12-31 + JD days.
+    m_jd = re.search(r'<RESULT[^>]*JD="(\d+)"', raw)
+    if m_jd:
+        d = date(1899, 12, 31) + timedelta(days=int(m_jd.group(1)))
+        return d.strftime("%Y%m%d")
+    m = re.search(r"<RESULT[^>]*>\s*(\d{1,2})-(\d{1,2})-(\d{4})\s*</RESULT>", raw)
     if not m:
-        raise RuntimeError(f"Couldn't parse Tally current date from: {raw[:200]!r}")
+        raise RuntimeError(f"Couldn't parse Tally current date from: {raw[:300]!r}")
     dd, mm, yyyy = m.groups()
     return f"{int(yyyy):04d}{int(mm):02d}{int(dd):02d}"
 
@@ -189,20 +196,28 @@ async def _phase_vouchers(writer: TallyWriter, dry_run: bool):
         if kind == "S":
             vnum, date, party, lines, _total, narration = v
             items = _build_voucher_items(lines, meta, _sales_ledger)
+            # Sales: REFERENCE = seed id (matches narration), REFERENCEDATE = voucher date
             print(f"  + Sales {vnum} {date} {party} ({len(lines)} lines)")
             if not dry_run:
                 await writer.create_sales_voucher(
                     date=date, voucher_number=vnum, party=party,
                     items=items, narration=narration, gst_mode="intra",
+                    reference=vnum, reference_date=date,
                 )
         elif kind == "P":
             vnum, date, party, lines, _total, narration = v
             items = _build_voucher_items(lines, meta, _purchase_ledger)
+            # Purchase: REFERENCE = seed id; REFERENCEDATE = voucher date - 2 days
+            # (supplier invoice is dated before we book the bill — visible in UI demo).
+            ref_date = (
+                datetime.strptime(date, "%Y%m%d") - timedelta(days=2)
+            ).strftime("%Y%m%d")
             print(f"  + Purchase {vnum} {date} {party} ({len(lines)} lines)")
             if not dry_run:
                 await writer.create_purchase_voucher(
                     date=date, voucher_number=vnum, party=party,
                     items=items, narration=narration, gst_mode="intra",
+                    reference=vnum, reference_date=ref_date,
                 )
         elif kind == "PMT":
             vnum, date, payee, bank, amount, narration = v
