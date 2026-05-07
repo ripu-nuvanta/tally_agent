@@ -111,6 +111,23 @@ def _build_voucher_items(
     ]
 
 
+def _compute_gross(items: list[tuple], gst_mode: str) -> float:
+    """Compute party gross (incl GST) for bill_allocations amount.
+
+    Mirrors the builder's calc: groups taxable base by gst_rate, applies tax,
+    sums. Returns positive magnitude. items shape: (name, qty, rate, ledger, uom, gst_rate).
+
+    Note: intra (CGST+SGST) and inter (IGST) sum to the same gross — base*rate/100
+    in total either way — so gst_mode is informational only.
+    """
+    rate_buckets: dict[int, float] = {}
+    for _n, qty, rate, _l, _u, gst_rate in items:
+        rate_buckets[gst_rate] = rate_buckets.get(gst_rate, 0.0) + qty * rate
+    base = sum(rate_buckets.values())
+    tax = sum(b * r / 100 for r, b in rate_buckets.items() if r > 0)
+    return round(base + tax, 2)
+
+
 async def _phase_groups(writer: TallyWriter, dry_run: bool):
     print(f"\n=== Phase: Groups ({len(bt.GROUPS)}) ===")
     for name, parent in bt.GROUPS:
@@ -196,13 +213,18 @@ async def _phase_vouchers(writer: TallyWriter, dry_run: bool):
         if kind == "S":
             vnum, date, party, lines, _total, narration = v
             items = _build_voucher_items(lines, meta, _sales_ledger)
-            # Sales: REFERENCE = seed id (matches narration), REFERENCEDATE = voucher date
+            # Sales: REFERENCE = seed id (matches narration), REFERENCEDATE = voucher date.
+            # bill_allocations: one New Ref bill per invoice carrying full gross
+            # (base + GST) so bills_receivable shows the outstanding.
+            gross = _compute_gross(items, gst_mode="intra")
+            bill_alloc = [{"name": vnum, "type": "New Ref", "amount": gross}]
             print(f"  + Sales {vnum} {date} {party} ({len(lines)} lines)")
             if not dry_run:
                 await writer.create_sales_voucher(
                     date=date, voucher_number=vnum, party=party,
                     items=items, narration=narration, gst_mode="intra",
                     reference=vnum, reference_date=date,
+                    bill_allocations=bill_alloc,
                 )
         elif kind == "P":
             vnum, date, party, lines, _total, narration = v
@@ -212,12 +234,16 @@ async def _phase_vouchers(writer: TallyWriter, dry_run: bool):
             ref_date = (
                 datetime.strptime(date, "%Y%m%d") - timedelta(days=2)
             ).strftime("%Y%m%d")
+            # bill_allocations: New Ref carrying full gross so bills_payable populates.
+            gross = _compute_gross(items, gst_mode="intra")
+            bill_alloc = [{"name": vnum, "type": "New Ref", "amount": gross}]
             print(f"  + Purchase {vnum} {date} {party} ({len(lines)} lines)")
             if not dry_run:
                 await writer.create_purchase_voucher(
                     date=date, voucher_number=vnum, party=party,
                     items=items, narration=narration, gst_mode="intra",
                     reference=vnum, reference_date=ref_date,
+                    bill_allocations=bill_alloc,
                 )
         elif kind == "PMT":
             vnum, date, payee, bank, amount, narration = v
@@ -249,7 +275,7 @@ PHASE_FNS = {
 }
 
 
-async def run(host: str, port: int, company: str, phases: list[str], dry_run: bool):
+async def run(host: str, port: int, company: str, phases: list[str], dry_run: bool, skip_preflight: bool = False):
     client = TallyClient(host=host, port=port)
     writer = TallyWriter(client=client, company=company)
 
@@ -257,7 +283,7 @@ async def run(host: str, port: int, company: str, phases: list[str], dry_run: bo
     if dry_run:
         print("(DRY-RUN — no POST)\n")
 
-    if "vouchers" in phases and not dry_run:
+    if "vouchers" in phases and not dry_run and not skip_preflight:
         await _preflight_check(client, company)
 
     for phase in phases:
@@ -286,9 +312,11 @@ def main():
                    help=f"comma-sep subset of {PHASES_DEFAULT}")
     p.add_argument("--dry-run", action="store_true",
                    help="build + log XML, do not POST")
+    p.add_argument("--skip-preflight", action="store_true",
+                   help="skip the Tally-current-date pre-flight check (use only when license is verified active)")
     args = p.parse_args()
     phases = [p.strip() for p in args.phases.split(",") if p.strip()]
-    asyncio.run(run(args.host, args.port, args.company, phases, args.dry_run))
+    asyncio.run(run(args.host, args.port, args.company, phases, args.dry_run, args.skip_preflight))
 
 
 if __name__ == "__main__":
