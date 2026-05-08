@@ -228,3 +228,18 @@ externally.
 | `bills_payable` shows 4 bills instead of 8 | Purchase "Use supplier invoice date" toggle off → REFERENCEDATE dropped, but BILLALLOCATIONS shouldn't be affected. If counts are off, check that the seeder ran the vouchers phase to completion | Verify toggles, re-check seeder log |
 | Bill names show as integer voucher numbers (e.g. `1`, `2`) instead of `S001`/`P001` | Sales numbering toggle isn't on "Automatic (Manual Override)" | Set it in voucher type, then re-seed (full reset required — Tally won't backfill) |
 | Receivable totals are off by ~18% on every bill | Receipt amounts in fixture were base, not gross. Check `RECEIPTS` rows in `bharat_traders.py` — they should be at gross | Already fixed in current seeder; if you see this on an older backup, restore the latest `.tbk` |
+
+---
+
+## Manual UI inspection
+
+License not detected: 
+- Change hostname to last known hostname from terminal; 
+- Always check if EDU mode or licensed Silver/Gold plan on left side
+- Some paths for reports: Go To -> Voucher Reports -> Sales, Purchase, More -> Credit Note, Debit Note, Journal, Receipt, Payment etc.
+- Adding reference/supplier info to voucher types: Gateway -> Alter -> Voucher Type -> Sales, Purchase, Payment, Receipt etc.  
+- Go To -> Registers -> Sales / Purchase
+- Alter -> Stock Groups, Stock Items etc. 
+
+
+
