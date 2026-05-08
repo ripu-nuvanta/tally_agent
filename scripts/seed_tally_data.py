@@ -246,21 +246,36 @@ async def _phase_vouchers(writer: TallyWriter, dry_run: bool):
                     bill_allocations=bill_alloc,
                 )
         elif kind == "PMT":
-            vnum, date, payee, bank, amount, narration = v
-            print(f"  + Payment {vnum} {date} {payee} ₹{amount}")
+            vnum, date, payee, bank, amount, narration, against = v
+            # Agst Ref against the named purchase bill (party PMT). None for
+            # expense PMTs (Rent/Salaries/etc — non-billwise expense ledgers).
+            bill_alloc = (
+                [{"name": against, "type": "Agst Ref", "amount": amount}]
+                if against else None
+            )
+            tag = f" → Agst Ref {against}" if against else ""
+            print(f"  + Payment {vnum} {date} {payee} ₹{amount}{tag}")
             if not dry_run:
                 # Payment = debit payee, credit bank
                 await writer.create_payment_voucher(
                     date=date, debit_ledger=payee, credit_ledger=bank,
                     amount=amount, narration=narration,
+                    bill_allocations=bill_alloc,
                 )
         elif kind == "R":
-            vnum, date, party, bank, amount, narration = v
-            print(f"  + Receipt {vnum} {date} {party} ₹{amount}")
+            vnum, date, party, bank, amount, narration, against = v
+            # Agst Ref against the named sales bill — fully clears the receivable.
+            bill_alloc = (
+                [{"name": against, "type": "Agst Ref", "amount": amount}]
+                if against else None
+            )
+            tag = f" → Agst Ref {against}" if against else ""
+            print(f"  + Receipt {vnum} {date} {party} ₹{amount}{tag}")
             if not dry_run:
                 await writer.create_receipt_voucher(
                     date=date, voucher_number=vnum, party=party,
                     bank_ledger=bank, amount=amount, narration=narration,
+                    bill_allocations=bill_alloc,
                 )
 
 

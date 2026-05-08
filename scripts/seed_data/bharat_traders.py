@@ -216,57 +216,90 @@ PURCHASE_INVOICES = [
 ]
 
 # ── Payments (16) ─────────────────────────────────────────────────────
-# (voucher_number, date_YYYYMMDD, payee_ledger, bank_ledger, amount, narration)
+# (voucher_number, date_YYYYMMDD, payee_ledger, bank_ledger, amount, narration, against)
+# `against` = purchase voucher_number for billwise party payments → emitted as Agst Ref;
+# None for expense payments (Rent, Salaries, etc. — non-billwise expense ledgers).
+# Party payments are intentionally partial — residual stays in bills_payable.
 PAYMENTS = [
-    ("PMT001", "20251010", "Samsung India Electronics", "HDFC Bank - Current A/c", 400000, "Part payment for PO #P001"),
-    ("PMT002", "20251105", "HP India Sales Pvt Ltd",    "HDFC Bank - Current A/c", 500000, "Payment for PO #P002"),
-    ("PMT003", "20251130", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - November"),
-    ("PMT004", "20251130", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - November"),
-    ("PMT005", "20251205", "Logitech India Pvt Ltd",    "HDFC Bank - Current A/c", 150000, "Part payment PO #P003"),
-    ("PMT006", "20251231", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - December"),
-    ("PMT007", "20251231", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - December"),
-    ("PMT008", "20251231", "Electricity",               "HDFC Bank - Current A/c",  12000, "Electricity bill Q3"),
-    ("PMT009", "20260115", "Local Stationery Mart",     "HDFC Bank - Current A/c",  80000, "Payment PO #P006"),
-    ("PMT010", "20260131", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - January"),
-    ("PMT011", "20260131", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - January"),
-    ("PMT012", "20260131", "Internet & Phone",          "HDFC Bank - Current A/c",   8000, "Monthly internet"),
-    ("PMT013", "20260228", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - February"),
-    ("PMT014", "20260228", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - February"),
-    ("PMT015", "20260215", "Travel & Conveyance",       "Cash",                     15000, "Sales team travel"),
-    ("PMT016", "20260220", "Office Maintenance",        "Cash",                      8000, "AC servicing"),
+    ("PMT001", "20251010", "Samsung India Electronics", "HDFC Bank - Current A/c", 400000, "Part payment for PO #P001", "P001"),
+    ("PMT002", "20251105", "HP India Sales Pvt Ltd",    "HDFC Bank - Current A/c", 500000, "Payment for PO #P002",      "P002"),
+    ("PMT003", "20251130", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - November",     None),
+    ("PMT004", "20251130", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - November",  None),
+    ("PMT005", "20251205", "Logitech India Pvt Ltd",    "HDFC Bank - Current A/c", 150000, "Part payment PO #P003",     "P003"),
+    ("PMT006", "20251231", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - December",     None),
+    ("PMT007", "20251231", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - December",  None),
+    ("PMT008", "20251231", "Electricity",               "HDFC Bank - Current A/c",  12000, "Electricity bill Q3",        None),
+    ("PMT009", "20260115", "Local Stationery Mart",     "HDFC Bank - Current A/c",  80000, "Payment PO #P006",          "P006"),
+    ("PMT010", "20260131", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - January",      None),
+    ("PMT011", "20260131", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - January",   None),
+    ("PMT012", "20260131", "Internet & Phone",          "HDFC Bank - Current A/c",   8000, "Monthly internet",           None),
+    ("PMT013", "20260228", "Rent",                      "HDFC Bank - Current A/c",  75000, "Office rent - February",     None),
+    ("PMT014", "20260228", "Salaries",                  "HDFC Bank - Current A/c", 250000, "Staff salaries - February",  None),
+    ("PMT015", "20260215", "Travel & Conveyance",       "Cash",                     15000, "Sales team travel",          None),
+    ("PMT016", "20260220", "Office Maintenance",        "Cash",                      8000, "AC servicing",               None),
 ]
 
 # ── Receipts (10) ─────────────────────────────────────────────────────
-# (voucher_number, date_YYYYMMDD, from_party, bank_ledger, amount, narration)
+# (voucher_number, date_YYYYMMDD, from_party, bank_ledger, amount, narration, against)
+# Amount = gross of linked sales invoice (incl GST) so each receipt fully clears the bill.
+# `against` = sales voucher_number → emitted as Agst Ref BILLALLOCATION on the party LEDGERENTRY.
 RECEIPTS = [
-    ("RCT001", "20251020", "Apex Technologies Pvt Ltd",  "HDFC Bank - Current A/c", 94000,  "Receipt against S001"),
-    ("RCT002", "20251105", "Sunrise Electronics Mumbai", "HDFC Bank - Current A/c", 110500, "Receipt against S002"),
-    ("RCT003", "20251125", "Global IT Solutions",        "HDFC Bank - Current A/c", 130000, "Part receipt S003"),
-    ("RCT004", "20251210", "Sharma & Sons Traders",      "SBI Savings A/c",          29500,  "Receipt against S004"),
-    ("RCT005", "20251228", "Patel Enterprises",          "HDFC Bank - Current A/c", 180000, "Receipt against S005"),
-    ("RCT006", "20260110", "Rajesh Computers",           "HDFC Bank - Current A/c",  25500, "Receipt against S006"),
-    ("RCT007", "20260120", "Eastern Digital Hub",        "HDFC Bank - Current A/c", 116000, "Part receipt S007"),
-    ("RCT008", "20260205", "Apex Technologies Pvt Ltd",  "SBI Savings A/c",          88000,  "Receipt against S008"),
-    ("RCT009", "20260220", "Global IT Solutions",        "HDFC Bank - Current A/c", 262500, "Receipt S009"),
-    ("RCT010", "20260301", "Patel Enterprises",          "HDFC Bank - Current A/c", 197000, "Receipt against S012"),
+    ("RCT001", "20251020", "Apex Technologies Pvt Ltd",  "HDFC Bank - Current A/c", 110920, "Receipt against S001", "S001"),
+    ("RCT002", "20251105", "Sunrise Electronics Mumbai", "HDFC Bank - Current A/c", 130390, "Receipt against S002", "S002"),
+    ("RCT003", "20251125", "Global IT Solutions",        "HDFC Bank - Current A/c", 153400, "Receipt against S003", "S003"),
+    ("RCT004", "20251210", "Sharma & Sons Traders",      "SBI Savings A/c",          33040, "Receipt against S004", "S004"),
+    ("RCT005", "20251228", "Patel Enterprises",          "HDFC Bank - Current A/c", 212400, "Receipt against S005", "S005"),
+    ("RCT006", "20260110", "Rajesh Computers",           "HDFC Bank - Current A/c",  30090, "Receipt against S006", "S006"),
+    ("RCT007", "20260120", "Eastern Digital Hub",        "HDFC Bank - Current A/c", 136880, "Receipt against S007", "S007"),
+    ("RCT008", "20260205", "Apex Technologies Pvt Ltd",  "SBI Savings A/c",         103840, "Receipt against S008", "S008"),
+    ("RCT009", "20260220", "Global IT Solutions",        "HDFC Bank - Current A/c", 309750, "Receipt against S009", "S009"),
+    ("RCT010", "20260301", "Patel Enterprises",          "HDFC Bank - Current A/c", 232460, "Receipt against S012", "S012"),
 ]
 
 # ── Outstanding Bills ─────────────────────────────────────────────────
-# Receivables: invoiced - received per party
+# All figures gross (incl GST). Receipts fully clear their linked bill;
+# party payments are partial (residual remains).
+#
+# Per-bill detail. Bill name = sales/purchase voucher_number.
+EXPECTED_BILLS_RECEIVABLE = [
+    # (party, bill_name, outstanding_gross)
+    ("Apex Technologies Pvt Ltd",   "S015",  62800),  # S001+S008 cleared by RCT001+RCT008
+    ("Sunrise Electronics Mumbai",  "S010", 166380),  # S002 cleared by RCT002
+    ("Global IT Solutions",         "S016", 372880),  # S003+S009 cleared by RCT003+RCT009
+    ("Sharma & Sons Traders",       "S011",  16365),  # S004 cleared by RCT004
+    ("Rajesh Computers",            "S013", 164492),  # S006 cleared by RCT006
+    ("Eastern Digital Hub",         "S014", 187620),  # S007 cleared by RCT007
+    # Patel Enterprises: S005+S012 fully cleared by RCT005+RCT010 → no outstanding bill
+]
+
+EXPECTED_BILLS_PAYABLE = [
+    # (party, bill_name, outstanding_gross)
+    ("Samsung India Electronics", "P001", 243100),  # 643100 - 400000 (PMT001 partial)
+    ("Samsung India Electronics", "P004", 498550),  # unpaid
+    ("HP India Sales Pvt Ltd",    "P002", 222160),  # 722160 - 500000 (PMT002 partial)
+    ("HP India Sales Pvt Ltd",    "P005", 488048),  # unpaid
+    ("Logitech India Pvt Ltd",    "P003", 117270),  # 267270 - 150000 (PMT005 partial)
+    ("Logitech India Pvt Ltd",    "P007", 120950),  # unpaid
+    ("Local Stationery Mart",     "P006",  62464),  # 142464 - 80000 (PMT009 partial)
+    ("Bharat Paper Supplies",     "P008",  81600),  # unpaid
+]
+
+# Per-party totals (sum of EXPECTED_BILLS_*).
 EXPECTED_RECEIVABLES = {
-    "Apex Technologies Pvt Ltd":  55000,   # 237000 - 182000
-    "Sunrise Electronics Mumbai": 141000,  # 251500 - 110500
-    "Global IT Solutions":        316000,  # 708500 - 392500
-    "Sharma & Sons Traders":       14250,  # 43750 - 29500
-    "Rajesh Computers":           139400,  # 164900 - 25500
-    "Eastern Digital Hub":        159000,  # 275000 - 116000
+    "Apex Technologies Pvt Ltd":   62800,
+    "Sunrise Electronics Mumbai": 166380,
+    "Global IT Solutions":        372880,
+    "Sharma & Sons Traders":       16365,
+    "Rajesh Computers":           164492,
+    "Eastern Digital Hub":        187620,
 }
-# Patel Enterprises: 377000 - 377000 = 0 (fully paid)
+# Total receivables: 970,537
 
 EXPECTED_PAYABLES = {
-    "Samsung India Electronics": 567500,  # 967500 - 400000
-    "HP India Sales Pvt Ltd":    525600,  # 1025600 - 500000
-    "Logitech India Pvt Ltd":    179000,  # 329000 - 150000
-    "Local Stationery Mart":      47200,  # 127200 - 80000
-    "Bharat Paper Supplies":      72000,  # 72000 - 0
+    "Samsung India Electronics": 741650,  # 243100 + 498550
+    "HP India Sales Pvt Ltd":    710208,  # 222160 + 488048
+    "Logitech India Pvt Ltd":    238220,  # 117270 + 120950
+    "Local Stationery Mart":      62464,
+    "Bharat Paper Supplies":      81600,
 }
+# Total payables: 1,834,142
