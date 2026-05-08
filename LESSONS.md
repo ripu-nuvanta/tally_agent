@@ -99,3 +99,187 @@ Full year total: ₹49,97,900
 ```
 
 These values from `get_sales_register` match Tally desktop exactly.
+
+---
+
+## 8. `<VOUCHERNUMBER>` only sticks under specific UI-set numbering modes
+
+**Discovery date:** 2026-05-05
+**Probe logs:** `docs/probe-voucher-numbering.log`, `docs/probe-tally-config.log`, `docs/probe-reference-alter.log`
+**Canonical evidence:** `docs/tally-write-exploration-v4.md` § "ALTER and config-write findings"
+
+### Truth table (live-verified)
+
+| NumberingMethod | How set | VOUCHERNUMBER on Create | VOUCHERNUMBER on ALTER |
+|---|---|---|---|
+| `Automatic` (default) | either | ❌ ignored | ❌ ignored |
+| `Automatic (Manual Override)` | UI-set | ✅ honored | ? (likely honored) |
+| `Automatic (Manual Override)` | XML-set | ❌ no runtime effect | ❌ |
+| `Manual` | UI-set | ✅ honored | ✅ honored |
+| `Manual` | XML-set | ❌ no runtime effect | ❌ |
+
+**`Default` value is READ-ONLY** — Tally's "as-shipped" state. Cannot be set as a write value (silently coerced to `None`).
+
+### What this means
+
+- For default Tally companies, never trust `<VOUCHERNUMBER>` on import — Tally auto-overwrites with its sequential counter.
+- `<REFERENCE>` is the right field for user-supplied invoice/bill numbers (works under any mode, see §9).
+- For voucher-number control on imports, the user must change the voucher-type config via Tally UI (not XML — see §11).
+
+---
+
+## 9. `<REFERENCE>` is the canonical user-supplied invoice number field
+
+**Discovery date:** 2026-05-05
+**Probe log:** `docs/probe-reference-alter.log`
+
+- Survives Create AND ALTER under any numbering mode.
+- Mutable: subsequent ALTER overwrites the previous value cleanly.
+- Minimal ALTER envelope (verified — `altered=1`, readback confirms):
+
+```xml
+<VOUCHER DATE="01-Oct-2025" TAGNAME="Master ID" TAGVALUE="20"
+         VCHTYPE="Sales" ACTION="Alter">
+  <REFERENCE>S001</REFERENCE>
+</VOUCHER>
+```
+
+- **Visibility caveat**: `<REFERENCE>` is hidden in Tally voucher screens by default. Per-voucher-type F12 toggle ("Show Reference" / equivalent) must be enabled by the user. Storage is unaffected — agent can write/read regardless.
+- For "find voucher S012" use cases, query Tally on the REFERENCE field, not VOUCHERNUMBER.
+
+---
+
+## 10. `BILLALLOCATIONS` works on Create only — cannot be retro-fitted via ALTER
+
+**Discovery date:** 2026-05-05
+**Probe logs:** `docs/probe-bill-allocations.log` (Create), session inline probes (ALTER)
+
+### What works
+
+- Builder support landed for all 4 voucher types (sales, purchase, payment, receipt) in `import_builder.py`. Pass `bill_allocations=[{"name": ..., "type": "New Ref"|"Agst Ref"|"On Account", "amount": ..., "credit_period": ...}]`.
+- `BILLALLOCATIONS.NAME` survives round-trip and is ALWAYS visible in Tally UI (Bills Outstanding, voucher's bill-wise breakdown). No F12 toggle needed.
+- Receipts/Payments with `Agst Ref` correctly clear the bill from `bills_receivable`/`bills_payable`.
+- Sign convention: `BILLALLOCATIONS.AMOUNT` mirrors the party LEDGERENTRY.AMOUNT.
+
+### What doesn't work — both ALTER paths fail
+
+| Approach | Tally response | Actual result |
+|---|---|---|
+| Partial ALTER (send only `<ALLLEDGERENTRIES.LIST>` + BILLALLOCATIONS) | `altered=1, errors=0` | Silently ignored. No bill created. |
+| Full-body ALTER (resend full voucher with bill_allocations + Master ID handle) | `CREATED=1, ALTERED=0` | Tally **ignores Master ID** and creates a DUPLICATE voucher with the bill. |
+
+### Operational rule
+
+Bills can only be added at voucher Create time. Vouchers seeded without `BILLALLOCATIONS` cannot have bills retro-fitted — only path is delete + recreate.
+
+---
+
+## 11. Voucher-type config writes via XML are unreliable (DANGEROUS)
+
+**Discovery date:** 2026-05-05
+**Live evidence**: User UI-set Sales NumberingMethod = "Automatic (Manual Override)" → VOUCHERNUMBER on Create immediately worked. We then XML-altered Purchase NumberingMethod from `Default` → `Manual`. Tally returned `altered=1`, readback showed `Manual`, BUT Tally UI continued to show `Automatic` and runtime behavior didn't change.
+
+### The pattern
+
+`<VOUCHERTYPE ACTION="Alter">` writes go to a "stored but ignored" shadow store:
+- Tally always returns `altered=1, errors=0`.
+- XML readback reflects the new value.
+- **UI/runtime behavior does NOT change.**
+
+Plus: invalid enum values silently coerce to `None` (e.g. `Default` → `None`).
+
+### Operational rule
+
+**Future write-agent must INSTRUCT the user to make voucher-type config changes via Tally UI** (Gateway → Alter → Voucher Types → ...). Do NOT attempt XML writes for behavior-affecting voucher-type fields. They look successful but don't take effect, and invalid values can leave the config in a broken state.
+
+Read-side queries on voucher-type config remain reliable — use `TYPE=Object SUBTYPE=VoucherType ID="<name>" FETCHLIST=*` to inspect before recommending UI changes.
+
+---
+
+## 12. `altered=1` is NOT proof of actual change
+
+**Always readback after ALTER**, especially for:
+
+- Enum fields (Tally silently coerces invalid values).
+- Sub-list ALTERs (partial `<ALLLEDGERENTRIES.LIST>` with bill_allocations is silently ignored).
+- Voucher-type config (writes appear successful but don't propagate to runtime).
+- VOUCHERNUMBER under Automatic mode (silently overwritten).
+
+`altered=1` from Tally means "the request was accepted as well-formed" — not "the field changed". Compare the post-write read against the intent before reporting success to the user.
+
+---
+
+## 13. Read-config pattern is universal and reliable
+
+`TYPE=Object SUBTYPE=<X> ID=<Y> FETCHLIST=*` works for `VoucherType`, `Company`, `StockItem`, `Ledger`. Use this freely to inspect before any write.
+
+Sample envelope:
+
+```xml
+<ENVELOPE>
+  <HEADER>
+    <VERSION>1</VERSION><TALLYREQUEST>Export</TALLYREQUEST>
+    <TYPE>Object</TYPE><SUBTYPE>VoucherType</SUBTYPE>
+    <ID TYPE="Name">Sales</ID>
+  </HEADER>
+  <BODY><DESC>
+    <STATICVARIABLES><SVCURRENTCOMPANY>...</SVCURRENTCOMPANY></STATICVARIABLES>
+    <FETCHLIST><FETCH>*</FETCH></FETCHLIST>
+  </DESC></BODY>
+</ENVELOPE>
+```
+
+Use this to inspect: NumberingMethod, GST flags, F11/F12 toggles (where exposed), opening balances, etc. Read-side is honest; only write-side has the divergences described above.
+
+---
+
+## 14. REFERENCE / REFERENCEDATE — external document number/date fields, toggle-gated writes
+
+**Discovery date:** 2026-05-07
+**Canonical evidence:** `docs/tally-write-exploration-v4.md` § "REFERENCEDATE — supplier invoice date (toggle-gated)"
+**Open enumeration:** `docs/open-items-parked.md` — "Per-voucher-type external-doc-date toggles"
+
+### Field meaning + canonical names
+
+- `<REFERENCE>` — external document number (supplier invoice no on Purchase, customer PO/reference on Sales, cheque/instrument no on Receipt/Payment).
+- `<REFERENCEDATE>` — external document date (supplier invoice date on Purchase, customer PO date on Sales, cheque date on Receipt/Payment).
+- Both are **top-level voucher fields**, siblings of `<DATE>`, `<VOUCHERNUMBER>`, `<NARRATION>`. NOT nested inside `<LEDGERENTRIES.LIST>` or `<BILLALLOCATIONS.LIST>`.
+- `<REFERENCEDATE>` format is **`YYYYMMDD`** (e.g. `20250925` for 25-Sep-2025). Same format as `<DATE>` in voucher import envelopes.
+
+### UI labels by voucher type
+
+| Voucher type | REFERENCE label | REFERENCEDATE label | Default visibility |
+|---|---|---|---|
+| Purchase | "Supplier Invoice No" | "Supplier Invoice Date" | Visible by default once toggle enabled |
+| Sales | "Reference" / "Order No." | "Reference Date" / "Order Date" | Hidden — F12 toggle on voucher type |
+| Receipt | (bill reference) | (cheque date for post-dated) | Parked — not yet enumerated |
+| Payment | (bill reference) | (cheque date for post-dated) | Parked — not yet enumerated |
+
+### The toggle gate (silent-overwrite-to-voucher-DATE failure mode)
+
+**REFERENCE/REFERENCEDATE writes are gated by a per-voucher-type configuration toggle**: Voucher Type → Configuration → "Use supplier invoice date" (label varies by voucher type — likely "Use customer PO date" / "Use cheque date" on others; not yet enumerated).
+
+When the toggle is **OFF** and you send `<REFERENCEDATE>20250925</REFERENCEDATE>` on Create or ALTER:
+- Tally returns `created=1` / `altered=1, errors=0` — no rejection, no error.
+- Tally **silently overwrites the requested value with the voucher's main `<DATE>` field**. So if `<DATE>20251015</DATE>`, readback shows `REFERENCEDATE = 15-Oct-2025`, not the 25-Sep-2025 you sent.
+- Looks like a successful round-trip on cursory inspection (the field is non-empty and well-formed). This is the most insidious silent-failure mode encountered so far.
+
+When the toggle is **ON**, the same XML envelope sticks correctly. Verified empirically (2026-05-07): identical envelope, both outcomes observed before vs after toggling.
+
+**Operational rule:** `altered=1` is NOT proof of correctness here either (cf. §12). For REFERENCEDATE, only readback comparison against the *intended* value confirms — not just that the field has *some* value.
+
+### Voucher-type config is Tally-installation-scoped, not company-scoped
+
+Voucher-type configurations (including these toggles) persist on the **Tally installation**, shared across all companies on the same install. Implication for backup/restore:
+
+- `.tbk` restore **into the same Tally install** → toggles preserved (because they were never company-scoped to begin with).
+- `.tbk` restore **into a different Tally install** (fresh install, different machine) → toggles do NOT travel with the backup. The voucher data restores fine, but any subsequent write that depends on the toggle will hit the silent-overwrite mode until the toggle is set manually on the new install.
+
+Critical for any deployment story: customer-side write-agent sessions need the toggles probed/configured before relying on REFERENCE/REFERENCEDATE writes.
+
+### Status across voucher types
+
+- **Purchase** — confirmed (this session). Toggle: "Use supplier invoice date".
+- **Sales / Receipt / Payment** — *likely* to have analogous toggles (customer PO date; cheque date for post-dated cheques), since REFERENCE/REFERENCEDATE have natural meaning on those types too. **Not yet probed.** Parked for write-agent design phase.
+
+---

@@ -68,3 +68,29 @@ From [`TALLYPRIME_AGENT_PLAN.md` §9](../TALLYPRIME_AGENT_PLAN.md):
 | WhatsApp integration | Open | Twilio/Meta webhook, text-only responses |
 | Agent architecture refinement | Done | C1 implemented in Phase 12 |
 | Cross-agent context preservation | Partial | F2-A done (last N messages), longer sessions untested |
+
+## Parked Tally Write-Agent Items
+
+### Per-voucher-type external-doc-date toggles (Sales/Receipt/Payment)
+
+Purchase has a "Use supplier invoice date" toggle (Voucher Type → Configuration) that gates `<REFERENCE>`/`<REFERENCEDATE>` writes. When OFF, REFERENCEDATE writes are silently overwritten with the voucher's main `<DATE>` field (no error, `altered=1`, readback looks healthy — most insidious silent-failure mode encountered). When ON, the same XML envelope sticks correctly.
+
+Sales (customer PO date), Receipt and Payment (cheque date for post-dated cheques) likely have analogous per-voucher-type toggles, since REFERENCE/REFERENCEDATE have natural meaning on those types too — but the toggle locations and exact behavior have not yet been probed. Required before write-agent supports these fields on those voucher types.
+
+- Owner: write-agent design phase.
+- Cross-ref: `LESSONS.md` §14, `docs/tally-write-exploration-v4.md` § "REFERENCEDATE — supplier invoice date (toggle-gated)".
+- Status: Open.
+
+### Set B1d feasibility probe — bank reconciliation primitives
+
+Set B1d (bank statement import + reconciliation) is deferred per Group B design but will need its own feasibility probe before implementation, similar to Group B Task 0. Several primitives are currently unvalidated against live Tally:
+
+- `BANKALLOCATIONS.LIST` block structure inside Receipt/Payment bank LEDGERENTRY
+- `BANKDATE` field — sets reconciled-with-bank date on a voucher (silent-failure risk per LESSONS §14 if there's a toggle gate)
+- `INSTRUMENTNO` and `INSTRUMENTDATE` fields — cheque/UTR no + cheque date
+- Whether `BANKDATE` can be set via ALTER on existing Receipt/Payment vouchers (similar to REFERENCEDATE pattern), or only on Create
+- Tally's "Bank Statement" import envelope (separate from voucher import) — does it exist as a documented import flavor, or is the right approach to ALTER bank-side fields directly?
+
+- Owner: Set B1d design phase.
+- Cross-ref: `LESSONS.md` §14 (silent-overwrite warning), `docs/tally-write-exploration-v4.md` (general write findings).
+- Status: Open.

@@ -94,6 +94,24 @@ Each experiment creates a test voucher/entity, inspects the Tally response, and 
 | E5 | Debit Note (`VCHTYPE="Debit Note"`) | Does DN creation work at all? With `Agst Ref` bill type? | CREATED=1, ERRORS=0 | Never tested |
 | E6 | Credit Note (`VCHTYPE="Credit Note"`) | Does CN creation work at all? With `Agst Ref` bill type? | CREATED=1, ERRORS=0 | Never tested |
 
+E7 and E8 added 2026-05-07 to cover read-side query primitives the write-agent UI depends on (gap analysis).
+
+**E7 — `get_company_list()` envelope**
+
+- **Goal:** Verify Tally exposes a way to list all loaded companies via XML export, so the write-agent's ConnectCompanyModal (Group B feature F1) can populate a dropdown of available companies on a given Tally host:port without requiring the user to type the company name.
+- **Status before probe:** No documented envelope in `docs/tally-write-exploration-v4.md`. Tally's export API is object-oriented (TYPE=Object/Collection/Data with explicit ID), and "list of companies" may not be a first-class endpoint. Possible candidates to test: `TYPE=Collection ID="List of Companies"`, `TYPE=Function NAME="$$CmpName"`, scraping from `TYPE=Data REPORT="..."`, or a bare `<ENVELOPE>` with no `SVCURRENTCOMPANY` returning an introspection response.
+- **Probe approach:** Try 3-4 candidate envelopes against live Tally. For each: log full response. Look for any response that returns a structured list of company names. Note: Tally is currently running on localhost:9000 with three companies present (`Bharat Traders Private Limited`, `Bharat Traders V0`, `Bharat Traders V1` per recent verifier output) — clear ground truth.
+- **Pass criteria:** At least one envelope returns all three company names parseable from XML.
+- **Fallback if no envelope works:** ConnectCompanyModal accepts a freeform text input instead of dropdown. Document this as a UX degradation in the design and flag in `docs/open-items-parked.md`.
+
+**E8 — `get_party_vouchers(party, voucher_types)` TDL collection**
+
+- **Goal:** Verify a TDL Collection envelope can return recent Purchase/Sales vouchers filtered by both party ledger name AND voucher type, for the DN/CN "against invoice" dropdown (Group B features F2/F3).
+- **Status before probe:** TDL collections with `CHILDOF=$$VchTypeAllVouchers` are known-working (used by `scripts/delete_seeded_vouchers.py`). Filter-by-party-name within voucher type is the unproven dimension. Tally TDL supports `FILTER` clauses but the exact syntax for cross-referencing the party ledger inside a voucher is non-trivial.
+- **Probe approach:** Build a TDL Collection with `TYPE=Voucher`, `CHILDOF=$$VchTypeSales` (or Purchase), and a FILTER comparing `$PartyLedgerName` to a passed parameter. Test against `Bharat Traders Private Limited` (which has 16 sales / 8 purchase vouchers spread across multiple parties — good filter test surface). Run twice: once with `Apex Technologies Pvt Ltd` (should return 3 sales), once with `Samsung India Electronics` (should return 2 purchases).
+- **Pass criteria:** Filtered collection returns ONLY vouchers for the requested party + type combination, with VOUCHERNUMBER, DATE, REFERENCE, and total amount accessible.
+- **Fallback if filter syntax doesn't work:** Fetch all vouchers of the type and filter client-side in Python. Document acceptable for low voucher counts (< few hundred); flag in parked items if filter is needed for scale.
+
 **Pre-requisites for running:**
 - Tally running on localhost:9000 with NUVANTA company loaded
 - Tally license activated (see `docs/tally-write-exploration.md` license section)

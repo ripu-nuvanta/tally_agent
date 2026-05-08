@@ -474,3 +474,123 @@ In our session: 6 vouchers (Sales×2, Purchase×2, Receipt, Journal) deleted cle
 
 - `scripts/explore_tally_write_v4.py` — original exploration script. **Patches needed** (this session pinpointed but did not all apply): purchase op7 sign convention (lines 806–~895), cleanup unit-delete safety (line ~244), voucher-delete to use Master ID (line ~162).
 - This document — verified envelope reference for Stage 1 (`backend/tally_bridge/import_builder.py` builders).
+
+---
+
+# ALTER and config-write findings (2026-05-05)
+
+**Context:** Multi-probe investigation against live Tally (Bharat Traders Private Limited, post-Stage-1-seed) to characterize what writes ACTUALLY take effect vs what merely returns success.
+**Method:** Each finding verified by post-write readback comparison + UI inspection where applicable.
+**Probe logs:** `docs/probe-voucher-numbering.log`, `docs/probe-reference-alter.log`, `docs/probe-bill-allocations.log`, `docs/probe-tally-config.log`.
+
+## Truth table
+
+| Field / op | Create | Partial ALTER (sub-list only) | Full-body ALTER (TAGNAME=Master ID) |
+|---|---|---|---|
+| `<VOUCHERNUMBER>` | Honored only when NumberingMethod = `Manual` or `Automatic (Manual Override)` AND set via Tally UI | Honored only when UI-set `Manual` | Same as Create rule |
+| `<REFERENCE>` | ✅ Works under any numbering mode | ✅ Works | ✅ Works |
+| `<BILLALLOCATIONS>` | ✅ Works | ❌ Silently ignored (`altered=1`, bill not created) | ❌ Tally creates a duplicate voucher (`CREATED=1, ALTERED=0`); Master ID ignored |
+| `<VOUCHERTYPE>` config (NumberingMethod, etc.) | N/A | N/A | ⚠️ Writes return `altered=1` and readback reflects, but UI + runtime do NOT change. **Effectively a no-op via XML.** |
+| Voucher Delete via Master ID | N/A | N/A | ✅ Works (already documented above) |
+
+## Canonical findings
+
+### Voucher numbering & VOUCHERNUMBER
+
+1. **`<VOUCHERNUMBER>` on Create** — only honored when voucher-type `NumberingMethod = "Automatic (Manual Override)"` OR `Manual`, AND that config was set via Tally UI (NOT via XML). Live evidence: with UI-set "Automatic (Manual Override)", `VOUCHERNUMBER="VTN_OVERRIDE_01"` survived round-trip cleanly.
+2. **`<VOUCHERNUMBER>` on ALTER** — only honored when NumberingMethod = `Manual` (UI-set). Confirmed: MID 20 ALTER'd `S001` → readback shows `voucher_number='S001'`.
+3. Under default `Automatic`, both Create and ALTER silently overwrite `VOUCHERNUMBER` with Tally's auto-counter. `altered=1` returned despite no effective change.
+4. **NumberingMethod taxonomy** (read-side, from `TYPE=Object SUBTYPE=VoucherType`): `Automatic`, `Manual`, `Multi-User Auto` (stored as `Multi-user Auto`), `None`, `Automatic (Manual Override)`, `Default` (Tally's "as-shipped" state, **READ-ONLY** — cannot be set as a write value).
+5. **Tally silently coerces invalid enum input to `None`.** `Default`, `Auto`, `AutomaticManual`, etc. all coerce to `None` with no error response. Always readback after enum writes.
+
+### REFERENCE
+
+6. **`<REFERENCE>` on Create AND ALTER works under any numbering mode.** Mutable (subsequent ALTER can change it). Survives round-trip.
+7. Visible in Tally UI **only after enabling the F12 toggle** on the voucher type's display config (default off for Sales). Per-voucher-type setting — must enable on each type the user cares about. Storage works regardless of F12.
+
+**Working ALTER envelope (REFERENCE on existing voucher):**
+
+```xml
+<VOUCHER DATE="01-Oct-2025" TAGNAME="Master ID" TAGVALUE="20"
+         VCHTYPE="Sales" ACTION="Alter">
+  <REFERENCE>S001</REFERENCE>
+</VOUCHER>
+```
+
+### REFERENCEDATE — supplier invoice date (toggle-gated)
+
+**Discovery date:** 2026-05-07. Supersedes earlier (incorrect) hypothesis that REFERENCEDATE silently drops in all conditions — the actual behavior is toggle-gated silent-overwrite-to-voucher-DATE.
+
+`<REFERENCEDATE>` is the canonical XML field for the external-document date — "Supplier Invoice Date" on Purchase. Top-level voucher field, sibling of `<DATE>`, `<VOUCHERNUMBER>`, `<REFERENCE>`. Format **`YYYYMMDD`** (e.g. `20250926` for 26-Sep-2025).
+
+**Working ALTER envelope (REFERENCEDATE on existing Purchase voucher):**
+
+```xml
+<VOUCHER DATE="01-Oct-2025" TAGNAME="Master ID" TAGVALUE="42"
+         VCHTYPE="Purchase" ACTION="Alter">
+  <REFERENCEDATE>20250926</REFERENCEDATE>
+</VOUCHER>
+```
+
+(Same shape as the REFERENCE envelope above; can be combined into a single ALTER setting both fields.)
+
+**Prerequisite — per-voucher-type toggle MUST be ON.** The voucher-type Configuration option **"Use supplier invoice date"** (Voucher Type → Configuration in the Tally UI) gates this field. Set via UI; do NOT attempt via XML voucher-type ALTER (cf. §"Voucher-type config writes — DANGER ZONE" — those writes look successful but don't take runtime effect).
+
+**Silent-overwrite-to-voucher-DATE failure mode when toggle is OFF.** If the toggle is OFF and you send the envelope above:
+- Tally returns `altered=1, errors=0` — no rejection.
+- Tally **silently overwrites the requested REFERENCEDATE with the voucher's `<DATE>` field**. Readback shows the voucher's main DATE in the REFERENCEDATE field, looking like a healthy round-trip.
+- This is the most insidious silent-failure mode encountered so far. `altered=1` is NOT proof; only readback comparison against the *intended* value detects the divergence.
+
+Verified empirically (2026-05-07): same envelope produced both outcomes — pre-toggle, REFERENCEDATE = voucher DATE (silent overwrite); post-toggle (UI-flipped to ON), REFERENCEDATE = 26-Sep-2025 (requested value sticks).
+
+**Install-scoped config note.** Voucher-type configurations (including this toggle) are Tally-installation-scoped, not company-scoped — `.tbk` restored into a different Tally install does NOT carry them. See LESSONS.md §14 for the full discussion + backup/restore implications.
+
+**Status across voucher types:**
+- **Purchase** — confirmed (this session).
+- **Sales** (customer PO date), **Receipt** / **Payment** (cheque date) — likely have analogous toggles but not yet probed. Parked for write-agent design phase (`docs/open-items-parked.md`).
+
+### BILLALLOCATIONS
+
+8. **BILLALLOCATIONS on Create: WORKS.** Verified — bill appears in `bills_receivable`, gets cleared by Receipt with `Agst Ref`. Builder support landed in `import_builder.py` for sales/purchase/payment/receipt (`bill_allocations` kwarg).
+9. **BILLALLOCATIONS on partial ALTER** (sending just `<ALLLEDGERENTRIES.LIST>` with party + BILLALLOCATIONS): **SILENTLY IGNORED.** Tally returns `altered=1, errors=0` but the bill is NOT created. Ledger entries left intact. Generic instance of the "Tally accepts but doesn't apply nested sub-list ALTER" pattern.
+10. **BILLALLOCATIONS on full-body ALTER** (resend entire voucher body with bill_allocations + Master ID handle via TAGNAME): **TALLY IGNORES THE MASTER ID** and creates a DUPLICATE voucher (response `CREATED=1, ALTERED=0`). The bill DOES get created — but on the duplicate.
+11. **Conclusion: BILLALLOCATIONS cannot be added to existing vouchers via ALTER under any approach.** The only path is delete + recreate.
+
+### Voucher-type config writes — DANGER ZONE
+
+12. **`<VOUCHERTYPE ACTION="Alter">` writes appear to succeed but DO NOT take runtime effect.** Live evidence:
+    - User manually set Sales NumberingMethod = "Automatic (Manual Override)" via UI → VOUCHERNUMBER on Create immediately worked.
+    - We then XML-altered Purchase NumberingMethod from `Default` → `Manual`. Tally returned `altered=1`, readback showed `Manual`, BUT the Tally UI continued to display `Automatic` and runtime behavior didn't change.
+13. **DO NOT TRUST XML voucher-type config writes for behavior-affecting fields.** The write goes to a "stored but ignored" shadow store that XML readback reflects but UI/runtime doesn't.
+14. **Implication: future write-agent must instruct the user to make voucher-type config changes via the Tally UI** — cannot do it itself reliably. (Gateway → Alter → Voucher Types → ...)
+
+### General writeability rules
+
+15. **`altered=1` is NOT proof of actual change.** Always readback-verify, especially for: enum writes, sub-list ALTERs, voucher-type config writes.
+16. **Master ID (LASTVCHID) is the canonical handle** for voucher delete/cancel. Reliable. Use `TAGNAME="Master ID" TAGVALUE=N`.
+17. **Read-config is universal and reliable**: `TYPE=Object SUBTYPE=<X> ID=<Y> FETCHLIST=*` works for VoucherType, Company, StockItem, Ledger. Use this freely.
+18. **`Default` numbering value is READ-ONLY** — Tally's internal "as-shipped" state for voucher types. Cannot be set via XML write (gets coerced to `None`).
+
+## Patterns that LOOK successful but aren't
+
+| Pattern | Tally response | Reality |
+|---|---|---|
+| Set NumberingMethod=Manual via XML, then send `<VOUCHERNUMBER>` on Create | `created=1` | VOUCHERNUMBER overwritten by auto-counter |
+| Partial ALTER adding BILLALLOCATIONS to existing voucher | `altered=1, errors=0` | Bill not created |
+| Full-body ALTER with TAGNAME="Master ID" + bill_allocations | `created=1, altered=0` | DUPLICATE voucher created; Master ID ignored |
+| Set NumberingMethod via XML to invalid enum (e.g. `Default`, `Auto`) | `altered=1` | Coerced to `None`. Voucher type now in broken numbering state. |
+| `<VOUCHERTYPE ACTION="Alter">` to change any behavior-affecting field | `altered=1`, readback reflects change | UI + runtime unchanged. Effectively a no-op. |
+
+## Bharat Traders Private Limited — state at end of probe session
+
+- 50 seeded vouchers (day book = 50, sales register = 16, purchase register = 8). bills_receivable / bills_payable empty.
+- MID 20 has `REFERENCE='S001'` and `VOUCHERNUMBER='S001'` (probe artifacts; left in place).
+- Sales voucher type: UI-set to `Automatic (Manual Override)`. Side effect: Sales 2-16 now show empty `voucher_number` (Tally clears auto-numbers when numbering mode changes).
+- Purchase voucher type: in **broken state** — XML-altered NumberingMethod to `None`. User must manually fix in Tally UI (Gateway → Alter → Voucher Types → Purchase → Method of Voucher Numbering → reset to `Automatic`).
+- Receipt + Payment voucher types: untouched.
+
+## Path forward for Bharat Traders
+
+- **REFERENCE-only backfill** for the 50 existing vouchers: ALTER each to set `REFERENCE` derived from NARRATION (`Invoice #S012` → `S012`). Safe under any numbering mode. User enables F12 toggle on each voucher type for visibility.
+- **Bills cannot be backfilled.** Accept as fresh-company future feature; only fresh creates can have BILLALLOCATIONS.
+- **Voucher-type config**: any future change must go via Tally UI; do not retry via XML.

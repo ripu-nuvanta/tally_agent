@@ -1738,3 +1738,39 @@ git commit -m "docs(seed): close Stage 1 — Bharat Traders seeded + verified"
 2. **GST rate round-trip.** v4 doc notes `IGSTRATE`/`CGSTRATE`/`SGSTRATE` not echoed via `NATIVEMETHOD GSTDetails`. Visual UI check in Task 11 Step 3 confirms rates persisted.
 3. **Read-path query name mismatches in `verify_tally_bridge_live.py`.** Mitigation: explicit grep + adjust step before the file is finalised.
 4. **Voucher number collisions.** Tally auto-generates voucher numbers per type when `<VOUCHERNUMBER>` is present — using S001..S016 etc. should be unique within type. If Tally rejects, drop `VOUCHERNUMBER` and let Tally auto-number.
+
+---
+
+## Stage 1 closeout (2026-05-05 session 2)
+
+**Status:** CODE COMPLETE + LIVE-VERIFIED. Bills feature parked.
+
+### What landed in this session
+
+- **Seed re-run on Bharat Traders Private Limited** — 50/50 vouchers written cleanly after fixing pre-flight Julian-Day parser (Tally returns date as `<RESULT TYPE="Date" JD="..."/>` with empty text). Hardened writer caught no silent drops.
+- **Tier-3 verifier**: 11/13 checks pass. Day book = 50, sales register = 16, purchase register = 8. Two failures: `bills_receivable`, `bills_payable` empty — root cause was builder gap (no `BILLALLOCATIONS.LIST` emitted on party line).
+- **Builder fix**: `BILLALLOCATIONS` support added to all 4 voucher builders (sales, purchase, payment, receipt) in `import_builder.py` + threaded through `TallyWriter`. 12 new unit tests. Backend unit total now **939**.
+- **Live probe verifies bills work end-to-end on fresh creates** (`scripts/probe_bill_allocations_live.py`): create sales voucher → bills_receivable shows it → receipt with `Agst Ref` clears it. Cleanup deletes both test vouchers via Master ID.
+
+### Probe findings (canonical evidence in `LESSONS.md` §8–§13 and `docs/tally-write-exploration-v4.md`)
+
+- `<VOUCHERNUMBER>` only sticks when voucher-type `NumberingMethod` is UI-set to `Manual` or `Automatic (Manual Override)`. XML-set NumberingMethod has no runtime effect (readback shows new value, UI/behavior doesn't change).
+- `<REFERENCE>` survives Create AND ALTER under any numbering mode. Visible in Tally UI only after per-voucher-type F12 toggle.
+- `BILLALLOCATIONS` works on Create only. Cannot be retro-fitted via ALTER (partial = silently ignored; full-body = creates duplicate).
+- Voucher-type config writes via XML are unreliable — always returns `altered=1` but doesn't propagate to runtime. Future write-agent must instruct user to make these via Tally UI.
+- Tally silently coerces invalid enum input to `None`. Always readback after ALTER.
+
+### Operational state of Bharat Traders Private Limited
+
+- 50 seeded vouchers; bills_receivable + bills_payable empty (cannot backfill).
+- MID 20 (Sales for Apex Tech, 01-Oct-2025) has REFERENCE='S001' AND VOUCHERNUMBER='S001' (probe artifacts; left in place).
+- Sales voucher type is on "Automatic (Manual Override)" (UI-set during this session); other Sales vouchers' numbers were cleared by Tally as a side-effect of the mode change.
+- **Purchase voucher type is in a broken state** (XML-set to NumberingMethod=`None`; user must fix via Tally UI: Gateway → Alter → Voucher Types → Purchase → set Method of Voucher Numbering to whatever is desired, likely `Automatic`).
+- Receipt + Payment voucher types untouched.
+
+### Parked / deferred
+
+- **REFERENCE backfill on existing 50 vouchers** (Path A) — single ALTER per voucher to set REFERENCE = seed ID derived from NARRATION. Decision pending.
+- **Bills on existing 50** — cannot be backfilled. Only future creates carry BILLALLOCATIONS.
+- **Stock item GST rates** — undocumented XML envelope; vouchers compute tax explicitly so this is cosmetic.
+- **Stage 2 — backup distribution** — once REFERENCE backfill (or decision to skip) is settled, take Tally backup, upload to GitHub Release, document restore.
