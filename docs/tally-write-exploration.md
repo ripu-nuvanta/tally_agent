@@ -1,4 +1,8 @@
-# Tally Write Exploration — Findings
+# Tally Write Exploration — Findings (v1)
+
+> **Superseded as a reference by [`tally-write-exploration-v4.md`](tally-write-exploration-v4.md)** — Stage 0 envelope reference + ALTER findings live there.
+>
+> This document remains the canonical record of the **2026-04-09 license root-cause investigation** (Tally silently clamps its internal current date when the license isn't activated, producing the misleading "Voucher date is missing" error). Operational write-safety rules are summarized in [`LESSONS.md` § 15](../LESSONS.md).
 
 **Date:** 2026-04-05 (original), updated 2026-04-09 (license retest)
 **Company:** NUVANTA AI TECHNOLOGIES PRIVATE LIMITED

@@ -4,6 +4,17 @@
 
 **Goal:** Extend the data entry pipeline from Payment-only to 5 voucher types (Payment, Purchase, Sales, Debit Note, Credit Note), add multi-currency extraction, auto-populate workspace company name from Tally, upgrade the review card UI with progressive disclosure, and persist audit trail to DB.
 
+## Why combined (F1 + F2 + F3 + B1b)
+
+These four items all modify the same vertical pipeline — `document_parser → voucher_builder → import_builder → writer → orchestrator` — and shipping them together avoids multiple passes through the same code:
+
+- **F1** (workspace creation pulls company name from Tally): `ConnectCompanyModal` should query Tally's company list and present exact names as a dropdown stored in `workspace.config.tally_company`. Prevents the `SVCurrentCompany` mismatch errors hit during the B1a smoke test.
+- **F2** (USD→INR multi-currency extraction): Claude Vision prompt needs explicit multi-currency handling. Extract `line_items_currency`, `total_currency`, `fx_rate`, `inr_total` separately; validator checks `line_items × fx_rate ≈ inr_total` instead of naive sum. Non-deterministic amounts across runs on the same PDF (1682.6 vs 1730.0 on Anthropic invoice) drove this.
+- **F3** (Payment vs Purchase voucher classification): blocks on B1b — needs the Purchase builder to exist. Extraction classifies receipt type (expense receipt vs vendor invoice); orchestrator routes to the appropriate voucher builder.
+- **B1b** (Sales/Purchase voucher builders): extends `import_builder.py` for Sales/Purchase. `PERSISTEDVIEW`, `ISPARTYLEDGER`, `LEDGERENTRIES.LIST` differ from Payment. GST: OUTPUT CGST/SGST for Sales, INPUT CGST/SGST for Purchase. XML format verified in `docs/tally-write-exploration-v4.md`.
+
+F1 also touches workspace config, which F2 may need (currency settings per workspace).
+
 **Architecture:** Widen existing B1a pipeline at every layer: document_parser (multi-currency + 5-type classification) → voucher_builder (4 new builder functions) → import_builder (4 new XML builders) → writer (4 new write methods) → orchestrator (routing by doc_type) → chat API (dispatch by voucher_type) → frontend (3-state review card + edit form). New tally_bridge query for company list (F1) and party voucher lookup (DN/CN). DB audit via existing UploadedFile/VoucherEntry models.
 
 **Tech Stack:** Python (FastAPI, httpx, xml.etree), React (Vite, Tailwind), Claude Vision API, PostgreSQL (SQLAlchemy async), Playwright

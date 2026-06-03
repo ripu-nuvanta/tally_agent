@@ -1,24 +1,19 @@
-# Open Items — Parked (2026-04-02)
+# Open Items — Parked
 
-Items from Phases 1–16 that are deferred while we focus on SaaS and compliance features.
+_Last updated: 2026-06-03_
+
+Items from Phases 1–16 deferred while focus is on SaaS (Set A) and compliance (Set B). Current active work is tracked in [`roadmap.md`](roadmap.md). Closed phases are summarized in [`CLAUDE.md`](../CLAUDE.md).
 
 **Sources:**
-- Architecture explorations (F1–F4, Company Selector): [`docs/plans/2026-03-12-agent-architecture-exploration.md`](plans/2026-03-12-agent-architecture-exploration.md)
-- Phase 8 backlog (conversation memory, cached ledger list, GST reports, export, WhatsApp, cross-agent context): [`TALLYPRIME_AGENT_PLAN.md` §9](../TALLYPRIME_AGENT_PLAN.md) (lines 966–984)
+- Architecture explorations (F1–F4, Company Selector): [`plans/2026-03-12-agent-architecture-exploration.md`](plans/2026-03-12-agent-architecture-exploration.md)
+- Phase 8 backlog (conversation memory, cached ledger list, GST reports, export, WhatsApp, cross-agent context): [`TALLYPRIME_AGENT_PLAN.md` §9](../TALLYPRIME_AGENT_PLAN.md) (archived spec)
 
-## Eval Status (Final — Run 31, stock_reorder_mock)
+## Completed Since This Was Parked
 
-| Turn | Query | Scores (F/Q/C/Ch) | Notes |
-|------|-------|--------------------|-------|
-| 1 | Stock reorder | Pass | — |
-| 2 | Top customers | Pass | Chart 4/5 |
-| 3 | MoM growth | Pass | Chart 5/5 |
-| 4 | Q3 vs Q4 | Pass | Clarification question (expected) |
-| 5 | Expense % | Pass | Fixed by streaming (34k tokens) |
-| 6 | Top 5 change | Pass | Passed with 480s timeout |
-| 7 | Avg monthly | Pass | — |
-
-**7/7 turns pass.** All eval scenarios green.
+- **Eval framework** — all 7/7 turns pass on stock_reorder_mock (Run 31). All eval scenarios green.
+- **F2-A (pass last N messages)** — implemented in Phase 14.
+- **Agent architecture C1 refinement** — implemented in Phase 12.
+- **Date-relative intelligence** — implemented in Phase 7.
 
 ## Parked Architecture Items
 
@@ -27,9 +22,9 @@ Items from Phases 1–16 that are deferred while we focus on SaaS and compliance
 - Risk: 18+ tools in one agent may confuse model
 - Status: Open — revisit if handover bugs resurface
 
-### F2-B/C: Session Data Cache
-- Option A (pass last N messages) implemented in Phase 14
-- Cleaner options: shared session cache (B) or merged agents (C) deferred
+### F2-B/C: Session Data Cache (cleaner options)
+- F2-A (pass last N messages) is done in Phase 14
+- Cleaner options: shared session cache (B) or merged agents (C) still deferred
 - Status: Open — current approach works for 5–7 turn sessions
 
 ### F3: Frontend Streaming (SSE/WebSocket)
@@ -60,13 +55,11 @@ From [`TALLYPRIME_AGENT_PLAN.md` §9](../TALLYPRIME_AGENT_PLAN.md):
 
 | Item | Status | Notes |
 |------|--------|-------|
-| Conversation memory (last 10 messages) | Partial | Session history exists, but in-memory only (no persistence) |
+| Conversation memory (last 10 messages) | Done (DB mode) | Persistent conversations land via Set A1. Legacy mode remains in-memory. |
 | Cached ledger list | Open | Would speed up fuzzy matching / suggestions |
-| GST reports (GSTR-1, GSTR-3B, tax liability) | Open | Superseded by compliance feature set |
-| Date-relative intelligence | Done | Implemented in Phase 7 |
+| GST reports (GSTR-1, GSTR-3B, tax liability) | Open | Superseded by compliance feature set (Set B) |
 | Export (PDF/Excel) | Open | — |
 | WhatsApp integration | Open | Twilio/Meta webhook, text-only responses |
-| Agent architecture refinement | Done | C1 implemented in Phase 12 |
 | Cross-agent context preservation | Partial | F2-A done (last N messages), longer sessions untested |
 
 ## Parked Tally Write-Agent Items

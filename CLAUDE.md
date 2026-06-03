@@ -6,9 +6,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime instance (default: `localhost:9000`; also works over LAN), lets users ask natural language questions about accounting data, and returns answers with charts and tables.
 
-**Stack**: Python (FastAPI) backend + React (Vite) frontend + Claude API (Anthropic SDK with tool-calling)
+**Stack**: Python (FastAPI) backend + React (Vite) frontend + Claude API (Anthropic SDK with tool-calling) + PostgreSQL (auth + persistence)
 **Tally Version**: TallyPrime 7.0+ (native JSON support, XML preferred for stability)
-**Implementation Plan**: See `TALLYPRIME_AGENT_PLAN.md` for the full spec and phased build order.
+
+**Operating mode:** SaaS + DB mode (Postgres + JWT auth + per-workspace conversations) is the default and only maintained mode. Legacy mode (in-memory sessions, no auth) is frozen — bug fixes only, no new features.
+
+**Where to look:**
+- **What's next** → [`docs/roadmap.md`](docs/roadmap.md) (canonical roadmap, sets A/B/C, active work)
+- **Closed phases** → § Implementation Phases below
+- **Tally API learnings & write safety** → [`LESSONS.md`](LESSONS.md)
+- **Parked items** → [`docs/open-items-parked.md`](docs/open-items-parked.md)
+- **Original spec (archived)** → [`TALLYPRIME_AGENT_PLAN.md`](TALLYPRIME_AGENT_PLAN.md)
 
 ## Build & Run Commands
 
@@ -17,14 +25,14 @@ TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime
 # Install dependencies
 uv sync --extra dev --extra langfuse --extra db
 
-# Run the FastAPI server (legacy mode — no auth, in-memory sessions)
+# Run the FastAPI server (DB mode — default for all new work; requires Postgres + JWT_SECRET in .env)
 uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
 
-# Run the FastAPI server (DB mode — auth + persistence, requires Postgres)
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tallyagent JWT_SECRET=<32+ chars> uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+# Run the FastAPI server (legacy mode — FROZEN; no new features. Omit DATABASE_URL to use in-memory sessions)
+# Kept for reference only — do NOT use for new development.
 
-# Run Alembic migrations (DB mode only)
-DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tallyagent PYTHONPATH=. python -m alembic upgrade head
+# Run Alembic migrations
+PYTHONPATH=. python -m alembic upgrade head
 
 # Run all unit tests (fast, no external deps)
 pytest tests/unit/ -v
@@ -64,8 +72,8 @@ python scripts/test_tally_connection.py
 # Live test: agent pipeline against real Tally (needs ANTHROPIC_API_KEY)
 PYTHONPATH=. uv run python scripts/test_agent_live.py --host <TALLY_IP> --port 9000
 
-# Seed test data into Tally
-python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000
+# Seed test data into Tally — ALWAYS pass --skip-preflight (see § Workflow Preferences)
+python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000 --skip-preflight
 
 # Eval framework & Playwright tests — PREREQUISITE: backend AND frontend must be running:
 #   Terminal 1: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000 2>&1 | tee docs/be_run1.log
@@ -92,17 +100,17 @@ PYTHONPATH=. python tests/eval/generate_golden.py --host <TALLY_IP> --port 9000
 ```bash
 cd frontend
 npm install
-npm run dev                          # Vite dev server (legacy mode)
-VITE_DB_MODE=true npm run dev        # Vite dev server (DB mode — auth + sidebar)
+VITE_DB_MODE=true npm run dev        # Vite dev server (DB mode — DEFAULT for all new work)
+npm run dev                          # Legacy mode (frozen) — no auth, no sidebar
 npm run build                        # Production build
-npm test                             # Vitest unit tests (116 tests)
+npm test                             # Vitest unit tests
 npm run test:watch                   # Vitest in watch mode
-npm run test:playwright              # Playwright visual tests (39 tests: responsive + eval-visual × 3 viewports)
+npm run test:playwright              # Playwright visual tests (responsive + eval-visual + db-mode × 3 viewports)
                                      # PREREQUISITE: backend must be running (uvicorn on port 8000)
 
-# IMPORTANT: To force-regenerate Playwright screenshots, DELETE the __screenshots__
-# directory first. Playwright's pixel-diff threshold can hide stale content.
-rm -rf tests/playwright/__screenshots__ && npm run test:playwright -- --update-snapshots
+# IMPORTANT: To regenerate Playwright screenshots, only delete the specific spec's screenshot
+# directory (e.g. __screenshots__/*/db-mode.spec.ts/), not the entire __screenshots__/.
+# See § Workflow Preferences → Playwright discipline.
 ```
 
 ## Architecture
@@ -150,9 +158,9 @@ User query → Orchestrator (classify) → Query Agent (fetch from Tally via too
 
 ### Frontend (React + Vite + Tailwind + Recharts)
 
-Chat-based UI at `frontend/src/`. Two modes controlled by `VITE_DB_MODE`:
-- **Legacy mode** (default): `SessionProvider` → `Header` + `ChatWindow`. No auth, no sidebar.
+Chat-based UI at `frontend/src/`. Always run with `VITE_DB_MODE=true` — DB mode is the only supported path:
 - **DB mode** (`VITE_DB_MODE=true`): `BrowserRouter` + `AuthProvider` → `LoginPage`/`RegisterPage` (public) or `ChatApp` (protected: `Header` + `Sidebar` + `ChatWindow`).
+- **Legacy mode** (no `VITE_DB_MODE`): frozen. `SessionProvider` → `Header` + `ChatWindow`. No auth, no sidebar. Kept for reference; no new work.
 
 Key components: `ChatWindow`, `MessageBubble` (renders text/table/chart inline), `ChartRenderer` (bar/line/pie via Recharts), `DataTable` (sortable with CSV export), `QuickActions` (preset query buttons), `Sidebar` (conversation list grouped by workspace), `ConnectCompanyModal`, `UserMenu`.
 
@@ -162,8 +170,8 @@ Key components: `ChatWindow`, `MessageBubble` (renders text/table/chart inline),
 - **Currency**: Use Indian comma formatting (₹12,34,567.00). Negative = outflow/debit, Positive = inflow/credit (Tally convention).
 - **XML requests**: Preferred over JSON for Tally communication — more stable and documented across versions. Use `xml.etree.ElementTree` for parsing.
 - **Claude models**: `claude-sonnet-4-6` for query/analysis agents, `claude-haiku-4-5-20251001` for orchestrator classification, `claude-opus-4-6` for eval judge.
-- **Session management**: Two modes — **Legacy** (in-memory dict, session_id → conversation history, TTL 60 min, 20 message limit) and **DB mode** (Postgres-backed, persistent conversations, per-workspace config). Controlled by `DATABASE_URL` env var.
-- **Tally Bridge is READ-ONLY** — no import/write operations except the seed data script.
+- **Session management**: **DB mode** (Postgres-backed, persistent conversations, per-workspace config) is the default and only maintained path. Legacy in-memory mode is frozen.
+- **Tally Bridge supports reads + writes**: query path (`backend/tally_bridge/queries/`) is read-only and broadly used. Write path (`backend/tally_bridge/import_builder.py`) lands vouchers via Set B1a (Payment) and Group B (Sales/Purchase/DN/CN). All writes must follow [`LESSONS.md` § 15 Tally Write Safety](LESSONS.md).
 - **Configuration**: All settings via `.env` file loaded by `pydantic_settings.BaseSettings` in `backend/config.py`.
 
 ## Environment Variables
@@ -177,67 +185,120 @@ EVAL_JUDGE_MODEL (default: claude-opus-4-6)
 APP_HOST, APP_PORT (default: 0.0.0.0:8000)
 VITE_API_URL (default: http://localhost:8000)
 
-# DB mode (Set A1) — all optional, app runs in legacy mode without them
+# DB mode (Set A1) — REQUIRED for new development. Legacy fallback exists but is frozen.
 DATABASE_URL                         # e.g. postgresql+asyncpg://user:pass@localhost/tallyagent
-JWT_SECRET                           # minimum 32 chars, required when DATABASE_URL is set
+JWT_SECRET                           # minimum 32 chars
 JWT_ACCESS_TOKEN_EXPIRY_MINUTES      # default: 30
 JWT_REFRESH_TOKEN_EXPIRY_DAYS        # default: 7
-VITE_DB_MODE=true                    # frontend: enables auth pages + sidebar (omit for legacy)
+VITE_DB_MODE=true                    # frontend: always set to true for DB mode (auth + sidebar)
 TEST_DATABASE_URL                    # for DB integration tests (separate DB recommended)
+TALLY_WRITE_ENABLED=true             # required for write paths (Set B1a, Group B)
 ```
 
 ## Testing
 
-- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting, mock handler, auth utils, pricing, DB models. 760 tests.
-- **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle + mock format parity. Also includes DB integration tests (auth flow, workspace CRUD, conversation persistence) — these require `TEST_DATABASE_URL`. 120 + 9 DB tests.
-- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. Includes legacy smoke tests (3) and DB smoke tests (6, require `TEST_DATABASE_URL`). 20 + 9 tests.
+_Approximate counts as of 2026-05-08 (Stage 2 closeout); ~1,450+ tests total, 0 failures, backend coverage ~89%._
+
+- **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting, mock handler, auth utils, pricing, DB models. ~956 tests.
+- **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle + mock format parity. Also includes DB integration tests (auth flow, workspace CRUD, conversation persistence) — these require `TEST_DATABASE_URL`. ~132 + 15 DB tests.
+- **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. Includes legacy smoke tests and DB smoke tests (require `TEST_DATABASE_URL`). ~39 + 14 DB tests.
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var OR `--tally-mode mock`. In mock mode, uses built-in mock handler (no real Tally needed, still needs Claude API key). 19 tests.
 - **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 8 scenarios, 49 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`. Mock mode: `--tally-mode mock` auto-selects `*_mock.yaml` scenario variants when available.
-- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all components + utils. 237 tests.
-- **Frontend Playwright tests** (`frontend/tests/playwright/`): Visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) + db-mode (21 specs × 3 viewports, 11 skipped for viewport-specific) = 52 pass + 11 skip. **IMPORTANT: After running Playwright tests, the MAIN AGENT must visually inspect screenshots from ALL viewports** in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/` before reporting pass/fail. Check for: blank space, content cutoff, sidebar/header overlap, missing text/tables/charts, unreadable elements. A test suite reporting "N passed" is NOT sufficient — screenshots must be visually verified. **Never delegate screenshot review to a subagent** — subagents cannot see images. The main orchestrating agent must use the Read tool on the PNG files itself.
-- **Playwright test design**: Before writing Playwright specs, enumerate a `component × state × viewport` matrix. Cover ALL visually distinct states (e.g., voucher: draft/pending/written/discarded, sidebar: active/collapsed/empty, header: live/demo badge). Each state needs a mock data variant and separate screenshot. Add content assertions (`expect(locator).toHaveText(...)`) BEFORE `toHaveScreenshot()` — screenshots catch regressions but assertions catch functional bugs.
-- **Playwright visual checklist**: Every `toHaveScreenshot()` call MUST be preceded by a `// VISUAL CHECKLIST:` comment block describing what the reviewer should verify in the screenshot: layout elements, specific text, colors/highlights, spacing/alignment, and what should NOT be visible. This guides the main agent's manual screenshot review and makes expected behavior explicit. Example:
-  ```typescript
-  // VISUAL CHECKLIST:
-  // - Header: "TallyPrime AI | Trial Balance April" first line
-  // - Subtitle: "Bharat Traders ● Live" below chat title
-  // - Sidebar: BHARAT TRADERS has bg-blue-50 highlight
-  // - NOT visible: no overlap between sidebar and chat content
-  await expect(page).toHaveScreenshot("chat-with-header.png");
-  ```
-- **Playwright screenshot regeneration**: Only delete `frontend/tests/playwright/__screenshots__/` for the specific test file being regenerated (e.g., `__screenshots__/*/db-mode.spec.ts/`), NOT the entire directory. Deleting everything removes responsive + eval-visual baselines that require a different frontend mode to regenerate.
+- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all components + utils. ~237 tests.
+- **Frontend Playwright tests** (`frontend/tests/playwright/`): Visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) + db-mode (20 specs × 3 viewports, 11 viewport-specific skips) ≈ 49 pass + 11 skip. Discipline rules (state matrix, visual checklist, screenshot regeneration scope, main-agent visual review) live in § Workflow Preferences → Playwright discipline.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
-- **Test plan thoroughness**: Every design spec MUST include a comprehensive test plan with:
-  1. **State matrix** — enumerate every `component × state × variant` combination. Cover all user action flows (e.g., approve/discard/edit→approve/edit→discard/edit→cancel). Include currency, GST, and error variants.
-  2. **Test fixture matrix** — list every fixture needed, organized by category:
-     - **Backend fixtures** (e.g., Vision JSON responses): one per doc type × currency × GST variant × edge case
-     - **Sample upload files**: one per supported file format (jpg, png, pdf, csv, xlsx) plus rejection cases (unsupported format, oversize, no extension)
-     - **Mock API responses**: every external service response the tests need
-     - **Frontend mock data**: TypeScript prop objects for component tests
-  3. **DB persistence scenarios** — if the feature writes to DB, enumerate: create/update/delete flows, linked records, status transitions, query-back verification
-  4. Fixtures must cover both new functionality AND regression of existing flows they extend.
-- Test company: "Bharat Traders Pvt Ltd" (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026).
+- **Test plan thoroughness** is mandatory for every design spec — see § Workflow Preferences → Spec & test plan thoroughness.
+- **Test company**: `Bharat Traders Private Limited` (Electronics & Office Supplies trader, Maharashtra, FY Apr 2025–Mar 2026). Seeded via `scripts/seed_tally_data.py`; backup committed at `seed_data/TDBK1800_100003.001`. Setup procedure in [`docs/seed-data-setup.md`](docs/seed-data-setup.md).
 
 ## Workflow Preferences
 
+### Process
+
 - **Always use skills** for all tasks — debugging, feature development, TDD, planning, code review, etc. Never skip skill invocation even for seemingly simple tasks. If there's even a 1% chance a skill applies, invoke it.
 - **Prefer superpowers skills over feature-dev**: When both `superpowers:*` and `feature-dev:*` skills could apply, always use the superpowers variant first (e.g., `superpowers:brainstorming` over `feature-dev:feature-dev`, `superpowers:systematic-debugging` over ad-hoc debugging, `superpowers:test-driven-development` over writing tests directly).
-- **Code review after every implementation**: After completing any implementation task (feature, bugfix, refactor), always run a code review using `superpowers:requesting-code-review` or the `code-review` agent. Never skip this step. Store review results in `docs/`.
+- **Code review after every implementation**: After completing any implementation task (feature, bugfix, refactor), always run a code review using `superpowers:requesting-code-review` or the `code-review` agent. Never skip this step — even on smooth implementations. (Caught violation during Phase 9: all 17 tasks shipped without review.) Store review results in `docs/code-review-*.md`. Also report clearly which test suites were NOT run (e.g., `e2e_live` needs real Tally).
 - **Main agent = orchestrator only**: The main conversation agent should NEVER write implementation code directly. Always spawn subagents (via the Agent tool) for code changes, writing tests, and debugging. The main agent's role is to plan, dispatch subagents, review their output, and integrate results. This preserves context window for planning and coordination.
-- **Persist artifacts in docs/**: Store code review results, implementation plans, and status tracking in `docs/` so they survive across sessions. Reference `docs/code-review-phase1-2.md` for current review status.
+- **Persist artifacts in docs/**: Store code review results, implementation plans, and status tracking in `docs/` so they survive across sessions. Examples: `docs/specs/*`, `docs/plans/*`, `docs/code-review-*.md`.
 
-## Implementation Phases (Build Order)
+### What targets which doc
 
-1. **Tally Bridge Layer** ✅ — client, request_builder, response_parser, models, exceptions
-2. **Agent Orchestrator & Tools** ✅ — tool definitions, query_agent with Claude tool-calling loop, orchestrator routing
-3. **FastAPI Backend** ✅ — main app, chat/health/companies/reports endpoints
-4. **React Frontend** ✅ — chat UI with inline charts and tables
-5. **Eval Framework** ✅ — two-phase eval (collect via Playwright → judge via LLM → HTML report), 8 scenarios, 49 turns
-6. **Mock Tally & Demo Mode** ✅ — built-in mock handler, demo toggle, e2e_live mock mode
-7. **Enriched Mock Data** ✅ — Fixture generator with complete Bharat Traders seed data, date-aware mock handler, 4 mock eval scenarios, 71 format parity tests
-8. **Advanced Features** — conversation memory, cached ledger list, GST reports, ~~date-relative parsing~~ ✅, export, WhatsApp
-9. **Tally Seed Stage 0 (write exploration)** ✅ — All 9 write ops + delete path verified against live Tally. See `docs/tally-write-exploration-v4.md`.
-10. **Tally Seed Stage 1 (build + live verify)** ✅ CLOSED 2026-05-07 — Builders + writer + seeder + Tier-3 verifier (13/13). Fresh `Bharat Traders Private Limited` with 50 vouchers, 16 bills receivable, 8 bills payable. REFERENCE + REFERENCEDATE on Sales/Purchase + BILLALLOCATIONS on all four voucher types. 956 unit tests, 0 failures.
-11. **Tally Seed Stage 2 (backup distribution)** ✅ CLOSED 2026-05-08 — Receipts at gross + Agst Ref bill_allocations on RCT/PMT in seeder. Tally backup committed at `seed_data/TDBK1800_100003.001`. Setup guide: `docs/seed-data-setup.md` (restore + reseed paths, UI toggle checklist, expected residuals: ₹9,70,537 receivable / ₹18,34,142 payable, troubleshooting). GitHub Release path documented but deferred (no current need).
-12. **Set B1b / Group B (write-agent — Payment, Purchase, Sales, Debit Note, Credit Note)** — design + plan complete; gating step is Task 0 feasibility probe (E1-E8) against live Tally. See `docs/plans/2026-04-12-group-b-voucher-types-plan.md`.
-13. **Set B1d (bank statement + reconciliation)** — DEFERRED. Feasibility probe parked for that phase. BANKALLOCATIONS / BANKDATE / INSTRUMENTNO unprobed. See `docs/open-items-parked.md`.
+- **What's next** → [`docs/roadmap.md`](docs/roadmap.md). Single source of truth for active work. Update it when feature sets close, when new sets are added, when priority changes, or when a probe/gating step is added or resolved. Don't track active roadmap in `CLAUDE.md` (status only) or in individual spec/plan docs (those are per-feature).
+- **Closed phases** → § Implementation Phases in this file. Promote completed roadmap items here with a one-line summary.
+- **Tally API gotchas** → [`LESSONS.md`](LESSONS.md). Especially § 15 (write safety rules). Cross-reference, don't re-state.
+- **Parked items** → [`docs/open-items-parked.md`](docs/open-items-parked.md).
+
+### Default to DB mode
+
+Legacy mode is frozen. Apply this everywhere:
+- New features: DB mode only. No `if not settings.db_mode` branches.
+- New tests: DB mode only (require `TEST_DATABASE_URL` or DB fixtures).
+- Bug fixes: fix in DB mode. If legacy-only and not blocking a demo, ignore.
+- Existing legacy unit/integration tests covering core Tally bridge logic: keep — they're mode-independent.
+- Existing legacy E2E/smoke tests: delete-when-broken; don't invest in keeping them green.
+- Manual testing: always start backend with `DATABASE_URL` + `JWT_SECRET` (+ `TALLY_WRITE_ENABLED=true` for write paths), frontend with `VITE_DB_MODE=true`.
+
+### Expensive test discipline
+
+- **Never run `e2e_live`, `eval/collect.py`, `eval/judge.py`, `eval/test_eval.py`, or `scripts/test_agent_live.py` twice for logging.** They make real Claude API calls. Always pipe to a log file on the *first* run via `2>&1 | tee docs/<logfile>.log`. The commands above already include this pattern — preserve it.
+
+### Spec & test plan thoroughness
+
+Every design spec must include:
+
+1. **State matrix** — every `component × state × variant` combination. Cover all user action flows (approve / discard / edit→approve / edit→discard / edit→cancel / reclassify). Include currency, GST, and error variants.
+2. **Test fixture matrix by category**:
+   - Backend fixtures (e.g. Vision JSON): one per doc type × currency × GST variant × edge case.
+   - Sample upload files: one per supported format (jpg, png, pdf, csv, xlsx) plus rejection cases (unsupported format, oversize, no extension).
+   - Mock API responses: every external service response the tests need.
+   - Frontend mock data: TypeScript prop objects for component tests.
+3. **DB persistence scenarios** — if the feature writes to DB: create/update/delete flows, linked records, status transitions, query-back verification.
+4. **Regression coverage** — fixtures must cover existing flows being extended, not just new ones.
+
+High-level "test these layers" tables alone are insufficient. Enumerate the surface; don't summarize it.
+
+### Playwright discipline
+
+- **State matrix before specs.** Build a `component × state × viewport` matrix before writing Playwright specs. Each state needs a mock data variant and a separate screenshot. For example: VoucherReviewCard = {draft / pending / written / discarded / error}; Sidebar = {expanded / collapsed / active-highlight / empty-workspace}; Header = {live-badge / demo-badge / long-name-truncation}.
+- **Assertions before screenshots.** Add `expect(locator).toHaveText(...)` content assertions *before* `toHaveScreenshot()` calls — screenshots catch regressions but assertions catch functional bugs.
+- **Visual checklist comment block.** Every `toHaveScreenshot()` MUST be preceded by a `// VISUAL CHECKLIST:` comment block stating: layout elements, specific text, colors / highlights, spacing / alignment, and what should NOT be visible. This guides the manual review.
+- **Main agent must inspect screenshots — every viewport.** After any Playwright run, the main agent (not a subagent — subagents can't see images) must use the Read tool on PNGs in `frontend/tests/playwright/__screenshots__/{mobile,tablet,desktop}/` before reporting pass/fail. Check for: blank space, content cutoff, sidebar/header overlap, missing text/tables/charts, unreadable elements. "N passed" only means pixel-diff matched the baseline — it does NOT mean the UI is correct. On first `--update-snapshots` there is no baseline, so everything passes by definition.
+- **Screenshot regeneration scope.** Only delete `frontend/tests/playwright/__screenshots__/*/<spec-name>.spec.ts/` for the specific spec being regenerated. Deleting the entire `__screenshots__/` directory wipes responsive + eval-visual baselines that require a different frontend mode to regenerate.
+
+### Seeder / Tally write specifics
+
+- **Always pass `--skip-preflight` to `seed_tally_data.py`.** A fresh Tally company's F2 date starts at FY-start (e.g. 2025-04-01), so the preflight check halts the seed. The user typically sets F2 manually in the UI right before/during the seed. Vouchers later than F2 drop silently; the verifier (`scripts/verify_tally_bridge_live.py`) catches it via the `day_book >= 50 vouchers` check.
+- **Read Tally config before any write.** See [`LESSONS.md` § 15](LESSONS.md) for the full operational checklist (probe voucher-type config, readback after every ALTER, REFERENCEDATE silent-overwrite detection, voucher-type config changes via UI only, etc.).
+
+## Implementation Phases
+
+Closed phases in build order, with one-line learnings. For what's next, see [`docs/roadmap.md`](docs/roadmap.md).
+
+| Phase | Status | Notes & key learnings |
+|---|---|---|
+| 1 — Tally Bridge | ✅ | `client.py`, `request_builder.py`, `response_parser.py`, models, exceptions. XML preferred over JSON across Tally versions. |
+| 2 — Agent Orchestrator & Tools | ✅ | Claude tool-calling loop, query classification. |
+| 2b — Analysis & Chart Agents | ✅ | Comparison, trend, top-N, aggregation. |
+| 3 — FastAPI Backend | ✅ | `POST /api/chat`, health, companies, reports. |
+| 4 — React Frontend | ✅ | Chat UI with inline Recharts + DataTable. |
+| 4b — Automated tests | ✅ | Vitest + Playwright (responsive + eval-visual). |
+| 5 — Eval Framework | ✅ | Two-phase (collect → judge → report). 8 scenarios, 49 turns. |
+| 6 — Eval Fixes (6 sub-phases) | ✅ | Flatten multi-dataset, date resolution, auto-enable charts, tool call limit 10→25, Langfuse observability. |
+| 7 — Date Validation | ✅ | `validate_tally_date()` regex + strptime + ISO autofix. `$$InDateRange` removed (not valid TDL). |
+| 8 — Eval Accuracy + UX | ✅ | Prompt rules 10–13, chart metadata stripping, inline markdown tables. |
+| 8b — Analysis Agent Fixes | ✅ | `_separate_tool_results()`, MAX_TOOL_CALLS 8→15, linear Change % line. |
+| 9 — Mock Tally + Demo Mode | ✅ | Built-in `mock_handler.py`, frontend toggle, `e2e_live --tally-mode mock`. |
+| 10 — Enriched Mock Data | ✅ | Fixture generator (34 ledgers, 50 vouchers, 15 stock items), 71 format parity tests. |
+| 11 — Tally Bridge Gap Closure | ✅ | 6 new tools (12→18): `list_all_ledgers`, `list_stock_items`, `list_account_groups`, `get_payment_register`, `get_receipt_register`, `get_cash_flow`. |
+| 12 — Code Execution Tool | ✅ | QueryAgent = data-fetch only; AnalysisAgent = sole computation authority. anthropic 0.84.0, pydantic 2.12.5. |
+| 13 — Chart Rendering Fixes | ✅ | `_format_pie_data` dynamic numeric scan; strip `*` in `_to_numeric`; `_has_table_intent()` honors user intent. |
+| 14 — Eval Data Accuracy | ✅ | Session context for AnalysisAgent, partial-period P&L rejection, ground truth keys. |
+| 15 — Architecture Bug Fixes | ✅ | Unconditional AnalysisAgent, context window 4→8 messages, QueryAgent max_tokens 1024→2048. |
+| 16 — Chart Stabilization | ✅ | Haiku chart advisor (`get_chart_advice()`) + markdown table parser + ChartAgent Rules A–D. AnalysisAgent streaming (max_tokens 32768), FE timeout 480s. |
+| Set A1 — Auth + Persistence | ✅ merged | DB mode (Postgres + JWT + workspaces + conversations). DB mode is now default. |
+| Set B1a — Expense Receipt Entry | ✅ merged | File upload → Vision extract → Tally Payment voucher. First write path live. |
+| Group A — UI enhancements (F4 + F5 + F6) | ✅ 2026-04-12 | Deferred conversation creation, workspace landing, voucher button states, responsive drawer. |
+| Tally Seed Stage 0 — write exploration | ✅ 2026-05-04 | All 9 write ops + delete path verified against live Tally. Canonical reference: `docs/tally-write-exploration-v4.md`. |
+| Tally Seed Stage 1 — build + live verify | ✅ 2026-05-07 | Builders + writer + seeder + Tier-3 verifier (13/13). 50 vouchers, 16 bills receivable, 8 bills payable. REFERENCE/REFERENCEDATE/BILLALLOCATIONS baked into seeder. |
+| Tally Seed Stage 2 — backup distribution | ✅ 2026-05-08 | Receipts at gross + Agst Ref on RCT/PMT. Backup committed at `seed_data/TDBK1800_100003.001`. Restore + reseed guide: `docs/seed-data-setup.md`. Expected residuals: ₹9,70,537 receivable / ₹18,34,142 payable. |
+
+**Up next:** Group B (write-agent — Sales / Purchase / Debit Note / Credit Note + multi-currency + workspace-from-Tally), gated on Task 0 feasibility probes E1–E8. See [`docs/roadmap.md`](docs/roadmap.md) and [`docs/plans/2026-04-12-group-b-voucher-types-plan.md`](docs/plans/2026-04-12-group-b-voucher-types-plan.md).

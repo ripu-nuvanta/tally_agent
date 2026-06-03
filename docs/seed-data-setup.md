@@ -1,5 +1,7 @@
 # Bharat Traders demo company — setup guide
 
+> **Status:** Stage 2 closed 2026-05-08. Tier-3 verifier 13/13. Backup captured at `seed_data/TDBK1800_100003.001`. Both restore (Path A) and full reseed (Path B) paths verified end-to-end.
+
 A canonical TallyPrime demo company for the TallyPrime AI Agent. Produced by
 `scripts/seed_tally_data.py`; the resulting state is captured in a Tally backup
 under `seed_data/`.
@@ -233,13 +235,19 @@ externally.
 
 ## Manual UI inspection
 
-License not detected: 
-- Change hostname to last known hostname from terminal; 
+Quick spot-check after restore/reseed:
+
+- Open one Sales voucher (e.g. S001) — confirm REFERENCE = `S001` visible after F12.
+- Open one Purchase voucher (e.g. P001) — confirm supplier invoice number + supplier invoice date `26-Sep-2025`.
+- Bills Receivable should list 16 bills; Bills Payable 8.
+
+License not detected:
+- Change hostname to last known hostname from terminal;
 - Always check if EDU mode or licensed Silver/Gold plan on left side
 - Some paths for reports: Go To -> Voucher Reports -> Sales, Purchase, More -> Credit Note, Debit Note, Journal, Receipt, Payment etc.
-- Adding reference/supplier info to voucher types: Gateway -> Alter -> Voucher Type -> Sales, Purchase, Payment, Receipt etc.  
+- Adding reference/supplier info to voucher types: Gateway -> Alter -> Voucher Type -> Sales, Purchase, Payment, Receipt etc.
 - Go To -> Registers -> Sales / Purchase
-- Alter -> Stock Groups, Stock Items etc. 
+- Alter -> Stock Groups, Stock Items etc.
 
 
 

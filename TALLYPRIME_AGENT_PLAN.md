@@ -1,5 +1,13 @@
 # TALLYPRIME AI AGENT — Implementation Plan for Claude Code
 
+> **⚠️ ARCHIVED — original project spec (phases 1–8)**
+> This document is preserved for historical context. It does NOT reflect current status.
+>
+> - **Current roadmap (what's next):** [`docs/roadmap.md`](docs/roadmap.md)
+> - **Current status, conventions, build commands:** [`CLAUDE.md`](CLAUDE.md)
+> - **Tally API learnings & write safety:** [`LESSONS.md`](LESSONS.md)
+> - **Parked items from phases 1–16:** [`docs/open-items-parked.md`](docs/open-items-parked.md)
+
 > **Project**: TallyPrime Chatbot Agent
 > **Stack**: Python (FastAPI) + React + Claude API
 > **Target**: Web app (primary), WhatsApp (future)

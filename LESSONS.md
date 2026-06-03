@@ -283,3 +283,21 @@ Critical for any deployment story: customer-side write-agent sessions need the t
 - **Sales / Receipt / Payment** — *likely* to have analogous toggles (customer PO date; cheque date for post-dated cheques), since REFERENCE/REFERENCEDATE have natural meaning on those types too. **Not yet probed.** Parked for write-agent design phase.
 
 ---
+
+## 15. Tally Write Safety — Operational Rules
+
+Distilled rules for any code path (or agent) that writes to Tally. Most of these are also "why" — the corresponding "what" is documented in §6–§14 above and in [`docs/tally-write-exploration-v4.md`](docs/tally-write-exploration-v4.md).
+
+1. **Read config before writing anything that depends on it.** Fetch the voucher type via `TYPE=Object SUBTYPE=VoucherType ID="<Name>" FETCHLIST=*` and inspect `NUMBERINGMETHOD`, `ALLOWALTERATION`, display toggles, and any per-type "Use … date" gate. Don't assume defaults.
+2. **`altered=1` / `created=1` is NOT proof of effect.** It only means the request parsed. Always readback after every ALTER — especially enum fields, sub-list ALTERs, and REFERENCEDATE.
+3. **Tally silently coerces invalid enum input to `None`.** No error, no warning. Readback is the only safety net.
+4. **Voucher-type config changes must be done in the Tally UI** (Gateway → Alter → Voucher Types → …). XML writes for behavior-affecting voucher-type fields (e.g. `NUMBERINGMETHOD`) appear successful — readback even confirms — but the runtime behavior doesn't change. Instruct the user; don't try to do it via XML.
+5. **BILLALLOCATIONS cannot be retro-fitted on existing vouchers.** Partial ALTER silently ignored; full-body ALTER with `TAGNAME="Master ID"` creates a duplicate voucher (`CREATED=1, ALTERED=0`). Bills must be added on the original Create.
+6. **REFERENCEDATE silent-overwrite check:** Before writing supplier-invoice-date (or analogous external-doc-date), confirm the per-voucher-type "Use supplier invoice date" toggle is ON. If OFF, Tally substitutes the voucher's main `DATE` field — readback alone won't catch it (the value looks plausible). Detection: write a value that differs from voucher DATE, then readback; if readback equals voucher DATE, the toggle is OFF.
+7. **Voucher-type config is Tally-installation-scoped, not company-scoped.** A `.tbk` restored into a different Tally install does not carry the toggles. Fresh installs need toggles set manually before any write that depends on them.
+8. **Sales numbering default ("Automatic") silently overwrites `<VOUCHERNUMBER>`.** Only `Manual` and `Automatic (Manual Override)` honor the supplied number — and the toggle change must be made in the UI (per rule 4).
+9. **Distinguish "data is stored correctly" from "user can see it in UI."** Some fields (e.g. REFERENCE) are stored under any numbering mode but hidden in the UI unless a per-voucher-type F12 display toggle is on. Surface the relevant toggle to the user when behavior is config-dependent.
+
+When advising the user, distinguish these two failure modes and surface the relevant Tally config — the agent can't see it without probing.
+
+---
