@@ -68,7 +68,7 @@ PYTHONPATH=. uv run python scripts/test_agent_live.py --host <TALLY_IP> --port 9
 python scripts/seed_tally_data.py --host <TALLY_IP> --port 9000
 
 # Eval framework & Playwright tests — PREREQUISITE: backend AND frontend must be running:
-#   Terminal 1: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000
+#   Terminal 1: uvicorn backend.main:app --reload --host 0.0.0.0 --port 8000 2>&1 | tee docs/be_run1.log
 #   Terminal 2: cd frontend && npm run dev   (Vite dev server on port 5173)
 # ⚠️ EXPENSIVE: Uses real Claude API calls. NEVER run twice — always tee to log on first run.
 # Results auto-saved to tests/eval/results/ (transcripts, screenshots, scores, report)
