@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import ConnectCompanyModal from "./components/ConnectCompanyModal";
 import UserMenu from "./components/UserMenu";
+import TallyStatusBadge from "./components/TallyStatusBadge";
 
 export default function ChatApp() {
   const { conversationId, workspaceId: urlWorkspaceId } = useParams();
@@ -105,17 +106,7 @@ export default function ChatApp() {
                   <span data-testid="header-workspace-name" className="text-xs text-gray-500 truncate">
                     {activeWorkspaceName}
                   </span>
-                  {activeWorkspaceConfig.mock_mode === true ? (
-                    <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                      Demo
-                    </span>
-                  ) : (
-                    <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      Live
-                    </span>
-                  )}
+                  <TallyStatusBadge config={activeWorkspaceConfig} />
                 </div>
               </div>
             </>

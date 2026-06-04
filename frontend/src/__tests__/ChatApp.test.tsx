@@ -82,6 +82,14 @@ describe("ChatApp", () => {
     mockedClient.getWorkspaces.mockResolvedValue([mockWorkspace]);
     mockedClient.getConversations.mockResolvedValue([mockConversation]);
     mockedClient.getConversation.mockResolvedValue(mockConversationDetail);
+    // TallyStatusBadge polls /api/health for live workspaces; default to connected
+    // so a live workspace badge resolves to "Live" after effects flush.
+    mockedClient.getHealth.mockResolvedValue({
+      status: "healthy",
+      tally_connected: true,
+      tally_url: "http://localhost:9000",
+      mode: "live",
+    });
   });
 
   it("renders the header with TallyPrime AI title", async () => {
