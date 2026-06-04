@@ -12,6 +12,7 @@ describe("TallyStatusBadge", () => {
   it("shows Demo (no polling) for mock workspaces", () => {
     render(<TallyStatusBadge config={{ mock_mode: true }} />);
     expect(screen.getByTestId("header-workspace-badge")).toHaveTextContent("Demo");
+    expect(screen.getByTestId("header-workspace-badge")).toHaveAttribute("data-status", "demo");
     expect(getHealth).not.toHaveBeenCalled();
   });
 
@@ -30,10 +31,12 @@ describe("TallyStatusBadge", () => {
       .mockResolvedValueOnce({ status: "degraded", tally_connected: false, tally_url: "x", mode: "live" })
       .mockResolvedValueOnce({ status: "healthy", tally_connected: true, tally_url: "x", mode: "live" });
     render(<TallyStatusBadge config={{ tally_host: "h" }} />);
-    // Flush only the initial check()'s microtask (not the 30s interval) so we
-    // observe the first (disconnected) result before the re-poll fires.
-    await act(async () => { await Promise.resolve(); await Promise.resolve(); });
-    expect(screen.getByTestId("header-workspace-badge")).toHaveTextContent("Offline");
+    // Advance timers to flush the initial check, then wait for the Offline state
+    // to be reflected in the DOM before advancing the 30s re-poll interval.
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    await vi.waitFor(() =>
+      expect(screen.getByTestId("header-workspace-badge")).toHaveTextContent("Offline"),
+    );
     await act(async () => { await vi.advanceTimersByTimeAsync(30000); });
     expect(screen.getByTestId("header-workspace-badge")).toHaveTextContent("Live");
   });

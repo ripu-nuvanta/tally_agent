@@ -107,6 +107,25 @@ describe("ConnectCompanyModal", () => {
     expect(onCreated).not.toHaveBeenCalled();
   });
 
+  it("shows no-company message (not generic error) when getCompanies returns empty list", async () => {
+    mockedClient.getCompanies.mockResolvedValue({ companies: [] });
+    const onCreated = vi.fn();
+    const user = userEvent.setup();
+    renderModal(vi.fn(), onCreated);
+
+    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/no company is loaded in Tally/i)).toBeInTheDocument();
+    });
+
+    expect(mockedClient.createWorkspace).not.toHaveBeenCalled();
+    // Stays on form
+    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+    expect(onCreated).not.toHaveBeenCalled();
+  });
+
   it("passes mock:true to getCompanies when Demo Mode is enabled", async () => {
     mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
     mockedClient.createWorkspace.mockResolvedValue(mockWorkspace);

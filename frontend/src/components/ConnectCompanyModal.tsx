@@ -22,9 +22,11 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
     e.preventDefault();
     setError("");
     setLoading(true);
+    const portNum = parseInt(tallyPort, 10);
+    const safePort = Number.isNaN(portNum) ? 9000 : portNum;
     try {
       const res = await getCompanies(
-        mockMode ? { mock: true } : { host: tallyHost, port: parseInt(tallyPort, 10) },
+        mockMode ? { mock: true } : { host: tallyHost, port: safePort },
       );
       if (!res.companies.length) throw new Error("No companies loaded in Tally");
       const actualCompany = res.companies[0].name;
@@ -32,7 +34,7 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
         name,
         config: {
           tally_host: tallyHost,
-          tally_port: parseInt(tallyPort, 10),
+          tally_port: safePort,
           mock_mode: mockMode,
           tally_company: actualCompany,
         },
@@ -40,8 +42,12 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
       setCompanyName(actualCompany);
       setWorkspace(ws);
       setStep("connected");
-    } catch {
-      setError("Failed to connect. Check that Tally is running at the given host/port with a company loaded.");
+    } catch (err) {
+      if (err instanceof Error && err.message === "No companies loaded in Tally") {
+        setError("Connected, but no company is loaded in Tally. Open a company in Tally and try again.");
+      } else {
+        setError("Failed to connect. Check that Tally is running at the given host/port with a company loaded.");
+      }
     } finally {
       setLoading(false);
     }
