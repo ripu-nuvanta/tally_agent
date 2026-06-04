@@ -102,7 +102,16 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
           + Connect Company
         </button>
       </div>
-      {showModal && <ConnectCompanyModal onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); loadData(); }} />}
+      {showModal && (
+        <ConnectCompanyModal
+          onClose={() => setShowModal(false)}
+          onCreated={(ws) => {
+            setShowModal(false);
+            loadData();
+            onNewChat(ws.id, ws.name, ws.config as Record<string, unknown>);
+          }}
+        />
+      )}
     </aside>
   );
 }

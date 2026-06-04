@@ -177,10 +177,11 @@ export default function ChatApp() {
           {showConnectModal && (
             <ConnectCompanyModal
               onClose={() => setShowConnectModal(false)}
-              onCreated={() => {
+              onCreated={(ws) => {
                 setShowConnectModal(false);
                 setHasWorkspaces(true);
                 setSidebarRefresh((n) => n + 1);
+                handleNewChat(ws.id, ws.name, ws.config as Record<string, unknown>);
               }}
             />
           )}

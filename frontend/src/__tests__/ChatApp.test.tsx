@@ -171,6 +171,52 @@ describe("ChatApp", () => {
     expect(screen.queryByPlaceholderText(/Ask about your Tally data/i)).not.toBeInTheDocument();
   });
 
+  it("completes connect modal flow and navigates to new workspace chat", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([]);
+    mockedClient.getConversations.mockResolvedValue([]);
+    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.createWorkspace.mockResolvedValue({
+      id: "ws-1",
+      name: "My Books",
+      agent_type: "tally",
+      config: {},
+      memory: {},
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    const user = userEvent.setup();
+    renderChatApp();
+
+    // Connect prompt shows with zero workspaces
+    await waitFor(() => {
+      expect(screen.getByTestId("connect-company-button")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("connect-company-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    // Confirmation screen
+    await waitFor(() => {
+      expect(screen.getByTestId("connect-confirm-company")).toHaveTextContent("Bharat Traders Pvt Ltd");
+    });
+
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    // Navigated to /w/ws-1 landing page → header shows "New Chat"
+    await waitFor(() => {
+      const chatTitle = document.querySelector('[data-testid="header-chat-title"]');
+      expect(chatTitle).toBeInTheDocument();
+      expect(chatTitle!.textContent).toBe("New Chat");
+    });
+  });
+
   it("sidebar container has hidden md:flex classes for responsive layout", async () => {
     renderChatApp();
 
