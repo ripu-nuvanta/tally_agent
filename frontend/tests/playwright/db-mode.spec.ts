@@ -163,7 +163,7 @@ test.describe("DB-mode visual tests", () => {
     await mockWorkspaceData(page);
 
     // Mock health endpoint to avoid errors
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -235,6 +235,10 @@ test.describe("DB-mode visual tests", () => {
     // - "Trial Balance April" has bg-blue-100 background (active conversation)
     // - On mobile: drawer overlay slides in from left, main content partially visible behind it
     // - On mobile: backdrop dimming effect visible behind the drawer
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("sidebar-with-workspaces.png");
   });
 
@@ -286,7 +290,7 @@ test.describe("DB-mode visual tests", () => {
     });
 
     // Mock health
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -329,6 +333,10 @@ test.describe("DB-mode visual tests", () => {
     // - Table headers: "Ledger", "Debit", "Credit"
     // - User message bubble above the assistant response
     // - NOT visible: no orange "Demo" badge
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("chat-with-header.png");
   });
 
@@ -397,7 +405,7 @@ test.describe("DB-mode visual tests", () => {
     });
 
     // Mock health
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -428,6 +436,10 @@ test.describe("DB-mode visual tests", () => {
     // - Three action buttons visible: "Write to Tally" (green), "Edit Entry" (white/outlined), "Discard" (red border)
     // - "Expense Entry — Draft" status label visible in card header
     // - NOT visible: no disabled/grayed buttons (draft state has all buttons enabled)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("voucher-review-card.png");
   });
 
@@ -442,7 +454,7 @@ test.describe("DB-mode visual tests", () => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -458,8 +470,11 @@ test.describe("DB-mode visual tests", () => {
     // Hamburger button should be visible
     await expect(page.locator('[aria-label="Open sidebar"]')).toBeVisible();
 
-    // Sidebar content (workspace names) should NOT be visible — hidden behind drawer
-    await expect(page.locator("text=Bharat Traders")).not.toBeVisible();
+    // Sidebar content (workspace names) should NOT be visible — hidden behind drawer.
+    // Scope to the sidebar <aside>: the header now shows the active workspace name on the
+    // landing page (header-workspace-name), so the bare text locator would also match the
+    // header. We only assert the SIDEBAR copy is hidden on mobile.
+    await expect(page.locator("aside").getByText("Bharat Traders")).not.toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Hamburger ☰ icon visible in the top-left corner of the header
@@ -469,6 +484,10 @@ test.describe("DB-mode visual tests", () => {
     // - Chat input box visible at the bottom
     // - NOT visible: no sidebar workspace names (Bharat Traders, NUVANTA AI hidden)
     // - NOT visible: no drawer overlay
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("mobile-hamburger-closed.png");
   });
 
@@ -483,7 +502,7 @@ test.describe("DB-mode visual tests", () => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -538,6 +557,10 @@ test.describe("DB-mode visual tests", () => {
     // - Backdrop behind the drawer dims the main content
     // - Main content partially visible behind the semi-transparent backdrop
     // - "+ New Chat" and "+ Connect Company" visible in the drawer
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("mobile-hamburger-open.png");
   });
 
@@ -552,7 +575,7 @@ test.describe("DB-mode visual tests", () => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -582,6 +605,10 @@ test.describe("DB-mode visual tests", () => {
     // - Quick action buttons visible in the center
     // - Chat input box visible at the bottom
     // - NOT visible: no sidebar content (mobile drawer is closed)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("mobile-landing-page.png");
   });
 
@@ -648,7 +675,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -675,6 +702,10 @@ test.describe("DB-mode visual tests", () => {
     // - Buttons should not look clickable (disabled cursor style)
     // - Vendor "Staples India", amount ₹5,000 still readable in the card
     // - NOT visible: no green border (not written), no gray (not discarded)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("voucher-pending.png");
   });
 
@@ -738,7 +769,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -766,6 +797,10 @@ test.describe("DB-mode visual tests", () => {
     // - NOT visible: no "Edit Entry" action button
     // - NOT visible: no "Discard" action button
     // - Card appears settled/final (no interactive elements)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("voucher-written.png");
   });
 
@@ -829,7 +864,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -857,6 +892,10 @@ test.describe("DB-mode visual tests", () => {
     // - NOT visible: no "Edit Entry" action button
     // - NOT visible: no "Discard" action button
     // - Card appears finalized with no interactive controls
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("voucher-discarded.png");
   });
 
@@ -894,7 +933,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -920,6 +959,10 @@ test.describe("DB-mode visual tests", () => {
     // - Conversations under Bharat Traders visible: Trial Balance April, Expense Entry, etc.
     // - Conversations under NUVANTA AI visible: P&L Summary
     // - Both workspace sections expanded with their conversation lists
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("sidebar-active-highlight.png");
   });
 
@@ -994,7 +1037,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1025,6 +1068,10 @@ test.describe("DB-mode visual tests", () => {
     // - "Trial Balance April" has bg-blue-100 highlight (active conversation under Bharat Traders)
     // - Collapsed workspace rows show NO conversation items listed below them
     // - ▸ arrow aligns to the right of the workspace name button
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("sidebar-collapsed-workspace.png");
   });
 
@@ -1059,7 +1106,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1082,6 +1129,10 @@ test.describe("DB-mode visual tests", () => {
     // - Workspace section is expanded (no collapse arrow, or expanded state)
     // - Proper spacing between workspace header and "+ New Chat" button
     // - "+ Connect Company" button visible at the bottom of the sidebar
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("sidebar-empty-workspace.png");
   });
 
@@ -1150,7 +1201,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1173,6 +1224,10 @@ test.describe("DB-mode visual tests", () => {
     // - Truncation does not cause text to overlap the avatar or other header elements
     // - The "..." appears at the end of the truncated text (not mid-word if possible)
     // - "Live" badge visible in the subtitle without being pushed off screen
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("header-long-names.png");
   });
 
@@ -1234,7 +1289,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1265,7 +1320,7 @@ test.describe("DB-mode visual tests", () => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1298,19 +1353,23 @@ test.describe("DB-mode visual tests", () => {
     await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
 
     // Verify modal form fields are visible
-    await expect(page.locator("text=Company Name")).toBeVisible();
+    await expect(page.locator("text=Friendly Name")).toBeVisible();
     await expect(page.locator("text=Tally Host")).toBeVisible();
     await expect(page.locator("text=Tally Port")).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Modal overlay visible with semi-transparent backdrop behind it
     // - Modal title "Connect Tally Company" visible at the top
-    // - Form fields visible: "Company Name" input, "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
+    // - Form fields visible: "Friendly Name" input, "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
     // - "Demo Mode" toggle switch visible in the form
     // - "Cancel" and "Connect" buttons visible at the bottom of the modal
     // - Modal is centered on the screen with appropriate width (not full screen)
     // - Backdrop dims the sidebar and main content behind the modal
     // - Proper vertical spacing between form fields (no cramping)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("connect-company-modal.png");
   });
 
@@ -1378,7 +1437,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1417,6 +1476,10 @@ test.describe("DB-mode visual tests", () => {
     // - "Edit Again" button visible (secondary styling)
     // - NOT visible: "Write to Tally" standalone button (replaced by inline form)
     // - NOT visible: "Discard" button
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("voucher-edit-form.png");
   });
 
@@ -1431,7 +1494,7 @@ test.describe("DB-mode visual tests", () => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1468,6 +1531,10 @@ test.describe("DB-mode visual tests", () => {
     // - Quick action buttons visible
     // - Chat input box visible at the bottom
     // - NOT visible: no message bubbles (fresh new chat)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("desktop-landing-page.png");
   });
 
@@ -1482,7 +1549,7 @@ test.describe("DB-mode visual tests", () => {
     await mockLoggedIn(page);
     await mockWorkspaceData(page);
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1511,6 +1578,10 @@ test.describe("DB-mode visual tests", () => {
     // - Both workspaces are expanded showing their "+ New Chat" buttons
     // - Conversations listed under each workspace (Trial Balance April, Expense Entry, etc. under Bharat Traders)
     // - No conversation item is highlighted with bg-blue-100 (landing page, no active conversation)
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
     await expect(page).toHaveScreenshot("sidebar-new-chat-highlighted.png");
   });
 
@@ -1531,7 +1602,7 @@ test.describe("DB-mode visual tests", () => {
       }
     });
 
-    await page.route("**/api/health", (route) =>
+    await page.route("**/api/health**", (route) =>
       route.fulfill({
         status: 200,
         contentType: "application/json",
@@ -1564,5 +1635,101 @@ test.describe("DB-mode visual tests", () => {
     // - NOT visible: quick action buttons
     // - NOT visible: any conversation messages
     await expect(page).toHaveScreenshot("no-workspaces-landing.png");
+  });
+
+  // Test 22: Connect company confirmation — two-step modal lands on confirmation screen
+  test("connect-company-confirmation", async ({ page, viewport }) => {
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "healthy", tally_connected: true, tally_url: "http://localhost:9000", mode: "live" }) }));
+    await page.route("**/api/companies**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ companies: [{ name: "Bharat Traders Private Limited" }] }) }));
+    await page.route("**/api/workspaces", (route) => {
+      if (route.request().method() === "POST") {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "ws-new", name: "My Books", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }) });
+      } else {
+        // Fall through to the GET handler registered by mockWorkspaceData (route.continue
+        // would hit the network and bypass the mock; fallback re-enters the route chain).
+        route.fallback();
+      }
+    });
+    await page.goto("/");
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    // open the connect modal (mirror the connect-company-modal test's mobile/desktop handling)
+    if (isMobile) {
+      const hamburger = page.locator('[aria-label="Open sidebar"]');
+      await hamburger.waitFor({ timeout: 10000 });
+      await hamburger.click();
+      await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
+    } else {
+      await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
+    }
+    const connectBtn = page.locator("text=+ Connect Company");
+    await (isMobile ? connectBtn.last() : connectBtn.first()).click();
+    await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
+    // fill friendly name and submit
+    await page.locator("#connect-name").fill("My Books");
+    // exact:true to avoid matching the sidebar "+ Connect Company" button
+    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    // confirmation screen
+    await expect(page.getByTestId("connect-confirm-company")).toHaveText("Bharat Traders Private Limited");
+    await expect(page.getByTestId("connect-confirm-name")).toHaveText("My Books");
+    await expect(page.getByTestId("connect-start-chat")).toBeVisible();
+    // VISUAL CHECKLIST:
+    // - Modal centered with backdrop; green check + "Company Connected" title
+    // - "TALLY COMPANY" label with value "Bharat Traders Private Limited"
+    // - "FRIENDLY NAME" label with value "My Books"
+    // - "Close" (secondary) and blue "Start chat" buttons, right-aligned
+    // - NOT visible: the form fields (Friendly Name input, Tally Host/Port, Demo toggle), no error banner
+    await expect(page).toHaveScreenshot("connect-company-confirmation.png");
+  });
+
+  // Test 23: Header Tally live — health reports connected → green "Live" badge
+  test("header-tally-live", async ({ page }) => {
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "healthy", tally_connected: true, tally_url: "http://localhost:9000", mode: "live" }) }));
+
+    await page.goto("/w/ws-1");
+
+    // Wait for workspace to resolve in header
+    await page.waitForSelector('[data-testid="header-workspace-name"]', { timeout: 10000 });
+    await expect(page.locator('[data-testid="header-workspace-name"]')).toHaveText("Bharat Traders");
+
+    // Badge resolves to connected/Live
+    await expect(page.getByTestId("header-workspace-badge")).toHaveAttribute("data-status", "connected", { timeout: 10000 });
+    await expect(page.getByTestId("header-workspace-badge")).toContainText("Live");
+
+    // VISUAL CHECKLIST:
+    // - Green pill badge with green dot + "Live" to the right of the workspace name
+    // - Header title line ("TallyPrime AI | New Chat") and workspace name "Bharat Traders" visible
+    // - NOT visible: red/Offline badge, gray/Checking badge, orange/Demo badge
+    await expect(page).toHaveScreenshot("header-tally-live.png");
+  });
+
+  // Test 24: Header Tally offline — health reports disconnected → red "Offline" badge
+  test("header-tally-offline", async ({ page }) => {
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "degraded", tally_connected: false, tally_url: "http://localhost:9000", mode: "live" }) }));
+
+    await page.goto("/w/ws-1");
+
+    // Wait for workspace to resolve in header
+    await page.waitForSelector('[data-testid="header-workspace-name"]', { timeout: 10000 });
+    await expect(page.locator('[data-testid="header-workspace-name"]')).toHaveText("Bharat Traders");
+
+    // Badge resolves to disconnected/Offline
+    await expect(page.getByTestId("header-workspace-badge")).toHaveAttribute("data-status", "disconnected", { timeout: 10000 });
+    await expect(page.getByTestId("header-workspace-badge")).toContainText("Offline");
+
+    // VISUAL CHECKLIST:
+    // - Red pill badge with red dot + "Offline" to the right of the workspace name
+    // - Header title line and workspace name "Bharat Traders" otherwise normal
+    // - NOT visible: green/Live badge, gray/Checking badge, orange/Demo badge
+    await expect(page).toHaveScreenshot("header-tally-offline.png");
   });
 });
