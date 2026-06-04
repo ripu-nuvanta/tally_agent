@@ -361,6 +361,41 @@ describe("ChatApp", () => {
     });
   });
 
+  it("redirects bare / to the first workspace landing page so New Chat is highlighted", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([
+      {
+        id: "ws-1",
+        name: "My Books",
+        agent_type: "tally",
+        config: {},
+        memory: {},
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    mockedClient.getConversations.mockResolvedValue([]);
+
+    renderChatApp("/");
+
+    // After workspaces load the app should redirect to /w/ws-1 and the
+    // sidebar should render the "+ New Chat" button in its active/highlighted state.
+    await screen.findByTestId("sidebar-new-chat-active");
+  });
+
+  it("does NOT redirect when there are no workspaces (stays at /)", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([]);
+    mockedClient.getConversations.mockResolvedValue([]);
+
+    renderChatApp("/");
+
+    // No workspaces → no redirect; the no-workspaces prompt appears instead.
+    await waitFor(() => {
+      expect(screen.getByTestId("no-workspaces-prompt")).toBeInTheDocument();
+    });
+    // The sidebar-new-chat-active element should never appear when count is 0.
+    expect(screen.queryByTestId("sidebar-new-chat-active")).not.toBeInTheDocument();
+  });
+
   it("header shows Demo badge with data-testid when mock_mode is true", async () => {
     mockedClient.getWorkspaces.mockResolvedValue([mockWorkspaceDemo]);
     mockedClient.getConversations.mockResolvedValue([mockConversation]);

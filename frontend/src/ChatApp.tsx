@@ -66,9 +66,17 @@ export default function ChatApp() {
     [],
   );
 
-  const handleWorkspacesLoaded = useCallback((count: number) => {
-    setHasWorkspaces(count > 0);
-  }, []);
+  const handleWorkspacesLoaded = useCallback(
+    (count: number, firstWorkspaceId?: string) => {
+      setHasWorkspaces(count > 0);
+      // Bare "/" with workspaces: land on the first workspace's new-chat page
+      // so the sidebar "+ New Chat" highlight has an active workspace to bind to.
+      if (count > 0 && firstWorkspaceId && !conversationId && !urlWorkspaceId) {
+        navigate(`/w/${firstWorkspaceId}`, { replace: true });
+      }
+    },
+    [conversationId, urlWorkspaceId, navigate],
+  );
 
   return (
     <div className="h-screen flex flex-col bg-white">
