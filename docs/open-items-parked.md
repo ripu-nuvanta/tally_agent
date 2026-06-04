@@ -87,3 +87,25 @@ Set B1d (bank statement import + reconciliation) is deferred per Group B design 
 - Owner: Set B1d design phase.
 - Cross-ref: `LESSONS.md` §14 (silent-overwrite warning), `docs/tally-write-exploration-v4.md` (general write findings).
 - Status: Open.
+
+### Connect-company: multi-company Tally selector
+
+`ConnectCompanyModal` currently takes `companies[0].name` from `GET /api/companies` as the actual Tally company when verifying a connection. If a Tally instance has multiple companies loaded, the user can't pick which one. Add a company selector (dropdown of the returned `companies`) in the modal's form step, storing the chosen name in `config.tally_company`.
+
+- Owner: FE follow-up.
+- Cross-ref: `docs/plans/2026-06-04-uiux-fixes-otel-heartbeat.md` Task 4.
+- Status: Open.
+
+### Frontend production build (`tsc -b`) is broken on master
+
+`npm run build` (`tsc -b && vite build`) fails on `master` (pre-dates branch `fix/uiux-nav-heartbeat`): the build tsconfig is stricter than the dev/test `npx tsc --noEmit` gate and includes test files, surfacing errors in `ChartRenderer.tsx` (recharts Formatter typing), `ChatWindow.tsx` (`m.data as Record<string,unknown>` cast of `TableData|TableData[]`), and unused-import errors in test files. The project's working gate is `npx tsc --noEmit` (clean) + Vitest; CI/build via `tsc -b` does not currently pass. Fix the build tsconfig (separate app vs test typecheck, relax test-file unused-locals, or correct the recharts/TableData casts) so `npm run build` is green.
+
+- Owner: FE infra follow-up.
+- Status: Open.
+
+### Write-flow eval coverage
+
+The eval framework (`tests/eval/`) covers the query flow only. Write paths (Set B1a Payment, Group B Sales/Purchase/DN/CN, and now the connect→Start chat flow) have no eval scenarios. Add write-flow eval scenarios with golden assertions on voucher creation outcomes.
+
+- Owner: eval framework follow-up.
+- Status: Open.

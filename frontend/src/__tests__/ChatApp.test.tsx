@@ -82,6 +82,14 @@ describe("ChatApp", () => {
     mockedClient.getWorkspaces.mockResolvedValue([mockWorkspace]);
     mockedClient.getConversations.mockResolvedValue([mockConversation]);
     mockedClient.getConversation.mockResolvedValue(mockConversationDetail);
+    // TallyStatusBadge polls /api/health for live workspaces; default to connected
+    // so a live workspace badge resolves to "Live" after effects flush.
+    mockedClient.getHealth.mockResolvedValue({
+      status: "healthy",
+      tally_connected: true,
+      tally_url: "http://localhost:9000",
+      mode: "live",
+    });
   });
 
   it("renders the header with TallyPrime AI title", async () => {
@@ -169,6 +177,52 @@ describe("ChatApp", () => {
 
     // The chat input should NOT be rendered (no point typing without a workspace)
     expect(screen.queryByPlaceholderText(/Ask about your Tally data/i)).not.toBeInTheDocument();
+  });
+
+  it("completes connect modal flow and navigates to new workspace chat", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([]);
+    mockedClient.getConversations.mockResolvedValue([]);
+    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.createWorkspace.mockResolvedValue({
+      id: "ws-1",
+      name: "My Books",
+      agent_type: "tally",
+      config: {},
+      memory: {},
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+
+    const user = userEvent.setup();
+    renderChatApp();
+
+    // Connect prompt shows with zero workspaces
+    await waitFor(() => {
+      expect(screen.getByTestId("connect-company-button")).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByTestId("connect-company-button"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    // Confirmation screen
+    await waitFor(() => {
+      expect(screen.getByTestId("connect-confirm-company")).toHaveTextContent("Bharat Traders Pvt Ltd");
+    });
+
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    // Navigated to /w/ws-1 landing page → header shows "New Chat"
+    await waitFor(() => {
+      const chatTitle = document.querySelector('[data-testid="header-chat-title"]');
+      expect(chatTitle).toBeInTheDocument();
+      expect(chatTitle!.textContent).toBe("New Chat");
+    });
   });
 
   it("sidebar container has hidden md:flex classes for responsive layout", async () => {
@@ -313,6 +367,41 @@ describe("ChatApp", () => {
       expect(badge).toBeInTheDocument();
       expect(badge!.textContent).toContain("Live");
     });
+  });
+
+  it("redirects bare / to the first workspace landing page so New Chat is highlighted", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([
+      {
+        id: "ws-1",
+        name: "My Books",
+        agent_type: "tally",
+        config: {},
+        memory: {},
+        created_at: "2026-01-01T00:00:00Z",
+        updated_at: "2026-01-01T00:00:00Z",
+      },
+    ]);
+    mockedClient.getConversations.mockResolvedValue([]);
+
+    renderChatApp("/");
+
+    // After workspaces load the app should redirect to /w/ws-1 and the
+    // sidebar should render the "+ New Chat" button in its active/highlighted state.
+    await screen.findByTestId("sidebar-new-chat-active");
+  });
+
+  it("does NOT redirect when there are no workspaces (stays at /)", async () => {
+    mockedClient.getWorkspaces.mockResolvedValue([]);
+    mockedClient.getConversations.mockResolvedValue([]);
+
+    renderChatApp("/");
+
+    // No workspaces → no redirect; the no-workspaces prompt appears instead.
+    await waitFor(() => {
+      expect(screen.getByTestId("no-workspaces-prompt")).toBeInTheDocument();
+    });
+    // The sidebar-new-chat-active element should never appear when count is 0.
+    expect(screen.queryByTestId("sidebar-new-chat-active")).not.toBeInTheDocument();
   });
 
   it("header shows Demo badge with data-testid when mock_mode is true", async () => {

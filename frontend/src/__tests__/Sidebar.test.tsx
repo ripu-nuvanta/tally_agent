@@ -159,4 +159,41 @@ describe("Sidebar", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
   });
+
+  it("calls onNewChat with the new workspace after completing the connect flow", async () => {
+    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.createWorkspace.mockResolvedValue({
+      id: "ws-1",
+      name: "My Books",
+      agent_type: "tally",
+      config: {},
+      memory: {},
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const onNewChat = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({ onNewChat });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "+ Connect Company" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "+ Connect Company" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start chat" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onNewChat).toHaveBeenCalledWith("ws-1", "My Books", {});
+  });
 });

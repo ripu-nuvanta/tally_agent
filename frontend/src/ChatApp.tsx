@@ -4,6 +4,7 @@ import Sidebar from "./components/Sidebar";
 import ChatWindow from "./components/ChatWindow";
 import ConnectCompanyModal from "./components/ConnectCompanyModal";
 import UserMenu from "./components/UserMenu";
+import TallyStatusBadge from "./components/TallyStatusBadge";
 
 export default function ChatApp() {
   const { conversationId, workspaceId: urlWorkspaceId } = useParams();
@@ -66,9 +67,17 @@ export default function ChatApp() {
     [],
   );
 
-  const handleWorkspacesLoaded = useCallback((count: number) => {
-    setHasWorkspaces(count > 0);
-  }, []);
+  const handleWorkspacesLoaded = useCallback(
+    (count: number, firstWorkspaceId?: string) => {
+      setHasWorkspaces(count > 0);
+      // Bare "/" with workspaces: land on the first workspace's new-chat page
+      // so the sidebar "+ New Chat" highlight has an active workspace to bind to.
+      if (count > 0 && firstWorkspaceId && !conversationId && !urlWorkspaceId) {
+        navigate(`/w/${firstWorkspaceId}`, { replace: true });
+      }
+    },
+    [conversationId, urlWorkspaceId, navigate],
+  );
 
   return (
     <div className="h-screen flex flex-col bg-white">
@@ -97,17 +106,7 @@ export default function ChatApp() {
                   <span data-testid="header-workspace-name" className="text-xs text-gray-500 truncate">
                     {activeWorkspaceName}
                   </span>
-                  {activeWorkspaceConfig.mock_mode === true ? (
-                    <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-orange-500" />
-                      Demo
-                    </span>
-                  ) : (
-                    <span data-testid="header-workspace-badge" className="inline-flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full bg-green-100 text-green-700 shrink-0">
-                      <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                      Live
-                    </span>
-                  )}
+                  <TallyStatusBadge config={activeWorkspaceConfig} />
                 </div>
               </div>
             </>
@@ -177,10 +176,11 @@ export default function ChatApp() {
           {showConnectModal && (
             <ConnectCompanyModal
               onClose={() => setShowConnectModal(false)}
-              onCreated={() => {
+              onCreated={(ws) => {
                 setShowConnectModal(false);
                 setHasWorkspaces(true);
                 setSidebarRefresh((n) => n + 1);
+                handleNewChat(ws.id, ws.name, ws.config as Record<string, unknown>);
               }}
             />
           )}

@@ -11,7 +11,7 @@ interface SidebarProps {
   onNewChat: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>) => void;
   refreshTrigger?: number;
   onWorkspaceResolved?: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>, conversationTitle?: string | null) => void;
-  onWorkspacesLoaded?: (count: number) => void;
+  onWorkspacesLoaded?: (count: number, firstWorkspaceId?: string) => void;
 }
 
 export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved, onWorkspacesLoaded }: SidebarProps) {
@@ -23,7 +23,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
   const loadData = async () => {
     const ws = await getWorkspaces();
     setWorkspaces(ws);
-    onWorkspacesLoaded?.(ws.length);
+    onWorkspacesLoaded?.(ws.length, ws[0]?.id);
     const convResults = await Promise.all(ws.map((w) => getConversations(w.id)));
     const convMap: Record<string, ConversationSummary[]> = {};
     ws.forEach((w, i) => { convMap[w.id] = convResults[i]; });
@@ -102,7 +102,16 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
           + Connect Company
         </button>
       </div>
-      {showModal && <ConnectCompanyModal onClose={() => setShowModal(false)} onCreated={() => { setShowModal(false); loadData(); }} />}
+      {showModal && (
+        <ConnectCompanyModal
+          onClose={() => setShowModal(false)}
+          onCreated={(ws) => {
+            setShowModal(false);
+            loadData();
+            onNewChat(ws.id, ws.name, ws.config as Record<string, unknown>);
+          }}
+        />
+      )}
     </aside>
   );
 }

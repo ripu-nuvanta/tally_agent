@@ -7,7 +7,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.health import router
-from backend.api.dependencies import get_client
+from backend.api.dependencies import get_client, get_current_user
 
 
 @pytest.fixture
@@ -28,6 +28,7 @@ def mock_client():
 def test_health_tally_connected(app, mock_client):
     mock_client.health_check.return_value = True
     app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_current_user] = lambda: "test-user"
     with TestClient(app) as tc:
         resp = tc.get("/api/health")
     assert resp.status_code == 200
@@ -40,6 +41,7 @@ def test_health_tally_connected(app, mock_client):
 def test_health_tally_disconnected(app, mock_client):
     mock_client.health_check.return_value = False
     app.dependency_overrides[get_client] = lambda: mock_client
+    app.dependency_overrides[get_current_user] = lambda: "test-user"
     with TestClient(app) as tc:
         resp = tc.get("/api/health")
     assert resp.status_code == 200

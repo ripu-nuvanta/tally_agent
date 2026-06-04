@@ -301,3 +301,18 @@ Distilled rules for any code path (or agent) that writes to Tally. Most of these
 When advising the user, distinguish these two failure modes and surface the relevant Tally config — the agent can't see it without probing.
 
 ---
+
+## 16. Observability & tooling gotchas (non-Tally)
+
+### `opentelemetry-instrumentation-anthropic` streaming tool-use `KeyError: 'input'`
+Version **0.53.0** crashes (caught by its own `@dont_throw`, so it surfaces only as a DEBUG log) inside `_process_response_item` when a streaming response with tools emits an `input_json_delta` before the event dict has an `input` key:
+```
+complete_response["events"][index]["input"] += item.delta.partial_json   # KeyError
+```
+Effect: streaming generations that use tools (here: `AnalysisAgent`, the only streaming+tools call) are dropped from Langfuse traces and spam DEBUG noise. Fixed in **0.61.0**, which guards it: `event["input"] = event.get("input", "") + item.delta.partial_json` plus a `tool_use` type check and an `index < len(events)` bounds check. **Rule:** keep `opentelemetry-instrumentation-anthropic >= 0.61.0`. Verify the guard by reading the *installed file* (`<venv>/.../opentelemetry/instrumentation/anthropic/streaming.py`) — `inspect.getsource` on the function returns the `@dont_throw` wrapper, not the real body.
+
+### `python-multipart` must be a declared dependency
+FastAPI's `File`/`Form`/`UploadFile` (used by `/api/chat/upload`) require `python-multipart` at import time. It was historically only manually `pip install`ed, never in the lock — so `uv sync` silently removes it and the upload route breaks. It is now a declared core dep in `pyproject.toml`. Don't rely on manually-installed packages; declare them.
+
+### Playwright route mocks must account for query strings
+`page.route("**/api/health", ...)` does **not** match `/api/health?host=localhost&port=9000` — Playwright globs don't span the query string. The per-workspace heartbeat badge sends host/port as query params, so the mock never fulfilled and the badge stuck on "Checking…". Use `**/api/health**` (trailing `**`) for any endpoint the frontend calls with query params. Also: for async header badges, add a settle wait (`await expect(badge).not.toContainText("Checking")`) before `toHaveScreenshot` to keep screenshots deterministic.
