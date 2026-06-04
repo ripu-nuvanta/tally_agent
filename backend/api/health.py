@@ -1,8 +1,8 @@
 """Health check endpoint."""
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
-from backend.api.dependencies import get_client
+from backend.api.dependencies import get_client, get_current_user
 from backend.api.models import HealthResponse
 from backend.tally_bridge.client import TallyClient
 
@@ -12,8 +12,9 @@ router = APIRouter()
 @router.get("/health", response_model=HealthResponse)
 async def health_check(
     host: str | None = None,
-    port: int = 9000,
+    port: int = Query(9000, ge=1, le=65535),
     client: TallyClient = Depends(get_client),
+    _user: str = Depends(get_current_user),
 ) -> HealthResponse:
     """Health check. With host[/port], probes that Tally instance ad hoc
     (used by the per-workspace heartbeat badge); otherwise uses the app client."""

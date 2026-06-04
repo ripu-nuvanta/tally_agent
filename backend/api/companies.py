@@ -1,8 +1,8 @@
 """Companies endpoint."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
-from backend.api.dependencies import get_client
+from backend.api.dependencies import get_client, get_current_user
 from backend.api.models import CompaniesResponse, CompanyItem
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.exceptions import TallyConnectionError, TallyResponseError
@@ -14,9 +14,10 @@ router = APIRouter()
 @router.get("/companies", response_model=CompaniesResponse)
 async def get_companies(
     host: str | None = None,
-    port: int = 9000,
+    port: int = Query(9000, ge=1, le=65535),
     mock: bool = False,
     client: TallyClient = Depends(get_client),
+    _user: str = Depends(get_current_user),
 ) -> CompaniesResponse:
     """List Tally companies.
 
