@@ -23,6 +23,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
     action: "approve" | "discard";
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const justCreatedConvRef = useRef<string | null>(null);
   const { sessionId, setSessionId, company } = useSession();
 
   useEffect(() => {
@@ -31,6 +32,13 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
 
   useEffect(() => {
     if (conversationId && workspaceId) {
+      if (justCreatedConvRef.current === conversationId) {
+        // This window just created the conversation via deferred creation —
+        // optimistic state is already correct; skip the refetch once so the
+        // in-flight response isn't clobbered. (Bug: first chat needed refresh.)
+        justCreatedConvRef.current = null;
+        return;
+      }
       getConversation(workspaceId, conversationId)
         .then((conv) => {
           setMessages(
@@ -47,8 +55,13 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           // Conversation may have been deleted or is inaccessible
           setMessages([]);
         });
+    } else if (!conversationId) {
+      // New-chat landing page: drop messages from any previously open conversation
+      // and start a fresh agent session. (Bug: New Chat needed refresh.)
+      setMessages([]);
+      setSessionId(null);
     }
-  }, [conversationId, workspaceId]);
+  }, [conversationId, workspaceId, setSessionId]);
 
   const handleSend = useCallback(
     async (text: string, file?: File) => {
@@ -75,6 +88,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
         if (!activeConvId && workspaceId) {
           const conv = await createConversation(workspaceId);
           activeConvId = conv.id;
+          justCreatedConvRef.current = conv.id;
           onConversationCreated?.(conv.id);
         }
 

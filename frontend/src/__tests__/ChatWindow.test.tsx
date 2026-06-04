@@ -333,6 +333,80 @@ describe("ChatWindow", () => {
       expect(onCreated).toHaveBeenCalledWith("conv-qa");
     });
 
+    it("does not clobber optimistic messages when first send creates the conversation", async () => {
+      const user = userEvent.setup();
+      const newConv = { id: "conv-new", title: null, tag: null, created_at: "2026-01-01", updated_at: "2026-01-01" };
+      mockedApi.createConversation.mockResolvedValue(newConv);
+      // Server hasn't persisted the optimistic messages yet
+      mockedApi.getConversation.mockResolvedValue({ id: "conv-new", title: null, tag: null, messages: [] });
+      mockedApi.sendChat.mockResolvedValue({ message: "Reply A", session_id: "s1" });
+
+      function Wrapper(props: { conversationId?: string; workspaceId?: string }) {
+        return (
+          <SessionProvider>
+            <ChatWindow {...props} />
+          </SessionProvider>
+        );
+      }
+
+      const { rerender } = render(<Wrapper workspaceId="ws-1" />);
+
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "First question{Enter}");
+
+      await waitFor(() => {
+        expect(mockedApi.createConversation).toHaveBeenCalledWith("ws-1");
+      });
+
+      // Simulate parent navigation to /c/:id after creation
+      await act(async () => {
+        rerender(<Wrapper workspaceId="ws-1" conversationId="conv-new" />);
+      });
+
+      // The ref guard should prevent getConversation from wiping optimistic state
+      await waitFor(() => {
+        expect(screen.getByText("Reply A")).toBeInTheDocument();
+      });
+      expect(screen.getByText("First question")).toBeInTheDocument();
+    });
+
+    it("clears messages when navigating to the new-chat landing page", async () => {
+      mockedApi.getConversation.mockResolvedValue({
+        id: "conv-1",
+        title: "Test",
+        tag: null,
+        messages: [
+          { id: "m1", role: "user" as const, content: "old question", created_at: "2026-01-01T00:00:00Z" },
+          { id: "m2", role: "assistant" as const, content: "old answer", created_at: "2026-01-01T00:00:01Z" },
+        ],
+      });
+
+      function Wrapper(props: { conversationId?: string; workspaceId?: string }) {
+        return (
+          <SessionProvider>
+            <ChatWindow {...props} />
+          </SessionProvider>
+        );
+      }
+
+      const { rerender } = render(<Wrapper workspaceId="ws-1" conversationId="conv-1" />);
+
+      await waitFor(() => {
+        expect(screen.getByText("old answer")).toBeInTheDocument();
+      });
+
+      // Navigate to new-chat landing page (conversationId becomes undefined)
+      await act(async () => {
+        rerender(<Wrapper workspaceId="ws-1" conversationId={undefined} />);
+      });
+
+      await waitFor(() => {
+        expect(screen.queryByText("old question")).not.toBeInTheDocument();
+      });
+      expect(screen.queryByText("old answer")).not.toBeInTheDocument();
+      expect(screen.getByText("TallyPrime AI Assistant")).toBeInTheDocument();
+    });
+
     it("loading prevents double creation on rapid sends", async () => {
       const user = userEvent.setup();
       // Make createConversation slow so we can test double-send prevention
