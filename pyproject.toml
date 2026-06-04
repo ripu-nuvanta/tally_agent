@@ -11,6 +11,7 @@ dependencies = [
     "pydantic-settings>=2.0",
     "python-dateutil>=2.9.0.post0",
     "python-dotenv>=1.0",
+    "python-multipart>=0.0.9",
     "pyyaml>=6.0.3",
     "uvicorn>=0.34",
 ]
@@ -20,7 +21,7 @@ langfuse = [
     "langfuse>=2.0",
     "opentelemetry-sdk>=1.20",
     "opentelemetry-exporter-otlp-proto-http>=1.20",
-    "opentelemetry-instrumentation-anthropic>=0.1",
+    "opentelemetry-instrumentation-anthropic>=0.61.0",
 ]
 dev = [
     "pytest>=8.0",
