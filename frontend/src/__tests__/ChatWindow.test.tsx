@@ -370,6 +370,39 @@ describe("ChatWindow", () => {
       expect(screen.getByText("First question")).toBeInTheDocument();
     });
 
+    it("does not clear optimistic messages when workspaceId changes mid-send", async () => {
+      const user = userEvent.setup();
+      // createConversation never resolves → the send stays in flight and
+      // conversationId remains undefined for the whole test window.
+      mockedApi.createConversation.mockReturnValue(new Promise(() => {}));
+      mockedApi.getConversation.mockResolvedValue({ id: "conv-x", title: null, tag: null, messages: [] });
+
+      function Wrapper(props: { conversationId?: string; workspaceId?: string }) {
+        return (
+          <SessionProvider>
+            <ChatWindow {...props} />
+          </SessionProvider>
+        );
+      }
+
+      const { rerender } = render(<Wrapper workspaceId="ws-1" />);
+
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "Mid-send question{Enter}");
+
+      // Optimistic user message is rendered while the send is in flight.
+      expect(screen.getByText("Mid-send question")).toBeInTheDocument();
+
+      // workspaceId changes mid-send (conversationId still undefined). The
+      // load-effect re-runs and would hit the clear branch — but the
+      // sendingRef guard must skip it so the optimistic message survives.
+      await act(async () => {
+        rerender(<Wrapper workspaceId="ws-2" />);
+      });
+
+      expect(screen.getByText("Mid-send question")).toBeInTheDocument();
+    });
+
     it("clears messages when navigating to the new-chat landing page", async () => {
       mockedApi.getConversation.mockResolvedValue({
         id: "conv-1",

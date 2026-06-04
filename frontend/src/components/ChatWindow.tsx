@@ -24,6 +24,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const justCreatedConvRef = useRef<string | null>(null);
+  const sendingRef = useRef(false);
   const { sessionId, setSessionId, company } = useSession();
 
   useEffect(() => {
@@ -35,7 +36,8 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
       if (justCreatedConvRef.current === conversationId) {
         // This window just created the conversation via deferred creation —
         // optimistic state is already correct; skip the refetch once so the
-        // in-flight response isn't clobbered. (Bug: first chat needed refresh.)
+        // refetch doesn't overwrite the optimistic messages this window is
+        // mid-rendering. (Bug: first chat needed refresh.)
         justCreatedConvRef.current = null;
         return;
       }
@@ -55,9 +57,11 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           // Conversation may have been deleted or is inaccessible
           setMessages([]);
         });
-    } else if (!conversationId) {
-      // New-chat landing page: drop messages from any previously open conversation
-      // and start a fresh agent session. (Bug: New Chat needed refresh.)
+    } else if (!conversationId && !sendingRef.current) {
+      // New-chat landing page: drop messages from any previously open
+      // conversation and start a fresh agent session. Skipped while a first
+      // send is in flight (conversationId still undefined) so a concurrent
+      // workspaceId change can't wipe the optimistic messages mid-send.
       setMessages([]);
       setSessionId(null);
     }
@@ -65,6 +69,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
 
   const handleSend = useCallback(
     async (text: string, file?: File) => {
+      sendingRef.current = true;
       const userMsg: ChatMessage = {
         id: generateId(),
         role: "user",
@@ -132,6 +137,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
         );
       } finally {
         setLoading(false);
+        sendingRef.current = false;
       }
     },
     [sessionId, company, setSessionId, workspaceId, conversationId, onMessageSent, onConversationCreated]
