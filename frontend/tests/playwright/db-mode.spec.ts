@@ -324,17 +324,22 @@ test.describe("DB-mode visual tests", () => {
     // Verify Live badge (workspace config has no mock_mode)
     await expect(page.locator('[data-testid="header-workspace-badge"]')).toContainText("Live");
 
-    // Verify TallyPrime AI header
-    await expect(page.locator("text=TallyPrime AI").first()).toBeVisible();
+    // Verify TallyPrime AI brand: visible in header on desktop/tablet, hidden on mobile (moved to drawer)
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    if (isMobile) {
+      await expect(page.locator("header").getByText("TallyPrime AI")).not.toBeVisible();
+    } else {
+      await expect(page.locator("header").getByText("TallyPrime AI")).toBeVisible();
+    }
 
     // On desktop/tablet: also verify sidebar shows "Trial Balance April"
-    const isMobile = (viewport?.width ?? 1280) < 768;
     if (!isMobile) {
       await expect(page.locator("text=Trial Balance April").first()).toBeVisible();
     }
 
     // VISUAL CHECKLIST:
-    // - Header first line: "TallyPrime AI | Trial Balance April" (conversation title after pipe)
+    // - Desktop/tablet header: "TallyPrime AI | Trial Balance April" (brand + pipe + conversation title)
+    // - Mobile header: NO "TallyPrime AI" brand (hidden md:block); shows chat title full-width instead
     // - Header subtitle (second line): "Bharat Traders ● Live" — subtitle is under the chat title, NOT under "TallyPrime AI"
     // - "Live" badge is green (not orange/demo)
     // - Sidebar (desktop/tablet): "Bharat Traders" section has bg-blue-50 background
@@ -480,6 +485,12 @@ test.describe("DB-mode visual tests", () => {
     // Hamburger button should be visible
     await expect(page.locator('[aria-label="Open sidebar"]')).toBeVisible();
 
+    // Brand "TallyPrime AI" should NOT be visible in the mobile header (moved to drawer)
+    await expect(page.locator("header").getByText("TallyPrime AI")).not.toBeVisible();
+
+    // Drawer brand block should not be present (drawer is closed)
+    await expect(page.getByTestId("drawer-brand")).not.toBeAttached();
+
     // Sidebar content (workspace names) should NOT be visible — hidden behind drawer.
     // Scope to the sidebar <aside>: the header now shows the active workspace name on the
     // landing page (header-workspace-name), so the bare text locator would also match the
@@ -488,10 +499,12 @@ test.describe("DB-mode visual tests", () => {
 
     // VISUAL CHECKLIST:
     // - Hamburger ☰ icon visible in the top-left corner of the header
-    // - "TallyPrime AI" text visible in the header center/left
+    // - Header has NO "TallyPrime AI" brand text (brand hidden on mobile, md:block)
+    // - Header shows: hamburger + chat title block + user avatar only
     // - Avatar/user icon visible in the top-right corner
     // - Quick action buttons visible in the main content area
     // - Chat input box visible at the bottom
+    // - NOT visible: "TallyPrime AI" brand in the header
     // - NOT visible: sidebar workspace header "Bharat Traders Private Limited (Bharat Traders)" (hidden behind drawer)
     // - NOT visible: "NUVANTA AI" sidebar label (hidden behind drawer)
     // - NOT visible: no drawer overlay
@@ -557,12 +570,20 @@ test.describe("DB-mode visual tests", () => {
     await page.locator("text=Bharat Traders Private Limited (Bharat Traders)").last().waitFor({ state: "visible", timeout: 10000 });
     await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
 
+    // Drawer brand block must be visible once drawer opens
+    await expect(page.getByTestId("drawer-brand")).toBeVisible();
+
+    // Brand still hidden in header (even when drawer is open)
+    await expect(page.locator("header").getByText("TallyPrime AI")).not.toBeVisible();
+
     // Verify the active conversation is shown and highlighted (bg-blue-100) in the drawer
     await expect(page.locator("text=Trial Balance April").last()).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Sidebar drawer slides in from the left and is fully visible
-    // - Workspace list visible in the drawer: "Bharat Traders Private Limited (Bharat Traders)" and "NUVANTA AI"
+    // - Drawer TOP shows "TallyPrime AI" brand block with bottom border (data-testid="drawer-brand")
+    // - Header does NOT show "TallyPrime AI" brand (hidden md:block — hidden on mobile)
+    // - Workspace list visible below the brand block: "Bharat Traders Private Limited (Bharat Traders)" and "NUVANTA AI"
     // - "Bharat Traders Private Limited (Bharat Traders)" wraps to multiple lines (fully visible, no ellipsis)
     // - "NUVANTA AI" unchanged (no tally_company)
     // - Collapse chevron still visible at the right edge of each workspace header
@@ -599,25 +620,31 @@ test.describe("DB-mode visual tests", () => {
 
     await page.goto("/w/ws-1");
 
-    // Wait for the TallyPrime AI header to load
-    await page.waitForSelector("text=TallyPrime AI", { timeout: 10000 });
+    // Wait for app to fully load (hint text is always in DOM regardless of brand visibility)
+    await page.waitForSelector("text=Type or upload to start a conversation", { timeout: 10000 });
 
     // Hamburger should be visible on mobile
     await expect(page.locator('[aria-label="Open sidebar"]')).toBeVisible();
 
-    // The app title should be visible
-    await expect(page.locator("text=TallyPrime AI").first()).toBeVisible();
+    // Header does NOT show "TallyPrime AI" brand on mobile (hidden md:block)
+    await expect(page.locator("header").getByText("TallyPrime AI")).not.toBeVisible();
+
+    // chat title element is visible in the header
+    await expect(page.locator('[data-testid="header-chat-title"]')).toBeVisible();
 
     // The chat window hint text should be visible (always visible regardless of sidebar)
     await expect(page.locator("text=Type or upload to start a conversation")).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Hamburger ☰ icon visible in the top-left of the header
-    // - "TallyPrime AI" text visible in the header
+    // - Header does NOT show "TallyPrime AI" brand (hidden on mobile — brand is in the drawer)
+    // - Header shows: hamburger + chat title (full width) + user avatar
+    // - [data-testid="header-chat-title"] visible in the header (shows "New Chat" in blue)
     // - "TallyPrime AI Assistant" heading centered in the main content area
     // - Hint text "Type or upload to start a conversation" visible below the heading
     // - Quick action buttons visible in the center
     // - Chat input box visible at the bottom
+    // - NOT visible: "TallyPrime AI" brand text in the header
     // - NOT visible: no sidebar content (mobile drawer is closed)
     {
       const badge = page.getByTestId("header-workspace-badge");
