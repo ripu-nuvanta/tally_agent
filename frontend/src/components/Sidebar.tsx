@@ -78,7 +78,7 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
             <div key={ws.id} className={isActive ? "bg-blue-50 rounded-lg px-1 py-0.5" : ""}>
               <button
                 onClick={() => toggleCollapse(ws.id)}
-                className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 ${
+                className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 overflow-hidden ${
                   isActive
                     ? "font-bold text-gray-900"
                     : "font-semibold text-gray-500"
