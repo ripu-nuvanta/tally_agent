@@ -9,7 +9,7 @@ const mockWorkspaces = [
     id: "ws-1",
     name: "Bharat Traders",
     agent_type: "tally",
-    config: { tally_host: "localhost", tally_port: 9000 },
+    config: { tally_host: "localhost", tally_port: 9000, tally_company: "Bharat Traders Private Limited" },
     created_at: "2025-04-01T00:00:00Z",
   },
   {
@@ -205,15 +205,15 @@ test.describe("DB-mode visual tests", () => {
       await hamburger.click();
       // Wait for drawer sidebar content — use .last() because the desktop sidebar
       // is also in the DOM (hidden) and Playwright picks the first (hidden) element
-      await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
-      await expect(page.locator("text=Bharat Traders").last()).toBeVisible();
+      await page.locator("text=Bharat Traders Private Limited (Bharat Traders)").last().waitFor({ state: "visible", timeout: 10000 });
+      await expect(page.locator("text=Bharat Traders Private Limited (Bharat Traders)").last()).toBeVisible();
       await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
       // Verify active conversation highlight is visible in the drawer sidebar
       await expect(page.locator("text=Trial Balance April").last()).toBeVisible();
     } else {
       // Desktop/tablet: sidebar is always visible
-      await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
-      await expect(page.locator("text=Bharat Traders").first()).toBeVisible();
+      await page.waitForSelector("text=Bharat Traders Private Limited (Bharat Traders)", { timeout: 10000 });
+      await expect(page.locator("text=Bharat Traders Private Limited (Bharat Traders)").first()).toBeVisible();
       await expect(page.locator("text=NUVANTA AI").first()).toBeVisible();
       // Verify active conversation is visible and highlighted
       await expect(page.locator("text=Trial Balance April").first()).toBeVisible();
@@ -226,12 +226,22 @@ test.describe("DB-mode visual tests", () => {
       await expect(page.locator("text=+ New Chat").first()).toBeVisible();
     }
 
+    // Content assertions before screenshot (catch functional bugs independently of pixel diff)
+    // Use .last() to handle mobile where two <aside> elements may be in DOM simultaneously
+    // (hidden desktop sidebar + visible drawer sidebar — drawer renders second)
+    await expect(
+      page.locator("aside").getByText("Bharat Traders Private Limited (Bharat Traders)").last(),
+    ).toBeVisible();
+    await expect(page.locator("aside").getByText("NUVANTA AI").last()).toBeVisible();
+
     // VISUAL CHECKLIST:
-    // - Two workspaces listed: "Bharat Traders" and "NUVANTA AI"
+    // - Sidebar shows "Bharat Traders Private Limited (Bharat Traders)" as the ws-1 workspace header
+    //   (may truncate with ellipsis on narrow viewports); "NUVANTA AI" unchanged (no tally_company)
+    // - Collapse chevron still visible at the right edge of each workspace header
     // - Conversations listed under each workspace (e.g., "Trial Balance April", "Expense Entry" under Bharat Traders; "P&L Summary" under NUVANTA AI)
     // - "+ New Chat" buttons visible for each workspace
     // - "+ Connect Company" button visible at the bottom of the sidebar
-    // - "Bharat Traders" section has bg-blue-50 background (active workspace)
+    // - "Bharat Traders Private Limited (Bharat Traders)" section has bg-blue-50 background (active workspace)
     // - "Trial Balance April" has bg-blue-100 background (active conversation)
     // - On mobile: drawer overlay slides in from left, main content partially visible behind it
     // - On mobile: backdrop dimming effect visible behind the drawer
@@ -474,7 +484,7 @@ test.describe("DB-mode visual tests", () => {
     // Scope to the sidebar <aside>: the header now shows the active workspace name on the
     // landing page (header-workspace-name), so the bare text locator would also match the
     // header. We only assert the SIDEBAR copy is hidden on mobile.
-    await expect(page.locator("aside").getByText("Bharat Traders")).not.toBeVisible();
+    await expect(page.locator("aside").getByText("Bharat Traders Private Limited (Bharat Traders)")).not.toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Hamburger ☰ icon visible in the top-left corner of the header
@@ -482,7 +492,8 @@ test.describe("DB-mode visual tests", () => {
     // - Avatar/user icon visible in the top-right corner
     // - Quick action buttons visible in the main content area
     // - Chat input box visible at the bottom
-    // - NOT visible: no sidebar workspace names (Bharat Traders, NUVANTA AI hidden)
+    // - NOT visible: sidebar workspace header "Bharat Traders Private Limited (Bharat Traders)" (hidden behind drawer)
+    // - NOT visible: "NUVANTA AI" sidebar label (hidden behind drawer)
     // - NOT visible: no drawer overlay
     {
       const badge = page.getByTestId("header-workspace-badge");
@@ -543,7 +554,7 @@ test.describe("DB-mode visual tests", () => {
     // Sidebar drawer with workspace names should now be visible.
     // Use .last() because the desktop sidebar is also in the DOM (inside hidden md:flex)
     // and Playwright picks the first (hidden) element. The drawer renders second.
-    await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
+    await page.locator("text=Bharat Traders Private Limited (Bharat Traders)").last().waitFor({ state: "visible", timeout: 10000 });
     await expect(page.locator("text=NUVANTA AI").last()).toBeVisible();
 
     // Verify the active conversation is shown and highlighted (bg-blue-100) in the drawer
@@ -551,8 +562,11 @@ test.describe("DB-mode visual tests", () => {
 
     // VISUAL CHECKLIST:
     // - Sidebar drawer slides in from the left and is fully visible
-    // - Workspace list visible in the drawer: "Bharat Traders" and "NUVANTA AI"
-    // - "Bharat Traders" section has bg-blue-50 background (active workspace)
+    // - Workspace list visible in the drawer: "Bharat Traders Private Limited (Bharat Traders)" and "NUVANTA AI"
+    // - "Bharat Traders Private Limited (Bharat Traders)" may truncate with ellipsis on narrow viewport
+    // - "NUVANTA AI" unchanged (no tally_company)
+    // - Collapse chevron still visible at the right edge of each workspace header
+    // - "Bharat Traders Private Limited (Bharat Traders)" section has bg-blue-50 background (active workspace)
     // - "Trial Balance April" conversation item has bg-blue-100 background (active)
     // - Backdrop behind the drawer dims the main content
     // - Main content partially visible behind the semi-transparent backdrop
@@ -953,7 +967,9 @@ test.describe("DB-mode visual tests", () => {
     await expect(activeWsSection.locator("text=Bharat Traders")).toBeVisible();
 
     // VISUAL CHECKLIST:
-    // - "Bharat Traders" workspace section has bg-blue-50 light blue background
+    // - "Bharat Traders Private Limited (Bharat Traders)" workspace section has bg-blue-50 light blue background
+    //   (may truncate with ellipsis if label is wider than sidebar)
+    // - Collapse chevron still visible at the right edge of the workspace header
     // - "Trial Balance April" conversation item has bg-blue-100 slightly darker blue background
     // - "NUVANTA AI" workspace section has NO blue highlight (plain/white background)
     // - Conversations under Bharat Traders visible: Trial Balance April, Expense Entry, etc.
