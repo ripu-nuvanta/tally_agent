@@ -72,18 +72,20 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
         {workspaces.map((ws) => {
           const isActive = ws.id === activeWorkspaceId;
           const isCollapsed = collapsed[ws.id] && !isActive;
+          const tallyCompany = ws.config?.tally_company;
+          const label = typeof tallyCompany === "string" && tallyCompany ? `${tallyCompany} (${ws.name})` : ws.name;
           return (
             <div key={ws.id} className={isActive ? "bg-blue-50 rounded-lg px-1 py-0.5" : ""}>
               <button
                 onClick={() => toggleCollapse(ws.id)}
-                className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 ${
+                className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 overflow-hidden ${
                   isActive
                     ? "font-bold text-gray-900"
                     : "font-semibold text-gray-500"
                 }`}
               >
-                <span>{ws.name}</span>
-                <span className="text-sm text-gray-400">{isCollapsed ? "▸" : "▾"}</span>
+                <span className="truncate text-left min-w-0" title={label}>{label}</span>
+                <span className="text-sm text-gray-400 shrink-0">{isCollapsed ? "▸" : "▾"}</span>
               </button>
               {!isCollapsed && (
                 <ConversationList workspaceId={ws.id} conversations={conversations[ws.id] || []}
