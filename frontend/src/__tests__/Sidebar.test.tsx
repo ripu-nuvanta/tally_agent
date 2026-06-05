@@ -160,6 +160,48 @@ describe("Sidebar", () => {
     });
   });
 
+  describe("workspace label with tally_company", () => {
+    const wsWithCompany: WorkspaceData[] = [
+      { id: "ws-1", name: "Hey", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      { id: "ws-2", name: "Nuvanta Co", agent_type: "tally", config: {}, memory: {}, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" },
+      { id: "ws-3", name: "Legacy Books", agent_type: "tally", config: { tally_company: "" }, memory: {}, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z" },
+    ];
+
+    beforeEach(() => {
+      mockedClient.getWorkspaces.mockResolvedValue(wsWithCompany);
+      mockedClient.getConversations.mockResolvedValue([]);
+    });
+
+    it("shows actual company name with friendly name in parentheses", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited (Hey)")).toBeInTheDocument();
+      });
+    });
+
+    it("falls back to friendly name when tally_company is missing", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Nuvanta Co")).toBeInTheDocument();
+      });
+    });
+
+    it("falls back to friendly name when tally_company is empty string", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Legacy Books")).toBeInTheDocument();
+      });
+    });
+
+    it("sets title attribute to the full label for hover on truncation", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        const label = screen.getByText("Bharat Traders Private Limited (Hey)");
+        expect(label).toHaveAttribute("title", "Bharat Traders Private Limited (Hey)");
+      });
+    });
+  });
+
   it("calls onNewChat with the new workspace after completing the connect flow", async () => {
     mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
     mockedClient.createWorkspace.mockResolvedValue({
