@@ -20,7 +20,7 @@ Example: `Bharat Traders Private Limited (Hey)`
 
 **Fallback:** If `config.tally_company` is absent (workspaces created before the two-step connect modal shipped), show just `workspace.name` — identical to current behavior.
 
-**Long names:** Truncate with ellipsis (Tailwind `truncate`) so the label never wraps or pushes out the collapse chevron. Full label in `title` attribute for hover.
+**Long names:** Wrap onto a second/third line (Tailwind `break-words`) so the full name is always visible — no truncation. Chevron stays top-aligned (`items-start` on the header button, `shrink-0` on the chevron). Full label also in `title` attribute. _(Amended 2026-06-05: originally truncate-with-ellipsis; user requested full visibility.)_
 
 ## State matrix
 
