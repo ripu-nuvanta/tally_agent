@@ -94,10 +94,10 @@ export default function ChatApp() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <h1 className="text-lg font-semibold text-gray-900 shrink-0">TallyPrime AI</h1>
+          <h1 className="hidden md:block text-lg font-semibold text-gray-900 shrink-0">TallyPrime AI</h1>
           {activeWorkspaceName && (
             <>
-              <span className="text-gray-300 shrink-0">|</span>
+              <span className="hidden md:inline text-gray-300 shrink-0">|</span>
               <div className="min-w-0 flex-1">
                 <div data-testid="header-chat-title" className={`text-sm font-medium truncate ${conversationId ? "text-gray-700" : "text-blue-600"}`}>
                   {conversationId ? (activeConversationTitle || "Chat") : "New Chat"}
@@ -138,21 +138,26 @@ export default function ChatApp() {
               onClick={() => setSidebarOpen(false)}
               aria-hidden="true"
             />
-            <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-xl z-50">
-              <Sidebar
-                activeConversationId={conversationId}
-                activeWorkspaceId={activeWorkspaceId || undefined}
-                onConversationSelect={(ws, conv, name, config, title) => {
-                  handleConversationSelect(ws, conv, name, config, title);
-                  setSidebarOpen(false);
-                }}
-                onNewChat={(ws, name, config) => {
-                  handleNewChat(ws, name, config);
-                }}
-                refreshTrigger={sidebarRefresh}
-                onWorkspaceResolved={handleWorkspaceResolved}
-                onWorkspacesLoaded={handleWorkspacesLoaded}
-              />
+            <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-xl z-50 flex flex-col">
+              <div data-testid="drawer-brand" className="px-4 py-3 border-b border-gray-200">
+                <h1 className="text-lg font-semibold text-gray-900">TallyPrime AI</h1>
+              </div>
+              <div className="flex-1 overflow-hidden">
+                <Sidebar
+                  activeConversationId={conversationId}
+                  activeWorkspaceId={activeWorkspaceId || undefined}
+                  onConversationSelect={(ws, conv, name, config, title) => {
+                    handleConversationSelect(ws, conv, name, config, title);
+                    setSidebarOpen(false);
+                  }}
+                  onNewChat={(ws, name, config) => {
+                    handleNewChat(ws, name, config);
+                  }}
+                  refreshTrigger={sidebarRefresh}
+                  onWorkspaceResolved={handleWorkspaceResolved}
+                  onWorkspacesLoaded={handleWorkspacesLoaded}
+                />
+              </div>
             </div>
           </div>
         )}

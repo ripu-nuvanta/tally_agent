@@ -98,4 +98,22 @@ describe("ConversationList", () => {
     const allButtons = screen.getAllByRole("button");
     expect(allButtons).toHaveLength(1);
   });
+
+  it("conversation button has title attribute equal to its title text", () => {
+    renderConversationList();
+    const button = screen.getByRole("button", { name: "Trial Balance Query" });
+    expect(button).toHaveAttribute("title", "Trial Balance Query");
+  });
+
+  it("conversation button with null title has title attribute 'New Chat'", () => {
+    renderConversationList();
+    // conv-3 has null title → displays "New Chat" → title attr should also be "New Chat"
+    // The "+ New Chat" action button does NOT have a title attr; filter by having a title attr
+    const buttons = screen.getAllByRole("button");
+    const nullTitleBtn = buttons.find(
+      (btn) => btn.getAttribute("title") === "New Chat" && btn.textContent === "New Chat"
+    );
+    expect(nullTitleBtn).toBeDefined();
+    expect(nullTitleBtn).toHaveAttribute("title", "New Chat");
+  });
 });
