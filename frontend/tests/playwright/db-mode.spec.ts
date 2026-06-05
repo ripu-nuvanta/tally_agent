@@ -236,7 +236,7 @@ test.describe("DB-mode visual tests", () => {
 
     // VISUAL CHECKLIST:
     // - Sidebar shows "Bharat Traders Private Limited (Bharat Traders)" as the ws-1 workspace header
-    //   (may truncate with ellipsis on narrow viewports); "NUVANTA AI" unchanged (no tally_company)
+    //   fully visible, wrapping to 2-3 lines (no truncation/ellipsis); "NUVANTA AI" unchanged (no tally_company)
     // - Collapse chevron still visible at the right edge of each workspace header
     // - Conversations listed under each workspace (e.g., "Trial Balance April", "Expense Entry" under Bharat Traders; "P&L Summary" under NUVANTA AI)
     // - "+ New Chat" buttons visible for each workspace
@@ -563,7 +563,7 @@ test.describe("DB-mode visual tests", () => {
     // VISUAL CHECKLIST:
     // - Sidebar drawer slides in from the left and is fully visible
     // - Workspace list visible in the drawer: "Bharat Traders Private Limited (Bharat Traders)" and "NUVANTA AI"
-    // - "Bharat Traders Private Limited (Bharat Traders)" may truncate with ellipsis on narrow viewport
+    // - "Bharat Traders Private Limited (Bharat Traders)" wraps to multiple lines (fully visible, no ellipsis)
     // - "NUVANTA AI" unchanged (no tally_company)
     // - Collapse chevron still visible at the right edge of each workspace header
     // - "Bharat Traders Private Limited (Bharat Traders)" section has bg-blue-50 background (active workspace)
@@ -968,7 +968,7 @@ test.describe("DB-mode visual tests", () => {
 
     // VISUAL CHECKLIST:
     // - "Bharat Traders Private Limited (Bharat Traders)" workspace section has bg-blue-50 light blue background
-    //   (may truncate with ellipsis if label is wider than sidebar)
+    //   fully visible, wrapping to 2-3 lines (chevron aligned to the top-right of the first line)
     // - Collapse chevron still visible at the right edge of the workspace header
     // - "Trial Balance April" conversation item has bg-blue-100 slightly darker blue background
     // - "NUVANTA AI" workspace section has NO blue highlight (plain/white background)

@@ -78,13 +78,13 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
             <div key={ws.id} className={isActive ? "bg-blue-50 rounded-lg px-1 py-0.5" : ""}>
               <button
                 onClick={() => toggleCollapse(ws.id)}
-                className={`w-full flex items-center justify-between text-xs uppercase tracking-wide px-2 mb-1 overflow-hidden ${
+                className={`w-full flex items-start justify-between text-xs uppercase tracking-wide px-2 mb-1 overflow-hidden ${
                   isActive
                     ? "font-bold text-gray-900"
                     : "font-semibold text-gray-500"
                 }`}
               >
-                <span className="truncate text-left min-w-0" title={label}>{label}</span>
+                <span className="text-left min-w-0 break-words" title={label}>{label}</span>
                 <span className="text-sm text-gray-400 shrink-0">{isCollapsed ? "▸" : "▾"}</span>
               </button>
               {!isCollapsed && (
