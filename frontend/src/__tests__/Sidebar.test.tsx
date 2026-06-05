@@ -193,11 +193,13 @@ describe("Sidebar", () => {
       });
     });
 
-    it("sets title attribute to the full label for hover on truncation", async () => {
+    it("wraps long labels (no truncate class) and keeps full label in title attr", async () => {
       renderSidebar();
       await waitFor(() => {
         const label = screen.getByText("Bharat Traders Private Limited (Hey)");
         expect(label).toHaveAttribute("title", "Bharat Traders Private Limited (Hey)");
+        expect(label.className).not.toContain("truncate");
+        expect(label.className).toContain("break-words");
       });
     });
   });
