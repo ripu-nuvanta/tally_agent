@@ -204,13 +204,17 @@ export async function voucherAction(
   return data;
 }
 
-export async function getHealth(): Promise<HealthResponse> {
-  const { data } = await api.get<HealthResponse>("/health");
+export async function getHealth(params?: { host?: string; port?: number }): Promise<HealthResponse> {
+  const { data } = await api.get<HealthResponse>("/health", { params });
   return data;
 }
 
-export async function getCompanies(): Promise<CompaniesResponse> {
-  const { data } = await api.get<CompaniesResponse>("/companies");
+export async function getCompanies(params?: {
+  host?: string;
+  port?: number;
+  mock?: boolean;
+}): Promise<CompaniesResponse> {
+  const { data } = await api.get<CompaniesResponse>("/companies", { params });
   return data;
 }
 

@@ -2,7 +2,7 @@ import { createContext, useContext, useState, type ReactNode } from "react";
 
 interface SessionContextValue {
   sessionId: string | null;
-  setSessionId: (id: string) => void;
+  setSessionId: (id: string | null) => void;
   company: string | null;
   setCompany: (name: string | null) => void;
 }

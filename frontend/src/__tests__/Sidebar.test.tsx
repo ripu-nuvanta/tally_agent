@@ -159,4 +159,85 @@ describe("Sidebar", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
   });
+
+  describe("workspace label with tally_company", () => {
+    const wsWithCompany: WorkspaceData[] = [
+      { id: "ws-1", name: "Hey", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      { id: "ws-2", name: "Nuvanta Co", agent_type: "tally", config: {}, memory: {}, created_at: "2026-01-02T00:00:00Z", updated_at: "2026-01-02T00:00:00Z" },
+      { id: "ws-3", name: "Legacy Books", agent_type: "tally", config: { tally_company: "" }, memory: {}, created_at: "2026-01-03T00:00:00Z", updated_at: "2026-01-03T00:00:00Z" },
+    ];
+
+    beforeEach(() => {
+      mockedClient.getWorkspaces.mockResolvedValue(wsWithCompany);
+      mockedClient.getConversations.mockResolvedValue([]);
+    });
+
+    it("shows actual company name with friendly name in parentheses", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited (Hey)")).toBeInTheDocument();
+      });
+    });
+
+    it("falls back to friendly name when tally_company is missing", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Nuvanta Co")).toBeInTheDocument();
+      });
+    });
+
+    it("falls back to friendly name when tally_company is empty string", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Legacy Books")).toBeInTheDocument();
+      });
+    });
+
+    it("wraps long labels (no truncate class) and keeps full label in title attr", async () => {
+      renderSidebar();
+      await waitFor(() => {
+        const label = screen.getByText("Bharat Traders Private Limited (Hey)");
+        expect(label).toHaveAttribute("title", "Bharat Traders Private Limited (Hey)");
+        expect(label.className).not.toContain("truncate");
+        expect(label.className).toContain("break-words");
+      });
+    });
+  });
+
+  it("calls onNewChat with the new workspace after completing the connect flow", async () => {
+    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.createWorkspace.mockResolvedValue({
+      id: "ws-1",
+      name: "My Books",
+      agent_type: "tally",
+      config: {},
+      memory: {},
+      created_at: "2026-01-01T00:00:00Z",
+      updated_at: "2026-01-01T00:00:00Z",
+    });
+    const onNewChat = vi.fn();
+    const user = userEvent.setup();
+    renderSidebar({ onNewChat });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "+ Connect Company" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "+ Connect Company" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
+    });
+
+    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Connect" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Start chat" })).toBeInTheDocument();
+    });
+
+    await user.click(screen.getByRole("button", { name: "Start chat" }));
+
+    expect(onNewChat).toHaveBeenCalledWith("ws-1", "My Books", {});
+  });
 });

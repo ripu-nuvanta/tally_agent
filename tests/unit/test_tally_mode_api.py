@@ -3,6 +3,7 @@
 import pytest
 from httpx import ASGITransport, AsyncClient
 from backend.main import app
+from backend.api.dependencies import get_current_user
 from backend.tally_bridge.client import TallyClient
 
 
@@ -14,11 +15,14 @@ async def client():
     from backend.agents.context import SessionStore
     app.state.session_store = SessionStore()
 
+    app.dependency_overrides[get_current_user] = lambda: "test-user"
+
     async with AsyncClient(
         transport=ASGITransport(app=app), base_url="http://test"
     ) as ac:
         yield ac
 
+    app.dependency_overrides.pop(get_current_user, None)
     app.state.tally_client.mock_mode = False
     await tally_client.close()
 

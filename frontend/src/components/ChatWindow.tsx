@@ -23,6 +23,8 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
     action: "approve" | "discard";
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const justCreatedConvRef = useRef<string | null>(null);
+  const sendingRef = useRef(false);
   const { sessionId, setSessionId, company } = useSession();
 
   useEffect(() => {
@@ -31,6 +33,14 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
 
   useEffect(() => {
     if (conversationId && workspaceId) {
+      if (justCreatedConvRef.current === conversationId) {
+        // This window just created the conversation via deferred creation —
+        // optimistic state is already correct; skip the refetch once so the
+        // refetch doesn't overwrite the optimistic messages this window is
+        // mid-rendering. (Bug: first chat needed refresh.)
+        justCreatedConvRef.current = null;
+        return;
+      }
       getConversation(workspaceId, conversationId)
         .then((conv) => {
           setMessages(
@@ -47,11 +57,19 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           // Conversation may have been deleted or is inaccessible
           setMessages([]);
         });
+    } else if (!conversationId && !sendingRef.current) {
+      // New-chat landing page: drop messages from any previously open
+      // conversation and start a fresh agent session. Skipped while a first
+      // send is in flight (conversationId still undefined) so a concurrent
+      // workspaceId change can't wipe the optimistic messages mid-send.
+      setMessages([]);
+      setSessionId(null);
     }
-  }, [conversationId, workspaceId]);
+  }, [conversationId, workspaceId, setSessionId]);
 
   const handleSend = useCallback(
     async (text: string, file?: File) => {
+      sendingRef.current = true;
       const userMsg: ChatMessage = {
         id: generateId(),
         role: "user",
@@ -75,6 +93,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
         if (!activeConvId && workspaceId) {
           const conv = await createConversation(workspaceId);
           activeConvId = conv.id;
+          justCreatedConvRef.current = conv.id;
           onConversationCreated?.(conv.id);
         }
 
@@ -118,6 +137,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
         );
       } finally {
         setLoading(false);
+        sendingRef.current = false;
       }
     },
     [sessionId, company, setSessionId, workspaceId, conversationId, onMessageSent, onConversationCreated]

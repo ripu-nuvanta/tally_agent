@@ -212,6 +212,29 @@ _Approximate counts as of 2026-05-08 (Stage 2 closeout); ~1,450+ tests total, 0 
 
 ## Workflow Preferences
 
+### Git branch discipline
+
+- **Allowed for Claude:** work on a feature branch → merge into the `dev` branch.
+- **NOT allowed:** never merge into `master` directly. `master` only changes via PR (reviewed and merged through GitHub).
+
+### Feature development lifecycle
+
+Standard flow for every feature, in order:
+
+1. **Spec + plan** before implementation (`docs/specs/*`, `docs/plans/*`).
+2. **Implement** (subagent-driven, per § Process).
+3. **Thorough test plan** after implementation — must cover E2E + frontend + backend, with test coverage stated. Don't stop at smoke tests: poke for full FE/BE E2E coverage.
+4. **Test cases** — including Playwright specs + screenshots (per § Playwright discipline).
+5. **Code review** → fix review findings → feature-complete merge (into `dev`, per § Git branch discipline).
+6. **Manual testing finds bugs** → that means the test cases were insufficient: first improve/extend the test cases to catch the bug, then debug and fix.
+7. **Docs update** (roadmap, CLAUDE.md, LESSONS.md as applicable) before session end.
+
+Additional rules:
+- **Backend logs → `logs/`**: keep backend server logs in the `logs/` folder for each test run (e.g. `uvicorn ... 2>&1 | tee logs/be_<run>.log`).
+- **E2E defaults to no-live-Tally, no-Claude-API** (mock Tally + mock Claude). Real-API runs are a separate, deliberate step.
+- **Claude-API eval runs only once everything is complete**: smoke → manual → eval, in that order. Eval flow: run eval scenario (`collect.py`) → run judge (`judge.py`) → generate report (`report.py`) or check the results JSON.
+- **Eval currently covers the query flow only** — write-flow eval scenarios still need to be added.
+
 ### Process
 
 - **Always use skills** for all tasks — debugging, feature development, TDD, planning, code review, etc. Never skip skill invocation even for seemingly simple tasks. If there's even a 1% chance a skill applies, invoke it.
@@ -229,7 +252,7 @@ _Approximate counts as of 2026-05-08 (Stage 2 closeout); ~1,450+ tests total, 0 
 
 ### Default to DB mode
 
-Legacy mode is frozen. Apply this everywhere:
+DB mode is now the default. Legacy mode (non-DB / no-user-auth / no-sidebar) is frozen. Apply this everywhere:
 - New features: DB mode only. No `if not settings.db_mode` branches.
 - New tests: DB mode only (require `TEST_DATABASE_URL` or DB fixtures).
 - Bug fixes: fix in DB mode. If legacy-only and not blocking a demo, ignore.

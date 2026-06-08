@@ -13,7 +13,7 @@ import httpx
 import pytest
 from httpx import ASGITransport
 
-from backend.api.dependencies import get_client
+from backend.api.dependencies import get_client, get_current_user
 from backend.tally_bridge.client import TallyClient
 from tests.mocks.mock_tally_server import create_mock_tally_app
 
@@ -45,8 +45,9 @@ async def async_client(mock_tally):
     app.include_router(companies.router, prefix="/api")
     app.include_router(reports.router, prefix="/api")
 
-    # Override the get_client dependency to return our mock_tally client
+    # Override get_client to use the mock Tally server, and bypass auth for tests.
     app.dependency_overrides[get_client] = lambda: mock_tally
+    app.dependency_overrides[get_current_user] = lambda: "test-user"
 
     transport = ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://test") as ac:
@@ -153,3 +154,66 @@ async def test_invalid_report_returns_400(async_client):
     assert resp.status_code == 400
     body = resp.json()
     assert "Unknown report" in body["detail"]
+
+
+# --- Companies: ad-hoc host/port/mock params ---
+
+
+async def test_companies_mock_param_returns_mock_company(async_client):
+    """mock=true must answer from the built-in mock handler, regardless of app client."""
+    resp = await async_client.get("/api/companies", params={"mock": "true"})
+    assert resp.status_code == 200
+    names = [c["name"] for c in resp.json()["companies"]]
+    assert "Bharat Traders Pvt Ltd" in names  # tests/fixtures/company_list.xml
+
+
+async def test_companies_explicit_host_probes_that_tally(async_client, mock_tally):
+    """host/port params probe that instance ad hoc (here: the aiohttp mock server)."""
+    port = int(mock_tally.base_url.rsplit(":", 1)[1])
+    resp = await async_client.get("/api/companies", params={"host": "localhost", "port": port})
+    assert resp.status_code == 200
+    assert len(resp.json()["companies"]) >= 1
+
+
+async def test_companies_bad_host_returns_503(async_client):
+    """Unreachable host/port must 503, not 500."""
+    resp = await async_client.get("/api/companies", params={"host": "127.0.0.1", "port": 1})
+    assert resp.status_code == 503
+
+
+# --- Health: ad-hoc host/port params ---
+
+
+async def test_health_bad_host_reports_degraded(async_client):
+    resp = await async_client.get("/api/health", params={"host": "127.0.0.1", "port": 1})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tally_connected"] is False
+    assert body["status"] == "degraded"
+    assert body["tally_url"] == "http://127.0.0.1:1"
+    assert body["mode"] == "live"
+
+
+async def test_health_explicit_host_reports_connected(async_client, mock_tally):
+    port = int(mock_tally.base_url.rsplit(":", 1)[1])
+    resp = await async_client.get("/api/health", params={"host": "localhost", "port": port})
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["tally_connected"] is True
+    assert body["status"] == "healthy"
+    assert body["mode"] == "live"
+
+
+async def test_health_without_params_unchanged(async_client):
+    resp = await async_client.get("/api/health")
+    assert resp.status_code == 200
+    assert {"status", "tally_connected", "tally_url", "mode"} <= resp.json().keys()
+
+
+# --- Port range validation ---
+
+
+async def test_companies_invalid_port_returns_422(async_client):
+    """Port out of 1–65535 range must return 422, not 500."""
+    resp = await async_client.get("/api/companies", params={"host": "h", "port": 99999})
+    assert resp.status_code == 422
