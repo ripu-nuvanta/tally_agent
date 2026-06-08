@@ -234,3 +234,59 @@ class TestFxDataEntryE2E:
         body = approve_resp.json()
         assert body["data"]["type"] == "voucher_written"
         assert "successfully" in body["message"].lower()
+
+    def test_approve_no_rate_foreign_entry_is_blocked(self, client):
+        """Finding 1: approving a foreign entry with no rate (amount 0, fx_rate 0)
+        must NOT write — return a voucher_error telling the user to set a rate."""
+        with patch(
+            "backend.tally_bridge.writer.TallyWriter.create_payment_voucher",
+            new=AsyncMock(),
+        ) as mock_write:
+            resp = client.post(
+                "/api/chat/voucher-action",
+                json={
+                    "action": "approve",
+                    "entry": {
+                        "id": "no-rate-1",
+                        "date": "20260404",
+                        "debit_ledger": "Consulting",
+                        "credit_ledger": "Cash",
+                        "amount": 0.0,
+                        "narration": "USD consulting — no rate",
+                        "gst_entries": [],
+                        "original_currency": "USD",
+                        "original_amount": 100.0,
+                        "fx_rate": 0.0,
+                    },
+                    "company": "Test Co",
+                    "session_id": "fx-blocked",
+                },
+            )
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["data"]["type"] == "voucher_error"
+        assert "rate" in body["message"].lower()
+        mock_write.assert_not_called()
+
+    def test_approve_inr_entry_still_writes(self, client):
+        """Finding 1 regression: a normal INR/positive entry still writes fine."""
+        resp = client.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "approve",
+                "entry": {
+                    "id": "inr-ok",
+                    "date": "20260404",
+                    "debit_ledger": "Travel Expenses",
+                    "credit_ledger": "Cash",
+                    "amount": 500.0,
+                    "narration": "INR ride",
+                    "gst_entries": [],
+                    "original_currency": "INR",
+                },
+                "company": "Test Co",
+                "session_id": "inr-ok",
+            },
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["type"] == "voucher_written"

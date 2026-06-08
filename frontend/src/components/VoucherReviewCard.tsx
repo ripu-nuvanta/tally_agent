@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatINR } from "../utils/format";
 
 export interface VoucherEntry {
   id: string;
@@ -55,19 +56,11 @@ function formatDate(dateStr: string): string {
   return dateStr;
 }
 
-function formatAmount(amount: number): string {
-  return new Intl.NumberFormat("en-IN", {
-    style: "currency",
-    currency: "INR",
-    minimumFractionDigits: 2,
-  }).format(amount);
-}
-
 function formatFx(entry: VoucherEntry): string {
   const cur = entry.original_currency ?? "";
   const orig = (entry.original_amount ?? 0).toFixed(2);
   const rate = (entry.fx_rate ?? 0).toFixed(2);
-  return `${cur} ${orig} @ ₹${rate} = ${formatAmount(entry.amount)}`;
+  return `${cur} ${orig} @ ₹${rate} = ${formatINR(entry.amount)}`;
 }
 
 function Spinner() {
@@ -136,7 +129,7 @@ export default function VoucherReviewCard({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-3">
                 <Field label="Vendor" value={entry.vendor_name || "—"} />
                 <Field label="Date" value={formatDate(entry.date)} />
-                <Field label="Amount" value={formatAmount(entry.amount)} />
+                <Field label="Amount" value={formatINR(entry.amount)} />
                 <Field label="Expense Ledger" value={entry.debit_ledger} />
                 <Field label="Paid via" value={entry.credit_ledger} />
                 <Field label="Narration" value={entry.narration} />
@@ -167,7 +160,7 @@ export default function VoucherReviewCard({
                 <div className="text-xs text-gray-500 mb-2">
                   GST:{" "}
                   {entry.gst_entries
-                    .map((g) => `${g.ledger}: ${formatAmount(g.amount)}`)
+                    .map((g) => `${g.ledger}: ${formatINR(g.amount)}`)
                     .join(", ")}
                 </div>
               )}

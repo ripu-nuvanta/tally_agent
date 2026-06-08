@@ -128,6 +128,16 @@ class TestParseRateOverride:
     def test_rejected_no_number(self, message):
         assert parse_rate_override(message) is None
 
+    @pytest.mark.parametrize("message", [
+        "flat at 84.5 per day",  # "per day" is not a currency; bare "at" must not match
+        "let's meet at 5",
+        "at 3 pm",
+        "the rent is fixed at 12000",
+    ])
+    def test_bare_at_number_is_not_a_rate(self, message):
+        """Finding 3: a number after plain 'at' (no rate/currency cue) is NOT a rate."""
+        assert parse_rate_override(message) is None
+
     def test_picks_number_adjacent_to_keyword(self):
         # "5 items" is noise; the rate keyword sits next to 84.5
         assert parse_rate_override("I have 5 items, use rate 84.5") == 84.5
@@ -227,6 +237,34 @@ class TestRecomputeEntryWithRate:
         assert entry["amount"] == 0.0
         assert entry["fx_rate"] == 0.0
 
+    def test_missing_original_amount_raises_not_silent_zero(self):
+        """Finding 2: a non-INR entry with no original_amount must not silently
+        produce ₹0 — it raises FxRecomputeError so the caller can clarify."""
+        from backend.services.fx import FxRecomputeError
+        entry = self._base_entry()
+        del entry["original_amount"]
+        with pytest.raises(FxRecomputeError):
+            recompute_entry_with_rate(entry, 90.0)
+
+    def test_zero_original_amount_raises_not_silent_zero(self):
+        from backend.services.fx import FxRecomputeError
+        entry = self._base_entry(original_amount=0.0)
+        with pytest.raises(FxRecomputeError):
+            recompute_entry_with_rate(entry, 90.0)
+
+    def test_malformed_gst_leg_does_not_crash(self):
+        """Finding 2: a gst leg missing 'ledger'/'amount' is skipped, not a KeyError."""
+        entry = self._base_entry(
+            original_gst_entries=[
+                {"ledger": "INPUT CGST", "amount": 9.0},
+                {"amount": 9.0},          # missing ledger
+                {"ledger": "INPUT IGST"},  # missing amount
+            ],
+        )
+        out = recompute_entry_with_rate(entry, 90.0)
+        # only the well-formed leg survives
+        assert out["gst_entries"] == [{"ledger": "INPUT CGST", "amount": 810.0}]
+
 
 class TestClassifyPendingMessage:
     ENTRY = {"id": "e1", "original_currency": "USD", "original_amount": 100.0}
@@ -245,3 +283,61 @@ class TestClassifyPendingMessage:
 
     def test_convert_keyword_without_number_is_clarify(self):
         assert classify_pending_message(self.ENTRY, "please convert this") == ("clarify", None)
+
+
+class TestSharedHelpers:
+    """Finding 4: rounding + FX-trail are single implementations shared across paths."""
+
+    def test_fx_round_inr_is_voucher_builder_impl(self):
+        # fx.py must reuse voucher_builder's Decimal rounding, not keep its own copy.
+        from backend.services import fx as fx_mod
+        from backend.services import voucher_builder as vb_mod
+        assert fx_mod._round_inr_dec is vb_mod._round_inr
+
+    def test_fx_trail_is_voucher_builder_impl(self):
+        from backend.services import fx as fx_mod
+        from backend.services import voucher_builder as vb_mod
+        assert fx_mod._fx_trail is vb_mod._fx_trail
+
+
+class TestOverrideBuilderParity:
+    """Finding 4: the override path and the builder path must produce the SAME
+    INR amount and the SAME FX trail for identical inputs (anti-drift guard)."""
+
+    def test_same_inr_amount_and_trail(self):
+        from decimal import Decimal
+        from backend.services.document_parser import ExtractedDocument
+        from backend.services.voucher_builder import build_payment_voucher_data
+
+        doc = ExtractedDocument(
+            doc_type="expense",
+            vendor_name="Acme Inc",
+            date="2026-04-04",
+            total_amount=Decimal("100.00"),
+            original_currency="USD",
+        )
+        # Builder path with a doc/override rate of 90.
+        vd = build_payment_voucher_data(
+            doc, "Consulting", "Cash", override=Decimal("90"),
+            default_rates={}, fallback=0.0,
+        )
+        # Override path on an equivalent pending entry, same rate.
+        entry = {
+            "id": "p1",
+            "narration": "Acme Inc",
+            "amount": 0.0,
+            "fx_rate": 0.0,
+            "gst_entries": [],
+            "original_gst_entries": [],
+            "original_currency": "USD",
+            "original_amount": 100.0,
+            "warnings": [],
+            "status": "draft",
+        }
+        out = recompute_entry_with_rate(entry, 90.0)
+
+        assert out["amount"] == float(vd.amount)
+        # FX trail substring identical across both paths
+        trail = " | FX: USD 100.00 @ ₹90.00 = ₹9,000.00"
+        assert vd.narration.endswith(trail)
+        assert out["narration"].endswith(trail)

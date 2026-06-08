@@ -147,6 +147,26 @@ class TestDryRunValidation:
         errors = writer.validate_voucher(voucher, known_ledgers=["Travel", "Cash"])
         assert any("narration" in e.lower() for e in errors)
 
+    def test_all_zero_amount_voucher_fails(self):
+        """A balanced-but-all-zero voucher (e.g. no-rate FX → ₹0) must be rejected.
+
+        Finding 1 (defense in depth): a Payment of 0 is never valid. The entries
+        balance (0 == 0) so the balance check alone passes; the magnitude
+        invariant must catch it.
+        """
+        writer = TallyWriter.__new__(TallyWriter)
+        voucher = {
+            "voucher_type": "Payment",
+            "date": "20260404",
+            "narration": "No-rate USD entry",
+            "ledger_entries": [
+                {"ledger": "Travel Expenses", "amount": 0.0},
+                {"ledger": "Cash", "amount": 0.0},
+            ],
+        }
+        errors = writer.validate_voucher(voucher, known_ledgers=["Travel Expenses", "Cash"])
+        assert any("zero" in e.lower() or "greater than" in e.lower() for e in errors)
+
 
 class TestWriteVoucher:
     @pytest.mark.asyncio

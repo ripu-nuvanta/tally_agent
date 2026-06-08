@@ -227,6 +227,29 @@ async def voucher_action(
                 session_id=session_id,
             )
 
+        # FX no-rate guard (Finding 1): a foreign-currency entry with no
+        # resolvable rate has amount 0 / fx_rate 0. Block the write and tell the
+        # user to set a rate via chat — never post a ₹0 voucher.
+        original_currency = (entry.get("original_currency") or "INR").strip().upper()
+        if original_currency and original_currency != "INR":
+            try:
+                fx_rate = float(entry.get("fx_rate") or 0)
+            except (TypeError, ValueError):
+                fx_rate = 0.0
+            try:
+                amount = float(entry.get("amount") or 0)
+            except (TypeError, ValueError):
+                amount = 0.0
+            if fx_rate <= 0 or amount <= 0:
+                return ChatResponse(
+                    message=(
+                        "Set a conversion rate before writing — "
+                        "reply 'use rate <n>' in chat."
+                    ),
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+
         writer = TallyWriter(client=client, company=company)
 
         # Create new ledger first if the review card marked it as new
@@ -410,14 +433,34 @@ async def _chat_db_mode(
     # If a voucher entry is pending and this message is a rate override, recompute
     # the entry deterministically from its ORIGINAL foreign amounts and return an
     # updated review card. Never touches the Tally query agent.
-    from backend.services.fx import classify_pending_message, recompute_entry_with_rate
+    from backend.services.fx import (
+        FxRecomputeError,
+        classify_pending_message,
+        recompute_entry_with_rate,
+    )
 
     action, new_rate = classify_pending_message(request.pending_entry, request.message)
+
+    # Try the recompute up front. If it can't run (e.g. the original foreign
+    # amount is unknown), downgrade to a clarification rather than a silent ₹0
+    # override (Finding 2).
+    updated = None
+    clarify_msg = (
+        "I can update the conversion rate — what rate should I use? "
+        "Reply with e.g. \"use rate 90\"."
+    )
+    if action == "override":
+        try:
+            updated = recompute_entry_with_rate(request.pending_entry, new_rate)
+        except FxRecomputeError as e:
+            action = "clarify"
+            clarify_msg = (
+                f"{e} Please re-upload the document so I can read the original "
+                "amount and currency."
+            )
+
     if action == "clarify":
-        msg_text = (
-            "I can update the conversion rate — what rate should I use? "
-            "Reply with e.g. \"use rate 90\"."
-        )
+        msg_text = clarify_msg
         assistant_msg = Message(
             conversation_id=request.conversation_id, role="assistant", content=msg_text,
         )
@@ -429,7 +472,6 @@ async def _chat_db_mode(
         return ChatResponse(message=msg_text, data=None, chart=None, session_id=str(conversation.id))
 
     if action == "override":
-        updated = recompute_entry_with_rate(request.pending_entry, new_rate)
         review_data = {
             "type": "voucher_review",
             "entries": [updated],

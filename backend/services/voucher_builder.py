@@ -6,14 +6,20 @@ and GST entry construction. Output is consumed by TallyWriter.create_payment_vou
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import Decimal
 
 from backend.config import settings
 from backend.services.document_parser import ExtractedDocument
-from backend.services.fx import parse_default_rates, resolve_fx_rate
-from backend.utils.currency_format import format_inr
-
-_TWO_PLACES = Decimal("0.01")
+# Shared FX helpers live in fx.py (the lower layer); re-export the rounding +
+# trail builders here so the builder path and the chat-override path stay
+# identical (Finding 4). ``_round_inr`` / ``_fx_trail`` keep their existing
+# names/signatures for call sites in this module.
+from backend.services.fx import (
+    _fx_trail,
+    _round_inr_dec as _round_inr,
+    parse_default_rates,
+    resolve_fx_rate,
+)
 
 
 @dataclass
@@ -39,11 +45,6 @@ def _convert_date(date_str: str) -> str:
     return date_str.replace("-", "")
 
 
-def _round_inr(amount: Decimal) -> Decimal:
-    """Round a Decimal to 2 decimal places (half-up), as INR paise."""
-    return amount.quantize(_TWO_PLACES, rounding=ROUND_HALF_UP)
-
-
 def _build_narration(doc: ExtractedDocument) -> str:
     """Build narration from vendor name and line item descriptions."""
     parts = []
@@ -53,17 +54,6 @@ def _build_narration(doc: ExtractedDocument) -> str:
     if descriptions:
         parts.append(", ".join(descriptions[:3]))
     return " — ".join(parts) if parts else "Expense entry"
-
-
-def _fx_trail(original_currency: str, original_amount: Decimal, rate: Decimal, inr: Decimal) -> str:
-    """Build the FX audit trail appended to the narration for non-INR docs.
-
-    Format: ` | FX: USD 100.00 @ ₹83.50 = ₹8,350.00`.
-    """
-    return (
-        f" | FX: {original_currency} {original_amount:.2f}"
-        f" @ ₹{rate:.2f} = {format_inr(float(inr))}"
-    )
 
 
 def build_payment_voucher_data(
