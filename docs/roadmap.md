@@ -32,7 +32,7 @@ The product evolves along three feature sets. Set A is foundational; B and C can
 | **B1c** | Debit Note / Credit Note voucher builders | Specced. Part of Group B. |
 | **B1d** | Bank statement import + reconciliation | Deferred. Needs its own feasibility probe (BANKALLOCATIONS / BANKDATE / INSTRUMENTNO primitives unvalidated). See [`open-items-parked.md`](open-items-parked.md). |
 | **Group A** | UI polish (F4 deferred conversation creation + workspace landing, F5 voucher button disable, F6 responsive drawer) | ✅ Complete 2026-04-12. Spec: `specs/2026-04-12-group-a-ui-enhancements-design.md`. |
-| **Group B** | F1 (workspace pulls company name) + F2 (multi-currency extraction) + F3 (Payment vs Purchase classification) + B1b combined | **Next up.** Spec: `specs/2026-04-12-group-b-voucher-types-design.md`. Plan: `plans/2026-04-12-group-b-voucher-types-plan.md`. Gating step is Task 0 (E1–E8 probes). |
+| **Group B** | F1 (company dropdown) + F2 (multi-currency) + F3 (Payment vs Purchase) + B1b/B1c + TDS | **In progress, sliced.** Task 0 probes (E1–E8 + TDS + bank-recon) ✅ done 2026-06-08. **F2 (Slice A) ✅ merged.** Building remaining slices B–F (see Active Work). Spec: `specs/2026-04-12-group-b-voucher-types-design.md`. |
 
 ### Set C — Sync & Store
 
@@ -47,13 +47,22 @@ Architecture intent: hybrid real-time tunnel + scheduled sync, reusing existing 
 
 ## Active Work — Next Up
 
-**Group B (F1 + F2 + F3 + B1b)** is the immediate next batch.
+The write-flow (Group B + reconciliation) is being built in **dependency-ordered slices**, one spec→plan→implement→review→merge cycle each:
 
-**Gating step:** Group B Task 0 — feasibility probes E1–E8 against live Tally. Must complete before any Group B implementation. See [`plans/2026-04-12-group-b-voucher-types-plan.md`](plans/2026-04-12-group-b-voucher-types-plan.md).
+| Slice | Scope | Status |
+|---|---|---|
+| **A** | Foreign-currency → INR (F2): extract original currency+amount, code-computed rate, chat-only override, INR-only into Tally, no-rate writes blocked | ✅ **Merged to dev 2026-06-08.** Spec `specs/2026-06-08-fx-inr-conversion-design.md`; review `code-review-fx-inr-2026-06-08.md`. |
+| **B** | Supplier Payment against an outstanding bill (Agst Ref) + cheque/instrument details | Next |
+| **C** | Purchase invoice + payment + **TDS-deducted journal** | Planned |
+| **D** | Sales invoice + receipt + **TDS-receivable journal** | Planned |
+| **E** | Credit / Debit Notes (returns) | Planned |
+| **F** | Bank-statement reconciliation (mark cleared) | Deferred — see below |
 
-E7 and E8 (added 2026-05-07) are currently unvalidated:
-- E7: `get_company_list` envelope
-- E8: `get_party_vouchers` TDL filter
+**Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 run live; Debit Note (E5), Credit Note (E6), company list (E7), party-voucher filter (E8) all verified. Two new probes added and verified: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import (top-level `BANKDATE` dropped), so reconciliation needs Tally's dedicated mechanism (Slice F / B1d).
+
+**TDS is new scope** (not in the original Group B plan): the Sale and Purchase flows each need three linked vouchers (invoice + settlement + TDS journal). Proven feasible by the probes; needs its own design in Slices C/D.
+
+**In-between UX plan (company picker + chat UX):** before/alongside Slices B–E, scope an intermediate plan for the workspace **company dropdown** (F1, E7 proven) and the chat UX for the multi-voucher review flow. To be specced.
 
 ---
 
