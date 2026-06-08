@@ -253,6 +253,20 @@ class Orchestrator(BaseAgent):
             payment_ledger=payment_ledgers[0],
         )
 
+        # 5b. FX rate warnings (T6). Non-INR docs whose rate came from a default
+        # or fallback need a "verify" warning; a missing rate blocks the write.
+        cur = voucher.original_currency.strip().upper()
+        if voucher.rate_source in ("default", "fallback"):
+            warnings = warnings + [
+                f"Used default {cur}→INR rate {voucher.fx_rate} — "
+                f"verify or reply 'use rate <n>'."
+            ]
+        elif voucher.rate_source == "none":
+            warnings = warnings + [
+                f"No conversion rate for {cur} — reply 'use rate <n>' to set it "
+                f"(entry can't be written yet)."
+            ]
+
         # 6. Assemble review card response
         entry_id = str(uuid_mod.uuid4())
         review_data = {
@@ -272,6 +286,13 @@ class Orchestrator(BaseAgent):
                 "warnings": warnings,
                 "is_new_ledger": mapping.is_new_ledger,
                 "suggested_parent": mapping.suggested_parent,
+                # FX fields (T6) — originals are the foreign-currency amounts so a
+                # later chat rate-override can recompute exactly (incl. from a
+                # no-rate state). amount/gst_entries above are already INR.
+                "original_currency": voucher.original_currency,
+                "original_amount": float(voucher.original_amount),
+                "fx_rate": float(voucher.fx_rate),
+                "original_gst_entries": voucher.original_gst_entries,
             }],
             "available_ledgers": ledger_names,
             "available_payment_ledgers": payment_ledgers,

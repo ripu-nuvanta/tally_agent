@@ -18,6 +18,7 @@ from backend.api.dependencies import get_client, get_current_user, get_session_s
 from backend.api.models import ChatRequest, ChatResponse, ChartSpec, VoucherActionRequest
 from backend.config import settings
 from backend.tally_bridge.client import TallyClient
+from backend.utils.currency_format import format_inr
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -404,6 +405,60 @@ async def _chat_db_mode(
     )
     db.add(user_msg)
     await db.flush()
+
+    # --- FX rate-override fast path (T5) ---
+    # If a voucher entry is pending and this message is a rate override, recompute
+    # the entry deterministically from its ORIGINAL foreign amounts and return an
+    # updated review card. Never touches the Tally query agent.
+    from backend.services.fx import classify_pending_message, recompute_entry_with_rate
+
+    action, new_rate = classify_pending_message(request.pending_entry, request.message)
+    if action == "clarify":
+        msg_text = (
+            "I can update the conversion rate — what rate should I use? "
+            "Reply with e.g. \"use rate 90\"."
+        )
+        assistant_msg = Message(
+            conversation_id=request.conversation_id, role="assistant", content=msg_text,
+        )
+        db.add(assistant_msg)
+        if conversation.title is None:
+            conversation.title = request.message[:100]
+        conversation.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return ChatResponse(message=msg_text, data=None, chart=None, session_id=str(conversation.id))
+
+    if action == "override":
+        updated = recompute_entry_with_rate(request.pending_entry, new_rate)
+        review_data = {
+            "type": "voucher_review",
+            "entries": [updated],
+        }
+        # Re-include ledger lists if the pending entry already carried them
+        # (frontend keeps its prior lists otherwise — see T5 note).
+        for key in ("available_ledgers", "available_payment_ledgers"):
+            if request.pending_entry.get(key):
+                review_data[key] = request.pending_entry[key]
+        rate_disp = (f"{new_rate:g}")
+        msg_text = (
+            f"Updated the conversion rate to {rate_disp}. "
+            f"New amount: {format_inr(updated['amount'])}. "
+            f"Review and click Write to Tally."
+        )
+        assistant_msg = Message(
+            conversation_id=request.conversation_id,
+            role="assistant",
+            content=msg_text,
+            data=review_data,
+        )
+        db.add(assistant_msg)
+        if conversation.title is None:
+            conversation.title = request.message[:100]
+        conversation.updated_at = datetime.now(timezone.utc)
+        await db.commit()
+        return ChatResponse(
+            message=msg_text, data=review_data, chart=None, session_id=str(conversation.id),
+        )
 
     # Build session context for orchestrator (bridge between DB and in-memory)
     session = SessionContext(

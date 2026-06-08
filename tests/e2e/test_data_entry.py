@@ -172,3 +172,65 @@ class TestDataEntryE2E:
             },
         )
         assert response.status_code == 422
+
+
+class TestFxDataEntryE2E:
+    """End-to-end FX flow (mock Tally + mock Claude) — T10.
+
+    Upload a USD document → review card carries INR amount + FX trail → approve
+    writes a Payment voucher with the INR amount. The chat rate-override step of
+    the full flow lives in the DB-mode fast path (T5) and is covered in
+    ``tests/e2e/test_db_data_entry.py`` (DB-gated) — the legacy chat path does
+    not implement it.
+    """
+
+    def _upload_usd(self, client, fixture_name="expense_usd_with_rate"):
+        from tests.fixtures import fx_documents as fxdoc
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=fxdoc.vision_message(fixture_name)),
+        ):
+            file_content = b"\xff\xd8\xff\xe0" + b"\x00" * 200
+            return client.post(
+                "/api/chat/upload",
+                files={"file": ("receipt.jpg", io.BytesIO(file_content), "image/jpeg")},
+                data={"message": "consulting expense"},
+            )
+
+    def test_usd_upload_review_then_approve_writes_inr(self, client):
+        """Upload USD doc → INR review card → approve → Payment written with INR amount."""
+        # Step 1: upload → review card
+        upload_resp = self._upload_usd(client)
+        assert upload_resp.status_code == 200, upload_resp.text
+        data = upload_resp.json()
+        assert data["data"]["type"] == "voucher_review"
+        entry = data["data"]["entries"][0]
+        # INR conversion + FX trail in narration
+        assert entry["original_currency"] == "USD"
+        assert entry["original_amount"] == 100.0
+        assert entry["fx_rate"] == 83.5
+        assert entry["amount"] == 8350.0  # 100 × 83.5
+        assert "FX: USD 100.00 @ ₹83.50 = ₹8,350.00" in entry["narration"]
+
+        # Step 2: approve the INR entry → Payment voucher written to (mock) Tally
+        approve_resp = client.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "approve",
+                "entry": {
+                    "id": entry["id"],
+                    "date": entry["date"],
+                    "debit_ledger": entry["debit_ledger"],
+                    "credit_ledger": entry["credit_ledger"],
+                    "amount": entry["amount"],  # INR
+                    "narration": entry["narration"],  # carries FX trail
+                    "gst_entries": entry["gst_entries"],
+                },
+                "company": "Test Co",
+                "session_id": "fx-e2e",
+            },
+        )
+        assert approve_resp.status_code == 200, approve_resp.text
+        body = approve_resp.json()
+        assert body["data"]["type"] == "voucher_written"
+        assert "successfully" in body["message"].lower()

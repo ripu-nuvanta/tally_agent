@@ -20,6 +20,10 @@ class ChatRequest(BaseModel):
     company: str | None = None
     workspace_id: str | None = None
     conversation_id: str | None = None
+    # The currently-pending voucher_review entry (last one not approved/discarded),
+    # so a chat rate-override ("use rate 90") can recompute it before the query
+    # agent runs. None for ordinary queries. See T5 (FX→INR conversion).
+    pending_entry: dict[str, Any] | None = None
 
 
 class ChartSpec(BaseModel):
