@@ -1,5 +1,4 @@
 """E2E tests — DB-mode file upload + voucher write pipeline. Requires TEST_DATABASE_URL."""
-import importlib
 import io
 import json
 import os
@@ -27,54 +26,53 @@ async def db_app(monkeypatch, tmp_path):
     """
     Stand up a full FastAPI app in DB mode with TALLY_WRITE_ENABLED.
 
-    Replicates the module-reload dance from test_db_smoke.py and adds
-    file-upload settings (FILE_STORAGE_PATH, TALLY_WRITE_ENABLED).
+    Uses the no-reload pattern (see test_db_smoke.py db_app for the full
+    rationale): mutate the shared ``settings`` singleton in place and assemble a
+    fresh app, instead of ``importlib.reload`` which rebinds module-level object
+    identities and silently breaks other test files' dependency_overrides /
+    settings monkeypatches.
     """
-    # 1. Set env vars before any module reload
-    monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
-    monkeypatch.setenv("JWT_SECRET", "a" * 64)
-    monkeypatch.setenv("TALLY_MODE", "mock")
-    monkeypatch.setenv("TALLY_WRITE_ENABLED", "true")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "test-key"))
+    from backend.config import settings
 
-    # 2. Reload config so db_mode=True is reflected
-    import backend.config
-    importlib.reload(backend.config)
-    backend.config.settings = backend.config.Settings()
-    backend.config.settings.FILE_STORAGE_PATH = str(tmp_path)
+    # 1. Flip the shared singleton into DB mode (restored by monkeypatch).
+    monkeypatch.setattr(settings, "DATABASE_URL", _TEST_DB_URL)
+    monkeypatch.setattr(settings, "JWT_SECRET", "a" * 64)
+    monkeypatch.setattr(settings, "TALLY_MODE", "mock")
+    monkeypatch.setattr(settings, "TALLY_WRITE_ENABLED", True)
+    monkeypatch.setattr(settings, "FILE_STORAGE_PATH", str(tmp_path))
+    monkeypatch.setattr(
+        settings, "ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "test-key")
+    )
 
-    # 3. Reload engine module (it reads settings at import time)
-    import backend.db.engine
-    importlib.reload(backend.db.engine)
-
-    # 4. Create test DB tables
+    # 2. Create test DB tables
     from backend.db.models import Base
     setup_engine = create_async_engine(_TEST_DB_URL)
     async with setup_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await setup_engine.dispose()
 
-    # 5. Reload API modules that hold stale references to settings.
-    import backend.api.dependencies
-    importlib.reload(backend.api.dependencies)
-    import backend.api.chat
-    importlib.reload(backend.api.chat)
-    import backend.api.auth
-    importlib.reload(backend.api.auth)
-    import backend.api.workspaces
-    importlib.reload(backend.api.workspaces)
-    import backend.api.conversations
-    importlib.reload(backend.api.conversations)
-    import backend.api.usage
-    importlib.reload(backend.api.usage)
+    # 3. Assemble a fresh app with all routers (DB-mode routers included
+    #    unconditionally — auth enforcement is decided at request time).
+    from fastapi import FastAPI
 
-    # Reload main.py — with db_mode=True the auth/workspace/conversation
-    # routers are registered at module level.
-    import backend.main
-    importlib.reload(backend.main)
-    from backend.main import app
+    from backend.api import (
+        auth,
+        chat,
+        companies,
+        conversations,
+        health,
+        reports,
+        tally_mode,
+        usage,
+        workspaces,
+    )
 
-    # 6. Manually initialise what lifespan would do (ASGITransport skips lifespan)
+    app = FastAPI()
+    for module in (chat, health, companies, reports, tally_mode,
+                   auth, workspaces, conversations, usage):
+        app.include_router(module.router, prefix="/api")
+
+    # 4. Manually initialise what lifespan would do (ASGITransport skips lifespan)
     from backend.agents.context import SessionStore
     from backend.tally_bridge.client import TallyClient
     from backend.db.engine import init_engine
@@ -85,9 +83,16 @@ async def db_app(monkeypatch, tmp_path):
     app.state.session_store = SessionStore(ttl_minutes=60)
     init_engine(_TEST_DB_URL)
 
+    # Reset auth's in-memory per-IP rate-limit state (was implicitly reset by
+    # the old reload; clear it explicitly so it doesn't accumulate across tests).
+    auth._register_attempts.clear()
+    auth._login_attempts.clear()
+
     yield app
 
-    # 7. Teardown
+    # 5. Teardown — close engine + drop tables. settings restored by monkeypatch.
+    auth._register_attempts.clear()
+    auth._login_attempts.clear()
     await tally_client.close()
     from backend.db.engine import close_engine
     await close_engine()
@@ -96,19 +101,6 @@ async def db_app(monkeypatch, tmp_path):
     async with teardown_engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
     await teardown_engine.dispose()
-
-    # 8. Restore modules to legacy state so other test files aren't affected
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    importlib.reload(backend.config)
-    backend.config.settings = backend.config.Settings()
-    importlib.reload(backend.db.engine)
-    importlib.reload(backend.api.dependencies)
-    importlib.reload(backend.api.chat)
-    importlib.reload(backend.api.auth)
-    importlib.reload(backend.api.workspaces)
-    importlib.reload(backend.api.conversations)
-    importlib.reload(backend.api.usage)
-    importlib.reload(backend.main)
 
 
 # ---------------------------------------------------------------------------
@@ -302,6 +294,112 @@ async def test_db_voucher_approve_creates_new_ledger(db_app):
         )
         assert resp.status_code == 200, resp.text
         body = resp.json()
+        assert body["data"]["type"] == "voucher_written"
+        assert "successfully" in body["message"].lower()
+
+
+def _mock_fx_vision_message(vendor, amount, date, currency, fx_rate):
+    """Vision response with currency + fx_rate fields (FX path)."""
+    vision_text = json.dumps({
+        "doc_type": "expense",
+        "vendor_name": vendor,
+        "date": date,
+        "currency": currency,
+        "fx_rate": fx_rate,
+        "total_amount": amount,
+        "line_items": [{"description": "Service", "amount": amount}],
+        "gst": None,
+        "payment_mode": "bank",
+    })
+    msg = MagicMock()
+    msg.content = [MagicMock(text=vision_text)]
+    return msg
+
+
+@pytest.mark.asyncio
+async def test_db_fx_upload_override_approve_full_flow(db_app):
+    """Full FX flow (T10): upload USD (no rate, blocked) → chat 'use rate 90'
+    recomputes INR → approve writes the Payment voucher with the INR amount.
+
+    Requires TEST_DATABASE_URL — the chat rate-override fast path is DB-mode only.
+    """
+    from unittest.mock import patch
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "FX Co", tally_company="Test Co")
+        headers = {"Authorization": f"Bearer {token}"}
+
+        # A conversation is required for DB-mode chat.
+        conv_resp = await ac.post(
+            f"/api/workspaces/{ws_id}/conversations",
+            json={"title": "FX flow"},
+            headers=headers,
+        )
+        assert conv_resp.status_code in (200, 201), conv_resp.text
+        conv_id = conv_resp.json()["id"]
+
+        # Step 1: upload USD doc, no rate, no default configured → blocked card.
+        mock_msg = _mock_fx_vision_message("Acme Inc", 100.0, "2026-04-04", "USD", None)
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=mock_msg),
+        ):
+            up = await ac.post(
+                "/api/chat/upload",
+                files={"file": ("receipt.jpg", io.BytesIO(_FAKE_JPEG), "image/jpeg")},
+                data={"message": "consulting", "workspace_id": ws_id, "conversation_id": conv_id},
+                headers=headers,
+            )
+        assert up.status_code == 200, up.text
+        entry = up.json()["data"]["entries"][0]
+        assert entry["original_currency"] == "USD"
+        assert entry["original_amount"] == 100.0
+        assert entry["fx_rate"] == 0.0
+        assert entry["amount"] == 0.0  # blocked: no rate
+        assert any("no conversion rate" in w.lower() for w in entry["warnings"])
+
+        # Step 2: chat "use rate 90" WITH pending_entry → recompute, warning cleared.
+        chat = await ac.post(
+            "/api/chat",
+            json={
+                "message": "use rate 90",
+                "workspace_id": ws_id,
+                "conversation_id": conv_id,
+                "pending_entry": entry,
+            },
+            headers=headers,
+        )
+        assert chat.status_code == 200, chat.text
+        cdata = chat.json()
+        assert cdata["data"]["type"] == "voucher_review"
+        updated = cdata["data"]["entries"][0]
+        assert updated["amount"] == 9000.0  # 100 × 90
+        assert updated["fx_rate"] == 90.0
+        assert updated["warnings"] == []
+        assert "FX: USD 100.00 @ ₹90.00 = ₹9,000.00" in updated["narration"]
+
+        # Step 3: approve → Payment voucher written with the INR amount.
+        ap = await ac.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "approve",
+                "entry": {
+                    "id": updated["id"],
+                    "date": updated.get("date", "20260404"),
+                    "debit_ledger": updated.get("debit_ledger", "Consulting Expenses"),
+                    "credit_ledger": updated.get("credit_ledger", "Cash"),
+                    "amount": updated["amount"],  # 9000 INR
+                    "narration": updated["narration"],  # carries FX trail
+                    "gst_entries": updated.get("gst_entries", []),
+                },
+                "company": "Test Co",
+                "session_id": "fx-db-e2e",
+                "workspace_id": ws_id,
+            },
+            headers=headers,
+        )
+        assert ap.status_code == 200, ap.text
+        body = ap.json()
         assert body["data"]["type"] == "voucher_written"
         assert "successfully" in body["message"].lower()
 

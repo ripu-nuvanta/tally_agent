@@ -23,13 +23,34 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
     action: "approve" | "discard";
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const justCreatedConvRef = useRef<string | null>(null);
   const sendingRef = useRef(false);
   const { sessionId, setSessionId, company } = useSession();
 
   useEffect(() => {
+    messagesRef.current = messages;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Derive the current pending voucher entry from existing message state:
+  // the most recent voucher_review message's entry that is still actionable
+  // (status draft/pending — not yet written or discarded). No parallel state.
+  function getPendingEntry(): Record<string, unknown> | undefined {
+    const msgs = messagesRef.current;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const data = msgs[i].data as Record<string, unknown> | undefined;
+      if (!data || data.type !== "voucher_review" || !Array.isArray(data.entries)) continue;
+      const entries = data.entries as Array<Record<string, unknown>>;
+      const actionable = entries.find(
+        (e) => e.status === "draft" || e.status === "pending",
+      );
+      // Stop at the most recent voucher_review message regardless of match —
+      // only one voucher is pending at a time (most recent).
+      return actionable;
+    }
+    return undefined;
+  }
 
   useEffect(() => {
     if (conversationId && workspaceId) {
@@ -97,6 +118,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           onConversationCreated?.(conv.id);
         }
 
+        const pendingEntry = file ? undefined : getPendingEntry();
         const response = file
           ? await sendChatWithFile(file, text, workspaceId, activeConvId)
           : await sendChat({
@@ -105,6 +127,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
               company: company ?? undefined,
               workspace_id: workspaceId,
               conversation_id: activeConvId,
+              ...(pendingEntry ? { pending_entry: pendingEntry } : {}),
             });
 
         setSessionId(response.session_id);
@@ -184,8 +207,23 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           content: response.message,
           data: response.data,
         };
+        // Mark the acted-upon entry terminal in its original voucher_review
+        // message so it's no longer treated as pending (clears pending_entry
+        // forwarding). approve → written, discard → deleted.
+        const terminalStatus =
+          action === "approve" ? "written" : action === "discard" ? "deleted" : null;
         setMessages((prev) =>
-          prev.map((m) => (m.id === loadingMsg.id ? resultMsg : m))
+          prev.map((m) => {
+            if (m.id === loadingMsg.id) return resultMsg;
+            if (!terminalStatus) return m;
+            if (!m.data || !("entries" in (m.data as Record<string, unknown>))) return m;
+            const d = m.data as Record<string, unknown>;
+            const entries = d.entries as Array<Record<string, unknown>>;
+            const updated = entries.map((e) =>
+              e.id === entryId ? { ...e, status: terminalStatus } : e
+            );
+            return { ...m, data: { ...d, entries: updated } };
+          })
         );
       } catch {
         // Revert entry status to draft on error

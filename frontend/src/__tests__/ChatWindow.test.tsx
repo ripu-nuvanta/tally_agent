@@ -206,6 +206,123 @@ describe("ChatWindow", () => {
     });
   });
 
+  describe("pending_entry forwarding (T8 — FX rate override)", () => {
+    const voucherReviewData = {
+      type: "voucher_review",
+      entries: [
+        {
+          id: "v-1",
+          voucher_type: "Payment",
+          date: "20260404",
+          vendor_name: "Acme",
+          amount: 8350,
+          debit_ledger: "Travel Expenses",
+          credit_ledger: "Cash",
+          narration: "Acme",
+          gst_entries: [],
+          status: "draft",
+          warnings: [],
+          is_new_ledger: false,
+          suggested_parent: null,
+          original_currency: "USD",
+          original_amount: 100,
+          fx_rate: 83.5,
+        },
+      ],
+      available_ledgers: ["Travel Expenses"],
+      available_payment_ledgers: ["Cash"],
+    };
+
+    async function uploadVoucher(user: ReturnType<typeof userEvent.setup>) {
+      mockedApi.sendChatWithFile.mockResolvedValue({
+        message: "Review this entry",
+        data: voucherReviewData as never,
+        session_id: "sess-fx",
+      });
+      const fileInput = screen.getByTestId("file-input");
+      const file = new File(["x"], "receipt.png", { type: "image/png" });
+      await user.upload(fileInput, file);
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() => {
+        expect(screen.getByText("Review this entry")).toBeInTheDocument();
+      });
+    }
+
+    it("includes pending_entry on the next chat after a voucher_review is shown", async () => {
+      const user = userEvent.setup();
+      renderWithProvider();
+      await uploadVoucher(user);
+
+      mockedApi.sendChat.mockResolvedValue({ message: "ok", session_id: "sess-fx" });
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "use rate 84.5{Enter}");
+
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenCalled();
+      });
+      expect(mockedApi.sendChat).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          pending_entry: expect.objectContaining({ id: "v-1", original_currency: "USD" }),
+        }),
+      );
+    });
+
+    it("forwards the updated entry when a chat rate-override returns a new voucher_review", async () => {
+      const user = userEvent.setup();
+      renderWithProvider();
+      await uploadVoucher(user);
+
+      // Rate-override chat response is itself a voucher_review with the new rate
+      const updatedVoucher = {
+        ...voucherReviewData,
+        entries: [{ ...voucherReviewData.entries[0], amount: 8450, fx_rate: 84.5 }],
+      };
+      mockedApi.sendChat.mockResolvedValue({
+        message: "Updated rate",
+        data: updatedVoucher as never,
+        session_id: "sess-fx",
+      });
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "use rate 84.5{Enter}");
+      await waitFor(() => {
+        expect(screen.getByText("Updated rate")).toBeInTheDocument();
+      });
+
+      // A subsequent chat forwards the *updated* pending entry (new rate)
+      mockedApi.sendChat.mockResolvedValue({ message: "ok", session_id: "sess-fx" });
+      await user.type(textarea, "use rate 85{Enter}");
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            pending_entry: expect.objectContaining({ id: "v-1", fx_rate: 84.5 }),
+          }),
+        );
+      });
+    });
+
+    it("clears pending_entry after the voucher is discarded", async () => {
+      const user = userEvent.setup();
+      renderWithProvider();
+      await uploadVoucher(user);
+
+      mockedApi.voucherAction.mockResolvedValue({ message: "Discarded", session_id: "sess-fx" });
+      await user.click(screen.getByText("Discard"));
+      await waitFor(() => {
+        expect(mockedApi.voucherAction).toHaveBeenCalled();
+      });
+
+      mockedApi.sendChat.mockResolvedValue({ message: "ok", session_id: "sess-fx" });
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "hello{Enter}");
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenCalled();
+      });
+      expect(mockedApi.sendChat).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ pending_entry: expect.anything() }),
+      );
+    });
+  });
+
   describe("workspace landing page (Task 5)", () => {
     it("shows workspace name when workspaceName is provided without conversationId", () => {
       render(
@@ -438,6 +555,20 @@ describe("ChatWindow", () => {
       });
       expect(screen.queryByText("old answer")).not.toBeInTheDocument();
       expect(screen.getByText("TallyPrime AI Assistant")).toBeInTheDocument();
+    });
+
+    it("omits pending_entry when no voucher is pending", async () => {
+      const user = userEvent.setup();
+      mockedApi.sendChat.mockResolvedValue({ message: "Response", session_id: "sess-1" });
+      renderWithProvider();
+      const textarea = screen.getByPlaceholderText("Ask about your Tally data...");
+      await user.type(textarea, "cash balance{Enter}");
+      await waitFor(() => {
+        expect(mockedApi.sendChat).toHaveBeenCalled();
+      });
+      expect(mockedApi.sendChat).toHaveBeenLastCalledWith(
+        expect.not.objectContaining({ pending_entry: expect.anything() }),
+      );
     });
 
     it("loading prevents double creation on rapid sends", async () => {

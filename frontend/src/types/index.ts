@@ -26,6 +26,7 @@ export interface ChatRequest {
   company?: string;
   workspace_id?: string;
   conversation_id?: string;
+  pending_entry?: Record<string, unknown> | null;
 }
 
 export interface ChatResponse {

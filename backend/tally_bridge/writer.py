@@ -111,6 +111,12 @@ class TallyWriter:
                 total = sum(float(e["amount"]) for e in valid_entries)
                 if abs(total) > 0.01:
                     errors.append(f"Ledger entries do not balance (sum={total:.2f})")
+                # Magnitude invariant: an all-zero voucher balances (0 == 0) but is
+                # never valid — e.g. a foreign entry with no resolvable rate yields
+                # amount 0. Reject it (defense in depth for the FX no-rate guard).
+                gross = sum(abs(float(e["amount"])) for e in valid_entries)
+                if gross <= 0.01:
+                    errors.append("Voucher total must be greater than zero")
             except (TypeError, ValueError) as e:
                 errors.append(f"Invalid amount in ledger entries: {e}")
 

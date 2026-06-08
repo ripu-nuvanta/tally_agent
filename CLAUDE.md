@@ -20,6 +20,8 @@ TallyPrime AI Agent — an AI-powered chatbot that connects to a live TallyPrime
 
 ## Build & Run Commands
 
+**Local run notes:** commands assume the project venv is active; if `uvicorn`/`python` aren't found, prefix with `uv run` (e.g. `PYTHONPATH=. uv run uvicorn backend.main:app ...`). The backend `--port` MUST match the frontend's `VITE_API_URL` (set in `frontend/.env`) — otherwise every API call 500s. Default is 8000.
+
 ### Backend (Python)
 ```bash
 # Install dependencies

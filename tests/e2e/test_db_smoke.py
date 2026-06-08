@@ -1,5 +1,4 @@
 """E2E smoke test — DB mode (auth + persistence). Requires TEST_DATABASE_URL."""
-import importlib
 import os
 
 import pytest
@@ -20,54 +19,65 @@ async def db_app(monkeypatch):
     """
     Stand up a full FastAPI app in DB mode for one test.
 
+    We deliberately AVOID ``importlib.reload`` here. Reloading
+    ``backend.config`` / ``backend.api.*`` rebinds module-level objects
+    (``settings``, ``get_client``, the routers' ``Depends`` targets) to NEW
+    identities. Other already-imported test modules keep references to the
+    ORIGINAL objects, so their ``dependency_overrides`` (keyed by identity) and
+    ``monkeypatch.setattr(settings, ...)`` silently stop matching — which is
+    exactly the cross-file contamination that broke ``test_fx_upload_flow.py``.
+
+    Instead we mutate the shared ``settings`` singleton in place (every module
+    that did ``from backend.config import settings`` sees it, because
+    ``db_mode`` is a live-computed property of ``DATABASE_URL``) and assemble a
+    fresh ``FastAPI`` app with the routers included explicitly — the same
+    no-reload pattern the other integration suites use.
+
     Because httpx ASGITransport does NOT trigger ASGI lifespan events, we
     manually wire up app.state (tally_client, session_store) and call
     init_engine() ourselves — exactly what the lifespan would do.
     """
-    # 1. Set env vars before any module reload
-    monkeypatch.setenv("DATABASE_URL", _TEST_DB_URL)
-    monkeypatch.setenv("JWT_SECRET", "a" * 64)
-    monkeypatch.setenv("TALLY_MODE", "mock")
-    monkeypatch.setenv("ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "test-key"))
+    from backend.config import settings
 
-    # 2. Reload config so db_mode=True is reflected
-    import backend.config
-    importlib.reload(backend.config)
-    backend.config.settings = backend.config.Settings()
+    # 1. Flip the shared singleton into DB mode (restored automatically by
+    #    monkeypatch in teardown). db_mode is derived live from DATABASE_URL.
+    monkeypatch.setattr(settings, "DATABASE_URL", _TEST_DB_URL)
+    monkeypatch.setattr(settings, "JWT_SECRET", "a" * 64)
+    monkeypatch.setattr(settings, "TALLY_MODE", "mock")
+    monkeypatch.setattr(
+        settings, "ANTHROPIC_API_KEY", os.environ.get("ANTHROPIC_API_KEY", "test-key")
+    )
 
-    # 3. Reload engine module (it reads settings at import time)
-    import backend.db.engine
-    importlib.reload(backend.db.engine)
-
-    # 4. Create test DB tables
+    # 2. Create test DB tables
     from backend.db.models import Base
     setup_engine = create_async_engine(_TEST_DB_URL)
     async with setup_engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     await setup_engine.dispose()
 
-    # 5. Reload API modules that hold a stale reference to settings.
-    #    Only dependencies.py controls auth enforcement for all endpoints.
-    import backend.api.dependencies
-    importlib.reload(backend.api.dependencies)
-    import backend.api.chat
-    importlib.reload(backend.api.chat)
-    import backend.api.auth
-    importlib.reload(backend.api.auth)
-    import backend.api.workspaces
-    importlib.reload(backend.api.workspaces)
-    import backend.api.conversations
-    importlib.reload(backend.api.conversations)
-    import backend.api.usage
-    importlib.reload(backend.api.usage)
+    # 3. Assemble a fresh app with all routers (DB-mode routers included
+    #    unconditionally — auth enforcement is decided at request time by
+    #    get_current_user reading settings.db_mode).
+    from fastapi import FastAPI
 
-    # Reload main.py — with db_mode=True the auth/workspace/conversation
-    #    routers are registered at module level (the if settings.db_mode block)
-    import backend.main
-    importlib.reload(backend.main)
-    from backend.main import app
+    from backend.api import (
+        auth,
+        chat,
+        companies,
+        conversations,
+        health,
+        reports,
+        tally_mode,
+        usage,
+        workspaces,
+    )
 
-    # 6. Manually initialise what lifespan would do (ASGITransport skips lifespan)
+    app = FastAPI()
+    for module in (chat, health, companies, reports, tally_mode,
+                   auth, workspaces, conversations, usage):
+        app.include_router(module.router, prefix="/api")
+
+    # 4. Manually initialise what lifespan would do (ASGITransport skips lifespan)
     from backend.agents.context import SessionStore
     from backend.tally_bridge.client import TallyClient
     from backend.db.engine import init_engine
@@ -78,9 +88,18 @@ async def db_app(monkeypatch):
     app.state.session_store = SessionStore(ttl_minutes=60)
     init_engine(_TEST_DB_URL)
 
+    # Reset auth's in-memory rate-limit state. The old reload-based fixture
+    # reset these implicitly by reloading backend.api.auth; without the reload
+    # we must clear them explicitly so per-IP register/login throttling doesn't
+    # accumulate across tests (every test registers from the same test client IP).
+    auth._register_attempts.clear()
+    auth._login_attempts.clear()
+
     yield app
 
-    # 7. Teardown
+    # 5. Teardown — close engine + drop tables. settings restored by monkeypatch.
+    auth._register_attempts.clear()
+    auth._login_attempts.clear()
     await tally_client.close()
     from backend.db.engine import close_engine
     await close_engine()
@@ -90,24 +109,12 @@ async def db_app(monkeypatch):
         await conn.run_sync(Base.metadata.drop_all)
     await teardown_engine.dispose()
 
-    # 8. Restore modules to legacy state so other test files aren't affected
-    monkeypatch.delenv("DATABASE_URL", raising=False)
-    importlib.reload(backend.config)
-    backend.config.settings = backend.config.Settings()
-    importlib.reload(backend.db.engine)
-    importlib.reload(backend.api.dependencies)
-    importlib.reload(backend.api.chat)
-    importlib.reload(backend.api.auth)
-    importlib.reload(backend.api.workspaces)
-    importlib.reload(backend.api.conversations)
-    importlib.reload(backend.api.usage)
-    importlib.reload(backend.main)
 
-
-async def test_db_health_is_public(db_app):
+async def test_db_health_requires_auth(db_app):
+    """In DB mode /api/health requires auth (commit 8478d5a) — unauthenticated → 401."""
     async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
         resp = await ac.get("/api/health")
-    assert resp.status_code == 200
+    assert resp.status_code == 401
 
 
 async def test_db_chat_requires_auth(db_app):

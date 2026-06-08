@@ -47,6 +47,22 @@ class TestVisionPrompt:
         assert "json" in prompt.lower()
         assert "GST" in prompt or "gst" in prompt
 
+    def test_prompt_drops_inr_mandate(self):
+        """Prompt must no longer force amounts into INR."""
+        prompt = build_vision_prompt()
+        assert "All amounts in INR" not in prompt
+
+    def test_prompt_asks_for_currency_and_fx_rate(self):
+        prompt = build_vision_prompt()
+        assert "currency" in prompt.lower()
+        assert "fx_rate" in prompt.lower()
+
+    def test_prompt_says_do_not_convert(self):
+        prompt = build_vision_prompt()
+        lower = prompt.lower()
+        assert "original currency" in lower
+        assert "not convert" in lower or "do not convert" in lower
+
 
 class TestParseVisionResponse:
     def test_basic_expense(self):
@@ -93,6 +109,58 @@ class TestParseVisionResponse:
     def test_invalid_json_raises(self):
         with pytest.raises(json.JSONDecodeError):
             parse_vision_response("not json at all")
+
+    def test_currency_present_captured_as_original_currency(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "AWS", "date": "2026-04-04",
+            "total_amount": 100.00, "currency": "USD", "fx_rate": 83.5,
+            "line_items": [{"description": "Cloud", "amount": 100.00}],
+            "gst": None, "payment_mode": "card",
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "USD"
+        assert doc.fx_rate == Decimal("83.5")
+
+    def test_currency_absent_defaults_to_inr(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "Local", "date": "2026-04-04",
+            "total_amount": 500.00,
+            "line_items": [{"description": "x", "amount": 500.00}],
+            "gst": None, "payment_mode": "cash",
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "INR"
+        assert doc.fx_rate is None
+
+    def test_lowercase_currency_uppercased(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "X", "date": "2026-04-04",
+            "total_amount": 50.0, "currency": "eur", "fx_rate": None,
+            "line_items": [], "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "EUR"
+        assert doc.fx_rate is None
+
+    def test_fx_rate_null_yields_none(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "X", "date": "2026-04-04",
+            "total_amount": 100.0, "currency": "USD", "fx_rate": None,
+            "line_items": [], "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "USD"
+        assert doc.fx_rate is None
+
+    def test_currency_back_compat_alias_set(self):
+        """Legacy `currency` field stays populated for back-compat."""
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "X", "date": "2026-04-04",
+            "total_amount": 100.0, "currency": "usd", "fx_rate": None,
+            "line_items": [], "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.currency == "USD"
 
 
 class TestAmountValidation:

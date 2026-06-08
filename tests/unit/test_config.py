@@ -35,3 +35,14 @@ class TestConfigDefaults:
         from backend.config import Settings
         s = Settings(TALLY_HOST="192.168.1.100", TALLY_PORT=9001)
         assert s.TALLY_URL == "http://192.168.1.100:9001"
+
+    def test_fx_default_rates_default_empty(self):
+        with patch.dict(os.environ, {}, clear=True):
+            from backend.config import Settings
+
+            class TestSettings(Settings):
+                model_config = {"env_file": None, "extra": "ignore"}
+
+            s = TestSettings()
+            assert s.FX_DEFAULT_RATES == ""
+            assert s.FX_DEFAULT_RATE == 0.0

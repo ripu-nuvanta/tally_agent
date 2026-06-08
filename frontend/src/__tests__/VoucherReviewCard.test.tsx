@@ -256,6 +256,61 @@ describe("VoucherReviewCard", () => {
     expect(grid.className).toContain("md:grid-cols-2");
   });
 
+  it("renders FX line and hint for a foreign-currency entry", () => {
+    render(
+      <VoucherReviewCard
+        entries={[
+          {
+            ...mockEntry,
+            amount: 8350,
+            original_currency: "USD",
+            original_amount: 100,
+            fx_rate: 83.5,
+          },
+        ]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    expect(screen.getByText(/USD 100\.00 @ ₹83\.50 = ₹8,350\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wrong rate\? Reply "use rate <n>" in chat\./)).toBeInTheDocument();
+    // Posted INR amount still rendered as today
+    expect(screen.getByText("₹8,350.00")).toBeInTheDocument();
+  });
+
+  it("does not render FX line for an INR entry", () => {
+    render(
+      <VoucherReviewCard
+        entries={[{ ...mockEntry, original_currency: "INR", original_amount: 500, fx_rate: 1 }]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Wrong rate\?/)).not.toBeInTheDocument();
+  });
+
+  it("does not render FX line when original_currency is absent (back-compat)", () => {
+    render(
+      <VoucherReviewCard
+        entries={[mockEntry]}
+        availableLedgers={[]}
+        availablePaymentLedgers={[]}
+        onApprove={noop}
+        onDiscard={noop}
+        onEdit={noop}
+      />
+    );
+    expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Wrong rate\?/)).not.toBeInTheDocument();
+  });
+
   it("uses flex-wrap on action buttons container", () => {
     render(
       <VoucherReviewCard

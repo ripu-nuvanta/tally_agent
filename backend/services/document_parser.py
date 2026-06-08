@@ -45,7 +45,9 @@ class ExtractedDocument:
     payment_mode: str | None = None
     raw_text: str | None = None
     confidence: float = 0.0
-    currency: str = "INR"
+    currency: str = "INR"  # back-compat alias for original_currency
+    original_currency: str = "INR"  # ISO code of the document's printed currency
+    fx_rate: Decimal | None = None  # rate printed on the document, if any
 
 
 _STRUCTURED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".ofx"}
@@ -74,6 +76,8 @@ Return ONLY valid JSON with this exact structure:
     "doc_type": "expense" | "purchase" | "sale",
     "vendor_name": "string or null",
     "date": "YYYY-MM-DD",
+    "currency": "ISO code, e.g. USD/EUR/INR (default INR if none shown)",
+    "fx_rate": number or null,
     "total_amount": number,
     "line_items": [
         {
@@ -96,7 +100,10 @@ Return ONLY valid JSON with this exact structure:
 }
 
 Rules:
-- All amounts in INR as positive numbers.
+- Report amounts in the document's ORIGINAL currency exactly as printed. Do NOT convert to INR.
+- Amounts as positive numbers.
+- "currency": the ISO code of the currency shown on the document (e.g. USD, EUR, INR). Default to "INR" if the document shows none.
+- "fx_rate": only set this if the document itself prints an exchange rate; otherwise null.
 - Date in YYYY-MM-DD format.
 - If GST is not mentioned or not applicable, set gst to null.
 - If unsure about a field, set it to null rather than guessing.
@@ -155,6 +162,10 @@ def parse_vision_response(response_text: str) -> ExtractedDocument:
             gstin=g.get("gstin"),
         )
 
+    currency_raw = data.get("currency")
+    currency = currency_raw.strip().upper() if currency_raw else "INR"
+    fx_rate = _to_decimal(data["fx_rate"]) if data.get("fx_rate") is not None else None
+
     return ExtractedDocument(
         doc_type=data.get("doc_type", "expense"),
         vendor_name=data.get("vendor_name"),
@@ -164,6 +175,9 @@ def parse_vision_response(response_text: str) -> ExtractedDocument:
         gst=gst,
         payment_mode=data.get("payment_mode"),
         confidence=0.85,
+        currency=currency,
+        original_currency=currency,
+        fx_rate=fx_rate,
     )
 
 
