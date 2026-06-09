@@ -38,9 +38,18 @@ def _fx_trail(
 # " | FX: USD 100.00 @ ₹83.50 = ₹8,350.00". Strips any prior trail so a
 # re-conversion appends exactly one.
 _FX_TRAIL_RE = re.compile(r"\s*\|\s*FX:.*$")
-# Warnings emitted for default/fallback/none rate sources (T6); removed on
-# a user rate override since the rate is now explicit.
-_RATE_WARNING_MARKERS = ("Used default", "No conversion rate")
+# Warnings emitted for default/fallback/none rate sources (T6), plus the
+# post-extraction FX validation warning from validate_extracted_amounts (Group B
+# Task 2: "Foreign currency (<CUR>) with no exchange rate — please verify INR
+# amount"). All concern a missing/uncertain rate and become stale once the user
+# sets an explicit rate, so all are removed on a rate override. Kept as precise
+# prefix markers so unrelated warnings (GST mismatch, zero total, line-item
+# mismatch) are never dropped.
+_RATE_WARNING_MARKERS = (
+    "Used default",
+    "No conversion rate",
+    "Foreign currency",
+)
 
 
 def parse_default_rates(s: str) -> dict[str, float]:

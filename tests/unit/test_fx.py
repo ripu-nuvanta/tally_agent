@@ -226,6 +226,24 @@ class TestRecomputeEntryWithRate:
         out = recompute_entry_with_rate(entry, 90.0)
         assert out["warnings"] == ["Amount looks unusual."]
 
+    def test_clears_validate_extracted_amounts_fx_warning(self):
+        # Group B Task 2 regression: validate_extracted_amounts emits a
+        # "Foreign currency (<CUR>) with no exchange rate — please verify INR
+        # amount" warning on the blocked entry. Setting an explicit rate makes it
+        # stale, so recompute must drop it too — not only the orchestrator's
+        # "No conversion rate ..." warning. Unrelated warnings stay.
+        entry = self._base_entry(
+            warnings=[
+                "Foreign currency (USD) with no exchange rate — please verify INR amount",
+                "No conversion rate for USD — reply 'use rate <n>' to set it (entry can't be written yet).",
+                "Line items (90) + GST (18) = 108, but document total is 100 — please verify",
+            ],
+        )
+        out = recompute_entry_with_rate(entry, 90.0)
+        assert out["warnings"] == [
+            "Line items (90) + GST (18) = 108, but document total is 100 — please verify"
+        ]
+
     def test_half_up_rounding(self):
         entry = self._base_entry(original_amount=100.005)
         out = recompute_entry_with_rate(entry, 1.0)

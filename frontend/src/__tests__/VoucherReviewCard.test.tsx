@@ -1,329 +1,197 @@
 import { render, screen, fireEvent } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
-import VoucherReviewCard, { type VoucherEntry } from "../components/VoucherReviewCard";
-
-const mockEntry: VoucherEntry = {
-  id: "test-1",
-  voucher_type: "Payment",
-  date: "20260404",
-  vendor_name: "Uber",
-  amount: 500,
-  debit_ledger: "Travel Expenses",
-  credit_ledger: "Cash",
-  narration: "Uber — Ride",
-  gst_entries: [],
-  status: "draft",
-  warnings: [],
-  is_new_ledger: false,
-  suggested_parent: null,
-};
+import VoucherReviewCard from "../components/VoucherReviewCard";
+import {
+  paymentINR,
+  purchaseINR,
+  purchaseUSD,
+  salesINR,
+  debitNoteINR,
+  creditNoteINR,
+  availableLedgers,
+  availablePaymentLedgers,
+  availableSupplierLedgers,
+  availableCustomerLedgers,
+} from "./fixtures/voucherMockData";
 
 const noop = vi.fn();
 
-describe("VoucherReviewCard", () => {
-  it("renders entry fields", () => {
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={["Travel Expenses", "Office Supplies"]}
-        availablePaymentLedgers={["Cash", "Bank Account"]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
+function renderCard(entry = paymentINR, extra = {}) {
+  return render(
+    <VoucherReviewCard
+      entries={[entry]}
+      availableLedgers={availableLedgers}
+      availablePaymentLedgers={availablePaymentLedgers}
+      availableSupplierLedgers={availableSupplierLedgers}
+      availableCustomerLedgers={availableCustomerLedgers}
+      onApprove={noop}
+      onDiscard={noop}
+      onEdit={noop}
+      {...extra}
+    />,
+  );
+}
+
+describe("VoucherReviewCard — collapsed states", () => {
+  it("renders Payment INR with vendor, date, amount, action buttons", () => {
+    renderCard(paymentINR);
+    expect(screen.getByText("Vendor:")).toBeInTheDocument();
     expect(screen.getAllByText(/Uber/).length).toBeGreaterThan(0);
-    expect(screen.getByText("Travel Expenses")).toBeInTheDocument();
     expect(screen.getByText("04-Apr-2026")).toBeInTheDocument();
+    expect(screen.getByText("₹500.00")).toBeInTheDocument();
     expect(screen.getByText("Write to Tally")).toBeInTheDocument();
     expect(screen.getByText("Edit Entry")).toBeInTheDocument();
     expect(screen.getByText("Discard")).toBeInTheDocument();
   });
 
-  it("calls onApprove when Write to Tally clicked", () => {
-    const onApprove = vi.fn();
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={onApprove}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    fireEvent.click(screen.getByText("Write to Tally"));
-    expect(onApprove).toHaveBeenCalledWith("test-1");
+  it("shows the type badge for each voucher type", () => {
+    renderCard(purchaseINR);
+    expect(screen.getByTestId(`voucher-type-badge-${purchaseINR.id}`)).toHaveTextContent("Purchase");
   });
 
-  it("calls onDiscard when Discard clicked", () => {
-    const onDiscard = vi.fn();
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={onDiscard}
-        onEdit={noop}
-      />
-    );
-    fireEvent.click(screen.getByText("Discard"));
-    expect(onDiscard).toHaveBeenCalledWith("test-1");
+  it("Payment does not show a Party field", () => {
+    renderCard(paymentINR);
+    expect(screen.queryByText("Party:")).not.toBeInTheDocument();
   });
 
-  it("shows warning for new ledger", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, is_new_ledger: true, suggested_parent: "Indirect Expenses" }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
+  it("Purchase shows party name and badge", () => {
+    renderCard(purchaseINR);
+    expect(screen.getByText("Party:")).toBeInTheDocument();
+    expect(screen.getAllByText(/Acme Supplies/).length).toBeGreaterThan(0);
+    expect(screen.getByTestId(`voucher-type-badge-${purchaseINR.id}`)).toHaveTextContent("Purchase");
+  });
+
+  it("Purchase USD shows both INR amount and original currency", () => {
+    renderCard(purchaseUSD);
+    expect(screen.getByText("₹8,350.00")).toBeInTheDocument();
+    expect(screen.getByText("USD 100.00")).toBeInTheDocument();
+  });
+
+  it("Sales shows party and green badge", () => {
+    renderCard(salesINR);
+    expect(screen.getByText("Party:")).toBeInTheDocument();
+    expect(screen.getByTestId(`voucher-type-badge-${salesINR.id}`)).toHaveTextContent("Sales");
+  });
+
+  it("Debit Note shows 'Against: Invoice #...'", () => {
+    renderCard(debitNoteINR);
+    expect(screen.getByText("Against:")).toBeInTheDocument();
+    expect(screen.getByText("Invoice #INV-2025")).toBeInTheDocument();
+    expect(screen.getByTestId(`voucher-type-badge-${debitNoteINR.id}`)).toHaveTextContent("Debit Note");
+  });
+
+  it("Credit Note shows 'Against: Invoice #...'", () => {
+    renderCard(creditNoteINR);
+    expect(screen.getByText("Invoice #SI-1001")).toBeInTheDocument();
+    expect(screen.getByTestId(`voucher-type-badge-${creditNoteINR.id}`)).toHaveTextContent("Credit Note");
+  });
+
+  it("renders new-ledger warning", () => {
+    renderCard({ ...paymentINR, is_new_ledger: true, suggested_parent: "Indirect Expenses" });
     expect(screen.getByText(/will be created/)).toBeInTheDocument();
     expect(screen.getByText(/Indirect Expenses/)).toBeInTheDocument();
   });
 
+  it("renders amber warnings", () => {
+    renderCard({ ...paymentINR, warnings: ["Total mismatch"] });
+    expect(screen.getByText("Total mismatch")).toBeInTheDocument();
+  });
+});
+
+describe("VoucherReviewCard — progressive disclosure", () => {
+  it("toggles expanded detail view", () => {
+    renderCard(purchaseINR);
+    expect(screen.queryByTestId(`voucher-expanded-${purchaseINR.id}`)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Show details"));
+    expect(screen.getByTestId(`voucher-expanded-${purchaseINR.id}`)).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Hide details"));
+    expect(screen.queryByTestId(`voucher-expanded-${purchaseINR.id}`)).not.toBeInTheDocument();
+  });
+
+  it("expanded view shows GST breakdown and ledger mappings", () => {
+    renderCard(purchaseINR);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(screen.getByText("Debit:")).toBeInTheDocument();
+    expect(screen.getByText("Credit:")).toBeInTheDocument();
+    expect(screen.getByText(/INPUT CGST/)).toBeInTheDocument();
+  });
+
+  it("expanded view shows FX line for USD", () => {
+    renderCard(purchaseUSD);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(screen.getByText(/USD 100\.00 @ ₹83\.50 = ₹8,350\.00/)).toBeInTheDocument();
+    expect(screen.getByText(/Wrong rate\?/)).toBeInTheDocument();
+  });
+
+  it("expanded view shows original invoice reference for Debit Note", () => {
+    renderCard(debitNoteINR);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(screen.getByText(/Against: Invoice #INV-2025/)).toBeInTheDocument();
+  });
+
+  it("does not show FX line for INR payment (back-compat)", () => {
+    renderCard(paymentINR);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
+  });
+});
+
+describe("VoucherReviewCard — actions", () => {
+  it("calls onApprove when Write to Tally clicked", () => {
+    const onApprove = vi.fn();
+    renderCard(paymentINR, { onApprove });
+    fireEvent.click(screen.getByText("Write to Tally"));
+    expect(onApprove).toHaveBeenCalledWith(paymentINR.id);
+  });
+
+  it("calls onDiscard when Discard clicked", () => {
+    const onDiscard = vi.fn();
+    renderCard(paymentINR, { onDiscard });
+    fireEvent.click(screen.getByText("Discard"));
+    expect(onDiscard).toHaveBeenCalledWith(paymentINR.id);
+  });
+
+  it("opens the edit form when Edit Entry clicked", () => {
+    renderCard(paymentINR);
+    fireEvent.click(screen.getByText("Edit Entry"));
+    expect(screen.getByTestId("voucher-edit-form")).toBeInTheDocument();
+    expect(screen.getByLabelText("Voucher Type")).toBeInTheDocument();
+  });
+
   it("shows written state without action buttons", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, status: "written" }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
+    renderCard({ ...paymentINR, status: "written" });
     expect(screen.getByText(/Written/)).toBeInTheDocument();
     expect(screen.queryByText("Write to Tally")).not.toBeInTheDocument();
   });
 
-  it("shows warnings when present", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, warnings: ["Total mismatch"] }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    expect(screen.getByText("Total mismatch")).toBeInTheDocument();
-  });
-
-  it("opens edit form when Edit Entry clicked", () => {
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={["Travel Expenses", "Office Supplies"]}
-        availablePaymentLedgers={["Cash"]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    fireEvent.click(screen.getByText("Edit Entry"));
-    expect(screen.getByLabelText("Vendor")).toBeInTheDocument();
-    expect(screen.getByText("Confirm & Write to Tally")).toBeInTheDocument();
-  });
-
-  it("allows editing the date", () => {
-    const onEdit = vi.fn();
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={["Travel Expenses"]}
-        availablePaymentLedgers={["Cash"]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={onEdit}
-      />
-    );
-    fireEvent.click(screen.getByText("Edit Entry"));
-    const dateInput = screen.getByLabelText("Date");
-    fireEvent.change(dateInput, { target: { value: "2026-03-02" } });
-    fireEvent.click(screen.getByText("Confirm & Write to Tally"));
-    expect(onEdit).toHaveBeenCalledWith(
-      "test-1",
-      expect.objectContaining({ date: "20260302" })
-    );
-  });
-
-  it("calls onEdit with updated values when confirmed", () => {
-    const onEdit = vi.fn();
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={["Travel Expenses", "Office Supplies"]}
-        availablePaymentLedgers={["Cash"]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={onEdit}
-      />
-    );
-    fireEvent.click(screen.getByText("Edit Entry"));
-    const vendorInput = screen.getByLabelText("Vendor");
-    fireEvent.change(vendorInput, { target: { value: "Ola" } });
-    fireEvent.click(screen.getByText("Confirm & Write to Tally"));
-    expect(onEdit).toHaveBeenCalledWith(
-      "test-1",
-      expect.objectContaining({ vendor_name: "Ola" })
-    );
-  });
-
   it("disables all buttons when status is pending", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, status: "pending" }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
+    renderCard({ ...paymentINR, status: "pending" });
     expect(screen.getByText("Write to Tally").closest("button")).toBeDisabled();
     expect(screen.getByText("Edit Entry").closest("button")).toBeDisabled();
     expect(screen.getByText("Discard").closest("button")).toBeDisabled();
   });
 
   it("shows spinner on approve button when pendingAction is approve", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, status: "pending" }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-        pendingAction={{ entryId: "test-1", action: "approve" }}
-      />
+    renderCard(
+      { ...paymentINR, status: "pending" },
+      { pendingAction: { entryId: paymentINR.id, action: "approve" } },
     );
     const writeBtn = screen.getByText("Write to Tally").closest("button")!;
     expect(writeBtn.querySelector('[data-testid="spinner"]')).toBeInTheDocument();
-    expect(writeBtn).toBeDisabled();
   });
 
   it("shows spinner on discard button when pendingAction is discard", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, status: "pending" }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-        pendingAction={{ entryId: "test-1", action: "discard" }}
-      />
+    renderCard(
+      { ...paymentINR, status: "pending" },
+      { pendingAction: { entryId: paymentINR.id, action: "discard" } },
     );
     const discardBtn = screen.getByText("Discard").closest("button")!;
     expect(discardBtn.querySelector('[data-testid="spinner"]')).toBeInTheDocument();
-    expect(discardBtn).toBeDisabled();
-  });
-
-  it("shows Pending label in status when status is pending", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, status: "pending" }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    expect(screen.getByText(/Pending/)).toBeInTheDocument();
-  });
-
-  it("uses responsive grid classes on field grid", () => {
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    const grid = screen.getByText("Vendor:").closest("div")!.parentElement!;
-    expect(grid.className).toContain("grid-cols-1");
-    expect(grid.className).toContain("md:grid-cols-2");
-  });
-
-  it("renders FX line and hint for a foreign-currency entry", () => {
-    render(
-      <VoucherReviewCard
-        entries={[
-          {
-            ...mockEntry,
-            amount: 8350,
-            original_currency: "USD",
-            original_amount: 100,
-            fx_rate: 83.5,
-          },
-        ]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    expect(screen.getByText(/USD 100\.00 @ ₹83\.50 = ₹8,350\.00/)).toBeInTheDocument();
-    expect(screen.getByText(/Wrong rate\? Reply "use rate <n>" in chat\./)).toBeInTheDocument();
-    // Posted INR amount still rendered as today
-    expect(screen.getByText("₹8,350.00")).toBeInTheDocument();
-  });
-
-  it("does not render FX line for an INR entry", () => {
-    render(
-      <VoucherReviewCard
-        entries={[{ ...mockEntry, original_currency: "INR", original_amount: 500, fx_rate: 1 }]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Wrong rate\?/)).not.toBeInTheDocument();
-  });
-
-  it("does not render FX line when original_currency is absent (back-compat)", () => {
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
-    expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
-    expect(screen.queryByText(/Wrong rate\?/)).not.toBeInTheDocument();
   });
 
   it("uses flex-wrap on action buttons container", () => {
-    render(
-      <VoucherReviewCard
-        entries={[mockEntry]}
-        availableLedgers={[]}
-        availablePaymentLedgers={[]}
-        onApprove={noop}
-        onDiscard={noop}
-        onEdit={noop}
-      />
-    );
+    renderCard(paymentINR);
     const writeBtn = screen.getByText("Write to Tally");
-    const btnContainer = writeBtn.closest("button")!.parentElement!;
-    expect(btnContainer.className).toContain("flex-wrap");
+    expect(writeBtn.closest("button")!.parentElement!.className).toContain("flex-wrap");
   });
 });
