@@ -256,6 +256,19 @@ async def voucher_action(
                     session_id=session_id,
                 )
 
+        # Party-ledger guard (Finding 3): Purchase/Sales/DN/CN need a party
+        # ledger. If the company has no Sundry Creditors/Debtors the candidate
+        # list is empty and party_ledger may be blank — block rather than post a
+        # voucher with a missing/duplicate party leg.
+        vtype = entry.get("voucher_type", "Payment")
+        if vtype in ("Purchase", "Sales", "Debit Note", "Credit Note"):
+            if not (entry.get("party_ledger") or "").strip():
+                return ChatResponse(
+                    message="Select a party ledger before writing.",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+
         writer = TallyWriter(client=client, company=company)
 
         # Create new ledger first if the review card marked it as new

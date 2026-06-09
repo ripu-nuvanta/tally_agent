@@ -141,6 +141,54 @@ def test_credit_note_dispatch_calls_create_credit_note(client):
     assert kw["bill_ref"] == "INV-FEB-001"
 
 
+def test_debit_note_edit_form_mapping_keeps_legs_distinct(client):
+    """Contract guard (Finding 1): an edit-form DN entry (party on credit,
+    purchase-returns on debit) must dispatch with purchase_ledger != party_ledger.
+    """
+    entry = {
+        "id": "dn2", "voucher_type": "Debit Note", "date": "20260305",
+        # edit-form convention: debit = returns ledger, credit = party
+        "debit_ledger": "Purchase Returns", "credit_ledger": "Croma Electronics",
+        "party_ledger": "Croma Electronics", "amount": 4718.0,
+        "narration": "Return", "gst_entries": [],
+        "bill_reference": "CRO-5678", "bill_type": "Agst Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_debit_note",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    kw = m.await_args.kwargs
+    assert kw["purchase_ledger"] == "Purchase Returns"
+    assert kw["party_ledger"] == "Croma Electronics"
+    assert kw["purchase_ledger"] != kw["party_ledger"]
+
+
+def test_credit_note_edit_form_mapping_keeps_legs_distinct(client):
+    """Contract guard (Finding 1): an edit-form CN entry (party on debit,
+    sales-returns on credit) must dispatch with sales_ledger != party_ledger.
+    """
+    entry = {
+        "id": "cn2", "voucher_type": "Credit Note", "date": "20260315",
+        # edit-form convention: debit = party, credit = returns ledger
+        "debit_ledger": "Infosys Ltd", "credit_ledger": "Sales Returns",
+        "party_ledger": "Infosys Ltd", "amount": 11800.0,
+        "narration": "Discount CN", "gst_entries": [],
+        "bill_reference": "INV-FEB-001", "bill_type": "Agst Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_credit_note",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    kw = m.await_args.kwargs
+    assert kw["sales_ledger"] == "Sales Returns"
+    assert kw["party_ledger"] == "Infosys Ltd"
+    assert kw["sales_ledger"] != kw["party_ledger"]
+
+
 def test_default_voucher_type_is_payment(client):
     """Legacy entries without voucher_type still write a Payment (regression)."""
     entry = {
@@ -153,6 +201,52 @@ def test_default_voucher_type_is_payment(client):
     ) as m:
         resp = _post(client, entry)
     assert resp.status_code == 200, resp.text
+    m.assert_awaited_once()
+
+
+@pytest.mark.parametrize(
+    "voucher_type,writer_method",
+    [
+        ("Purchase", "create_purchase_voucher_ledger"),
+        ("Sales", "create_sales_voucher_ledger"),
+        ("Debit Note", "create_debit_note"),
+        ("Credit Note", "create_credit_note"),
+    ],
+)
+def test_empty_party_ledger_blocks_party_voucher(client, voucher_type, writer_method):
+    """Finding 3: a party voucher with empty/missing party_ledger must return a
+    voucher_error and NOT call the writer.
+    """
+    entry = {
+        "id": "np1", "voucher_type": voucher_type, "date": "20260301",
+        "debit_ledger": "Purchase Accounts", "credit_ledger": "Sales Accounts",
+        "party_ledger": "", "amount": 1000.0, "narration": "n", "gst_entries": [],
+    }
+    with patch(
+        f"backend.tally_bridge.writer.TallyWriter.{writer_method}",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_error"
+    assert "party ledger" in resp.json()["message"].lower()
+    m.assert_not_awaited()
+
+
+def test_valid_party_ledger_still_writes(client):
+    """Finding 3 happy path: a Purchase WITH a party_ledger still writes."""
+    entry = {
+        "id": "ok1", "voucher_type": "Purchase", "date": "20260301",
+        "debit_ledger": "Purchase Accounts", "credit_ledger": "Acme",
+        "party_ledger": "Acme", "amount": 1000.0, "narration": "n", "gst_entries": [],
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
     m.assert_awaited_once()
 
 

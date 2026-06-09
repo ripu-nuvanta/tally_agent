@@ -127,23 +127,16 @@ export default function VoucherEditForm({
       debitLedger = primaryLedger;
       creditLedger = paymentLedger;
     } else if (voucherType === "Purchase" || voucherType === "Debit Note") {
-      // party on credit (Purchase) / debit (DN) — keep party + primary distinct
-      if (voucherType === "Purchase") {
-        debitLedger = primaryLedger;
-        creditLedger = partyLedger;
-      } else {
-        debitLedger = partyLedger;
-        creditLedger = primaryLedger;
-      }
+      // Match the backend/orchestrator convention: Purchase AND Debit Note put
+      // the purchase/returns ledger on DEBIT and the party on CREDIT. chat.py
+      // dispatches purchase_ledger=debit_ledger, party_ledger=party.
+      debitLedger = primaryLedger;
+      creditLedger = partyLedger;
     } else {
-      // Sales / Credit Note
-      if (voucherType === "Sales") {
-        debitLedger = partyLedger;
-        creditLedger = primaryLedger;
-      } else {
-        debitLedger = primaryLedger;
-        creditLedger = partyLedger;
-      }
+      // Sales AND Credit Note put the party on DEBIT and the sales/returns
+      // ledger on CREDIT. chat.py dispatches sales_ledger=credit_ledger.
+      debitLedger = partyLedger;
+      creditLedger = primaryLedger;
     }
 
     const updates: Partial<VoucherEntry> = {
@@ -154,14 +147,30 @@ export default function VoucherEditForm({
       debit_ledger: debitLedger,
       credit_ledger: creditLedger,
     };
+    // Party fields: set for party vouchers, explicitly CLEAR for Payment so a
+    // reclassify (e.g. Sales → Payment) can't carry a stale party into the
+    // partial merge the parent performs.
     if (showParty) {
       updates.party_name = partyLedger;
       updates.party_ledger = partyLedger;
       updates.is_party_ledger = true;
+    } else {
+      updates.party_name = "";
+      updates.party_ledger = "";
+      updates.is_party_ledger = false;
     }
+    // Bill/against-invoice fields: "Agst Ref" only for DN/CN. For Purchase/Sales
+    // default to "New Ref" with a cleared reference; Payment carries none. This
+    // prevents a reclassify (e.g. DN → Purchase) leaving a stale "Agst Ref".
     if (showRef) {
       updates.bill_reference = billReference;
       updates.bill_type = "Agst Ref";
+    } else if (voucherType === "Purchase" || voucherType === "Sales") {
+      updates.bill_reference = "";
+      updates.bill_type = "New Ref";
+    } else {
+      updates.bill_reference = "";
+      updates.bill_type = "";
     }
     onSave(updates);
   };

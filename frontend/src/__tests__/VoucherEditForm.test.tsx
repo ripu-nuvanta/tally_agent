@@ -7,6 +7,7 @@ import {
   purchaseUSD,
   salesINR,
   debitNoteINR,
+  creditNoteINR,
   availableLedgers,
   availablePaymentLedgers,
   availableSupplierLedgers,
@@ -88,6 +89,32 @@ describe("VoucherEditForm — reclassify", () => {
     expect(optionTexts).toContain("Globex Ltd");
     expect(optionTexts).not.toContain("Acme Supplies");
   });
+
+  // Finding 2: reclassify must not leave stale party/bill fields on the entry.
+  it("reclassifying Debit Note → Purchase clears bill_reference and uses New Ref", () => {
+    const onSave = vi.fn();
+    renderForm(debitNoteINR, onSave);
+    // Pick the supplier party so the Purchase save passes validation.
+    fireEvent.change(screen.getByLabelText("Voucher Type"), { target: { value: "Purchase" } });
+    fireEvent.change(screen.getByLabelText("Party Ledger"), { target: { value: "Acme Supplies" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.voucher_type).toBe("Purchase");
+    expect(updates.bill_reference).toBe("");
+    expect(updates.bill_type).toBe("New Ref");
+  });
+
+  it("reclassifying Sales → Payment clears party fields", () => {
+    const onSave = vi.fn();
+    renderForm(salesINR, onSave);
+    fireEvent.change(screen.getByLabelText("Voucher Type"), { target: { value: "Payment" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.voucher_type).toBe("Payment");
+    expect(updates.party_ledger).toBe("");
+    expect(updates.party_name).toBe("");
+    expect(updates.is_party_ledger).toBe(false);
+  });
 });
 
 describe("VoucherEditForm — Against Invoice (DN/CN)", () => {
@@ -163,6 +190,39 @@ describe("VoucherEditForm — save & validation", () => {
     renderForm(paymentINR, vi.fn(), onCancel);
     fireEvent.click(screen.getByText("Back"));
     expect(onCancel).toHaveBeenCalledTimes(1);
+  });
+
+  // Finding 1: edit-form DN/CN debit/credit mapping must MATCH the backend
+  // orchestrator convention (DN: party on credit; CN: party on debit). The
+  // chat.py dispatch reads purchase_ledger=debit_ledger (DN) /
+  // sales_ledger=credit_ledger (CN); an inverted mapping collapses both legs
+  // onto the party ledger.
+  it("editing a Debit Note keeps party on credit, returns ledger on debit", () => {
+    const onSave = vi.fn();
+    renderForm(debitNoteINR, onSave);
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.debit_ledger).not.toBe(updates.credit_ledger);
+    // party (Acme Supplies) must be on CREDIT for a Debit Note
+    expect(updates.credit_ledger).toBe("Acme Supplies");
+    expect(updates.debit_ledger).toBe("Purchase Returns");
+    expect(updates.party_ledger).toBe("Acme Supplies");
+    // dispatch reads purchase_ledger=debit_ledger → must NOT equal party
+    expect(updates.debit_ledger).not.toBe(updates.party_ledger);
+  });
+
+  it("editing a Credit Note keeps party on debit, returns ledger on credit", () => {
+    const onSave = vi.fn();
+    renderForm(creditNoteINR, onSave);
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.debit_ledger).not.toBe(updates.credit_ledger);
+    // party (Globex Ltd) must be on DEBIT for a Credit Note
+    expect(updates.debit_ledger).toBe("Globex Ltd");
+    expect(updates.credit_ledger).toBe("Sales Returns");
+    expect(updates.party_ledger).toBe("Globex Ltd");
+    // dispatch reads sales_ledger=credit_ledger → must NOT equal party
+    expect(updates.credit_ledger).not.toBe(updates.party_ledger);
   });
 
   it("maps party to credit ledger for Purchase on save", () => {
