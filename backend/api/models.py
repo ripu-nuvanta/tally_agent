@@ -177,6 +177,7 @@ class VoucherReviewEntry(BaseModel):
     voucher_type: str
     date: str
     vendor_name: str | None = None
+    party_name: str | None = None       # canonical party (vendor or customer)
     amount: float
     debit_ledger: str
     credit_ledger: str
@@ -186,6 +187,18 @@ class VoucherReviewEntry(BaseModel):
     warnings: list[str] = []
     is_new_ledger: bool = False
     suggested_parent: str | None = None
+    # Group B additions (Purchase / Sales / Debit Note / Credit Note)
+    party_ledger: str | None = None
+    is_party_ledger: bool = False
+    bill_reference: str | None = None
+    bill_type: str = "New Ref"
+    against_invoice_options: list[dict[str, Any]] = []  # DN/CN reference dropdown
+    party_vouchers: list[dict[str, Any]] = []           # raw party voucher lookup
+    # FX fields (Slice A / Group B multi-currency)
+    original_currency: str = "INR"
+    original_amount: float | None = None
+    fx_rate: float | None = None
+    inr_amount: float | None = None
 
 
 class VoucherReviewData(BaseModel):

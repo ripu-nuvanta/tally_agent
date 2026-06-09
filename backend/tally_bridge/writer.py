@@ -23,8 +23,10 @@ from backend.tally_bridge.import_builder import (
     build_create_ledger,
     build_create_payment_voucher,
     build_create_purchase_voucher,
+    build_create_purchase_voucher_ledger,
     build_create_receipt_voucher,
     build_create_sales_voucher,
+    build_create_sales_voucher_ledger,
     build_create_stock_group,
     build_create_stock_item,
     build_create_unit,
@@ -348,6 +350,82 @@ class TallyWriter:
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_credit_note")
+
+    async def create_purchase_voucher_ledger(
+        self, date: str, party_ledger: str, purchase_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+    ) -> dict:
+        """Create a ledger-only Purchase voucher (Group B document path).
+
+        Mirrors Purchase polarity: purchase ledger debit (-base), GST input
+        debit (-), party (Sundry Creditors) credit (+amount). These balance to
+        zero. Distinct from the stock-based ``create_purchase_voucher`` (seeder).
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": purchase_ledger, "amount": -base_amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": -gst["amount"], "is_debit": True})
+        entries.append({"ledger": party_ledger, "amount": amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Purchase", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_purchase_voucher_ledger(
+            date=date, party_ledger=party_ledger, purchase_ledger=purchase_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_purchase_voucher_ledger")
+
+    async def create_sales_voucher_ledger(
+        self, date: str, party_ledger: str, sales_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+    ) -> dict:
+        """Create a ledger-only Sales voucher (Group B document path).
+
+        Mirrors Sales polarity: party (Sundry Debtors) debit (-amount), GST
+        output credit (+), sales ledger credit (+base). These balance to zero.
+        Distinct from the stock-based ``create_sales_voucher`` (seeder).
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": party_ledger, "amount": -amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": gst["amount"], "is_debit": False})
+        entries.append({"ledger": sales_ledger, "amount": base_amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Sales", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_sales_voucher_ledger(
+            date=date, party_ledger=party_ledger, sales_ledger=sales_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_sales_voucher_ledger")
 
     async def create_group(self, name: str, parent: str) -> dict:
         """Create an account group in Tally."""

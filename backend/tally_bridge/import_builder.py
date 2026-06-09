@@ -338,6 +338,55 @@ def build_create_credit_note(
     )
 
 
+def build_create_purchase_voucher_ledger(
+    date: str,
+    party_ledger: str,
+    purchase_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+) -> str:
+    """Build XML for a ledger-only Purchase voucher (party + contra + GST).
+
+    Group B document-driven path: unlike the stock-based
+    ``build_create_purchase_voucher`` (seeder), this posts the party (Sundry
+    Creditors) credit and the purchase/expense ledger + Input GST debits using
+    the verified DN/CN ledger-invoice shape with a fresh ``New Ref`` bill.
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Purchase", date=date, party_ledger=party_ledger,
+        contra_ledger=purchase_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="New Ref", is_purchase_side=True,
+    )
+
+
+def build_create_sales_voucher_ledger(
+    date: str,
+    party_ledger: str,
+    sales_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+) -> str:
+    """Build XML for a ledger-only Sales voucher (party + contra + GST).
+
+    Group B document-driven path: posts the party (Sundry Debtors) debit and the
+    sales ledger + Output GST credits using the ledger-invoice shape with a fresh
+    ``New Ref`` bill (mirrors Credit Note polarity).
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Sales", date=date, party_ledger=party_ledger,
+        contra_ledger=sales_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="New Ref", is_purchase_side=False,
+    )
+
+
 def build_create_group(name: str, parent: str, company: str) -> str:
     """Build XML to create an account group in Tally."""
     _require(name, "name")
