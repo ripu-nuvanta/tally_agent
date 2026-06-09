@@ -18,7 +18,8 @@ from backend.agents.context import SessionContext
 from backend.agents.orchestrator import Orchestrator
 from tests.fixtures import vision_docs
 
-# Ledgers the mock Tally "returns" — covers party groups + contra ledgers.
+# Ledgers the mock Tally "returns" — covers party groups + contra ledgers +
+# the six seed-company GST ledgers under Duties & Taxes.
 _LEDGERS = [
     {"name": "Croma Electronics", "parent_group": "Sundry Creditors"},
     {"name": "Infosys Ltd", "parent_group": "Sundry Debtors"},
@@ -28,6 +29,12 @@ _LEDGERS = [
     {"name": "HDFC Bank", "parent_group": "Bank Accounts"},
     {"name": "Cash", "parent_group": "Cash-in-hand"},
     {"name": "Office Supplies", "parent_group": "Indirect Expenses"},
+    {"name": "CGST Input", "parent_group": "Duties & Taxes"},
+    {"name": "SGST Input", "parent_group": "Duties & Taxes"},
+    {"name": "IGST Input", "parent_group": "Duties & Taxes"},
+    {"name": "CGST Output", "parent_group": "Duties & Taxes"},
+    {"name": "SGST Output", "parent_group": "Duties & Taxes"},
+    {"name": "IGST Output", "parent_group": "Duties & Taxes"},
 ]
 
 
@@ -139,6 +146,83 @@ async def test_credit_note_routes_with_against_invoice_options():
     assert entry["bill_type"] == "Agst Ref"
     assert entry["party_vouchers"] == sample
     assert entry["against_invoice_options"]
+
+
+def _gst_ledger_names(entry):
+    return {e["ledger"] for e in entry.get("gst_entries", [])}
+
+
+@pytest.mark.asyncio
+async def test_purchase_gets_input_gst_legs():
+    """Intrastate purchase resolves Input CGST/SGST from Duties & Taxes."""
+    result = await _run_upload("purchase_office_inr")
+    entry = _entry(result)
+    assert _gst_ledger_names(entry) == {"CGST Input", "SGST Input"}
+    # Contra (purchase) leg posts the BASE; party gross = base + GST.
+    gst_total = sum(e["amount"] for e in entry["gst_entries"])
+    assert abs((entry["amount"] - gst_total) - (15340.0 - 2342.0)) < 0.01
+
+
+@pytest.mark.asyncio
+async def test_interstate_purchase_gets_input_igst():
+    result = await _run_upload("purchase_interstate_inr")
+    entry = _entry(result)
+    assert _gst_ledger_names(entry) == {"IGST Input"}
+
+
+@pytest.mark.asyncio
+async def test_sales_gets_output_gst_legs():
+    result = await _run_upload("sales_service_inr")
+    entry = _entry(result)
+    assert _gst_ledger_names(entry) == {"CGST Output", "SGST Output"}
+
+
+@pytest.mark.asyncio
+async def test_debit_note_gets_input_gst_legs():
+    sample = [
+        {"voucher_number": "CRO-2026-5678", "date": "2026-02-10",
+         "voucher_type": "Purchase", "amount": 15340.0, "reference": "CRO-2026-5678"},
+    ]
+    result = await _run_upload("debit_note_return_inr", party_vouchers=sample)
+    entry = _entry(result)
+    assert _gst_ledger_names(entry) == {"CGST Input", "SGST Input"}
+
+
+@pytest.mark.asyncio
+async def test_credit_note_gets_output_gst_legs():
+    sample = [
+        {"voucher_number": "INV-001", "date": "2026-03-01",
+         "voucher_type": "Sales", "amount": 118000.0, "reference": "INV-001"},
+    ]
+    result = await _run_upload("credit_note_return_inr", party_vouchers=sample)
+    entry = _entry(result)
+    assert _gst_ledger_names(entry) == {"CGST Output", "SGST Output"}
+
+
+@pytest.mark.asyncio
+async def test_missing_gst_ledger_warns_no_leg():
+    """When the needed GST ledger isn't in the ledger list, warn and omit the leg."""
+    orch = Orchestrator()
+    session = SessionContext(session_id="s1")
+    no_gst_ledgers = [
+        {"name": "Croma Electronics", "parent_group": "Sundry Creditors"},
+        {"name": "Purchase Accounts", "parent_group": "Purchase Accounts"},
+    ]
+    with _temp_file() as path, patch(
+        "backend.agents.orchestrator.anthropic_client.messages.create",
+        new=AsyncMock(return_value=vision_docs.vision_message("purchase_office_inr")),
+    ), patch(
+        "backend.tally_bridge.response_parser.parse_ledger_list",
+        return_value=no_gst_ledgers,
+    ):
+        result = await orch.process_file_upload(
+            file_path=path, filename="doc.jpg", mime_type="image/jpeg",
+            user_message="entry", client=_FakeClient(), session=session,
+            file_id="file-1",
+        )
+    entry = result["data"]["entries"][0]
+    assert entry["gst_entries"] == []
+    assert any("not found" in w for w in entry["warnings"])
 
 
 @pytest.mark.asyncio

@@ -7,6 +7,8 @@ the same FX-conversion behaviour as ``build_payment_voucher_data`` — the poste
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 from backend.services.document_parser import parse_vision_response
 from backend.services.voucher_builder import (
     VoucherData,
@@ -62,6 +64,30 @@ class TestBuildPurchaseVoucher:
         ledger_names = [e["ledger"] for e in vd.gst_entries]
         assert "INPUT CGST" in ledger_names
         assert "INPUT SGST" in ledger_names
+
+    def test_purchase_contra_is_base_and_balances(self):
+        """Party gross = base + CGST + SGST; the three legs (party credit,
+        contra debit = base, GST debits) sum to zero."""
+        doc = _load_doc("purchase_office_inr.json")  # total 15340, GST 1171+1171
+        vd = build_purchase_voucher_data(
+            doc, party_ledger="Croma", purchase_ledger="Purchases",
+            gst_ledgers={"cgst_input": "CGST Input", "sgst_input": "SGST Input"},
+        )
+        gst_total = sum(e["amount"] for e in vd.gst_entries)
+        assert gst_total == pytest.approx(2342.0)
+        base = float(vd.amount) - gst_total
+        # party (credit, +gross) + contra (debit, -base) + GST (debit, -each) = 0
+        legs = [float(vd.amount), -base] + [-e["amount"] for e in vd.gst_entries]
+        assert abs(sum(legs)) < 0.01
+
+    def test_interstate_purchase_gst_igst_only(self):
+        doc = _load_doc("purchase_interstate_inr.json")  # IGST 3600
+        vd = build_purchase_voucher_data(
+            doc, party_ledger="AWS India", purchase_ledger="Purchases",
+            gst_ledgers={"igst_input": "IGST Input"},
+        )
+        assert [e["ledger"] for e in vd.gst_entries] == ["IGST Input"]
+        assert vd.gst_entries[0]["amount"] == pytest.approx(3600.0)
 
 
 class TestBuildSalesVoucher:
@@ -131,6 +157,15 @@ class TestBuildDebitNote:
         )
         assert vd.bill_reference is None
 
+    def test_debit_note_input_gst_entries(self):
+        """DN is a purchase return → input-side GST ledgers (reversed at write)."""
+        doc = _load_doc("debit_note_return_inr.json")
+        vd = build_debit_note_data(
+            doc, party_ledger="Croma Electronics", purchase_ledger="Purchases",
+            gst_ledgers={"cgst_input": "CGST Input", "sgst_input": "SGST Input"},
+        )
+        assert {e["ledger"] for e in vd.gst_entries} == {"CGST Input", "SGST Input"}
+
 
 class TestBuildCreditNote:
     def test_with_ref(self):
@@ -156,6 +191,15 @@ class TestBuildCreditNote:
         )
         assert vd.debit_ledger == "Sales Returns"
         assert vd.credit_ledger == "Infosys Ltd"
+
+    def test_credit_note_output_gst_entries(self):
+        """CN is a sales return → output-side GST ledgers (reversed at write)."""
+        doc = _load_doc("credit_note_return_inr.json")
+        vd = build_credit_note_data(
+            doc, party_ledger="Infosys Ltd", sales_ledger="Sales",
+            gst_ledgers={"cgst_output": "CGST Output", "sgst_output": "SGST Output"},
+        )
+        assert {e["ledger"] for e in vd.gst_entries} == {"CGST Output", "SGST Output"}
 
 
 class TestNarrationUsesPartyName:
