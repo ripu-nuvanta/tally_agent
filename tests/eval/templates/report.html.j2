@@ -144,6 +144,9 @@
                         {% if turn.chart_quality %}
                         <span class="turn-score"><span class="dim">Chart:</span> {{ turn.chart_quality.score }}/5</span>
                         {% endif %}
+                        {% if turn.voucher_correctness %}
+                        <span class="turn-score"><span class="dim">Voucher:</span> {{ turn.voucher_correctness.score }}/5</span>
+                        {% endif %}
                     </div>
 
                     {% if turn.factual_correctness and turn.factual_correctness.reasoning %}

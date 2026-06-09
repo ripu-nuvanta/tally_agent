@@ -23,6 +23,7 @@ DIMENSIONS = [
     ("conversation_coherence", "Conversation Coherence"),
     ("error_handling", "Error Handling"),
     ("chart_quality", "Chart Quality"),
+    ("voucher_correctness", "Voucher Correctness"),
 ]
 
 

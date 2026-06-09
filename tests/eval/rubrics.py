@@ -77,6 +77,34 @@ CHART_RUBRIC = {
     1: "Broken or missing chart when one was expected.",
 }
 
+VOUCHER_RUBRIC = {
+    5: "All fields correctly extracted from the document: correct voucher type, party/vendor name matches, total amount matches the document, and GST split (CGST/SGST or IGST) is correct. Date and narration sensible.",
+    4: "Voucher type, party, and amount correct; minor issue such as a small GST rounding difference or a slightly-off date/narration.",
+    3: "Mostly correct but one significant field wrong (e.g. wrong party name, amount off by a line item, or GST not split out when it should be).",
+    2: "Multiple fields wrong: wrong voucher type OR wrong amount AND wrong party. Unusable without heavy correction.",
+    1: "Hallucinated or unusable: invented party/amount, wrong voucher type, or no usable voucher produced.",
+}
+
+
+def _is_write_flow_turn(turn: dict[str, Any], scenario_turn: dict[str, Any] | None) -> bool:
+    """Return True if this turn is a write-flow turn (voucher review / action).
+
+    Detected by either an extracted voucher_type in the collected response_data,
+    a write-flow turn type, or an ``expect.voucher`` ground-truth block in the
+    scenario YAML. Query turns (no voucher signal) are unaffected.
+    """
+    data = turn.get("response_data")
+    if isinstance(data, dict) and data.get("voucher_type"):
+        return True
+    if turn.get("type") in ("upload", "action"):
+        return True
+    if scenario_turn:
+        if scenario_turn.get("type") in ("upload", "action"):
+            return True
+        if isinstance(scenario_turn.get("expect"), dict) and scenario_turn["expect"].get("voucher"):
+            return True
+    return False
+
 
 def _should_verify_totals(turn: dict[str, Any], checks: list[str]) -> bool:
     """Return True if totals verification should be applied to this turn."""
@@ -106,6 +134,7 @@ def build_judge_prompt(
     prior_turns: list[dict[str, Any]],
     ground_truth: dict[str, Any] | None,
     checks: list[str],
+    scenario_turn: dict[str, Any] | None = None,
 ) -> str:
     """Build the full judge prompt for evaluating a single turn (text dimensions).
 
@@ -114,7 +143,15 @@ def build_judge_prompt(
         prior_turns: List of prior turns for conversation context
         ground_truth: Optional ground truth data from golden fixtures
         checks: List of check strings from the scenario YAML
+        scenario_turn: Optional scenario YAML turn definition. When the turn is a
+            write-flow turn, its ``expect.voucher`` block is the voucher ground
+            truth and the voucher_correctness dimension is added to the rubric.
     """
+    is_write_flow = _is_write_flow_turn(turn, scenario_turn)
+    expected_voucher = None
+    if scenario_turn and isinstance(scenario_turn.get("expect"), dict):
+        expected_voucher = scenario_turn["expect"].get("voucher")
+
     parts = []
 
     # Conversation context
@@ -141,12 +178,24 @@ def build_judge_prompt(
     if turn.get("chart_spec"):
         parts.append(f"\nChart Spec:\n{json.dumps(turn['chart_spec'], indent=2, default=str)}")
 
+    # Extracted voucher fields (write-flow turns)
+    if is_write_flow and isinstance(turn.get("response_data"), dict):
+        voucher_str = json.dumps(turn["response_data"], indent=2, default=str)
+        parts.append(f"\n## Extracted Voucher (from review card)\n{voucher_str}")
+        if turn.get("card_status"):
+            parts.append(f"\nCard status after action: {turn['card_status']}")
+
     # Ground truth
     if ground_truth:
         gt_str = json.dumps(ground_truth, indent=2, default=str)
         if len(gt_str) > 3000:
             gt_str = gt_str[:3000] + "\n... (truncated)"
         parts.append(f"\n## Ground Truth Data\n{gt_str}")
+
+    # Expected voucher ground truth (write-flow turns)
+    if is_write_flow and expected_voucher:
+        ev_str = json.dumps(expected_voucher, indent=2, default=str)
+        parts.append(f"\n## Expected Voucher (ground truth from document)\n{ev_str}")
 
     # Checks to evaluate
     parts.append("\n## Checks to Evaluate")
@@ -164,7 +213,20 @@ def build_judge_prompt(
     parts.append(f"\nConversation Coherence:\n{_format_rubric(COHERENCE_RUBRIC)}")
     parts.append(f"\nError Handling:\n{_format_rubric(ERROR_HANDLING_RUBRIC)}")
 
+    if is_write_flow:
+        parts.append(f"\nVoucher Correctness:\n{_format_rubric(VOUCHER_RUBRIC)}")
+        parts.append(
+            "\nFor voucher_correctness, compare the Extracted Voucher fields against the "
+            "Expected Voucher ground truth: voucher type, party/vendor, total amount, and the "
+            "GST split (CGST + SGST). Penalize hallucinated or missing fields."
+        )
+
     parts.append("\nScore each dimension 1-5 with reasoning. Evaluate each check as passed or failed.")
+    if is_write_flow:
+        parts.append(
+            'Include a "voucher_correctness": {"score": <1-5>, "reasoning": "<why>"} entry in '
+            "your JSON in addition to the standard dimensions."
+        )
     parts.append("Respond with JSON only.")
 
     return "\n".join(parts)
@@ -233,6 +295,7 @@ def parse_judge_response(response_text: str) -> dict[str, Any]:
         "conversation_coherence",
         "error_handling",
         "chart_quality",
+        "voucher_correctness",
     ]
     for dim in dimensions:
         pattern = rf'"{dim}".*?"score".*?(\d)'

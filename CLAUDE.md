@@ -235,7 +235,7 @@ Additional rules:
 - **Backend logs → `logs/`**: keep backend server logs in the `logs/` folder for each test run (e.g. `uvicorn ... 2>&1 | tee logs/be_<run>.log`).
 - **E2E defaults to no-live-Tally, no-Claude-API** (mock Tally + mock Claude). Real-API runs are a separate, deliberate step.
 - **Claude-API eval runs only once everything is complete**: smoke → manual → eval, in that order. Eval flow: run eval scenario (`collect.py`) → run judge (`judge.py`) → generate report (`report.py`) or check the results JSON.
-- **Eval currently covers the query flow only** — write-flow eval scenarios still need to be added.
+- **Eval covers the query flow and (since 2026-06-09) a write flow** — `scenarios/write_flow_mock.yaml` (upload → voucher review → Write to Tally), with `voucher_correctness` rubric + upload/action turn types in `collect.py`. Run in mock-Tally mode (real Vision, no live writes). See `docs/eval-write-flow-2026-06-09.md`.
 
 ### Process
 

@@ -1,0 +1,32 @@
+name: "Write Flow — Purchase Invoice"
+description: >
+  Upload a purchase invoice image, verify the agent extracts the voucher
+  correctly into the review card (type, party, amount, GST split), then approve
+  ("Write to Tally"). In live mode the write hits the configured Tally instance;
+  prefer the *_mock variant for routine runs to avoid live-Tally pollution.
+tags: [write_flow, upload, voucher, purchase, gst]
+
+turns:
+  - type: upload
+    file_path: tests/eval/fixtures/purchase_invoice.png
+    message: "Please record this purchase invoice"
+    expect:
+      voucher:
+        voucher_type: Purchase
+        party: "Bharat Paper Supplies"
+        amount: 5900
+        cgst: 450
+        sgst: 450
+        date: "15-Jun-2025"
+      checks:
+        - "classified as Purchase"
+        - "party is Bharat Paper Supplies"
+        - "amount 5900"
+        - "CGST 450 + SGST 450 split out"
+
+  - type: action
+    button: "Write to Tally"
+    expect:
+      checks:
+        - "voucher written confirmation shown"
+        - "no error"
