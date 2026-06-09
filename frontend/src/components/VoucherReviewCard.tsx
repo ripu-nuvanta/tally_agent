@@ -1,5 +1,8 @@
 import { useState } from "react";
 import { formatINR } from "../utils/format";
+import VoucherReviewExpanded from "./VoucherReviewExpanded";
+import VoucherEditForm from "./VoucherEditForm";
+import type { AgainstInvoiceOption } from "./VoucherRefSelect";
 
 export interface VoucherEntry {
   id: string;
@@ -15,9 +18,17 @@ export interface VoucherEntry {
   warnings: string[];
   is_new_ledger: boolean;
   suggested_parent: string | null;
+  // Group B additions
+  party_name?: string | null;
+  party_ledger?: string | null;
+  is_party_ledger?: boolean;
+  bill_reference?: string | null;
+  bill_type?: string | null;
+  against_invoice_options?: AgainstInvoiceOption[];
   original_currency?: string;
   original_amount?: number;
   fx_rate?: number;
+  inr_amount?: number;
   original_gst_entries?: Array<{ ledger: string; amount: number }>;
 }
 
@@ -25,27 +36,15 @@ interface VoucherReviewCardProps {
   entries: VoucherEntry[];
   availableLedgers: string[];
   availablePaymentLedgers: string[];
+  availableSupplierLedgers?: string[];
+  availableCustomerLedgers?: string[];
   onApprove: (entryId: string) => void;
   onDiscard: (entryId: string) => void;
   onEdit: (entryId: string, updates: Partial<VoucherEntry>) => void;
   pendingAction?: { entryId: string; action: "approve" | "discard" } | null;
 }
 
-function formatDateForInput(yyyymmdd: string): string {
-  // Convert YYYYMMDD → YYYY-MM-DD for <input type="date">
-  if (yyyymmdd.length === 8 && /^\d{8}$/.test(yyyymmdd)) {
-    return `${yyyymmdd.slice(0, 4)}-${yyyymmdd.slice(4, 6)}-${yyyymmdd.slice(6, 8)}`;
-  }
-  return yyyymmdd;
-}
-
-function formatDateForStorage(yyyy_mm_dd: string): string {
-  // Convert YYYY-MM-DD → YYYYMMDD for Tally
-  return yyyy_mm_dd.replace(/-/g, "");
-}
-
 function formatDate(dateStr: string): string {
-  // YYYYMMDD → DD-MMM-YYYY
   if (dateStr.length === 8 && /^\d{8}$/.test(dateStr)) {
     const y = dateStr.slice(0, 4);
     const m = dateStr.slice(4, 6);
@@ -56,12 +55,13 @@ function formatDate(dateStr: string): string {
   return dateStr;
 }
 
-function formatFx(entry: VoucherEntry): string {
-  const cur = entry.original_currency ?? "";
-  const orig = (entry.original_amount ?? 0).toFixed(2);
-  const rate = (entry.fx_rate ?? 0).toFixed(2);
-  return `${cur} ${orig} @ ₹${rate} = ${formatINR(entry.amount)}`;
-}
+const TYPE_BADGE: Record<string, string> = {
+  Payment: "bg-blue-100 text-blue-800",
+  Purchase: "bg-orange-100 text-orange-800",
+  Sales: "bg-green-100 text-green-800",
+  "Debit Note": "bg-red-100 text-red-800",
+  "Credit Note": "bg-amber-100 text-amber-800",
+};
 
 function Spinner() {
   return (
@@ -76,135 +76,161 @@ export default function VoucherReviewCard({
   entries,
   availableLedgers,
   availablePaymentLedgers,
+  availableSupplierLedgers = [],
+  availableCustomerLedgers = [],
   onApprove,
   onDiscard,
   onEdit,
   pendingAction,
 }: VoucherReviewCardProps) {
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   return (
     <div className="space-y-3">
-      {entries.map((entry) => (
-        <div
-          key={entry.id}
-          className={`rounded-lg border p-4 ${
-            entry.status === "written"
-              ? "border-green-200 bg-green-50"
-              : entry.status === "deleted"
-              ? "border-gray-200 bg-gray-50 opacity-60"
-              : entry.status === "pending"
-              ? "border-yellow-200 bg-yellow-50"
-              : "border-blue-200 bg-blue-50"
-          }`}
-          data-testid={`voucher-review-${entry.id}`}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <span className="text-sm font-medium text-gray-700">
-              Expense Entry — {
-                entry.status === "written"
-                  ? "Written"
-                  : entry.status === "deleted"
-                  ? "Discarded"
-                  : entry.status === "pending"
-                  ? "Pending"
-                  : "Draft"
-              }
-            </span>
-          </div>
+      {entries.map((entry) => {
+        const isEditing = editingId === entry.id;
+        const isExpanded = expandedId === entry.id;
+        const isForeign = !!entry.original_currency && entry.original_currency !== "INR";
+        const partyLabel = entry.party_name || entry.vendor_name || "—";
+        const isReturn = entry.voucher_type === "Debit Note" || entry.voucher_type === "Credit Note";
 
-          {editingId === entry.id ? (
-            <EditForm
-              entry={entry}
-              availableLedgers={availableLedgers}
-              availablePaymentLedgers={availablePaymentLedgers}
-              onSave={(updates) => {
-                onEdit(entry.id, updates);
-                setEditingId(null);
-              }}
-              onCancel={() => setEditingId(null)}
-            />
-          ) : (
-            <>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-3">
-                <Field label="Vendor" value={entry.vendor_name || "—"} />
-                <Field label="Date" value={formatDate(entry.date)} />
-                <Field label="Amount" value={formatINR(entry.amount)} />
-                <Field label="Expense Ledger" value={entry.debit_ledger} />
-                <Field label="Paid via" value={entry.credit_ledger} />
-                <Field label="Narration" value={entry.narration} />
+        return (
+          <div
+            key={entry.id}
+            className={`rounded-lg border p-4 ${
+              entry.status === "written"
+                ? "border-green-200 bg-green-50"
+                : entry.status === "deleted"
+                ? "border-gray-200 bg-gray-50 opacity-60"
+                : entry.status === "pending"
+                ? "border-yellow-200 bg-yellow-50"
+                : "border-blue-200 bg-blue-50"
+            }`}
+            data-testid={`voucher-review-${entry.id}`}
+          >
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`px-2 py-0.5 rounded text-xs font-medium ${
+                    TYPE_BADGE[entry.voucher_type] || "bg-gray-100 text-gray-800"
+                  }`}
+                  data-testid={`voucher-type-badge-${entry.id}`}
+                >
+                  {entry.voucher_type}
+                </span>
+                <span className="text-sm font-medium text-gray-700">
+                  {entry.status === "written"
+                    ? "Written"
+                    : entry.status === "deleted"
+                    ? "Discarded"
+                    : entry.status === "pending"
+                    ? "Pending"
+                    : "Draft"}
+                </span>
               </div>
+            </div>
 
-              {entry.original_currency && entry.original_currency !== "INR" && (
-                <div className="text-xs text-gray-600 mb-2">
-                  <div>{formatFx(entry)}</div>
-                  <div className="text-gray-400">Wrong rate? Reply "use rate &lt;n&gt;" in chat.</div>
+            {isEditing ? (
+              <VoucherEditForm
+                entry={entry}
+                availableLedgers={availableLedgers}
+                availablePaymentLedgers={availablePaymentLedgers}
+                availableSupplierLedgers={availableSupplierLedgers}
+                availableCustomerLedgers={availableCustomerLedgers}
+                onSave={(updates) => {
+                  onEdit(entry.id, updates);
+                  setEditingId(null);
+                }}
+                onCancel={() => setEditingId(null)}
+              />
+            ) : (
+              <>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-sm mb-3">
+                  {entry.voucher_type !== "Payment" && (
+                    <Field label="Party" value={partyLabel} />
+                  )}
+                  {entry.voucher_type === "Payment" && (
+                    <Field label="Vendor" value={entry.vendor_name || "—"} />
+                  )}
+                  <Field label="Date" value={formatDate(entry.date)} />
+                  <Field label="Amount" value={formatINR(entry.amount)} />
+                  {isForeign && (
+                    <Field
+                      label="Original"
+                      value={`${entry.original_currency} ${(entry.original_amount ?? 0).toFixed(2)}`}
+                    />
+                  )}
+                  {isReturn && entry.bill_reference && (
+                    <Field label="Against" value={`Invoice #${entry.bill_reference}`} />
+                  )}
                 </div>
-              )}
 
-              {entry.is_new_ledger && (
-                <div className="text-xs text-amber-600 mb-2">
-                  New ledger "{entry.debit_ledger}" will be created under "{entry.suggested_parent}"
-                </div>
-              )}
+                {entry.is_new_ledger && (
+                  <div className="text-xs text-amber-600 mb-2">
+                    New ledger "{entry.debit_ledger}" will be created under "{entry.suggested_parent}"
+                  </div>
+                )}
 
-              {entry.warnings.length > 0 && (
-                <div className="text-xs text-amber-600 mb-2">
-                  {entry.warnings.map((w, i) => (
-                    <div key={i}>{w}</div>
-                  ))}
-                </div>
-              )}
+                {entry.warnings.length > 0 && (
+                  <div className="text-xs text-amber-600 mb-2" data-testid={`voucher-warnings-${entry.id}`}>
+                    {entry.warnings.map((w, i) => (
+                      <div key={i}>{w}</div>
+                    ))}
+                  </div>
+                )}
 
-              {entry.gst_entries.length > 0 && (
-                <div className="text-xs text-gray-500 mb-2">
-                  GST:{" "}
-                  {entry.gst_entries
-                    .map((g) => `${g.ledger}: ${formatINR(g.amount)}`)
-                    .join(", ")}
-                </div>
-              )}
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(isExpanded ? null : entry.id)}
+                  className="text-xs text-blue-600 hover:underline"
+                >
+                  {isExpanded ? "Hide details" : "Show details"}
+                </button>
 
-              {(entry.status === "draft" || entry.status === "pending") && (
-                <div className="flex flex-wrap gap-2 mt-3">
-                  <button
-                    type="button"
-                    onClick={() => onApprove(entry.id)}
-                    disabled={entry.status === "pending"}
-                    className={`px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm transition-colors flex items-center gap-1.5 ${
-                      entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-green-700"
-                    }`}
-                  >
-                    {pendingAction?.entryId === entry.id && pendingAction.action === "approve" && <Spinner />}
-                    Write to Tally
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditingId(entry.id)}
-                    disabled={entry.status === "pending"}
-                    className={`px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm transition-colors ${
-                      entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
-                    }`}
-                  >
-                    Edit Entry
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onDiscard(entry.id)}
-                    disabled={entry.status === "pending"}
-                    className={`px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm transition-colors flex items-center gap-1.5 ${
-                      entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-50"
-                    }`}
-                  >
-                    {pendingAction?.entryId === entry.id && pendingAction.action === "discard" && <Spinner />}
-                    Discard
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      ))}
+                {isExpanded && <VoucherReviewExpanded entry={entry} />}
+
+                {(entry.status === "draft" || entry.status === "pending") && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => onApprove(entry.id)}
+                      disabled={entry.status === "pending"}
+                      className={`px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm transition-colors flex items-center gap-1.5 ${
+                        entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-green-700"
+                      }`}
+                    >
+                      {pendingAction?.entryId === entry.id && pendingAction.action === "approve" && <Spinner />}
+                      Write to Tally
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingId(entry.id)}
+                      disabled={entry.status === "pending"}
+                      className={`px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm transition-colors ${
+                        entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
+                      }`}
+                    >
+                      Edit Entry
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onDiscard(entry.id)}
+                      disabled={entry.status === "pending"}
+                      className={`px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm transition-colors flex items-center gap-1.5 ${
+                        entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-50"
+                      }`}
+                    >
+                      {pendingAction?.entryId === entry.id && pendingAction.action === "discard" && <Spinner />}
+                      Discard
+                    </button>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -214,115 +240,6 @@ function Field({ label, value }: { label: string; value: string }) {
     <div>
       <span className="text-gray-500">{label}:</span>{" "}
       <span className="text-gray-900">{value}</span>
-    </div>
-  );
-}
-
-interface EditFormProps {
-  entry: VoucherEntry;
-  availableLedgers: string[];
-  availablePaymentLedgers: string[];
-  onSave: (updates: Partial<VoucherEntry>) => void;
-  onCancel: () => void;
-}
-
-function EditForm({
-  entry,
-  availableLedgers,
-  availablePaymentLedgers,
-  onSave,
-  onCancel,
-}: EditFormProps) {
-  const [vendor, setVendor] = useState(entry.vendor_name || "");
-  const [date, setDate] = useState(formatDateForInput(entry.date));
-  const [amount, setAmount] = useState(String(entry.amount));
-  const [debitLedger, setDebitLedger] = useState(entry.debit_ledger);
-  const [creditLedger, setCreditLedger] = useState(entry.credit_ledger);
-  const [narration, setNarration] = useState(entry.narration);
-
-  return (
-    <div className="space-y-2">
-      <input
-        value={vendor}
-        onChange={(e) => setVendor(e.target.value)}
-        placeholder="Vendor"
-        aria-label="Vendor"
-        className="w-full rounded border px-2 py-1 text-sm"
-      />
-      <input
-        type="date"
-        value={date}
-        onChange={(e) => setDate(e.target.value)}
-        aria-label="Date"
-        className="w-full rounded border px-2 py-1 text-sm"
-      />
-      <input
-        value={amount}
-        onChange={(e) => setAmount(e.target.value)}
-        type="number"
-        placeholder="Amount"
-        aria-label="Amount"
-        className="w-full rounded border px-2 py-1 text-sm"
-      />
-      <select
-        value={debitLedger}
-        onChange={(e) => setDebitLedger(e.target.value)}
-        aria-label="Expense Ledger"
-        className="w-full rounded border px-2 py-1 text-sm"
-      >
-        {availableLedgers.map((l) => (
-          <option key={l} value={l}>
-            {l}
-          </option>
-        ))}
-        {!availableLedgers.includes(debitLedger) && (
-          <option value={debitLedger}>{debitLedger} (new)</option>
-        )}
-      </select>
-      <select
-        value={creditLedger}
-        onChange={(e) => setCreditLedger(e.target.value)}
-        aria-label="Payment Ledger"
-        className="w-full rounded border px-2 py-1 text-sm"
-      >
-        {availablePaymentLedgers.map((l) => (
-          <option key={l} value={l}>
-            {l}
-          </option>
-        ))}
-      </select>
-      <input
-        value={narration}
-        onChange={(e) => setNarration(e.target.value)}
-        placeholder="Narration"
-        aria-label="Narration"
-        className="w-full rounded border px-2 py-1 text-sm"
-      />
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() =>
-            onSave({
-              vendor_name: vendor,
-              date: formatDateForStorage(date),
-              amount: parseFloat(amount),
-              debit_ledger: debitLedger,
-              credit_ledger: creditLedger,
-              narration,
-            })
-          }
-          className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
-        >
-          Confirm & Write to Tally
-        </button>
-        <button
-          type="button"
-          onClick={onCancel}
-          className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-700 text-sm hover:bg-gray-50"
-        >
-          Edit Again
-        </button>
-      </div>
     </div>
   );
 }

@@ -51,6 +51,12 @@ export interface CompaniesResponse {
   companies: Company[];
 }
 
+export interface TestConnectionResponse {
+  connected: boolean;
+  companies: string[];
+  error?: string;
+}
+
 export interface TallyModeResponse {
   mode: "mock" | "live";
 }

@@ -10,6 +10,7 @@ import type {
   LoginRequest,
   RegisterRequest,
   TallyModeResponse,
+  TestConnectionResponse,
   WorkspaceData,
 } from "../types";
 
@@ -215,6 +216,17 @@ export async function getCompanies(params?: {
   mock?: boolean;
 }): Promise<CompaniesResponse> {
   const { data } = await api.get<CompaniesResponse>("/companies", { params });
+  return data;
+}
+
+export async function testConnection(
+  host: string,
+  port: number,
+): Promise<TestConnectionResponse> {
+  const { data } = await api.post<TestConnectionResponse>("/tally/test-connection", {
+    host,
+    port,
+  });
   return data;
 }
 

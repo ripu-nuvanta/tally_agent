@@ -1,0 +1,19 @@
+{
+  "doc_type": "purchase",
+  "party_name": "AWS India",
+  "date": "2026-03-31",
+  "total_amount": 23600.00,
+  "original_currency": "INR",
+  "fx_rate": null,
+  "line_items": [
+    {"description": "AWS Cloud Services - March", "amount": 20000.00, "quantity": null, "rate": null}
+  ],
+  "gst": {
+    "cgst_rate": null, "cgst_amount": null,
+    "sgst_rate": null, "sgst_amount": null,
+    "igst_rate": 18.0, "igst_amount": 3600.00,
+    "gstin": "29AABCA1234E1ZP"
+  },
+  "payment_mode": "bank",
+  "original_invoice_ref": null
+}

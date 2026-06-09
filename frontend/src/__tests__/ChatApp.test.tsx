@@ -182,10 +182,13 @@ describe("ChatApp", () => {
   it("completes connect modal flow and navigates to new workspace chat", async () => {
     mockedClient.getWorkspaces.mockResolvedValue([]);
     mockedClient.getConversations.mockResolvedValue([]);
-    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.testConnection.mockResolvedValue({
+      connected: true,
+      companies: ["Bharat Traders Pvt Ltd"],
+    });
     mockedClient.createWorkspace.mockResolvedValue({
       id: "ws-1",
-      name: "My Books",
+      name: "Bharat Traders Pvt Ltd",
       agent_type: "tally",
       config: {},
       memory: {},
@@ -207,8 +210,11 @@ describe("ChatApp", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
 
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
 
     // Confirmation screen
     await waitFor(() => {

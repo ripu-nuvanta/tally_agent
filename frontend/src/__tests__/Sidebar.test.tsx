@@ -205,10 +205,13 @@ describe("Sidebar", () => {
   });
 
   it("calls onNewChat with the new workspace after completing the connect flow", async () => {
-    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.testConnection.mockResolvedValue({
+      connected: true,
+      companies: ["Bharat Traders Pvt Ltd"],
+    });
     mockedClient.createWorkspace.mockResolvedValue({
       id: "ws-1",
-      name: "My Books",
+      name: "Bharat Traders Pvt Ltd",
       agent_type: "tally",
       config: {},
       memory: {},
@@ -229,8 +232,11 @@ describe("Sidebar", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
 
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Start chat" })).toBeInTheDocument();
@@ -238,6 +244,6 @@ describe("Sidebar", () => {
 
     await user.click(screen.getByRole("button", { name: "Start chat" }));
 
-    expect(onNewChat).toHaveBeenCalledWith("ws-1", "My Books", {});
+    expect(onNewChat).toHaveBeenCalledWith("ws-1", "Bharat Traders Pvt Ltd", {});
   });
 });

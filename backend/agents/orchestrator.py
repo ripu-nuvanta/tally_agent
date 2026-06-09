@@ -137,18 +137,28 @@ class Orchestrator(BaseAgent):
         client,  # TallyClient
         session,  # SessionContext
         file_id: str,
+        db=None,  # AsyncSession | None (DB mode only)
+        user_id: str | None = None,
+        workspace_id: str | None = None,
+        conversation_id: str | None = None,
     ) -> dict:
         """Process an uploaded file for data entry.
 
-        Pipeline: parse document → fetch Tally ledgers → map vendor → build voucher
-        → return review card data.
+        Pipeline: parse document → fetch Tally ledgers → route by doc_type →
+        build the matching voucher → return review card data. For Debit/Credit
+        Notes, the party's prior Purchase/Sales vouchers are fetched to offer an
+        "Against Invoice" reference.
 
         The actual Tally write happens later when the user clicks "Write to Tally"
         (via /chat/voucher-action endpoint).
 
+        In DB mode (``db`` provided) an ``UploadedFile`` audit row is persisted and
+        its id becomes the review card's ``file_id``.
+
         Returns a dict with keys: message, data (ChatResponse-compatible).
         """
         import base64
+        import os
         import uuid as uuid_mod
 
         from backend.services.document_parser import (
@@ -158,7 +168,14 @@ class Orchestrator(BaseAgent):
             validate_extracted_amounts,
         )
         from backend.services.ledger_mapper import LedgerMapper
-        from backend.services.voucher_builder import build_payment_voucher_data
+        from backend.services.voucher_builder import (
+            build_credit_note_data,
+            build_debit_note_data,
+            build_payment_voucher_data,
+            build_purchase_voucher_data,
+            build_sales_voucher_data,
+        )
+        from backend.tally_bridge.queries.vouchers import get_party_vouchers
         from backend.tally_bridge.request_builder import build_list_ledgers
         from backend.tally_bridge.response_parser import parse_ledger_list
 
@@ -224,36 +241,114 @@ class Orchestrator(BaseAgent):
         # 2. Validate amounts (warnings, not blocking)
         warnings = validate_extracted_amounts(extracted)
 
+        # 2b. Persist the uploaded-file audit row (DB mode only). The DB id then
+        # becomes the review card's file_id so a later write can link back.
+        if db is not None and user_id and workspace_id and conversation_id:
+            from backend.db.models import UploadedFile
+            uploaded = UploadedFile(
+                user_id=user_id,
+                workspace_id=workspace_id,
+                conversation_id=conversation_id,
+                filename=filename,
+                mime_type=mime_type or "application/octet-stream",
+                file_size=os.path.getsize(file_path),
+                storage_path=file_path,
+                extracted_data=_extracted_to_jsonable(extracted),
+                status="extracted",
+            )
+            db.add(uploaded)
+            await db.flush()
+            file_id = str(uploaded.id)
+
         # 3. Fetch Tally ledgers for mapping
         ledger_xml = await client.post_xml(build_list_ledgers())
         tally_ledgers = parse_ledger_list(ledger_xml)
         ledger_names = [l["name"] for l in tally_ledgers]
 
-        payment_groups = {"cash-in-hand", "bank accounts", "bank occ a/c"}
-        payment_ledgers = [
-            l["name"] for l in tally_ledgers
-            if l.get("parent_group", "").lower() in payment_groups
-        ]
+        def _ledgers_in(*groups: str) -> list[str]:
+            wanted = {g.lower() for g in groups}
+            return [
+                l["name"] for l in tally_ledgers
+                if l.get("parent_group", "").lower() in wanted
+            ]
+
+        payment_ledgers = _ledgers_in("cash-in-hand", "bank accounts", "bank occ a/c")
         if not payment_ledgers:
             payment_ledgers = ["Cash"]
+        supplier_ledgers = _ledgers_in("sundry creditors")
+        customer_ledgers = _ledgers_in("sundry debtors")
+        purchase_ledgers = _ledgers_in("purchase accounts") or ["Purchase Accounts"]
+        sales_ledgers = _ledgers_in("sales accounts") or ["Sales Accounts"]
 
-        # 4. Map vendor to ledger
+        # 4. Route by doc_type → build the matching voucher.
         mapper = LedgerMapper()
-        # TODO(Task 14+): Load stored mappings from DB (ledger_mappings table) per workspace
-        mapping = await mapper.find_mapping(
-            extracted.vendor_name or "Expense",
-            "Payment",
-            tally_ledgers=ledger_names,
-        )
+        doc_type = extracted.doc_type
+        party_vouchers_list: list[dict] = []
 
-        # 5. Build voucher payload
-        voucher = build_payment_voucher_data(
-            doc=extracted,
-            expense_ledger=mapping.ledger_name,
-            payment_ledger=payment_ledgers[0],
-        )
+        if doc_type in ("purchase", "debit_note"):
+            party_name = extracted.party_name or "Unknown Supplier"
+            mapping = await mapper.find_mapping(
+                party_name, doc_type, tally_ledgers=supplier_ledgers or ledger_names,
+            )
+            purchase_ledger = purchase_ledgers[0]
+            if doc_type == "debit_note":
+                party_vouchers_list = await get_party_vouchers(
+                    client, party_name, ["Purchase"],
+                )
+                voucher = build_debit_note_data(
+                    doc=extracted, party_ledger=party_name,
+                    purchase_ledger=purchase_ledger,
+                    original_ref=extracted.original_invoice_ref,
+                )
+            else:
+                voucher = build_purchase_voucher_data(
+                    doc=extracted, party_ledger=party_name,
+                    purchase_ledger=purchase_ledger,
+                )
+        elif doc_type in ("sales", "credit_note"):
+            party_name = extracted.party_name or "Unknown Customer"
+            mapping = await mapper.find_mapping(
+                party_name, doc_type, tally_ledgers=customer_ledgers or ledger_names,
+            )
+            sales_ledger = sales_ledgers[0]
+            if doc_type == "credit_note":
+                party_vouchers_list = await get_party_vouchers(
+                    client, party_name, ["Sales"],
+                )
+                voucher = build_credit_note_data(
+                    doc=extracted, party_ledger=party_name,
+                    sales_ledger=sales_ledger,
+                    original_ref=extracted.original_invoice_ref,
+                )
+            else:
+                voucher = build_sales_voucher_data(
+                    doc=extracted, party_ledger=party_name,
+                    sales_ledger=sales_ledger,
+                )
+        else:
+            # payment (and any unknown type) → expense + payment ledger.
+            mapping = await mapper.find_mapping(
+                extracted.party_name or extracted.vendor_name or "Expense",
+                "Payment", tally_ledgers=ledger_names,
+            )
+            voucher = build_payment_voucher_data(
+                doc=extracted, expense_ledger=mapping.ledger_name,
+                payment_ledger=payment_ledgers[0],
+            )
 
-        # 5b. FX rate warnings (T6). Non-INR docs whose rate came from a default
+        # 4b. "Against Invoice" options for DN/CN — surface each prior voucher's
+        # number/date/amount for the edit-form dropdown (Task 13).
+        against_invoice_options = [
+            {
+                "voucher_number": v.get("voucher_number") or v.get("reference") or "",
+                "date": v.get("date", ""),
+                "amount": v.get("amount"),
+                "reference": v.get("reference") or v.get("voucher_number") or "",
+            }
+            for v in party_vouchers_list
+        ]
+
+        # 5. FX rate warnings (T6). Non-INR docs whose rate came from a default
         # or fallback need a "verify" warning; a missing rate blocks the write.
         cur = voucher.original_currency.strip().upper()
         if voucher.rate_source in ("default", "fallback"):
@@ -276,7 +371,8 @@ class Orchestrator(BaseAgent):
                 "id": entry_id,
                 "voucher_type": voucher.voucher_type,
                 "date": voucher.date,
-                "vendor_name": extracted.vendor_name,
+                "vendor_name": extracted.party_name or extracted.vendor_name,
+                "party_name": extracted.party_name or extracted.vendor_name,
                 "amount": float(voucher.amount),
                 "debit_ledger": voucher.debit_ledger,
                 "credit_ledger": voucher.credit_ledger,
@@ -286,25 +382,48 @@ class Orchestrator(BaseAgent):
                 "warnings": warnings,
                 "is_new_ledger": mapping.is_new_ledger,
                 "suggested_parent": mapping.suggested_parent,
+                # Group B additions
+                "party_ledger": voucher.party_ledger,
+                "is_party_ledger": voucher.is_party_ledger,
+                "bill_reference": voucher.bill_reference,
+                "bill_type": voucher.bill_type,
+                "against_invoice_options": against_invoice_options,
+                "party_vouchers": party_vouchers_list,
                 # FX fields (T6) — originals are the foreign-currency amounts so a
                 # later chat rate-override can recompute exactly (incl. from a
                 # no-rate state). amount/gst_entries above are already INR.
                 "original_currency": voucher.original_currency,
                 "original_amount": float(voucher.original_amount),
                 "fx_rate": float(voucher.fx_rate),
+                "inr_amount": float(voucher.amount),
                 "original_gst_entries": voucher.original_gst_entries,
             }],
             "available_ledgers": ledger_names,
             "available_payment_ledgers": payment_ledgers,
+            "available_supplier_ledgers": supplier_ledgers,
+            "available_customer_ledgers": customer_ledgers,
         }
 
-        vendor_display = extracted.vendor_name or "Unknown vendor"
-        amount_display = f"₹{float(voucher.amount):,.2f}"
+        type_labels = {
+            "Payment": "payment", "Purchase": "purchase invoice",
+            "Sales": "sales invoice", "Debit Note": "debit note",
+            "Credit Note": "credit note",
+        }
+        type_label = type_labels.get(voucher.voucher_type, "entry")
+        party_display = extracted.party_name or extracted.vendor_name or "Unknown"
+        if voucher.original_currency.strip().upper() != "INR" and voucher.fx_rate:
+            amount_display = (
+                f"{voucher.original_currency} {float(voucher.original_amount):,.2f} "
+                f"(≈ ₹{float(voucher.amount):,.2f} @ {float(voucher.fx_rate):.2f})"
+            )
+        else:
+            amount_display = f"₹{float(voucher.amount):,.2f}"
+
         message = (
-            f"I've extracted the expense details from your receipt:\n\n"
-            f"**{vendor_display}** — {amount_display} on {extracted.date}\n\n"
+            f"I've extracted the {type_label} details:\n\n"
+            f"**{party_display}** — {amount_display} on {extracted.date}\n\n"
             f"Please review the entry below and click **Write to Tally** to create "
-            f"the payment voucher, or **Edit Entry** to make corrections."
+            f"the {voucher.voucher_type.lower()} voucher, or **Edit Entry** to make corrections."
         )
         if warnings:
             message += "\n\n⚠️ " + " | ".join(warnings)
@@ -587,6 +706,34 @@ def _filter_table_by_advice(table: dict, advice: dict) -> dict | None:
         new_rows.append(new_row)
 
     return {"headers": new_headers, "rows": new_rows}
+
+
+def _extracted_to_jsonable(extracted) -> dict:
+    """Convert an ExtractedDocument to a JSON-serialisable dict for JSONB storage.
+
+    Decimals → float, nested dataclasses (line items, gst) → dicts. Anything that
+    still isn't JSON-safe is coerced to ``str`` as a last resort.
+    """
+    import dataclasses
+    from decimal import Decimal
+
+    def _conv(value):
+        if isinstance(value, Decimal):
+            return float(value)
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            return {k: _conv(v) for k, v in dataclasses.asdict(value).items()}
+        if isinstance(value, dict):
+            return {k: _conv(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [_conv(v) for v in value]
+        if value is None or isinstance(value, (str, int, float, bool)):
+            return value
+        return str(value)
+
+    try:
+        return _conv(extracted)
+    except Exception:  # noqa: BLE001 - audit metadata must never break the upload
+        return {"doc_type": getattr(extracted, "doc_type", None)}
 
 
 def _strip_markdown_fences(text: str) -> str:

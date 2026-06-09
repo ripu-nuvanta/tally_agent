@@ -192,6 +192,201 @@ def build_create_payment_voucher(
     return _wrap_import("Vouchers", company, voucher_xml)
 
 
+def _build_ledger_invoice_voucher(
+    vch_type: str,
+    date: str,
+    party_ledger: str,
+    contra_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+    bill_type: str = "New Ref",
+    is_purchase_side: bool = True,
+) -> str:
+    """Build XML for ledger-only invoice-style vouchers (Debit Note / Credit Note).
+
+    Uses ``LEDGERENTRIES.LIST`` + ``Invoice Voucher View`` + ``ISPARTYLEDGER`` —
+    the verified shape from Task 0 probes E5/E6 (no inventory entries; DN/CN are
+    value-only adjustments against an existing bill).
+
+    Sign convention (verified E5/E6):
+      - ``is_purchase_side=True`` (Debit Note, mirrors Purchase): party is the
+        credit side (ISDEEMEDPOSITIVE=No, +amount); GST input and the contra
+        purchase ledger are the debit side (ISDEEMEDPOSITIVE=Yes, -amount).
+      - ``is_purchase_side=False`` (Credit Note, mirrors Sales): party is the
+        debit side (ISDEEMEDPOSITIVE=Yes, -amount); GST output and the contra
+        sales ledger are the credit side (ISDEEMEDPOSITIVE=No, +amount).
+
+    The bill allocation (when ``bill_ref`` is set) mirrors the party-line sign
+    via ``_render_bill_allocations``.
+    """
+    if amount <= 0:
+        raise ValueError(f"amount must be positive, got {amount}")
+    _require(date, "date")
+    _require(party_ledger, "party_ledger")
+    _require(contra_ledger, "contra_ledger")
+    _require(narration, "narration")
+    _require(company, "company")
+
+    gst_total = sum(e["amount"] for e in (gst_entries or []))
+    if gst_total < 0 or gst_total > amount:
+        raise ValueError(f"invalid gst total {gst_total} for amount {amount}")
+    base_amount = amount - gst_total
+
+    if is_purchase_side:
+        party_sign = 1  # party credit side → +amount
+        party_deemed = "No"
+        contra_sign = -1  # GST input + purchase ledger on debit side → -amount
+        contra_deemed = "Yes"
+    else:
+        party_sign = -1  # party debit side → -amount
+        party_deemed = "Yes"
+        contra_sign = 1  # GST output + sales ledger on credit side → +amount
+        contra_deemed = "No"
+
+    bill_allocs = (
+        [{"name": bill_ref, "type": bill_type, "amount": amount}] if bill_ref else None
+    )
+    bill_xml = _render_bill_allocations(bill_allocs, party_line_sign=party_sign)
+
+    entries: list[str] = []
+    entries.append(
+        f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(party_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>{party_deemed}</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>{party_sign * amount:.2f}</AMOUNT>{bill_xml}
+</LEDGERENTRIES.LIST>"""
+    )
+
+    for gst in gst_entries or []:
+        entries.append(
+            f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(gst["ledger"])}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>{contra_deemed}</ISDEEMEDPOSITIVE>
+<AMOUNT>{contra_sign * gst["amount"]:.2f}</AMOUNT>
+</LEDGERENTRIES.LIST>"""
+        )
+
+    entries.append(
+        f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(contra_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>{contra_deemed}</ISDEEMEDPOSITIVE>
+<AMOUNT>{contra_sign * base_amount:.2f}</AMOUNT>
+</LEDGERENTRIES.LIST>"""
+    )
+
+    entries_xml = "\n".join(entries)
+    voucher_xml = f"""<VOUCHER VCHTYPE="{_esc(vch_type)}" ACTION="Create">
+<DATE>{_esc(date)}</DATE>
+<VOUCHERTYPENAME>{_esc(vch_type)}</VOUCHERTYPENAME>
+<NARRATION>{_esc(narration)}</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+{entries_xml}
+</VOUCHER>"""
+    return _wrap_import("Vouchers", company, voucher_xml)
+
+
+def build_create_debit_note(
+    date: str,
+    party_ledger: str,
+    purchase_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+) -> str:
+    """Build XML to create a Debit Note in Tally (mirrors Purchase polarity).
+
+    A Debit Note reduces a payable — it debits the purchase/expense ledger and
+    credits the supplier (party), referencing the original bill via ``Agst Ref``.
+    Verified live as probe E5 (docs/group-b-task0-probe-results-2026-06-08.md).
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Debit Note", date=date, party_ledger=party_ledger,
+        contra_ledger=purchase_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="Agst Ref", is_purchase_side=True,
+    )
+
+
+def build_create_credit_note(
+    date: str,
+    party_ledger: str,
+    sales_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+) -> str:
+    """Build XML to create a Credit Note in Tally (mirrors Sales polarity).
+
+    A Credit Note reduces a receivable — it credits the sales/revenue ledger and
+    debits the customer (party), referencing the original bill via ``Agst Ref``.
+    Verified live as probe E6 (docs/group-b-task0-probe-results-2026-06-08.md).
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Credit Note", date=date, party_ledger=party_ledger,
+        contra_ledger=sales_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="Agst Ref", is_purchase_side=False,
+    )
+
+
+def build_create_purchase_voucher_ledger(
+    date: str,
+    party_ledger: str,
+    purchase_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+) -> str:
+    """Build XML for a ledger-only Purchase voucher (party + contra + GST).
+
+    Group B document-driven path: unlike the stock-based
+    ``build_create_purchase_voucher`` (seeder), this posts the party (Sundry
+    Creditors) credit and the purchase/expense ledger + Input GST debits using
+    the verified DN/CN ledger-invoice shape with a fresh ``New Ref`` bill.
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Purchase", date=date, party_ledger=party_ledger,
+        contra_ledger=purchase_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="New Ref", is_purchase_side=True,
+    )
+
+
+def build_create_sales_voucher_ledger(
+    date: str,
+    party_ledger: str,
+    sales_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+) -> str:
+    """Build XML for a ledger-only Sales voucher (party + contra + GST).
+
+    Group B document-driven path: posts the party (Sundry Debtors) debit and the
+    sales ledger + Output GST credits using the ledger-invoice shape with a fresh
+    ``New Ref`` bill (mirrors Credit Note polarity).
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Sales", date=date, party_ledger=party_ledger,
+        contra_ledger=sales_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="New Ref", is_purchase_side=False,
+    )
+
+
 def build_create_group(name: str, parent: str, company: str) -> str:
     """Build XML to create an account group in Tally."""
     _require(name, "name")

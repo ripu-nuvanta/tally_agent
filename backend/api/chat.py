@@ -148,7 +148,13 @@ async def chat_with_file(
             client=client,
             session=session,
             file_id=file_id,
+            db=db if settings.db_mode else None,
+            user_id=user_id if settings.db_mode else None,
+            workspace_id=workspace_id if settings.db_mode else None,
+            conversation_id=conversation_id if settings.db_mode else None,
         )
+        if settings.db_mode and db is not None:
+            await db.commit()
     except HTTPException:
         # Clean up the uploaded file on pipeline failure.
         try:
@@ -250,6 +256,19 @@ async def voucher_action(
                     session_id=session_id,
                 )
 
+        # Party-ledger guard (Finding 3): Purchase/Sales/DN/CN need a party
+        # ledger. If the company has no Sundry Creditors/Debtors the candidate
+        # list is empty and party_ledger may be blank — block rather than post a
+        # voucher with a missing/duplicate party leg.
+        vtype = entry.get("voucher_type", "Payment")
+        if vtype in ("Purchase", "Sales", "Debit Note", "Credit Note"):
+            if not (entry.get("party_ledger") or "").strip():
+                return ChatResponse(
+                    message="Select a party ledger before writing.",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+
         writer = TallyWriter(client=client, company=company)
 
         # Create new ledger first if the review card marked it as new
@@ -281,17 +300,68 @@ async def voucher_action(
                     session_id=session_id,
                 )
 
-        # Create the voucher
+        # Create the voucher — dispatch by voucher_type. Document-driven
+        # Purchase/Sales use the ledger-only writers (party + contra + GST),
+        # NOT the stock-based seeder writers of the same base name.
+        voucher_type = entry.get("voucher_type", "Payment")
         try:
             gst_entries = entry.get("gst_entries") or None
-            result = await writer.create_payment_voucher(
-                date=entry["date"],
-                debit_ledger=entry["debit_ledger"],
-                credit_ledger=entry["credit_ledger"],
-                amount=entry["amount"],
-                narration=entry["narration"],
-                gst_entries=gst_entries,
-            )
+            bill_ref = entry.get("bill_reference")
+            if voucher_type == "Payment":
+                result = await writer.create_payment_voucher(
+                    date=entry["date"],
+                    debit_ledger=entry["debit_ledger"],
+                    credit_ledger=entry["credit_ledger"],
+                    amount=entry["amount"],
+                    narration=entry["narration"],
+                    gst_entries=gst_entries,
+                )
+            elif voucher_type == "Purchase":
+                result = await writer.create_purchase_voucher_ledger(
+                    date=entry["date"],
+                    party_ledger=entry["party_ledger"],
+                    purchase_ledger=entry["debit_ledger"],
+                    amount=entry["amount"],
+                    narration=entry["narration"],
+                    gst_entries=gst_entries,
+                    bill_ref=bill_ref,
+                )
+            elif voucher_type == "Sales":
+                result = await writer.create_sales_voucher_ledger(
+                    date=entry["date"],
+                    party_ledger=entry["party_ledger"],
+                    sales_ledger=entry["credit_ledger"],
+                    amount=entry["amount"],
+                    narration=entry["narration"],
+                    gst_entries=gst_entries,
+                    bill_ref=bill_ref,
+                )
+            elif voucher_type == "Debit Note":
+                result = await writer.create_debit_note(
+                    date=entry["date"],
+                    party_ledger=entry["party_ledger"],
+                    purchase_ledger=entry["debit_ledger"],
+                    amount=entry["amount"],
+                    narration=entry["narration"],
+                    gst_entries=gst_entries,
+                    bill_ref=bill_ref,
+                )
+            elif voucher_type == "Credit Note":
+                result = await writer.create_credit_note(
+                    date=entry["date"],
+                    party_ledger=entry["party_ledger"],
+                    sales_ledger=entry["credit_ledger"],
+                    amount=entry["amount"],
+                    narration=entry["narration"],
+                    gst_entries=gst_entries,
+                    bill_ref=bill_ref,
+                )
+            else:
+                return ChatResponse(
+                    message=f"Unknown voucher type: {voucher_type}",
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
         except ValidationError as e:
             return ChatResponse(
                 message=f"Validation failed: {'; '.join(e.errors)}",
@@ -307,8 +377,30 @@ async def voucher_action(
 
         if result["success"]:
             vch_id = result.get("last_vch_id") or ""
+
+            # Persist audit trail (DB mode only) — VoucherEntry linked to the
+            # file. Requires a real conversation_id (non-nullable FK); the
+            # frontend threads it through the review entry. If absent (legacy
+            # entries / smoke tests), skip the audit row rather than crash.
+            conv_id = entry.get("conversation_id")
+            if settings.db_mode and db is not None and conv_id:
+                from backend.db.models import VoucherEntry as VoucherEntryDB
+                ve = VoucherEntryDB(
+                    file_id=entry.get("file_id") or None,
+                    user_id=user_id,
+                    workspace_id=request.workspace_id,
+                    conversation_id=conv_id,
+                    voucher_type=voucher_type,
+                    voucher_data=entry,
+                    status="written",
+                    tally_response=result,
+                    tally_voucher_number=str(vch_id),
+                )
+                db.add(ve)
+                await db.commit()
+
             return ChatResponse(
-                message=f"Payment voucher written to Tally successfully. Voucher ID: {vch_id}",
+                message=f"{voucher_type} voucher written to Tally successfully. Voucher ID: {vch_id}",
                 data={
                     "type": "voucher_written",
                     "entry_id": entry.get("id"),

@@ -119,6 +119,8 @@ export default function MessageBubble({ message, onVoucherAction, pendingVoucher
               entries={entries}
               availableLedgers={(voucherData.available_ledgers as string[]) || []}
               availablePaymentLedgers={(voucherData.available_payment_ledgers as string[]) || []}
+              availableSupplierLedgers={(voucherData.available_supplier_ledgers as string[]) || []}
+              availableCustomerLedgers={(voucherData.available_customer_ledgers as string[]) || []}
               pendingAction={pendingVoucherAction}
               onApprove={(id) => {
                 const entry = entries.find((e) => e.id === id);
