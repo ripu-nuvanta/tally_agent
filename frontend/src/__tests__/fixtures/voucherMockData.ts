@@ -84,10 +84,10 @@ export const debitNoteINR: VoucherEntry = {
   party_ledger: "Acme Supplies",
   is_party_ledger: true,
   amount: 2360,
-  // Backend/orchestrator convention: Debit Note → party on CREDIT,
-  // purchase-returns ledger on DEBIT.
-  debit_ledger: "Purchase Returns",
-  credit_ledger: "Acme Supplies",
+  // Correct convention (purchase return): Debit Note → party on DEBIT,
+  // purchase-returns ledger on CREDIT (reduces the payable).
+  debit_ledger: "Acme Supplies",
+  credit_ledger: "Purchase Returns",
   narration: "Debit Note — Acme Supplies",
   bill_reference: "INV-2025",
   bill_type: "Agst Ref",
@@ -111,10 +111,10 @@ export const creditNoteINR: VoucherEntry = {
   party_ledger: "Globex Ltd",
   is_party_ledger: true,
   amount: 1180,
-  // Backend/orchestrator convention: Credit Note → party on DEBIT,
-  // sales-returns ledger on CREDIT.
-  debit_ledger: "Globex Ltd",
-  credit_ledger: "Sales Returns",
+  // Correct convention (sales return): Credit Note → party on CREDIT,
+  // sales-returns ledger on DEBIT (reduces the receivable).
+  debit_ledger: "Sales Returns",
+  credit_ledger: "Globex Ltd",
   narration: "Credit Note — Globex Ltd",
   bill_reference: "SI-1001",
   bill_type: "Agst Ref",

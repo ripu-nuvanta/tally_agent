@@ -2,13 +2,22 @@
 
 Sales/Purchase invoice builders already exist (inventory-based) and are covered
 by ``tests/unit/test_import_builder.py``. This file covers only the NEW
-ledger-only Debit Note / Credit Note builders, whose verified XML shape comes
-from the Task 0 live probes E5/E6 (``docs/group-b-task0-probe-results-2026-06-08.md``):
+ledger-only Debit Note / Credit Note builders.
 
-  - Debit Note mirrors Purchase: party ISDEEMEDPOSITIVE=No / +amount,
-    contra (purchase) ISDEEMEDPOSITIVE=Yes / -amount.
-  - Credit Note mirrors Sales:   party ISDEEMEDPOSITIVE=Yes / -amount,
-    contra (sales)    ISDEEMEDPOSITIVE=No / +amount.
+CORRECTNESS NOTE (2026-06-09 live manual test, logs/manual_test_group_b_live.log):
+A return posts in the INVERSE direction of the original invoice — it must REDUCE
+the outstanding bill, not increase it. The earlier "DN mirrors Purchase / CN
+mirrors Sales" convention was a BUG (DN increased the payable, CN increased the
+receivable). Correct convention:
+
+  - Debit Note (purchase return) REDUCES the payable: party (supplier) on the
+    DEBIT side (ISDEEMEDPOSITIVE=Yes / -amount); contra (purchase-returns) + the
+    reversed Input GST on the CREDIT side (ISDEEMEDPOSITIVE=No / +amount).
+  - Credit Note (sales return) REDUCES the receivable: party (customer) on the
+    CREDIT side (ISDEEMEDPOSITIVE=No / +amount); contra (sales-returns) + the
+    reversed Output GST on the DEBIT side (ISDEEMEDPOSITIVE=Yes / -amount).
+  - The Agst Ref BILLALLOCATIONS amount mirrors the party-leg sign so it reduces
+    the original bill.
   - Both use LEDGERENTRIES.LIST + Invoice Voucher View + ISPARTYLEDGER + Agst Ref.
 """
 import xml.etree.ElementTree as ET
@@ -63,8 +72,9 @@ class TestCreateDebitNote:
         party = _party_entry(v)
         assert party.find("LEDGERNAME").text == "Croma"
 
-    def test_debit_note_sign_mirrors_purchase(self):
-        """DN party = credit side (No / +amount); contra = debit (Yes / -amount)."""
+    def test_debit_note_reduces_payable_party_on_debit(self):
+        """DN (purchase return) reduces the payable: party = DEBIT side
+        (Yes / -amount); contra (purchase-returns) = credit (No / +amount)."""
         xml = build_create_debit_note(
             date="20260305", party_ledger="Croma",
             purchase_ledger="Purchases", amount=1000.0,
@@ -72,15 +82,15 @@ class TestCreateDebitNote:
         )
         v = _voucher(xml)
         party = _party_entry(v)
-        assert party.find("ISDEEMEDPOSITIVE").text == "No"
-        assert float(party.find("AMOUNT").text) > 0
+        assert party.find("ISDEEMEDPOSITIVE").text == "Yes"
+        assert float(party.find("AMOUNT").text) < 0
         contra = [
             e for e in v.findall("LEDGERENTRIES.LIST")
             if e.find("ISPARTYLEDGER") is None
             and "Purchases" in (e.find("LEDGERNAME").text or "")
         ][0]
-        assert contra.find("ISDEEMEDPOSITIVE").text == "Yes"
-        assert float(contra.find("AMOUNT").text) < 0
+        assert contra.find("ISDEEMEDPOSITIVE").text == "No"
+        assert float(contra.find("AMOUNT").text) > 0
 
     def test_debit_note_agst_ref(self):
         xml = build_create_debit_note(
@@ -94,8 +104,9 @@ class TestCreateDebitNote:
         assert bill is not None
         assert bill.find("BILLTYPE").text == "Agst Ref"
         assert bill.find("NAME").text == "CRO-2026-5678"
-        # Bill alloc amount mirrors the party-line sign (positive for DN).
-        assert float(bill.find("AMOUNT").text) > 0
+        # Bill alloc amount mirrors the party-line sign (NEGATIVE for DN — the
+        # party is on the debit side so the Agst Ref reduces the payable bill).
+        assert float(bill.find("AMOUNT").text) < 0
 
     def test_debit_note_gst_input(self):
         xml = build_create_debit_note(
@@ -114,9 +125,10 @@ class TestCreateDebitNote:
         ]
         assert len(gst) == 2
         for e in gst:
-            # GST input on a DN sits on the debit side (Yes / negative).
-            assert e.find("ISDEEMEDPOSITIVE").text == "Yes"
-            assert float(e.find("AMOUNT").text) < 0
+            # Reversed Input GST on a DN sits on the CREDIT side (No / positive)
+            # — same side as the contra returns ledger.
+            assert e.find("ISDEEMEDPOSITIVE").text == "No"
+            assert float(e.find("AMOUNT").text) > 0
 
     def test_debit_note_entries_balance(self):
         xml = build_create_debit_note(
@@ -131,6 +143,26 @@ class TestCreateDebitNote:
         v = _voucher(xml)
         amounts = [float(e.find("AMOUNT").text) for e in v.findall("LEDGERENTRIES.LIST")]
         assert abs(sum(amounts)) < 0.01
+
+    def test_debit_note_agst_ref_sign_reduces_payable(self):
+        """Regression (live test 2026-06-09): the Agst Ref allocation amount on a
+        DN must be NEGATIVE — same sign as the party DEBIT leg — so it reduces
+        the outstanding payable bill rather than increasing it."""
+        xml = build_create_debit_note(
+            date="20260305", party_ledger="Croma",
+            purchase_ledger="Purchases", amount=2000.0,
+            narration="Return", company="Test Co",
+            bill_ref="CRO-2026-5678",
+        )
+        v = _voucher(xml)
+        party = _party_entry(v)
+        bill = party.find("BILLALLOCATIONS.LIST")
+        party_amt = float(party.find("AMOUNT").text)
+        bill_amt = float(bill.find("AMOUNT").text)
+        # Both negative and equal magnitude.
+        assert party_amt < 0
+        assert bill_amt < 0
+        assert abs(party_amt - bill_amt) < 0.01
 
     def test_required_fields_validation(self):
         with pytest.raises(ValueError, match="date"):
@@ -169,8 +201,9 @@ class TestCreateCreditNote:
         assert v.find("PERSISTEDVIEW").text == "Invoice Voucher View"
         assert v.find("ISINVOICE").text == "Yes"
 
-    def test_credit_note_sign_mirrors_sales(self):
-        """CN party = debit side (Yes / -amount); contra = credit (No / +amount)."""
+    def test_credit_note_reduces_receivable_party_on_credit(self):
+        """CN (sales return) reduces the receivable: party = CREDIT side
+        (No / +amount); contra (sales-returns) = debit (Yes / -amount)."""
         xml = build_create_credit_note(
             date="20260315", party_ledger="Infosys",
             sales_ledger="Sales", amount=1000.0,
@@ -178,15 +211,15 @@ class TestCreateCreditNote:
         )
         v = _voucher(xml)
         party = _party_entry(v)
-        assert party.find("ISDEEMEDPOSITIVE").text == "Yes"
-        assert float(party.find("AMOUNT").text) < 0
+        assert party.find("ISDEEMEDPOSITIVE").text == "No"
+        assert float(party.find("AMOUNT").text) > 0
         contra = [
             e for e in v.findall("LEDGERENTRIES.LIST")
             if e.find("ISPARTYLEDGER") is None
             and "Sales" in (e.find("LEDGERNAME").text or "")
         ][0]
-        assert contra.find("ISDEEMEDPOSITIVE").text == "No"
-        assert float(contra.find("AMOUNT").text) > 0
+        assert contra.find("ISDEEMEDPOSITIVE").text == "Yes"
+        assert float(contra.find("AMOUNT").text) < 0
 
     def test_credit_note_agst_ref(self):
         xml = build_create_credit_note(
@@ -199,8 +232,9 @@ class TestCreateCreditNote:
         bill = _party_entry(v).find("BILLALLOCATIONS.LIST")
         assert bill.find("BILLTYPE").text == "Agst Ref"
         assert bill.find("NAME").text == "INV-2026-FEB-001"
-        # Bill alloc amount mirrors the party-line sign (negative for CN).
-        assert float(bill.find("AMOUNT").text) < 0
+        # Bill alloc amount mirrors the party-line sign (POSITIVE for CN — the
+        # party is on the credit side so the Agst Ref reduces the receivable bill).
+        assert float(bill.find("AMOUNT").text) > 0
 
     def test_credit_note_gst_output(self):
         xml = build_create_credit_note(
@@ -219,9 +253,10 @@ class TestCreateCreditNote:
         ]
         assert len(gst) == 2
         for e in gst:
-            # GST output on a CN sits on the credit side (No / positive).
-            assert e.find("ISDEEMEDPOSITIVE").text == "No"
-            assert float(e.find("AMOUNT").text) > 0
+            # Reversed Output GST on a CN sits on the DEBIT side (Yes / negative)
+            # — same side as the contra returns ledger.
+            assert e.find("ISDEEMEDPOSITIVE").text == "Yes"
+            assert float(e.find("AMOUNT").text) < 0
 
     def test_credit_note_entries_balance(self):
         xml = build_create_credit_note(
@@ -236,3 +271,22 @@ class TestCreateCreditNote:
         v = _voucher(xml)
         amounts = [float(e.find("AMOUNT").text) for e in v.findall("LEDGERENTRIES.LIST")]
         assert abs(sum(amounts)) < 0.01
+
+    def test_credit_note_agst_ref_sign_reduces_receivable(self):
+        """Regression (live test 2026-06-09): the Agst Ref allocation amount on a
+        CN must be POSITIVE — same sign as the party CREDIT leg — so it reduces
+        the outstanding receivable bill rather than increasing it."""
+        xml = build_create_credit_note(
+            date="20260315", party_ledger="Infosys",
+            sales_ledger="Sales", amount=3000.0,
+            narration="Return", company="Test Co",
+            bill_ref="INV-2026-FEB-001",
+        )
+        v = _voucher(xml)
+        party = _party_entry(v)
+        bill = party.find("BILLALLOCATIONS.LIST")
+        party_amt = float(party.find("AMOUNT").text)
+        bill_amt = float(bill.find("AMOUNT").text)
+        assert party_amt > 0
+        assert bill_amt > 0
+        assert abs(party_amt - bill_amt) < 0.01

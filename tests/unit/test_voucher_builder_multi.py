@@ -102,6 +102,18 @@ class TestBuildDebitNote:
         assert vd.party_ledger == "Croma Electronics"
         assert vd.is_party_ledger is True
 
+    def test_debit_ledger_is_party_credit_is_contra(self):
+        """Correctness (live test 2026-06-09): a DN reduces the payable, so the
+        party (supplier) is on DEBIT and the purchase-returns contra on CREDIT —
+        the INVERSE of a Purchase."""
+        doc = _load_doc("debit_note_return_inr.json")
+        vd = build_debit_note_data(
+            doc, party_ledger="Croma Electronics",
+            purchase_ledger="Purchase Returns",
+        )
+        assert vd.debit_ledger == "Croma Electronics"
+        assert vd.credit_ledger == "Purchase Returns"
+
     def test_falls_back_to_doc_invoice_ref(self):
         """When original_ref is not passed, fall back to doc.original_invoice_ref."""
         doc = _load_doc("debit_note_return_inr.json")
@@ -132,6 +144,18 @@ class TestBuildCreditNote:
         assert vd.bill_reference == "INV-2026-FEB-001"
         assert vd.bill_type == "Agst Ref"
         assert vd.party_ledger == "Infosys Ltd"
+
+    def test_debit_ledger_is_contra_credit_is_party(self):
+        """Correctness (live test 2026-06-09): a CN reduces the receivable, so the
+        sales-returns contra is on DEBIT and the party (customer) on CREDIT — the
+        INVERSE of a Sales."""
+        doc = _load_doc("credit_note_return_inr.json")
+        vd = build_credit_note_data(
+            doc, party_ledger="Infosys Ltd",
+            sales_ledger="Sales Returns",
+        )
+        assert vd.debit_ledger == "Sales Returns"
+        assert vd.credit_ledger == "Infosys Ltd"
 
 
 class TestNarrationUsesPartyName:
