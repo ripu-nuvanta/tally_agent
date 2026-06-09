@@ -285,12 +285,20 @@ class Orchestrator(BaseAgent):
         doc_type = extracted.doc_type
         party_vouchers_list: list[dict] = []
 
+        # Resolve GST ledgers from the workspace's Tally ledgers (Duties & Taxes)
+        # so a GST invoice posts the Input/Output GST leg separately rather than
+        # folding it into the contra. Missing ledgers warn + fall back to no leg.
+        gst_warnings: list[str] = []
+
         if doc_type in ("purchase", "debit_note"):
             party_name = extracted.party_name or "Unknown Supplier"
             mapping = await mapper.find_mapping(
                 party_name, doc_type, tally_ledgers=supplier_ledgers or ledger_names,
             )
             purchase_ledger = purchase_ledgers[0]
+            gst_ledgers, gst_warnings = _resolve_gst_ledgers(
+                tally_ledgers, "input", extracted,
+            )
             if doc_type == "debit_note":
                 party_vouchers_list = await get_party_vouchers(
                     client, party_name, ["Purchase"],
@@ -298,12 +306,14 @@ class Orchestrator(BaseAgent):
                 voucher = build_debit_note_data(
                     doc=extracted, party_ledger=party_name,
                     purchase_ledger=purchase_ledger,
+                    gst_ledgers=gst_ledgers,
                     original_ref=extracted.original_invoice_ref,
                 )
             else:
                 voucher = build_purchase_voucher_data(
                     doc=extracted, party_ledger=party_name,
                     purchase_ledger=purchase_ledger,
+                    gst_ledgers=gst_ledgers,
                 )
         elif doc_type in ("sales", "credit_note"):
             party_name = extracted.party_name or "Unknown Customer"
@@ -311,6 +321,9 @@ class Orchestrator(BaseAgent):
                 party_name, doc_type, tally_ledgers=customer_ledgers or ledger_names,
             )
             sales_ledger = sales_ledgers[0]
+            gst_ledgers, gst_warnings = _resolve_gst_ledgers(
+                tally_ledgers, "output", extracted,
+            )
             if doc_type == "credit_note":
                 party_vouchers_list = await get_party_vouchers(
                     client, party_name, ["Sales"],
@@ -318,12 +331,14 @@ class Orchestrator(BaseAgent):
                 voucher = build_credit_note_data(
                     doc=extracted, party_ledger=party_name,
                     sales_ledger=sales_ledger,
+                    gst_ledgers=gst_ledgers,
                     original_ref=extracted.original_invoice_ref,
                 )
             else:
                 voucher = build_sales_voucher_data(
                     doc=extracted, party_ledger=party_name,
                     sales_ledger=sales_ledger,
+                    gst_ledgers=gst_ledgers,
                 )
         else:
             # payment (and any unknown type) → expense + payment ledger.
@@ -347,6 +362,10 @@ class Orchestrator(BaseAgent):
             }
             for v in party_vouchers_list
         ]
+
+        # 4c. Surface any GST-ledger-not-found warnings on the review entry.
+        if gst_warnings:
+            warnings = warnings + gst_warnings
 
         # 5. FX rate warnings (T6). Non-INR docs whose rate came from a default
         # or fallback need a "verify" warning; a missing rate blocks the write.
@@ -706,6 +725,77 @@ def _filter_table_by_advice(table: dict, advice: dict) -> dict | None:
         new_rows.append(new_row)
 
     return {"headers": new_headers, "rows": new_rows}
+
+
+# Canonical GST ledger labels per component, keyed by the voucher_builder's
+# expected dict keys (cgst_input/.../igst_output). The "tokens" are matched
+# case-insensitively and order-independently against each Duties & Taxes ledger
+# name, so both "CGST Input" and "Input CGST" resolve to cgst_input.
+_GST_COMPONENT_TOKENS = {
+    "cgst": ("cgst",),
+    "sgst": ("sgst",),
+    "igst": ("igst",),
+}
+
+
+def _resolve_gst_ledgers(
+    tally_ledgers: list[dict],
+    direction: str,
+    doc,
+) -> tuple[dict[str, str], list[str]]:
+    """Resolve GST ledger names from the workspace's Tally ledgers.
+
+    Matches ledgers under "Duties & Taxes" (case-insensitive) to the GST
+    components present on ``doc`` for the given ``direction`` ("input" for
+    Purchase/Debit Note, "output" for Sales/Credit Note). Returns a dict keyed
+    by the voucher_builder's expected keys (``cgst_input``/``sgst_input``/
+    ``igst_input`` or the ``*_output`` variants) plus a list of warnings for any
+    component the document HAS but no matching ledger was found.
+
+    Matching is order-independent ("Input CGST" resolves the same as
+    "CGST Input") and requires the direction word ("input"/"output") to be
+    present in the ledger name so the Input/Output ledgers aren't confused.
+    """
+    gst_ledgers: dict[str, str] = {}
+    warnings: list[str] = []
+
+    gst = getattr(doc, "gst", None)
+    if not gst:
+        return gst_ledgers, warnings
+
+    # Candidate GST ledgers: only those under Duties & Taxes.
+    duties = [
+        l for l in tally_ledgers
+        if (l.get("parent_group", "") or "").strip().lower() == "duties & taxes"
+    ]
+
+    amounts = {
+        "cgst": getattr(gst, "cgst_amount", None),
+        "sgst": getattr(gst, "sgst_amount", None),
+        "igst": getattr(gst, "igst_amount", None),
+    }
+
+    for component, tokens in _GST_COMPONENT_TOKENS.items():
+        amount = amounts[component]
+        if not amount:
+            continue  # component not on the document → nothing to map
+        key = f"{component}_{direction}"
+        match = None
+        for ledger in duties:
+            name = ledger["name"]
+            lname = name.lower()
+            if direction in lname and all(t in lname for t in tokens):
+                match = name
+                break
+        if match:
+            gst_ledgers[key] = match
+        else:
+            label = f"{component.upper()} {direction.capitalize()}"
+            warnings.append(
+                f"GST ledger '{label}' not found — GST not posted separately"
+            )
+
+    return gst_ledgers, warnings
 
 
 def _extracted_to_jsonable(extracted) -> dict:
