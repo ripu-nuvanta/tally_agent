@@ -125,11 +125,63 @@ def _handle_import(xml_body: str) -> str:
 </RESPONSE>"""
 
 
+# Seeded parties that have invoices in the mock company, keyed by lookup name.
+# Mirrors the live test company (`Bharat Traders Private Limited`) seed data.
+_MOCK_PARTY_VOUCHERS: dict[str, list[dict]] = {
+    "Apex Technologies Pvt Ltd": [
+        {"number": "1", "date": "20250520", "type": "Sales",
+         "reference": "INV-APX-001", "amount": "118000.00"},
+        {"number": "7", "date": "20250812", "type": "Sales",
+         "reference": "INV-APX-002", "amount": "88500.00"},
+    ],
+    "Croma Electronics": [
+        {"number": "3", "date": "20250610", "type": "Purchase",
+         "reference": "PINV-CRM-001", "amount": "153400.00"},
+    ],
+}
+
+
+def _handle_party_vouchers(xml_body: str) -> str:
+    """Return a party's vouchers filtered by the requested voucher types.
+
+    Matches the verified probe-E8 envelope (``build_party_vouchers``): a TDL
+    Collection NAMEd ``PartyVouchers`` constrained by ``CHILDOF $$VchType<Type>``
+    and a ``$PartyLedgerName = "<party>"`` FILTER. Unknown parties yield an
+    empty COLLECTION.
+    """
+    party_match = re.search(r'\$PartyLedgerName = "(.*?)"', xml_body)
+    party = party_match.group(1) if party_match else ""
+    requested_types = {m for m in re.findall(r"<CHILDOF>\$\$VchType(.*?)</CHILDOF>", xml_body)}
+
+    rows = _MOCK_PARTY_VOUCHERS.get(party, [])
+    if requested_types:
+        rows = [r for r in rows if r["type"] in requested_types]
+
+    vouchers_xml = "\n".join(
+        f"""<VOUCHER>
+<DATE>{r['date']}</DATE>
+<VOUCHERNUMBER>{r['number']}</VOUCHERNUMBER>
+<VOUCHERTYPENAME>{r['type']}</VOUCHERTYPENAME>
+<PARTYLEDGERNAME>{party}</PARTYLEDGERNAME>
+<REFERENCE>{r['reference']}</REFERENCE>
+<AMOUNT>{r['amount']}</AMOUNT>
+</VOUCHER>"""
+        for r in rows
+    )
+    return f"""<ENVELOPE><BODY><DATA><COLLECTION>
+{vouchers_xml}
+</COLLECTION></DATA></BODY></ENVELOPE>"""
+
+
 def mock_tally_request(xml_body: str) -> str:
     """Process an XML request and return mock fixture response."""
     # Handle write/import requests first
     if "Import Data" in xml_body:
         return _handle_import(xml_body)
+
+    # Party voucher lookup (verified probe E8) — TDL collection filtered by party + type
+    if "PartyVouchers" in xml_body:
+        return _handle_party_vouchers(xml_body)
 
     # Check date-aware reports first
     for report_name in DATE_AWARE_REPORTS:
