@@ -15,6 +15,8 @@ from __future__ import annotations
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.import_builder import (
     build_cancel_voucher,
+    build_create_credit_note,
+    build_create_debit_note,
     build_create_group,
     build_create_gst_ledger,
     build_create_journal_voucher,
@@ -272,6 +274,80 @@ class TallyWriter:
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_journal_voucher")
+
+    async def create_debit_note(
+        self, date: str, party_ledger: str, purchase_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+    ) -> dict:
+        """Create a Debit Note in Tally with validation (mirrors Purchase polarity).
+
+        Validation legs: purchase ledger debit (-base), GST input debit (-),
+        party credit (+amount). These balance to zero.
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": purchase_ledger, "amount": -base_amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": -gst["amount"], "is_debit": True})
+        entries.append({"ledger": party_ledger, "amount": amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Debit Note", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_debit_note(
+            date=date, party_ledger=party_ledger, purchase_ledger=purchase_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_debit_note")
+
+    async def create_credit_note(
+        self, date: str, party_ledger: str, sales_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+    ) -> dict:
+        """Create a Credit Note in Tally with validation (mirrors Sales polarity).
+
+        Validation legs: party debit (-amount), GST output credit (+),
+        sales ledger credit (+base). These balance to zero.
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": party_ledger, "amount": -amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": gst["amount"], "is_debit": False})
+        entries.append({"ledger": sales_ledger, "amount": base_amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Credit Note", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_credit_note(
+            date=date, party_ledger=party_ledger, sales_ledger=sales_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_credit_note")
 
     async def create_group(self, name: str, parent: str) -> dict:
         """Create an account group in Tally."""

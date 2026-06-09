@@ -1,0 +1,14 @@
+{
+  "doc_type": "payment",
+  "party_name": "Uber",
+  "date": "2026-03-15",
+  "total_amount": 350.00,
+  "original_currency": "INR",
+  "fx_rate": null,
+  "line_items": [
+    {"description": "Uber ride - client meeting", "amount": 350.00, "quantity": null, "rate": null}
+  ],
+  "gst": null,
+  "payment_mode": "upi",
+  "original_invoice_ref": null
+}

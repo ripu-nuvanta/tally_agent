@@ -1,0 +1,14 @@
+{
+  "doc_type": "purchase",
+  "party_name": "Anthropic PBC",
+  "date": "2026-03-15",
+  "total_amount": 1730.00,
+  "original_currency": "USD",
+  "fx_rate": null,
+  "line_items": [
+    {"description": "Claude API Usage - March 2026", "amount": 1730.00, "quantity": null, "rate": null}
+  ],
+  "gst": null,
+  "payment_mode": "bank",
+  "original_invoice_ref": null
+}

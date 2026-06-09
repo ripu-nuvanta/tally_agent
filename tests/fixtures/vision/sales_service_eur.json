@@ -1,0 +1,14 @@
+{
+  "doc_type": "sales",
+  "party_name": "Acme GmbH",
+  "date": "2026-03-10",
+  "total_amount": 5000.00,
+  "original_currency": "EUR",
+  "fx_rate": 90.25,
+  "line_items": [
+    {"description": "Software Development Services", "amount": 5000.00, "quantity": null, "rate": null}
+  ],
+  "gst": null,
+  "payment_mode": null,
+  "original_invoice_ref": null
+}
