@@ -62,6 +62,7 @@ async def judge_turn_text(
         prior_turns=prior_turns,
         ground_truth=ground_truth,
         checks=checks,
+        scenario_turn=scenario_turn,
     )
 
     # Build message content — include full screenshot if available so the judge
@@ -242,7 +243,9 @@ async def judge_transcript(
         rq = text_scores.get("response_quality", {}).get("score", "?")
         cc = text_scores.get("conversation_coherence", {}).get("score", "?")
         cq = chart_scores.get("chart_quality", {}).get("score", "-")
-        print(f"    Scores: factual={fc}, quality={rq}, coherence={cc}, chart={cq}")
+        vc_dim = text_scores.get("voucher_correctness")
+        vc = vc_dim.get("score", "-") if isinstance(vc_dim, dict) else "-"
+        print(f"    Scores: factual={fc}, quality={rq}, coherence={cc}, chart={cq}, voucher={vc}")
 
     return scores
 
