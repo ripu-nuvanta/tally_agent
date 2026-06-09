@@ -28,11 +28,11 @@ The product evolves along three feature sets. Set A is foundational; B and C can
 | Sub | Scope | Status |
 |---|---|---|
 | **B1a** | Expense receipt entry (file upload → Vision extract → Tally write — Payment voucher only) | ✅ Complete — merged. Spec: `specs/2026-04-04-set-b1a-expense-entry-plan.md`. |
-| **B1b** | Sales / Purchase voucher builders (extends B1a pipeline) | Specced. Blocked on **Group B Task 0** feasibility probe. |
-| **B1c** | Debit Note / Credit Note voucher builders | Specced. Part of Group B. |
+| **B1b** | Sales / Purchase voucher builders (extends B1a pipeline) | ✅ Complete — merged 2026-06-09 (Group B). |
+| **B1c** | Debit Note / Credit Note voucher builders | ✅ Complete — merged 2026-06-09 (Group B). |
 | **B1d** | Bank statement import + reconciliation | Deferred. Needs its own feasibility probe (BANKALLOCATIONS / BANKDATE / INSTRUMENTNO primitives unvalidated). See [`open-items-parked.md`](open-items-parked.md). |
 | **Group A** | UI polish (F4 deferred conversation creation + workspace landing, F5 voucher button disable, F6 responsive drawer) | ✅ Complete 2026-04-12. Spec: `specs/2026-04-12-group-a-ui-enhancements-design.md`. |
-| **Group B** | F1 (company dropdown) + F2 (multi-currency) + F3 (Payment vs Purchase) + B1b/B1c + TDS | **In progress, sliced.** Task 0 probes (E1–E8 + TDS + bank-recon) ✅ done 2026-06-08. **F2 (Slice A) ✅ merged.** Building remaining slices B–F (see Active Work). Spec: `specs/2026-04-12-group-b-voucher-types-design.md`. |
+| **Group B** | F1 (company dropdown) + F2 (multi-currency) + F3 (5-type classification) + B1b (Purchase/Sales) + B1c (DN/CN) + DB audit | ✅ **Complete — merged 2026-06-09.** Tasks 0–16. Spec: `specs/2026-04-12-group-b-voucher-types-design.md`; review: `code-review-group-b-2026-06-09.md`. (GST-ledger mapping for invoices + DN/CN direction verify are tracked follow-ups.) |
 
 ### Set C — Sync & Store
 
@@ -47,20 +47,20 @@ Architecture intent: hybrid real-time tunnel + scheduled sync, reusing existing 
 
 ## Active Work — Next Up
 
-The write-flow (Group B + reconciliation) is being built in **dependency-ordered slices**, one spec→plan→implement→review→merge cycle each:
+The documented **Group B** (`specs/2026-04-12-group-b-voucher-types-design.md`) is now built and merged. We implemented exactly the doc (upload-driven, 5-type classification) — not the earlier A–F slice reframing.
 
-| Slice | Scope | Status |
+| Item | Scope | Status |
 |---|---|---|
-| **A** | Foreign-currency → INR (F2): extract original currency+amount, code-computed rate, chat-only override, INR-only into Tally, no-rate writes blocked | ✅ **Merged to dev 2026-06-08.** Spec `specs/2026-06-08-fx-inr-conversion-design.md`; review `code-review-fx-inr-2026-06-08.md`. |
-| **B** | Supplier Payment against an outstanding bill (Agst Ref) + cheque/instrument details | Next |
-| **C** | Purchase invoice + payment + **TDS-deducted journal** | Planned |
-| **D** | Sales invoice + receipt + **TDS-receivable journal** | Planned |
-| **E** | Credit / Debit Notes (returns) | Planned |
-| **F** | Bank-statement reconciliation (mark cleared) | Deferred — see below |
+| **F2 (Slice A)** | Foreign-currency → INR: original currency+amount, code-computed rate, chat-only override, INR-only into Tally, no-rate writes blocked | ✅ **Merged 2026-06-08.** Spec `specs/2026-06-08-fx-inr-conversion-design.md`; review `code-review-fx-inr-2026-06-08.md`. |
+| **Group B (F1+F3+B1b/B1c)** | Upload → Vision classifies `payment/purchase/sales/debit_note/credit_note` → route to builder → party + GST + bill allocation → write; company-name dropdown (test-connection); DB audit (UploadedFile + VoucherEntry) | ✅ **Merged 2026-06-09.** Plan `plans/2026-04-12-group-b-voucher-types-plan.md` Tasks 0–16; review `code-review-group-b-2026-06-09.md`. |
 
-**Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 run live; Debit Note (E5), Credit Note (E6), company list (E7), party-voucher filter (E8) all verified. Two new probes added and verified: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import (top-level `BANKDATE` dropped), so reconciliation needs Tally's dedicated mechanism (Slice F / B1d).
+**Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 verified (DN/CN creation, company list, party-voucher filter). Two extra probes: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import, so reconciliation needs Tally's dedicated mechanism.
 
-**TDS is new scope** (not in the original Group B plan): the Sale and Purchase flows each need three linked vouchers (invoice + settlement + TDS journal). Proven feasible by the probes; needs its own design in Slices C/D.
+### Not in the doc — future work (deliberately deferred)
+
+- **GST ledger mapping for invoices** — Group B routes invoices but does not yet map extracted GST line items to Input/Output GST ledgers (orchestrator passes `gst_ledgers=None`, same as the legacy payment path). Needs per-workspace GST-ledger resolution. Tracked in `code-review-group-b-2026-06-09.md` follow-ups.
+- **DN/CN posting-direction live verification** — builder convention was probe-*accepted* (CREATED=1) but not read-back-verified for direction (does a DN actually reduce the payable?). Add a read-back probe before production reliance.
+- **Supplier payment against an outstanding bill** (Agst Ref settlement of an existing payable), **TDS journals**, and **bank-statement reconciliation** — all beyond the current doc; require their own spec before building.
 
 **In-between UX plan (company picker + chat UX):** before/alongside Slices B–E, scope an intermediate plan for the workspace **company dropdown** (F1, E7 proven) and the chat UX for the multi-voucher review flow. To be specced.
 
