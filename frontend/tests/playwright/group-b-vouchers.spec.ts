@@ -329,8 +329,9 @@ test.describe("Group B voucher-type VoucherReviewCard visual tests", () => {
       party_ledger: "Acme Supplies",
       is_party_ledger: true,
       amount: 2360,
-      debit_ledger: "Purchase Returns",
-      credit_ledger: "Acme Supplies",
+      // Purchase return: party on DEBIT, purchase-returns on CREDIT.
+      debit_ledger: "Acme Supplies",
+      credit_ledger: "Purchase Returns",
       narration: "Debit Note — Acme Supplies",
       bill_reference: "INV-2025",
       bill_type: "Agst Ref",
@@ -390,8 +391,9 @@ test.describe("Group B voucher-type VoucherReviewCard visual tests", () => {
       party_ledger: "Globex Ltd",
       is_party_ledger: true,
       amount: 1180,
-      debit_ledger: "Globex Ltd",
-      credit_ledger: "Sales Returns",
+      // Sales return: party on CREDIT, sales-returns on DEBIT.
+      debit_ledger: "Sales Returns",
+      credit_ledger: "Globex Ltd",
       narration: "Credit Note — Globex Ltd",
       bill_reference: "SI-1001",
       bill_type: "Agst Ref",

@@ -98,9 +98,11 @@ def test_sales_dispatch_calls_sales_writer(client):
 
 
 def test_debit_note_dispatch_calls_create_debit_note(client):
+    # Correct DN convention (live test 2026-06-09): party on DEBIT, purchase-
+    # returns contra on CREDIT. chat.py dispatches purchase_ledger=credit_ledger.
     entry = {
         "id": "dn1", "voucher_type": "Debit Note", "date": "20260305",
-        "debit_ledger": "Purchase Accounts", "credit_ledger": "Croma Electronics",
+        "debit_ledger": "Croma Electronics", "credit_ledger": "Purchase Returns",
         "party_ledger": "Croma Electronics", "amount": 4718.0,
         "narration": "Return", "gst_entries": [],
         "bill_reference": "CRO-5678", "bill_type": "Agst Ref",
@@ -115,14 +117,17 @@ def test_debit_note_dispatch_calls_create_debit_note(client):
     m.assert_awaited_once()
     kw = m.await_args.kwargs
     assert kw["party_ledger"] == "Croma Electronics"
-    assert kw["purchase_ledger"] == "Purchase Accounts"
+    assert kw["purchase_ledger"] == "Purchase Returns"
+    assert kw["party_ledger"] != kw["purchase_ledger"]
     assert kw["bill_ref"] == "CRO-5678"
 
 
 def test_credit_note_dispatch_calls_create_credit_note(client):
+    # Correct CN convention (live test 2026-06-09): party on CREDIT, sales-
+    # returns contra on DEBIT. chat.py dispatches sales_ledger=debit_ledger.
     entry = {
         "id": "cn1", "voucher_type": "Credit Note", "date": "20260315",
-        "debit_ledger": "Infosys Ltd", "credit_ledger": "Sales Accounts",
+        "debit_ledger": "Sales Returns", "credit_ledger": "Infosys Ltd",
         "party_ledger": "Infosys Ltd", "amount": 11800.0,
         "narration": "Discount CN", "gst_entries": [],
         "bill_reference": "INV-FEB-001", "bill_type": "Agst Ref",
@@ -137,18 +142,20 @@ def test_credit_note_dispatch_calls_create_credit_note(client):
     m.assert_awaited_once()
     kw = m.await_args.kwargs
     assert kw["party_ledger"] == "Infosys Ltd"
-    assert kw["sales_ledger"] == "Sales Accounts"
+    assert kw["sales_ledger"] == "Sales Returns"
+    assert kw["party_ledger"] != kw["sales_ledger"]
     assert kw["bill_ref"] == "INV-FEB-001"
 
 
 def test_debit_note_edit_form_mapping_keeps_legs_distinct(client):
-    """Contract guard (Finding 1): an edit-form DN entry (party on credit,
-    purchase-returns on debit) must dispatch with purchase_ledger != party_ledger.
+    """Contract guard: an edit-form DN entry (party on DEBIT, purchase-returns on
+    CREDIT — the correct return polarity) must dispatch with the party as
+    party_ledger and the CONTRA (credit_ledger) as purchase_ledger, kept distinct.
     """
     entry = {
         "id": "dn2", "voucher_type": "Debit Note", "date": "20260305",
-        # edit-form convention: debit = returns ledger, credit = party
-        "debit_ledger": "Purchase Returns", "credit_ledger": "Croma Electronics",
+        # correct edit-form convention: debit = party, credit = returns ledger
+        "debit_ledger": "Croma Electronics", "credit_ledger": "Purchase Returns",
         "party_ledger": "Croma Electronics", "amount": 4718.0,
         "narration": "Return", "gst_entries": [],
         "bill_reference": "CRO-5678", "bill_type": "Agst Ref",
@@ -166,13 +173,14 @@ def test_debit_note_edit_form_mapping_keeps_legs_distinct(client):
 
 
 def test_credit_note_edit_form_mapping_keeps_legs_distinct(client):
-    """Contract guard (Finding 1): an edit-form CN entry (party on debit,
-    sales-returns on credit) must dispatch with sales_ledger != party_ledger.
+    """Contract guard: an edit-form CN entry (party on CREDIT, sales-returns on
+    DEBIT — the correct return polarity) must dispatch with the party as
+    party_ledger and the CONTRA (debit_ledger) as sales_ledger, kept distinct.
     """
     entry = {
         "id": "cn2", "voucher_type": "Credit Note", "date": "20260315",
-        # edit-form convention: debit = party, credit = returns ledger
-        "debit_ledger": "Infosys Ltd", "credit_ledger": "Sales Returns",
+        # correct edit-form convention: debit = returns ledger, credit = party
+        "debit_ledger": "Sales Returns", "credit_ledger": "Infosys Ltd",
         "party_ledger": "Infosys Ltd", "amount": 11800.0,
         "narration": "Discount CN", "gst_entries": [],
         "bill_reference": "INV-FEB-001", "bill_type": "Agst Ref",

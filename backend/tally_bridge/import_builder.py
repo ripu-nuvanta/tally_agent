@@ -203,21 +203,31 @@ def _build_ledger_invoice_voucher(
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
     bill_type: str = "New Ref",
-    is_purchase_side: bool = True,
+    party_on_debit: bool = False,
 ) -> str:
-    """Build XML for ledger-only invoice-style vouchers (Debit Note / Credit Note).
+    """Build XML for ledger-only invoice-style vouchers (Purchase / Sales /
+    Debit Note / Credit Note).
 
     Uses ``LEDGERENTRIES.LIST`` + ``Invoice Voucher View`` + ``ISPARTYLEDGER`` —
-    the verified shape from Task 0 probes E5/E6 (no inventory entries; DN/CN are
-    value-only adjustments against an existing bill).
+    the verified shape from Task 0 probes E5/E6 (no inventory entries).
 
-    Sign convention (verified E5/E6):
-      - ``is_purchase_side=True`` (Debit Note, mirrors Purchase): party is the
-        credit side (ISDEEMEDPOSITIVE=No, +amount); GST input and the contra
-        purchase ledger are the debit side (ISDEEMEDPOSITIVE=Yes, -amount).
-      - ``is_purchase_side=False`` (Credit Note, mirrors Sales): party is the
-        debit side (ISDEEMEDPOSITIVE=Yes, -amount); GST output and the contra
-        sales ledger are the credit side (ISDEEMEDPOSITIVE=No, +amount).
+    Sign convention is driven by ``party_on_debit`` — the party leg and the
+    contra (GST + returns/purchase/sales ledger) leg always sit on OPPOSITE
+    sides. The party leg with ISDEEMEDPOSITIVE=Yes carries a NEGATIVE amount
+    (Tally debit); with ISDEEMEDPOSITIVE=No a POSITIVE amount (Tally credit):
+
+      - ``party_on_debit=False`` → party on CREDIT (No / +amount); contra on
+        DEBIT (Yes / -amount). Used by Purchase (party = creditor) and Credit
+        Note (a sales return that REDUCES the receivable — party = customer on
+        credit).
+      - ``party_on_debit=True``  → party on DEBIT (Yes / -amount); contra on
+        CREDIT (No / +amount). Used by Sales (party = debtor) and Debit Note (a
+        purchase return that REDUCES the payable — party = supplier on debit).
+
+    A return (DN/CN) posts in the INVERSE direction of the original invoice so
+    that the Agst Ref bill allocation REDUCES the outstanding bill. (Before the
+    2026-06-09 fix, DN mirrored Purchase / CN mirrored Sales — that was the bug
+    that made returns INCREASE the bill; see logs/manual_test_group_b_live.log.)
 
     The bill allocation (when ``bill_ref`` is set) mirrors the party-line sign
     via ``_render_bill_allocations``.
@@ -235,16 +245,16 @@ def _build_ledger_invoice_voucher(
         raise ValueError(f"invalid gst total {gst_total} for amount {amount}")
     base_amount = amount - gst_total
 
-    if is_purchase_side:
-        party_sign = 1  # party credit side → +amount
-        party_deemed = "No"
-        contra_sign = -1  # GST input + purchase ledger on debit side → -amount
-        contra_deemed = "Yes"
-    else:
+    if party_on_debit:
         party_sign = -1  # party debit side → -amount
         party_deemed = "Yes"
-        contra_sign = 1  # GST output + sales ledger on credit side → +amount
+        contra_sign = 1  # GST + contra ledger on credit side → +amount
         contra_deemed = "No"
+    else:
+        party_sign = 1  # party credit side → +amount
+        party_deemed = "No"
+        contra_sign = -1  # GST + contra ledger on debit side → -amount
+        contra_deemed = "Yes"
 
     bill_allocs = (
         [{"name": bill_ref, "type": bill_type, "amount": amount}] if bill_ref else None
@@ -300,17 +310,20 @@ def build_create_debit_note(
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
 ) -> str:
-    """Build XML to create a Debit Note in Tally (mirrors Purchase polarity).
+    """Build XML to create a Debit Note in Tally (purchase return).
 
-    A Debit Note reduces a payable — it debits the purchase/expense ledger and
-    credits the supplier (party), referencing the original bill via ``Agst Ref``.
-    Verified live as probe E5 (docs/group-b-task0-probe-results-2026-06-08.md).
+    A Debit Note reduces a payable — it DEBITS the supplier (party) and CREDITS
+    the purchase-returns/contra ledger (plus reversed Input GST on credit),
+    referencing the original bill via ``Agst Ref`` so the allocation reduces the
+    outstanding payable. This is the INVERSE of a Purchase (party_on_debit=True).
+    Corrected 2026-06-09 (logs/manual_test_group_b_live.log) — the prior
+    "mirrors Purchase" polarity wrongly INCREASED the payable.
     """
     return _build_ledger_invoice_voucher(
         vch_type="Debit Note", date=date, party_ledger=party_ledger,
         contra_ledger=purchase_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
-        bill_type="Agst Ref", is_purchase_side=True,
+        bill_type="Agst Ref", party_on_debit=True,
     )
 
 
@@ -324,17 +337,20 @@ def build_create_credit_note(
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
 ) -> str:
-    """Build XML to create a Credit Note in Tally (mirrors Sales polarity).
+    """Build XML to create a Credit Note in Tally (sales return).
 
-    A Credit Note reduces a receivable — it credits the sales/revenue ledger and
-    debits the customer (party), referencing the original bill via ``Agst Ref``.
-    Verified live as probe E6 (docs/group-b-task0-probe-results-2026-06-08.md).
+    A Credit Note reduces a receivable — it CREDITS the customer (party) and
+    DEBITS the sales-returns/contra ledger (plus reversed Output GST on debit),
+    referencing the original bill via ``Agst Ref`` so the allocation reduces the
+    outstanding receivable. This is the INVERSE of a Sales (party_on_debit=False).
+    Corrected 2026-06-09 (logs/manual_test_group_b_live.log) — the prior
+    "mirrors Sales" polarity wrongly INCREASED the receivable.
     """
     return _build_ledger_invoice_voucher(
         vch_type="Credit Note", date=date, party_ledger=party_ledger,
         contra_ledger=sales_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
-        bill_type="Agst Ref", is_purchase_side=False,
+        bill_type="Agst Ref", party_on_debit=False,
     )
 
 
@@ -359,7 +375,7 @@ def build_create_purchase_voucher_ledger(
         vch_type="Purchase", date=date, party_ledger=party_ledger,
         contra_ledger=purchase_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
-        bill_type="New Ref", is_purchase_side=True,
+        bill_type="New Ref", party_on_debit=False,
     )
 
 
@@ -383,7 +399,7 @@ def build_create_sales_voucher_ledger(
         vch_type="Sales", date=date, party_ledger=party_ledger,
         contra_ledger=sales_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
-        bill_type="New Ref", is_purchase_side=False,
+        bill_type="New Ref", party_on_debit=True,
     )
 
 

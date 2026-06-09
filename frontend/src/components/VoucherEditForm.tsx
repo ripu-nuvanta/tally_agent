@@ -89,10 +89,12 @@ export default function VoucherEditForm({
   const [billReference, setBillReference] = useState(entry.bill_reference || "");
   const [error, setError] = useState("");
 
-  // Primary (non-party) ledger. For Payment this is the expense ledger and
-  // the credit (payment) ledger is editable separately.
+  // Primary (non-party) ledger = the contra/returns/expense ledger. It sits on
+  // the side OPPOSITE the party. Party-on-debit types (Sales, Debit Note) keep
+  // the contra on credit; party-on-credit types (Payment, Purchase, Credit
+  // Note) keep the contra on debit.
   const initialPrimary =
-    entry.voucher_type === "Sales" || entry.voucher_type === "Credit Note"
+    entry.voucher_type === "Sales" || entry.voucher_type === "Debit Note"
       ? entry.credit_ledger
       : entry.debit_ledger;
   const [primaryLedger, setPrimaryLedger] = useState(initialPrimary);
@@ -120,21 +122,25 @@ export default function VoucherEditForm({
       return;
     }
 
-    // Map fields back onto debit/credit by voucher direction.
+    // Map fields back onto debit/credit by voucher direction. A return (DN/CN)
+    // posts INVERSE to its base invoice so it reduces the bill:
+    //   - Purchase: party on CREDIT, purchase ledger on DEBIT.
+    //   - Sales:    party on DEBIT,  sales ledger on CREDIT.
+    //   - Debit Note (purchase return): party on DEBIT, returns ledger on CREDIT.
+    //   - Credit Note (sales return):   party on CREDIT, returns ledger on DEBIT.
+    // chat.py reads party_ledger from party and the contra from the OTHER leg
+    // (DN: purchase_ledger=credit_ledger; CN: sales_ledger=debit_ledger).
     let debitLedger: string;
     let creditLedger: string;
     if (voucherType === "Payment") {
       debitLedger = primaryLedger;
       creditLedger = paymentLedger;
-    } else if (voucherType === "Purchase" || voucherType === "Debit Note") {
-      // Match the backend/orchestrator convention: Purchase AND Debit Note put
-      // the purchase/returns ledger on DEBIT and the party on CREDIT. chat.py
-      // dispatches purchase_ledger=debit_ledger, party_ledger=party.
+    } else if (voucherType === "Purchase" || voucherType === "Credit Note") {
+      // party on CREDIT, contra (primary) on DEBIT
       debitLedger = primaryLedger;
       creditLedger = partyLedger;
     } else {
-      // Sales AND Credit Note put the party on DEBIT and the sales/returns
-      // ledger on CREDIT. chat.py dispatches sales_ledger=credit_ledger.
+      // Sales / Debit Note: party on DEBIT, contra (primary) on CREDIT
       debitLedger = partyLedger;
       creditLedger = primaryLedger;
     }

@@ -337,20 +337,26 @@ async def voucher_action(
                     bill_ref=bill_ref,
                 )
             elif voucher_type == "Debit Note":
+                # DN (purchase return): party on DEBIT, purchase-returns contra
+                # on CREDIT. The party comes from party_ledger; the contra is the
+                # OTHER leg (credit_ledger). See logs/manual_test_group_b_live.log.
                 result = await writer.create_debit_note(
                     date=entry["date"],
                     party_ledger=entry["party_ledger"],
-                    purchase_ledger=entry["debit_ledger"],
+                    purchase_ledger=entry["credit_ledger"],
                     amount=entry["amount"],
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
                 )
             elif voucher_type == "Credit Note":
+                # CN (sales return): party on CREDIT, sales-returns contra on
+                # DEBIT. The party comes from party_ledger; the contra is the
+                # OTHER leg (debit_ledger).
                 result = await writer.create_credit_note(
                     date=entry["date"],
                     party_ledger=entry["party_ledger"],
-                    sales_ledger=entry["credit_ledger"],
+                    sales_ledger=entry["debit_ledger"],
                     amount=entry["amount"],
                     narration=entry["narration"],
                     gst_entries=gst_entries,

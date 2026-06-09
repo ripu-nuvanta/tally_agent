@@ -197,7 +197,7 @@ def _build_invoice_voucher_data(
     gst_ledgers: dict[str, str] | None,
     bill_type: str,
     bill_reference: str | None,
-    is_purchase_side: bool,
+    party_on_debit: bool,
     override: Decimal | None,
     default_rates: dict[str, float] | None,
     fallback: float | None,
@@ -207,9 +207,14 @@ def _build_invoice_voucher_data(
     FX conversion is identical to the payment path: ``amount`` and every GST leg
     are INR. ``debit_ledger``/``credit_ledger`` are populated for the validation
     layer (party on one side, contra ledger on the other) following each
-    voucher's polarity:
-      - is_purchase_side=True  (Purchase/DN): debit=contra (purchase), credit=party.
-      - is_purchase_side=False (Sales/CN):    debit=party,          credit=contra (sales).
+    voucher's polarity. ``party_on_debit`` matches the XML builder convention so
+    every layer agrees:
+      - party_on_debit=False (Purchase/Credit Note): debit=contra, credit=party.
+      - party_on_debit=True  (Sales/Debit Note):     debit=party,  credit=contra.
+
+    Note Debit Note (purchase return) puts the party on DEBIT — the INVERSE of a
+    Purchase — so the return reduces the payable; Credit Note (sales return) puts
+    the party on CREDIT — the inverse of a Sales — so it reduces the receivable.
     """
     rate, rate_source, to_inr = _resolve_fx(doc, override, default_rates, fallback)
     gst_entries, original_gst_entries = _gst_legs(doc, gst_ledgers, gst_direction, to_inr)
@@ -218,10 +223,10 @@ def _build_invoice_voucher_data(
     inr_amount = to_inr(original_amount)
     narration = _narration_with_fx(doc, original_amount, rate, inr_amount)
 
-    if is_purchase_side:
-        debit_ledger, credit_ledger = contra_ledger, party_ledger
-    else:
+    if party_on_debit:
         debit_ledger, credit_ledger = party_ledger, contra_ledger
+    else:
+        debit_ledger, credit_ledger = contra_ledger, party_ledger
 
     return VoucherData(
         voucher_type=voucher_type,
@@ -261,7 +266,7 @@ def build_purchase_voucher_data(
         doc, voucher_type="Purchase", party_ledger=party_ledger,
         contra_ledger=purchase_ledger, gst_direction="input",
         gst_ledgers=gst_ledgers, bill_type="New Ref", bill_reference=None,
-        is_purchase_side=True, override=override,
+        party_on_debit=False, override=override,
         default_rates=default_rates, fallback=fallback,
     )
 
@@ -283,7 +288,7 @@ def build_sales_voucher_data(
         doc, voucher_type="Sales", party_ledger=party_ledger,
         contra_ledger=sales_ledger, gst_direction="output",
         gst_ledgers=gst_ledgers, bill_type="New Ref", bill_reference=None,
-        is_purchase_side=False, override=override,
+        party_on_debit=True, override=override,
         default_rates=default_rates, fallback=fallback,
     )
 
@@ -300,16 +305,18 @@ def build_debit_note_data(
 ) -> VoucherData:
     """Convert an ExtractedDocument into VoucherData for a Debit Note.
 
-    GST is input-side (mirrors Purchase); bill allocation is ``Agst Ref`` against
-    the original bill. ``original_ref`` takes precedence; when omitted it falls
-    back to ``doc.original_invoice_ref``.
+    A Debit Note is a purchase return: party (supplier) on DEBIT, purchase-
+    returns contra on CREDIT (the INVERSE of a Purchase) so the Agst Ref reduces
+    the payable. GST is input-side (reversed); bill allocation is ``Agst Ref``
+    against the original bill. ``original_ref`` takes precedence; when omitted it
+    falls back to ``doc.original_invoice_ref``.
     """
     bill_reference = original_ref or doc.original_invoice_ref
     return _build_invoice_voucher_data(
         doc, voucher_type="Debit Note", party_ledger=party_ledger,
         contra_ledger=purchase_ledger, gst_direction="input",
         gst_ledgers=gst_ledgers, bill_type="Agst Ref",
-        bill_reference=bill_reference, is_purchase_side=True, override=override,
+        bill_reference=bill_reference, party_on_debit=True, override=override,
         default_rates=default_rates, fallback=fallback,
     )
 
@@ -326,15 +333,17 @@ def build_credit_note_data(
 ) -> VoucherData:
     """Convert an ExtractedDocument into VoucherData for a Credit Note.
 
-    GST is output-side (mirrors Sales); bill allocation is ``Agst Ref`` against
-    the original bill. ``original_ref`` takes precedence; when omitted it falls
-    back to ``doc.original_invoice_ref``.
+    A Credit Note is a sales return: party (customer) on CREDIT, sales-returns
+    contra on DEBIT (the INVERSE of a Sales) so the Agst Ref reduces the
+    receivable. GST is output-side (reversed); bill allocation is ``Agst Ref``
+    against the original bill. ``original_ref`` takes precedence; when omitted it
+    falls back to ``doc.original_invoice_ref``.
     """
     bill_reference = original_ref or doc.original_invoice_ref
     return _build_invoice_voucher_data(
         doc, voucher_type="Credit Note", party_ledger=party_ledger,
         contra_ledger=sales_ledger, gst_direction="output",
         gst_ledgers=gst_ledgers, bill_type="Agst Ref",
-        bill_reference=bill_reference, is_purchase_side=False, override=override,
+        bill_reference=bill_reference, party_on_debit=False, override=override,
         default_rates=default_rates, fallback=fallback,
     )

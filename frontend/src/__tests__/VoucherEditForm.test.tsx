@@ -192,37 +192,38 @@ describe("VoucherEditForm — save & validation", () => {
     expect(onCancel).toHaveBeenCalledTimes(1);
   });
 
-  // Finding 1: edit-form DN/CN debit/credit mapping must MATCH the backend
-  // orchestrator convention (DN: party on credit; CN: party on debit). The
-  // chat.py dispatch reads purchase_ledger=debit_ledger (DN) /
-  // sales_ledger=credit_ledger (CN); an inverted mapping collapses both legs
-  // onto the party ledger.
-  it("editing a Debit Note keeps party on credit, returns ledger on debit", () => {
+  // Correctness (live test 2026-06-09): a return posts INVERSE to its base
+  // invoice so it reduces the bill. DN (purchase return) → party on DEBIT,
+  // returns ledger on CREDIT. CN (sales return) → party on CREDIT, returns
+  // ledger on DEBIT. chat.py reads the contra from the OTHER leg (DN:
+  // purchase_ledger=credit_ledger; CN: sales_ledger=debit_ledger), so the two
+  // legs must stay distinct.
+  it("editing a Debit Note keeps party on debit, returns ledger on credit", () => {
     const onSave = vi.fn();
     renderForm(debitNoteINR, onSave);
     fireEvent.click(screen.getByText("Save"));
     const updates = onSave.mock.calls[0][0];
     expect(updates.debit_ledger).not.toBe(updates.credit_ledger);
-    // party (Acme Supplies) must be on CREDIT for a Debit Note
-    expect(updates.credit_ledger).toBe("Acme Supplies");
-    expect(updates.debit_ledger).toBe("Purchase Returns");
+    // party (Acme Supplies) must be on DEBIT for a Debit Note
+    expect(updates.debit_ledger).toBe("Acme Supplies");
+    expect(updates.credit_ledger).toBe("Purchase Returns");
     expect(updates.party_ledger).toBe("Acme Supplies");
-    // dispatch reads purchase_ledger=debit_ledger → must NOT equal party
-    expect(updates.debit_ledger).not.toBe(updates.party_ledger);
+    // dispatch reads purchase_ledger=credit_ledger → must NOT equal party
+    expect(updates.credit_ledger).not.toBe(updates.party_ledger);
   });
 
-  it("editing a Credit Note keeps party on debit, returns ledger on credit", () => {
+  it("editing a Credit Note keeps party on credit, returns ledger on debit", () => {
     const onSave = vi.fn();
     renderForm(creditNoteINR, onSave);
     fireEvent.click(screen.getByText("Save"));
     const updates = onSave.mock.calls[0][0];
     expect(updates.debit_ledger).not.toBe(updates.credit_ledger);
-    // party (Globex Ltd) must be on DEBIT for a Credit Note
-    expect(updates.debit_ledger).toBe("Globex Ltd");
-    expect(updates.credit_ledger).toBe("Sales Returns");
+    // party (Globex Ltd) must be on CREDIT for a Credit Note
+    expect(updates.credit_ledger).toBe("Globex Ltd");
+    expect(updates.debit_ledger).toBe("Sales Returns");
     expect(updates.party_ledger).toBe("Globex Ltd");
-    // dispatch reads sales_ledger=credit_ledger → must NOT equal party
-    expect(updates.credit_ledger).not.toBe(updates.party_ledger);
+    // dispatch reads sales_ledger=debit_ledger → must NOT equal party
+    expect(updates.debit_ledger).not.toBe(updates.party_ledger);
   });
 
   it("maps party to credit ledger for Purchase on save", () => {
