@@ -70,7 +70,11 @@ Correctness is proven live; these are hardening/quality items:
 
 ### Future work (beyond the current doc — need their own spec)
 
-- **Inventory line items on invoices (HIGH — next feature).** The agent invoice write-path uses the
+- **Invoice entry Phase 1 — Supplier Invoice No. + duplicate blocking** ✅ **Merged 2026-06-10.** Supplier
+  invoice no. written to Tally's `REFERENCE` (live-verified) + shown on the card; duplicate **hard block**
+  (file-hash + party/invoice-no vs DB & Tally, **server-side re-derived** so it's not client-bypassable,
+  per-workspace). Spec `specs/2026-06-10-invoice-entry-phase1-design.md`; review `code-review-invoice-dedup-2026-06-10.md`.
+- **Invoice entry Phase 2 — Inventory line items (HIGH — next feature).** The agent invoice write-path uses the
   **accounting-only** ledger builder (`_build_ledger_invoice_voucher`): it lumps the base on a single
   purchase/sales ledger and puts the extracted item names in the **narration** — no stock items, qty, or
   rate in the inventory grid. Vision already extracts `line_items` (description/qty/rate/amount); they're
