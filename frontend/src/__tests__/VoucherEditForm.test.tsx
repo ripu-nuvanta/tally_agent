@@ -254,6 +254,34 @@ describe("VoucherEditForm — inventory line items", () => {
     expect(line.stock_group).toBe("Office Supplies");
   });
 
+  it("blocks save when an inventory row is neither matched nor create_new", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseInventory, onSave);
+    // Row 2 is create_new; toggling it off clears matched_item → invalid state
+    // (create_new=false AND matched_item=null). Save must be blocked.
+    fireEvent.click(screen.getByLabelText("Create new 2"));
+    fireEvent.click(screen.getByText("Save"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /matched to an existing stock item or marked Create new/i,
+    );
+  });
+
+  it("re-selecting an existing item on a toggled-off row restores a valid save", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseInventory, onSave);
+    fireEvent.click(screen.getByLabelText("Create new 2"));
+    // Now a dropdown is shown for row 2; pick an existing item.
+    fireEvent.change(screen.getByLabelText("Stock Item 2"), {
+      target: { value: "Stapler" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    expect(onSave).toHaveBeenCalled();
+    const line = onSave.mock.calls[0][0].line_items[1];
+    expect(line.create_new).toBe(false);
+    expect(line.matched_item).toBe("Stapler");
+  });
+
   it("keeps non-inventory edit fields working for an accounting-only purchase", () => {
     const onSave = vi.fn();
     renderForm(purchaseINR, onSave);

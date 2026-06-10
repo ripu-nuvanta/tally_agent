@@ -201,19 +201,31 @@ async def _write_inventory_voucher(
     the stock-based writer with the GST mode + Phase-1 reference + a New Ref bill
     allocation for the gross.
     """
+    from backend.tally_bridge.import_builder import compute_invoice_gross
+
     voucher_type = entry["voucher_type"]
     party = entry["party_ledger"]
     lines = entry.get("line_items") or []
     default_group = entry.get("default_stock_group") or "Primary"
 
     async def _idempotent(coro):
-        """Run a create; swallow 'already exists' style failures."""
+        """Run a master create; swallow ONLY a genuine already-exists failure.
+
+        Finding 4: masters are pre-flighted idempotently, so an "already exists"
+        response from Tally is expected and benign. ANY other failure (bad
+        group, Tally down, permissions, malformed XML) must NOT be swallowed —
+        it would surface later as a confusing "item not found" on the voucher
+        post. Log it and re-raise.
+        """
         try:
             await coro
-        except Exception as e:  # noqa: BLE001 — masters are idempotent
+        except Exception as e:
             msg = str(e).lower()
-            if "exist" not in msg and "duplicate" not in msg:
-                logger.info("Stock master pre-flight note: %s", e)
+            if "already exist" in msg or "duplicate" in msg:
+                logger.info("Stock master already exists (idempotent skip): %s", e)
+                return
+            logger.error("Stock master pre-flight failed (not an already-exists case): %s", e)
+            raise
 
     seen_units: set[str] = set()
     seen_groups: set[str] = set()
@@ -251,13 +263,19 @@ async def _write_inventory_voucher(
     ]
     gst_mode = _gst_mode_from_entries(entry.get("gst_entries"))
 
+    # Finding 1: the party leg (and its New Ref bill allocation) must equal the
+    # gross computed from the SAME item tuples the builder posts (Σ qty×rate +
+    # per-bucket GST), never Vision's extracted total. After a user edits
+    # qty/rate, Vision's total is stale; using it imbalances the voucher.
+    gross = compute_invoice_gross(items, gst_mode)
+
     # The supplier/customer invoice number doubles as the voucher number; fall
     # back to a date-derived value when none was extracted.
     voucher_number = reference or entry.get("bill_reference") or f"AUTO-{entry['date']}"
     bill_allocations = [{
         "name": (entry.get("bill_reference") or reference or voucher_number),
         "type": "New Ref",
-        "amount": float(entry["amount"]),
+        "amount": gross,
     }]
 
     common = dict(
@@ -454,6 +472,50 @@ async def voucher_action(
                 # Pre-flight: idempotently ensure each new line's unit, stock
                 # group, and stock item exist; then post the stock-based voucher
                 # with item tuples + GST mode + the Phase-1 reference + New Ref.
+
+                # Finding 3: block when the original invoice had qty-null lines
+                # that the resolver dropped — posting only the qty lines would
+                # silently under-post. Tell the user which descriptions need a
+                # quantity (they fill them in the review card).
+                if entry.get("has_unquantified_lines"):
+                    missing = entry.get("unquantified_descriptions") or []
+                    names = ", ".join(f"'{d}'" for d in missing if d) or "some lines"
+                    return ChatResponse(
+                        message=(
+                            f"These lines need a quantity before writing: {names}. "
+                            "Add quantities in the card, then write."
+                        ),
+                        data={"type": "voucher_error", "entry_id": entry.get("id")},
+                        session_id=session_id,
+                    )
+
+                # Finding 2: block any line with qty<=0 or rate<=0 — never post a
+                # zero-qty/zero-rate stock line.
+                bad_line = None
+                for line in (entry.get("line_items") or []):
+                    try:
+                        q = float(line.get("qty") or 0)
+                        r = float(line.get("rate") or 0)
+                    except (TypeError, ValueError):
+                        q = r = 0.0
+                    if q <= 0 or r <= 0:
+                        bad_line = (
+                            line.get("stock_name")
+                            or line.get("matched_item")
+                            or line.get("description")
+                            or "line"
+                        )
+                        break
+                if bad_line is not None:
+                    return ChatResponse(
+                        message=(
+                            f"Line '{bad_line}' is missing quantity or rate — "
+                            "fix it before writing."
+                        ),
+                        data={"type": "voucher_error", "entry_id": entry.get("id")},
+                        session_id=session_id,
+                    )
+
                 result = await _write_inventory_voucher(
                     writer, entry, reference, reference_date,
                 )

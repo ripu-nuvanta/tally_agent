@@ -119,6 +119,10 @@ export default function VoucherEditForm({
     availableCustomerLedgers,
   );
   const againstOptions = entry.against_invoice_options || [];
+  // Finding 5: a row is invalid when it's neither matched nor create_new. Used
+  // to disable Save (with a hint) so an unresolved row can't be written.
+  const hasInvalidInventoryRow =
+    isInventory && lineItems.some((l) => !l.create_new && !l.matched_item);
 
   const handleSave = () => {
     if (showParty && !partyLedger) {
@@ -128,6 +132,22 @@ export default function VoucherEditForm({
     if (!primaryLedger) {
       setError("Select a ledger.");
       return;
+    }
+    // Finding 5: every inventory row must be EITHER matched to an existing item
+    // OR create_new — never neither. Toggling "Create new" off without picking
+    // an existing item leaves the row invalid (create_new=false && matched_item
+    // =null); block the write until it's resolved.
+    if (isInventory) {
+      const invalid = lineItems.findIndex(
+        (l) => !l.create_new && !l.matched_item,
+      );
+      if (invalid !== -1) {
+        const label = lineItems[invalid].description || `Item ${invalid + 1}`;
+        setError(
+          `Line '${label}': select an existing item or toggle Create new.`,
+        );
+        return;
+      }
     }
 
     // Map fields back onto debit/credit by voucher direction. A return (DN/CN)
@@ -356,11 +376,24 @@ export default function VoucherEditForm({
         />
       )}
 
+      {hasInvalidInventoryRow && (
+        <div className="text-xs text-red-600" role="alert">
+          Each item must be matched to an existing stock item or marked Create
+          new before you can save.
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
           type="button"
           onClick={handleSave}
-          className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
+          disabled={hasInvalidInventoryRow}
+          title={
+            hasInvalidInventoryRow
+              ? "Each item must be matched to an existing stock item or marked Create new."
+              : undefined
+          }
+          className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Save
         </button>

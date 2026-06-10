@@ -16,7 +16,10 @@ from backend.services.document_parser import (
     GSTBreakdown,
     LineItem,
 )
-from backend.services.stock_resolver import resolve_line_items
+from backend.services.stock_resolver import (
+    dropped_unquantified_descriptions,
+    resolve_line_items,
+)
 from backend.tally_bridge.models import StockItem
 
 
@@ -194,6 +197,26 @@ async def test_lines_without_qty_are_skipped(monkeypatch):
     )
     assert len(resolved) == 1
     assert resolved[0]["description"] == "Widget"
+
+
+def test_dropped_unquantified_descriptions_lists_qty_null_lines():
+    """Finding 3: report descriptions of lines dropped for missing qty so the
+    inventory write can be blocked rather than silently under-posting."""
+    doc = _doc([
+        LineItem(description="Freight charges", amount=Decimal("500"), quantity=None),
+        LineItem(description="Widget", amount=Decimal("200"),
+                 quantity=Decimal("2"), rate=Decimal("100")),
+        LineItem(description="Handling", amount=Decimal("100"), quantity=None),
+    ])
+    assert dropped_unquantified_descriptions(doc) == ["Freight charges", "Handling"]
+
+
+def test_dropped_unquantified_descriptions_empty_when_all_quantified():
+    doc = _doc([
+        LineItem(description="Widget", amount=Decimal("200"),
+                 quantity=Decimal("2"), rate=Decimal("100")),
+    ])
+    assert dropped_unquantified_descriptions(doc) == []
 
 
 @pytest.mark.asyncio

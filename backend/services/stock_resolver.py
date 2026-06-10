@@ -93,6 +93,21 @@ def _doc_gst_rate(doc) -> float:
     return cgst + sgst
 
 
+def dropped_unquantified_descriptions(doc) -> list[str]:
+    """Descriptions of line items that ``resolve_line_items`` would drop.
+
+    A qty-null line is skipped by the resolver (it signals a non-inventory
+    line). On an invoice that DID route to inventory, those dropped lines mean
+    the stock grid would under-post the invoice. The inventory write path uses
+    this list to block the write and tell the user which lines need a quantity.
+    """
+    return [
+        (line.description or "")
+        for line in (doc.line_items or [])
+        if line.quantity is None
+    ]
+
+
 async def resolve_line_items(
     client,
     doc,

@@ -430,6 +430,7 @@ class Orchestrator(BaseAgent):
         is_inventory = False
         resolved_lines: list[dict] = []
         available_stock_items: list[str] = []
+        unquantified_descriptions: list[str] = []
         default_stock_group = settings.DEFAULT_STOCK_GROUP
         if doc_type in ("purchase", "sales"):
             has_qty = any(
@@ -437,7 +438,10 @@ class Orchestrator(BaseAgent):
             )
             if has_qty:
                 from backend.services import stock_resolver
-                from backend.services.stock_resolver import resolve_line_items
+                from backend.services.stock_resolver import (
+                    dropped_unquantified_descriptions,
+                    resolve_line_items,
+                )
 
                 stock_items = await stock_resolver.list_stock_items(client)
                 available_stock_items = [li.name for li in stock_items]
@@ -450,6 +454,13 @@ class Orchestrator(BaseAgent):
                 for line in resolved_lines:
                     line["ledger"] = contra_ledger
                 is_inventory = bool(resolved_lines)
+                # Finding 3: record any qty-null lines the resolver dropped. A
+                # mixed invoice (some lines without a qty) would under-post the
+                # stock grid; voucher_action blocks the write until the user
+                # adds quantities for these descriptions.
+                unquantified_descriptions = dropped_unquantified_descriptions(
+                    extracted
+                )
 
         # 6. Assemble review card response
         entry_id = str(uuid_mod.uuid4())
@@ -496,6 +507,8 @@ class Orchestrator(BaseAgent):
                 "line_items": resolved_lines,
                 "available_stock_items": available_stock_items,
                 "default_stock_group": default_stock_group,
+                "has_unquantified_lines": bool(unquantified_descriptions),
+                "unquantified_descriptions": unquantified_descriptions,
             }],
             "available_ledgers": ledger_names,
             "available_payment_ledgers": payment_ledgers,

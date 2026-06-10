@@ -27,6 +27,26 @@ def _validate_reference_date(reference_date: str | None) -> None:
         )
 
 
+def compute_invoice_gross(items: list[tuple], gst_mode: str) -> float:
+    """Compute the party gross (base + GST) for a stock-based invoice.
+
+    Single source of truth for the inventory party leg: the New Ref bill
+    allocation amount AND the posted party AMOUNT must both equal this value so
+    the voucher balances exactly. Mirrors the builder calc in
+    ``build_create_purchase_voucher`` / ``build_create_sales_voucher``: groups
+    the taxable base by gst_rate, applies tax, sums.
+
+    items shape: (name, qty, rate, ledger, uom, gst_rate). intra (CGST+SGST) and
+    inter (IGST) yield the same gross, so gst_mode is informational only.
+    """
+    rate_buckets: dict[int, float] = {}
+    for _name, qty, rate, _ledger, _uom, gst_rate in items:
+        rate_buckets[gst_rate] = rate_buckets.get(gst_rate, 0.0) + (qty * rate)
+    base = sum(rate_buckets.values())
+    tax = sum(b * r / 100 for r, b in rate_buckets.items() if r > 0)
+    return round(base + tax, 2)
+
+
 def _render_reference_block(reference: str | None, reference_date: str | None) -> str:
     """Render <REFERENCE> + <REFERENCEDATE> elements (each emitted only when
     its arg is provided). Returns leading-newline string ready to inline."""

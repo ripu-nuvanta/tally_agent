@@ -171,6 +171,256 @@ async def test_goods_purchase_writes_stock_voucher(db_session, ctx):
 
 
 @pytest.mark.asyncio
+async def test_bill_alloc_gross_matches_builder_party_total(db_session, ctx):
+    """Finding 1: the New Ref bill-allocation amount must equal the gross the
+    builder computes from the item tuples (Σ qty×rate + GST), NOT Vision's
+    extracted total. Reconciles exactly so the voucher balances."""
+    from backend.tally_bridge.import_builder import compute_invoice_gross
+
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-GROSS")
+    entry = result["data"]["entries"][0]
+    # Simulate a user edit that diverges from Vision's total: bump a rate so
+    # Σ(qty×rate)+GST no longer equals entry["amount"].
+    entry["line_items"][0]["rate"] = 600.0  # was 500
+    entry["amount"] = 99999.0  # stale Vision total — must NOT be used
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_written"
+    kw = m_vch.await_args.kwargs
+    expected = compute_invoice_gross(kw["items"], kw["gst_mode"])
+    assert kw["bill_allocations"][0]["amount"] == expected
+    assert expected != 99999.0  # never the stale Vision total
+
+
+@pytest.mark.asyncio
+async def test_zero_qty_line_blocks_write(db_session, ctx):
+    """Finding 2: a line with qty<=0 or rate<=0 must block the write."""
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-ZEROQTY")
+    entry = result["data"]["entries"][0]
+    entry["line_items"][0]["qty"] = 0  # zero qty
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_error"
+    assert "quantity or rate" in resp.message
+    m_vch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_zero_rate_line_blocks_write(db_session, ctx):
+    """Finding 2: rate<=0 also blocks."""
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-ZERORATE")
+    entry = result["data"]["entries"][0]
+    entry["line_items"][1]["rate"] = 0
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_error"
+    assert "quantity or rate" in resp.message
+    m_vch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_mixed_invoice_unquantified_lines_block_write(db_session, ctx):
+    """Finding 3: an inventory invoice where the ORIGINAL doc had a line with no
+    qty (silently dropped by resolve_line_items) must block the write and name
+    the line(s) needing a quantity."""
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-MIXED")
+    entry = result["data"]["entries"][0]
+    # Simulate the orchestrator flag: at least one original line lacked a qty.
+    entry["has_unquantified_lines"] = True
+    entry["unquantified_descriptions"] = ["Freight charges"]
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_error"
+    assert "Freight charges" in resp.message
+    m_vch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_all_quantified_invoice_writes(db_session, ctx):
+    """Finding 3 inverse: when every line is quantified (flag false/absent), the
+    inventory write proceeds."""
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-ALLQTY")
+    entry = result["data"]["entries"][0]
+    assert not entry.get("has_unquantified_lines")
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_written"
+    m_vch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_idempotent_swallows_only_already_exists(db_session, ctx):
+    """Finding 4: the master-create guard swallows ONLY the genuine
+    already-exists case. A non-exists failure (bad group, Tally down) must
+    propagate, not be silently swallowed into a confusing downstream error."""
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-PROPAGATE")
+    entry = result["data"]["entries"][0]
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    boom = RuntimeError("create_stock_item silently failed: Tally returned EXCEPTIONS=1")
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(side_effect=boom),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        with pytest.raises(RuntimeError):
+            await voucher_action(
+                req, client=TallyClient("localhost", 9000),
+                user_id=str(user.id), db=db_session,
+            )
+    m_vch.assert_not_awaited()  # never reached the voucher post
+
+
+@pytest.mark.asyncio
+async def test_idempotent_swallows_already_exists(db_session, ctx):
+    """Finding 4 inverse: a genuine already-exists failure is swallowed and the
+    voucher still posts."""
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-EXISTS")
+    entry = result["data"]["entries"][0]
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+    exists = RuntimeError(
+        "create_stock_item silently failed: Stock Item already exists"
+    )
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(side_effect=exists),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_written"
+    m_vch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_services_purchase_is_accounting_only(db_session, ctx):
     """Regression: a no-qty purchase stays accounting-only (ledger writer)."""
     user, ws, conv = ctx
