@@ -226,6 +226,20 @@ async def voucher_action(
 
     # approve and edit both write to Tally
     if request.action in ("approve", "edit"):
+        # Duplicate hard block (Phase 1 Part B): an entry flagged as a duplicate
+        # on upload must never be written — defense-in-depth so a client can't
+        # bypass the UI by re-submitting the entry.
+        if entry.get("status") == "duplicate":
+            dup = entry.get("duplicate_of") or {}
+            reason = dup.get("reason") or "duplicate"
+            vno = dup.get("voucher_no")
+            detail = f" (matches voucher #{vno})" if vno else ""
+            return ChatResponse(
+                message=f"Duplicate — not written. {reason}{detail}.",
+                data={"type": "voucher_error", "entry_id": entry.get("id")},
+                session_id=session_id,
+            )
+
         if not settings.TALLY_WRITE_ENABLED:
             return ChatResponse(
                 message="Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
@@ -307,6 +321,8 @@ async def voucher_action(
         try:
             gst_entries = entry.get("gst_entries") or None
             bill_ref = entry.get("bill_reference")
+            reference = entry.get("reference")
+            reference_date = entry.get("reference_date")
             if voucher_type == "Payment":
                 result = await writer.create_payment_voucher(
                     date=entry["date"],
@@ -315,6 +331,8 @@ async def voucher_action(
                     amount=entry["amount"],
                     narration=entry["narration"],
                     gst_entries=gst_entries,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Purchase":
                 result = await writer.create_purchase_voucher_ledger(
@@ -325,6 +343,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Sales":
                 result = await writer.create_sales_voucher_ledger(
@@ -335,6 +355,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Debit Note":
                 # DN (purchase return): party on DEBIT, purchase-returns contra
@@ -348,6 +370,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Credit Note":
                 # CN (sales return): party on CREDIT, sales-returns contra on
@@ -361,6 +385,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             else:
                 return ChatResponse(

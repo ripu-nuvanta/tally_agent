@@ -241,6 +241,59 @@ def test_empty_party_ledger_blocks_party_voucher(client, voucher_type, writer_me
     m.assert_not_awaited()
 
 
+@pytest.mark.parametrize(
+    "voucher_type,writer_method,extra",
+    [
+        ("Payment", "create_payment_voucher", {}),
+        ("Purchase", "create_purchase_voucher_ledger", {"party_ledger": "Acme"}),
+        ("Sales", "create_sales_voucher_ledger", {"party_ledger": "Acme"}),
+        ("Debit Note", "create_debit_note", {"party_ledger": "Acme"}),
+        ("Credit Note", "create_credit_note", {"party_ledger": "Acme"}),
+    ],
+)
+def test_reference_passed_to_writer(client, voucher_type, writer_method, extra):
+    """Phase 1 Part A: the supplier invoice no/date threads through to every writer."""
+    entry = {
+        "id": "ref1", "voucher_type": voucher_type, "date": "20260210",
+        "debit_ledger": "Purchase Accounts", "credit_ledger": "Sales Accounts",
+        "amount": 1000.0, "narration": "n", "gst_entries": [],
+        "reference": "SUP-INV-77", "reference_date": "20260210",
+        **extra,
+    }
+    with patch(
+        f"backend.tally_bridge.writer.TallyWriter.{writer_method}",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    kw = m.await_args.kwargs
+    assert kw["reference"] == "SUP-INV-77"
+    assert kw["reference_date"] == "20260210"
+
+
+@pytest.mark.parametrize("action", ["approve", "edit"])
+def test_duplicate_entry_is_hard_blocked(client, action):
+    """Phase 1 Part B: an entry already flagged status=duplicate must NOT write —
+    defense-in-depth so a client can't bypass the UI."""
+    entry = {
+        "id": "dup1", "voucher_type": "Purchase", "date": "20260210",
+        "debit_ledger": "Purchase Accounts", "credit_ledger": "Acme",
+        "party_ledger": "Acme", "amount": 1000.0, "narration": "n",
+        "gst_entries": [], "status": "duplicate",
+        "duplicate_of": {"voucher_no": "P-1", "date": "20260201", "reason": "same file"},
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m:
+        resp = _post(client, entry, action=action)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_error"
+    assert "duplicate" in resp.json()["message"].lower()
+    m.assert_not_awaited()
+
+
 def test_valid_party_ledger_still_writes(client):
     """Finding 3 happy path: a Purchase WITH a party_ledger still writes."""
     entry = {

@@ -375,7 +375,9 @@ async def test_db_fx_upload_override_approve_full_flow(db_app):
         updated = cdata["data"]["entries"][0]
         assert updated["amount"] == 9000.0  # 100 × 90
         assert updated["fx_rate"] == 90.0
-        assert updated["warnings"] == []
+        # The FX rate warning must be cleared. A non-blocking "No invoice number"
+        # soft note (Phase 1 Part B) may remain — it doesn't gate the write.
+        assert not any("rate" in w.lower() for w in updated["warnings"])
         assert "FX: USD 100.00 @ ₹90.00 = ₹9,000.00" in updated["narration"]
 
         # Step 3: approve → Payment voucher written with the INR amount.

@@ -492,9 +492,10 @@ def test_receipt_does_not_accept_reference_kwargs():
     assert "reference_date" not in params
 
 
-def test_payment_does_not_accept_reference_kwargs():
+def test_payment_accepts_reference_kwargs():
+    # Phase 1 Part A: payment vouchers now carry the supplier invoice no.
     import inspect
     from backend.tally_bridge.import_builder import build_create_payment_voucher
     params = inspect.signature(build_create_payment_voucher).parameters
-    assert "reference" not in params
-    assert "reference_date" not in params
+    assert "reference" in params
+    assert "reference_date" in params
