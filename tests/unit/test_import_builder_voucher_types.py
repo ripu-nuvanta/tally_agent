@@ -106,6 +106,62 @@ def test_build_create_stock_item_12pct_rate_splits_correctly():
     assert gd.findtext("CGSTRATE") == "6"
     assert gd.findtext("SGSTRATE") == "6"
 
+
+def test_build_create_stock_item_empty_hsn_omits_hsn_but_keeps_gst():
+    """Vision often extracts no HSN. An empty hsn_code must not raise and must
+    omit the <HSNCODE>/<HSN> elements while still emitting the GST rate block."""
+    from backend.tally_bridge.import_builder import build_create_stock_item
+    xml = build_create_stock_item(
+        name="Generic Widget",
+        group="Electronics",
+        uom="Nos",
+        opening_qty=0,
+        opening_rate=0,
+        hsn_code="",
+        gst_rate=18,
+        company="X",
+    )
+    root = _root(xml)
+    si = root.find(".//STOCKITEM")
+    # Required fields still present
+    assert si.get("NAME") == "Generic Widget"
+    assert si.find("NAME.LIST/NAME").text == "Generic Widget"
+    assert si.findtext("PARENT") == "Electronics"
+    assert si.findtext("BASEUNITS") == "Nos"
+    assert si.findtext("GSTAPPLICABLE") == "Applicable"
+    # No bogus HSN emitted (element absent or empty)
+    assert not (si.findtext("HSNCODE") or "")
+    assert not (si.findtext("HSN") or "")
+    assert si.find("HSNDETAILS.LIST") is None
+    # GST rate block still applies
+    gd = si.find("GSTDETAILS.LIST")
+    assert gd is not None
+    assert gd.findtext("IGSTRATE") == "18"
+    assert gd.findtext("CGSTRATE") == "9"
+    assert gd.findtext("SGSTRATE") == "9"
+    assert gd.findtext("TAXABILITY") == "Taxable"
+
+
+def test_build_create_stock_item_with_hsn_still_emits_hsn():
+    """Regression: a non-empty HSN still emits HSNCODE/HSN and HSNDETAILS."""
+    from backend.tally_bridge.import_builder import build_create_stock_item
+    xml = build_create_stock_item(
+        name="Bond Paper",
+        group="Office Supplies",
+        uom="Pcs",
+        opening_qty=0,
+        opening_rate=0,
+        hsn_code="4802",
+        gst_rate=12,
+        company="X",
+    )
+    root = _root(xml)
+    si = root.find(".//STOCKITEM")
+    assert si.findtext("HSNCODE") == "4802"
+    assert si.findtext("HSN") == "4802"
+    assert si.find("HSNDETAILS.LIST") is not None
+
+
 def test_build_create_ledger_with_opening_state_gstin():
     from backend.tally_bridge.import_builder import build_create_ledger
     xml = build_create_ledger(

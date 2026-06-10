@@ -570,16 +570,18 @@ def build_create_stock_item(
     company: str,
     applicable_from: str = "20250401",
 ) -> str:
-    """Build XML to create a stock item with HSN + per-item GST rate.
+    """Build XML to create a stock item with optional HSN + per-item GST rate.
 
     Splits gst_rate evenly across CGST/SGST (intra-state) and uses full rate for IGST
     (inter-state). E.g. 18% → 9 CGST + 9 SGST + 18 IGST.
-    See docs/tally-write-exploration-v4.md Op 3.
+
+    HSN is optional: Vision frequently extracts no HSN code. When hsn_code is empty,
+    the HSNCODE/HSN/HSNDETAILS elements are omitted but the GST rate block is still
+    emitted so GST continues to apply. See docs/tally-write-exploration-v4.md Op 3.
     """
     _require(name, "name")
     _require(group, "group")
     _require(uom, "uom")
-    _require(hsn_code, "hsn_code")
     _require(company, "company")
     if opening_qty < 0 or opening_rate < 0:
         raise ValueError("opening_qty and opening_rate must be non-negative")
@@ -591,20 +593,26 @@ def build_create_stock_item(
     igst_str = f"{gst_rate:g}"
     opening_value = opening_qty * opening_rate
 
+    hsn_str = (hsn_code or "").strip()
+    if hsn_str:
+        hsn_xml = f"""<HSNCODE>{_esc(hsn_str)}</HSNCODE>
+<HSN>{_esc(hsn_str)}</HSN>
+<HSNDETAILS.LIST>
+<APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
+<HSNCODE>{_esc(hsn_str)}</HSNCODE>
+<HSN>{_esc(hsn_str)}</HSN>
+</HSNDETAILS.LIST>
+"""
+    else:
+        hsn_xml = ""
+
     si_xml = f"""<STOCKITEM NAME="{_esc(name)}" ACTION="Create">
 <NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
 <PARENT>{_esc(group)}</PARENT>
 <BASEUNITS>{_esc(uom)}</BASEUNITS>
 <GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
 <GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY>
-<HSNCODE>{_esc(hsn_code)}</HSNCODE>
-<HSN>{_esc(hsn_code)}</HSN>
-<HSNDETAILS.LIST>
-<APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
-<HSNCODE>{_esc(hsn_code)}</HSNCODE>
-<HSN>{_esc(hsn_code)}</HSN>
-</HSNDETAILS.LIST>
-<GSTDETAILS.LIST>
+{hsn_xml}<GSTDETAILS.LIST>
 <APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
 <TAXABILITY>Taxable</TAXABILITY>
 <IGSTRATE>{igst_str}</IGSTRATE>
