@@ -15,7 +15,11 @@ import pytest
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from backend.services.dedup import find_duplicate, sha256_bytes
+from backend.services.dedup import (
+    find_business_key_duplicate,
+    find_duplicate,
+    sha256_bytes,
+)
 
 pytestmark = pytest.mark.skipif(
     not os.environ.get("TEST_DATABASE_URL"),
@@ -214,6 +218,102 @@ async def test_tally_error_still_applies_db_b2(db_session, seeded):
             db_session, _FakeClient(),
             workspace_id=str(seeded["ws"].id), content_hash="DIFFERENT",
             party_ledger="Acme", invoice_ref="INV-100", company="Co",
+        )
+    assert dup is not None
+    assert dup["voucher_no"] == "P-7"
+
+
+# --- Finding 2: normalize keys (strip + casefold) on both B2 sides ---
+
+@pytest.mark.asyncio
+async def test_b2_db_match_ignores_whitespace_and_case(db_session, seeded):
+    """DB B2: 'inv-100 ' vs stored 'INV-100' (and ' acme ' vs 'Acme') still matches."""
+    with patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        dup = await find_duplicate(
+            db_session, _FakeClient(),
+            workspace_id=str(seeded["ws"].id), content_hash="DIFFERENT",
+            party_ledger="  acme  ", invoice_ref="inv-100 ", company="Co",
+        )
+    assert dup is not None
+    assert dup["voucher_no"] == "P-7"
+
+
+@pytest.mark.asyncio
+async def test_b2_tally_match_ignores_whitespace_and_case(db_session, seeded):
+    """Tally B2: a stored REFERENCE 'INV-200\\n' matches incoming 'inv-200'."""
+    tally_rows = [
+        {"voucher_number": "T-55", "date": "01-05-2026", "reference": "INV-200\n",
+         "voucher_type": "Purchase"},
+    ]
+    with patch(
+        "backend.services.dedup.get_party_vouchers",
+        new=AsyncMock(return_value=tally_rows),
+    ):
+        dup = await find_duplicate(
+            db_session, _FakeClient(),
+            workspace_id=str(seeded["ws"].id), content_hash="DIFFERENT",
+            party_ledger="SomeSupplier", invoice_ref="inv-200", company="Co",
+        )
+    assert dup is not None
+    assert dup["voucher_no"] == "T-55"
+
+
+# --- Finding 1 helper: find_business_key_duplicate (B2 only, no file hash) ---
+
+@pytest.mark.asyncio
+async def test_business_key_helper_matches_db_voucherentry(db_session, seeded):
+    with patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        dup = await find_business_key_duplicate(
+            db_session, _FakeClient(),
+            workspace_id=str(seeded["ws"].id),
+            party_ledger="Acme", invoice_ref="INV-100", company="Co",
+        )
+    assert dup is not None
+    assert dup["voucher_no"] == "P-7"
+    assert dup["reason"] == "same invoice no for party"
+
+
+@pytest.mark.asyncio
+async def test_business_key_helper_no_ref_returns_none(db_session, seeded):
+    """Empty reference → no business-key block (consistent with upload-time B2-skip)."""
+    mock = AsyncMock(return_value=[])
+    with patch("backend.services.dedup.get_party_vouchers", new=mock):
+        dup = await find_business_key_duplicate(
+            db_session, _FakeClient(),
+            workspace_id=str(seeded["ws"].id),
+            party_ledger="Acme", invoice_ref="", company="Co",
+        )
+    assert dup is None
+    mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_business_key_helper_distinct_ref_returns_none(db_session, seeded):
+    """A corrected/edited reference that is no longer a dup → allowed (None)."""
+    with patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        dup = await find_business_key_duplicate(
+            db_session, _FakeClient(),
+            workspace_id=str(seeded["ws"].id),
+            party_ledger="Acme", invoice_ref="INV-NEW-999", company="Co",
+        )
+    assert dup is None
+
+
+@pytest.mark.asyncio
+async def test_business_key_helper_normalizes(db_session, seeded):
+    with patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        dup = await find_business_key_duplicate(
+            db_session, _FakeClient(),
+            workspace_id=str(seeded["ws"].id),
+            party_ledger="ACME", invoice_ref="  inv-100", company="Co",
         )
     assert dup is not None
     assert dup["voucher_no"] == "P-7"

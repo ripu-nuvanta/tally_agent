@@ -117,15 +117,32 @@ async def test_b1_same_file_twice_blocks_second(db_session, ctx):
     user, ws, conv = ctx
     same_bytes = b"\xff\xd8\xff\xe0IDENTICALFILE"
     first = await _upload(db_session, ctx, "purchase_office_inr", content=same_bytes)
-    assert first["data"]["entries"][0]["status"] == "draft"
+    entry1 = first["data"]["entries"][0]
+    assert entry1["status"] == "draft"
 
-    # Mark the first file's voucher as written so B1 surfaces a voucher no.
+    # Write the first entry so a prior written VoucherEntry exists (party+ref).
+    entry1["conversation_id"] = str(conv.id)
+    entry1["file_id"] = first["data"]["file_id"]
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        await voucher_action(
+            VoucherActionRequest(action="approve", entry=entry1,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+
+    # Upload-time B1: the same file again is flagged "same file".
     second = await _upload(db_session, ctx, "purchase_office_inr", content=same_bytes)
     entry2 = second["data"]["entries"][0]
     assert entry2["status"] == "duplicate"
     assert entry2["duplicate_of"]["reason"] == "same file"
 
-    # The hard block: voucher_action must refuse to write.
+    # Write-time hard block: the server re-derives the B2 party+reference key
+    # (matches the now-written entry1) and refuses to write.
     entry2["conversation_id"] = str(conv.id)
     req = VoucherActionRequest(
         action="approve", entry=entry2, workspace_id=str(ws.id),
@@ -134,7 +151,9 @@ async def test_b1_same_file_twice_blocks_second(db_session, ctx):
     with patch(
         "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
         new=AsyncMock(return_value=_SUCCESS),
-    ) as m:
+    ) as m, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
         resp = await voucher_action(
             req, client=TallyClient("localhost", 9000),
             user_id=str(user.id), db=db_session,
@@ -204,6 +223,142 @@ async def test_distinct_invoice_writes_with_reference(db_session, ctx):
     assert resp.data["type"] == "voucher_written"
     assert posted["reference"] == "CRO-2026-5678"
     assert posted["reference_date"] == "20260210"
+
+
+@pytest.mark.asyncio
+async def test_write_time_recheck_blocks_even_with_client_status_draft(db_session, ctx):
+    """Finding 1: a known business-key duplicate is blocked at write time even when
+    the client lies with status='draft' — the server re-derives from party+reference.
+    """
+    user, ws, conv = ctx
+    # First upload + write to create a written VoucherEntry with the reference.
+    first = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-FILE-ONE")
+    entry1 = first["data"]["entries"][0]
+    entry1["conversation_id"] = str(conv.id)
+    entry1["file_id"] = first["data"]["file_id"]
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        await voucher_action(
+            VoucherActionRequest(action="approve", entry=entry1,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+
+    # Client re-submits the SAME party+reference but lies: status='draft'.
+    dup_entry = dict(entry1)
+    dup_entry["id"] = "client-forged"
+    dup_entry["status"] = "draft"
+    dup_entry.pop("duplicate_of", None)
+    dup_entry["file_id"] = None
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            VoucherActionRequest(action="approve", entry=dup_entry,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_error"
+    assert "duplicate" in resp.message.lower()
+    m.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_edit_reference_to_non_duplicate_allows_write(db_session, ctx):
+    """Finding 1: editing the reference to a NON-duplicate value lets the write proceed."""
+    user, ws, conv = ctx
+    first = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-EDIT-ONE")
+    entry1 = first["data"]["entries"][0]
+    entry1["conversation_id"] = str(conv.id)
+    entry1["file_id"] = first["data"]["file_id"]
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        await voucher_action(
+            VoucherActionRequest(action="approve", entry=entry1,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+
+    # Second doc with same party but a CORRECTED (different) invoice no.
+    second = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-EDIT-TWO")
+    entry2 = second["data"]["entries"][0]
+    entry2["conversation_id"] = str(conv.id)
+    entry2["file_id"] = second["data"]["file_id"]
+    entry2["reference"] = "CRO-2026-9999-CORRECTED"  # user fixed a mis-read invoice no
+    entry2["status"] = "duplicate"  # stale client flag — must be ignored
+
+    posted = {}
+
+    async def _capture(self, **kwargs):
+        posted.update(kwargs)
+        return _SUCCESS
+
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=_capture,
+    ), patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            VoucherActionRequest(action="edit", entry=entry2,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_written"
+    assert posted["reference"] == "CRO-2026-9999-CORRECTED"
+
+
+@pytest.mark.asyncio
+async def test_write_time_recheck_normalizes_reference(db_session, ctx):
+    """Finding 1+2: trimmed/case-different reference still detected at write time."""
+    user, ws, conv = ctx
+    first = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-NORM-ONE")
+    entry1 = first["data"]["entries"][0]
+    entry1["conversation_id"] = str(conv.id)
+    entry1["file_id"] = first["data"]["file_id"]
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        await voucher_action(
+            VoucherActionRequest(action="approve", entry=entry1,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+
+    dup_entry = dict(entry1)
+    dup_entry["id"] = "norm-dup"
+    dup_entry["status"] = "draft"
+    dup_entry["file_id"] = None
+    # written ref is "CRO-2026-5678"; resubmit with trailing space + lower case.
+    dup_entry["reference"] = "  cro-2026-5678 "
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ):
+        resp = await voucher_action(
+            VoucherActionRequest(action="approve", entry=dup_entry,
+                                 workspace_id=str(ws.id), session_id=str(conv.id)),
+            client=TallyClient("localhost", 9000), user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_error"
+    assert "duplicate" in resp.message.lower()
+    m.assert_not_awaited()
 
 
 @pytest.mark.asyncio

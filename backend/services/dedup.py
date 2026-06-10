@@ -37,6 +37,77 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _norm(s: str | None) -> str:
+    """Normalize a dedup key: strip surrounding whitespace + casefold.
+
+    OCR/Vision artifacts ("INV-100 ", "inv-100\\n") must not cause silent
+    misses. Applied to BOTH sides of the party + reference comparison.
+    """
+    return (s or "").strip().casefold()
+
+
+async def find_business_key_duplicate(
+    db,
+    client,
+    *,
+    workspace_id: str,
+    party_ledger: str | None,
+    invoice_ref: str | None,
+    company: str | None = None,
+) -> dict | None:
+    """B2 business-key (party ledger + supplier invoice no) duplicate check.
+
+    Re-usable, content-hash-free check shared by the upload path (via
+    ``find_duplicate``) and the write-time re-check in ``voucher_action``.
+    Returns a ``{"voucher_no", "date", "reason"}`` descriptor if the
+    party + reference already exist (DB VoucherEntry or Tally), else None.
+
+    No invoice ref → no business-key block (consistent with upload-time
+    B2-skip). All matching is normalized (strip + casefold).
+    """
+    if not invoice_ref or not _norm(invoice_ref):
+        return None
+
+    ref_n = _norm(invoice_ref)
+    party_n = _norm(party_ledger)
+
+    # (a) DB: prior written VoucherEntry with same party + reference.
+    rows = (await db.execute(
+        select(VoucherEntry).where(
+            VoucherEntry.workspace_id == workspace_id,
+            VoucherEntry.status == "written",
+        )
+    )).scalars().all()
+    for ve in rows:
+        data = ve.voucher_data or {}
+        if (_norm(data.get("party_ledger")) == party_n
+                and _norm(data.get("reference")) == ref_n):
+            return {
+                "voucher_no": ve.tally_voucher_number or "",
+                "date": (data.get("date") or ""),
+                "reason": "same invoice no for party",
+            }
+
+    # (b) Tally (authoritative). Errors → treat as "no Tally match".
+    if party_ledger:
+        try:
+            vouchers = await get_party_vouchers(
+                client, party_ledger, _PARTY_VOUCHER_TYPES, company=company,
+            )
+        except Exception as exc:  # noqa: BLE001 — never crash on Tally errors
+            logger.warning("Tally dedup query failed for %r: %s", party_ledger, exc)
+            vouchers = []
+        for v in vouchers:
+            if v.get("reference") and _norm(v.get("reference")) == ref_n:
+                return {
+                    "voucher_no": v.get("voucher_number") or "",
+                    "date": v.get("date") or "",
+                    "reason": "same invoice no for party",
+                }
+
+    return None
+
+
 async def find_duplicate(
     db,
     client,
@@ -78,41 +149,10 @@ async def find_duplicate(
             }
 
     # --- B2: business key (party + invoice ref). Skip if no invoice ref. ---
-    if not invoice_ref:
-        return None
-
-    # (a) DB: prior written VoucherEntry with same party + reference.
-    rows = (await db.execute(
-        select(VoucherEntry).where(
-            VoucherEntry.workspace_id == workspace_id,
-            VoucherEntry.status == "written",
-        )
-    )).scalars().all()
-    for ve in rows:
-        data = ve.voucher_data or {}
-        if (data.get("party_ledger") == party_ledger
-                and data.get("reference") == invoice_ref):
-            return {
-                "voucher_no": ve.tally_voucher_number or "",
-                "date": (data.get("date") or ""),
-                "reason": "same invoice no for party",
-            }
-
-    # (b) Tally (authoritative). Errors → treat as "no Tally match".
-    if party_ledger:
-        try:
-            vouchers = await get_party_vouchers(
-                client, party_ledger, _PARTY_VOUCHER_TYPES, company=company,
-            )
-        except Exception as exc:  # noqa: BLE001 — never crash the upload on Tally errors
-            logger.warning("Tally dedup query failed for %r: %s", party_ledger, exc)
-            vouchers = []
-        for v in vouchers:
-            if v.get("reference") and v.get("reference") == invoice_ref:
-                return {
-                    "voucher_no": v.get("voucher_number") or "",
-                    "date": v.get("date") or "",
-                    "reason": "same invoice no for party",
-                }
-
-    return None
+    return await find_business_key_duplicate(
+        db, client,
+        workspace_id=workspace_id,
+        party_ledger=party_ledger,
+        invoice_ref=invoice_ref,
+        company=company,
+    )

@@ -226,19 +226,36 @@ async def voucher_action(
 
     # approve and edit both write to Tally
     if request.action in ("approve", "edit"):
-        # Duplicate hard block (Phase 1 Part B): an entry flagged as a duplicate
-        # on upload must never be written — defense-in-depth so a client can't
-        # bypass the UI by re-submitting the entry.
-        if entry.get("status") == "duplicate":
-            dup = entry.get("duplicate_of") or {}
-            reason = dup.get("reason") or "duplicate"
-            vno = dup.get("voucher_no")
-            detail = f" (matches voucher #{vno})" if vno else ""
-            return ChatResponse(
-                message=f"Duplicate — not written. {reason}{detail}.",
-                data={"type": "voucher_error", "entry_id": entry.get("id")},
-                session_id=session_id,
+        # Duplicate hard block (Phase 1 Part B, Finding 1): re-derive the
+        # business-key duplicate SERVER-SIDE before writing. We never trust the
+        # client-sent ``status`` (bypassable, and it wrongly sticks after an edit
+        # that corrects a mis-read invoice no). The check uses the entry's CURRENT
+        # party_ledger + reference, so an edited/corrected reference is
+        # re-evaluated: a genuine duplicate is blocked, a corrected one writes.
+        # Empty reference → no business-key block (consistent with upload B2-skip).
+        if settings.db_mode and db is not None and request.workspace_id:
+            from backend.services.dedup import find_business_key_duplicate
+            dup = await find_business_key_duplicate(
+                db, client,
+                workspace_id=request.workspace_id,
+                party_ledger=entry.get("party_ledger") or entry.get("vendor_name"),
+                invoice_ref=entry.get("reference"),
+                company=company,
             )
+            if dup is not None:
+                reason = dup.get("reason") or "duplicate"
+                vno = dup.get("voucher_no")
+                when = dup.get("date")
+                vno_part = f" #{vno}" if vno else ""
+                when_part = f" (written {when})" if when else ""
+                return ChatResponse(
+                    message=(
+                        f"Duplicate of voucher{vno_part}{when_part} — {reason}. "
+                        "Not written."
+                    ),
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
 
         if not settings.TALLY_WRITE_ENABLED:
             return ChatResponse(

@@ -273,9 +273,13 @@ def test_reference_passed_to_writer(client, voucher_type, writer_method, extra):
 
 
 @pytest.mark.parametrize("action", ["approve", "edit"])
-def test_duplicate_entry_is_hard_blocked(client, action):
-    """Phase 1 Part B: an entry already flagged status=duplicate must NOT write —
-    defense-in-depth so a client can't bypass the UI."""
+def test_client_sent_duplicate_status_is_not_trusted_in_legacy(client, action):
+    """Phase 1 Part B / Finding 1: the server NEVER trusts the client-sent
+    ``status``. The authoritative duplicate block is the server-side re-derive
+    (DB mode only — covered in tests/integration/test_invoice_dedup_flow.py). In
+    legacy mode (no DB) there is no persistence to re-derive against, so a
+    client-asserted status=duplicate must NOT by itself block a write.
+    """
     entry = {
         "id": "dup1", "voucher_type": "Purchase", "date": "20260210",
         "debit_ledger": "Purchase Accounts", "credit_ledger": "Acme",
@@ -289,9 +293,10 @@ def test_duplicate_entry_is_hard_blocked(client, action):
     ) as m:
         resp = _post(client, entry, action=action)
     assert resp.status_code == 200, resp.text
-    assert resp.json()["data"]["type"] == "voucher_error"
-    assert "duplicate" in resp.json()["message"].lower()
-    m.assert_not_awaited()
+    # Client status is ignored; the write proceeds (no server-side DB re-derive
+    # available in legacy mode).
+    assert resp.json()["data"]["type"] == "voucher_written"
+    m.assert_awaited_once()
 
 
 def test_valid_party_ledger_still_writes(client):
