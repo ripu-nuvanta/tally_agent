@@ -70,7 +70,19 @@ Correctness is proven live; these are hardening/quality items:
 
 ### Future work (beyond the current doc — need their own spec)
 
+- **Inventory line items on invoices (HIGH — next feature).** The agent invoice write-path uses the
+  **accounting-only** ledger builder (`_build_ledger_invoice_voucher`): it lumps the base on a single
+  purchase/sales ledger and puts the extracted item names in the **narration** — no stock items, qty, or
+  rate in the inventory grid. Vision already extracts `line_items` (description/qty/rate/amount); they're
+  just not mapped to Tally stock items. The **inventory-capable builder exists** (`build_create_purchase_voucher`
+  / `..._sales_voucher`, used by the seeder) but isn't wired to the upload flow. Needs a spec covering:
+  stock-item resolution/creation (+ units), qty×rate per line, per-item GST, and writing the
+  **Supplier Invoice No.** field. Also fix **ledger auto-mapping category** (e.g. paper → "Purchase - Electronics").
+  Discovered 2026-06-10 via live upload (voucher posted accounting-only).
 - **Supplier payment against an outstanding bill** (Agst Ref settlement of an existing payable), **TDS journals** (sale/purchase each need invoice + settlement + TDS journal), and **bank-statement reconciliation** (the reconciliation *date* needs Tally's dedicated mechanism — probe-confirmed it doesn't persist via voucher import).
+
+> **Ops note:** restart the backend after merging write-path features — a stale server (pre-GST-merge)
+> served accounting-only/no-GST vouchers on 2026-06-10 even though the merged code was correct.
 
 ---
 
