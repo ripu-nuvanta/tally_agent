@@ -143,6 +143,8 @@ class TallyWriter:
         gst_entries: list[dict] | None = None,
         known_ledgers: list[str] | None = None,
         bill_allocations: list[dict] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a Payment voucher in Tally with validation."""
         # Build voucher dict for validation
@@ -174,6 +176,8 @@ class TallyWriter:
             company=self.company,
             gst_entries=gst_entries,
             bill_allocations=bill_allocations,
+            reference=reference,
+            reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_payment_voucher")
@@ -283,6 +287,8 @@ class TallyWriter:
         gst_entries: list[dict] | None = None,
         bill_ref: str | None = None,
         known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a Debit Note in Tally with validation (mirrors Purchase polarity).
 
@@ -310,6 +316,7 @@ class TallyWriter:
             date=date, party_ledger=party_ledger, purchase_ledger=purchase_ledger,
             amount=amount, narration=narration, company=self.company,
             gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_debit_note")
@@ -320,6 +327,8 @@ class TallyWriter:
         gst_entries: list[dict] | None = None,
         bill_ref: str | None = None,
         known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a Credit Note in Tally with validation (mirrors Sales polarity).
 
@@ -347,6 +356,7 @@ class TallyWriter:
             date=date, party_ledger=party_ledger, sales_ledger=sales_ledger,
             amount=amount, narration=narration, company=self.company,
             gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_credit_note")
@@ -357,6 +367,8 @@ class TallyWriter:
         gst_entries: list[dict] | None = None,
         bill_ref: str | None = None,
         known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a ledger-only Purchase voucher (Group B document path).
 
@@ -385,6 +397,7 @@ class TallyWriter:
             date=date, party_ledger=party_ledger, purchase_ledger=purchase_ledger,
             amount=amount, narration=narration, company=self.company,
             gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_purchase_voucher_ledger")
@@ -395,6 +408,8 @@ class TallyWriter:
         gst_entries: list[dict] | None = None,
         bill_ref: str | None = None,
         known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a ledger-only Sales voucher (Group B document path).
 
@@ -423,6 +438,7 @@ class TallyWriter:
             date=date, party_ledger=party_ledger, sales_ledger=sales_ledger,
             amount=amount, narration=narration, company=self.company,
             gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_sales_voucher_ledger")

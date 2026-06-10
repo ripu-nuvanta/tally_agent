@@ -29,6 +29,8 @@ export const purchaseINR: VoucherEntry = {
   debit_ledger: "Purchase Accounts",
   credit_ledger: "Acme Supplies",
   narration: "Purchase — Acme Supplies",
+  reference: "PINV-FLOW-01",
+  reference_date: "20260410",
   bill_reference: "INV-2025",
   bill_type: "New Ref",
   gst_entries: [
@@ -39,6 +41,19 @@ export const purchaseINR: VoucherEntry = {
   warnings: [],
   is_new_ledger: false,
   suggested_parent: null,
+};
+
+// Duplicate-state entry — write must be hard-blocked, red banner shown.
+export const purchaseDuplicate: VoucherEntry = {
+  ...purchaseINR,
+  id: "v-purchase-duplicate",
+  reference: "PINV-FLOW-01",
+  status: "duplicate",
+  duplicate_of: {
+    voucher_no: "12",
+    date: "20260410",
+    reason: "same invoice no for party",
+  },
 };
 
 export const purchaseUSD: VoucherEntry = {

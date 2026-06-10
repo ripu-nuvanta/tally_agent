@@ -226,6 +226,37 @@ async def voucher_action(
 
     # approve and edit both write to Tally
     if request.action in ("approve", "edit"):
+        # Duplicate hard block (Phase 1 Part B, Finding 1): re-derive the
+        # business-key duplicate SERVER-SIDE before writing. We never trust the
+        # client-sent ``status`` (bypassable, and it wrongly sticks after an edit
+        # that corrects a mis-read invoice no). The check uses the entry's CURRENT
+        # party_ledger + reference, so an edited/corrected reference is
+        # re-evaluated: a genuine duplicate is blocked, a corrected one writes.
+        # Empty reference → no business-key block (consistent with upload B2-skip).
+        if settings.db_mode and db is not None and request.workspace_id:
+            from backend.services.dedup import find_business_key_duplicate
+            dup = await find_business_key_duplicate(
+                db, client,
+                workspace_id=request.workspace_id,
+                party_ledger=entry.get("party_ledger") or entry.get("vendor_name"),
+                invoice_ref=entry.get("reference"),
+                company=company,
+            )
+            if dup is not None:
+                reason = dup.get("reason") or "duplicate"
+                vno = dup.get("voucher_no")
+                when = dup.get("date")
+                vno_part = f" #{vno}" if vno else ""
+                when_part = f" (written {when})" if when else ""
+                return ChatResponse(
+                    message=(
+                        f"Duplicate of voucher{vno_part}{when_part} — {reason}. "
+                        "Not written."
+                    ),
+                    data={"type": "voucher_error", "entry_id": entry.get("id")},
+                    session_id=session_id,
+                )
+
         if not settings.TALLY_WRITE_ENABLED:
             return ChatResponse(
                 message="Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
@@ -307,6 +338,8 @@ async def voucher_action(
         try:
             gst_entries = entry.get("gst_entries") or None
             bill_ref = entry.get("bill_reference")
+            reference = entry.get("reference")
+            reference_date = entry.get("reference_date")
             if voucher_type == "Payment":
                 result = await writer.create_payment_voucher(
                     date=entry["date"],
@@ -315,6 +348,8 @@ async def voucher_action(
                     amount=entry["amount"],
                     narration=entry["narration"],
                     gst_entries=gst_entries,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Purchase":
                 result = await writer.create_purchase_voucher_ledger(
@@ -325,6 +360,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Sales":
                 result = await writer.create_sales_voucher_ledger(
@@ -335,6 +372,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Debit Note":
                 # DN (purchase return): party on DEBIT, purchase-returns contra
@@ -348,6 +387,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             elif voucher_type == "Credit Note":
                 # CN (sales return): party on CREDIT, sales-returns contra on
@@ -361,6 +402,8 @@ async def voucher_action(
                     narration=entry["narration"],
                     gst_entries=gst_entries,
                     bill_ref=bill_ref,
+                    reference=reference,
+                    reference_date=reference_date,
                 )
             else:
                 return ChatResponse(

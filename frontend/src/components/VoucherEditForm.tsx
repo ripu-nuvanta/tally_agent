@@ -87,6 +87,7 @@ export default function VoucherEditForm({
   const [amount, setAmount] = useState(String(entry.amount));
   const [narration, setNarration] = useState(entry.narration);
   const [billReference, setBillReference] = useState(entry.bill_reference || "");
+  const [reference, setReference] = useState(entry.reference || "");
   const [error, setError] = useState("");
 
   // Primary (non-party) ledger = the contra/returns/expense ledger. It sits on
@@ -152,6 +153,8 @@ export default function VoucherEditForm({
       narration,
       debit_ledger: debitLedger,
       credit_ledger: creditLedger,
+      // Supplier invoice no. — editable so a mis-read number can be corrected.
+      reference: reference.trim() || null,
     };
     // Party fields: set for party vouchers, explicitly CLEAR for Payment so a
     // reclassify (e.g. Sales → Payment) can't carry a stale party into the
@@ -252,6 +255,20 @@ export default function VoucherEditForm({
           aria-label="Date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
+          className="w-full rounded border px-2 py-1 text-sm"
+        />
+      </div>
+
+      <div>
+        <label htmlFor="edit-reference" className="block text-xs text-gray-500 mb-1">
+          Supplier Invoice No.
+        </label>
+        <input
+          id="edit-reference"
+          type="text"
+          aria-label="Supplier Invoice No."
+          value={reference}
+          onChange={(e) => setReference(e.target.value)}
           className="w-full rounded border px-2 py-1 text-sm"
         />
       </div>

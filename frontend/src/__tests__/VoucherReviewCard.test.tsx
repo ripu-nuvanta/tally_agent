@@ -5,6 +5,7 @@ import {
   paymentINR,
   purchaseINR,
   purchaseUSD,
+  purchaseDuplicate,
   salesINR,
   debitNoteINR,
   creditNoteINR,
@@ -95,6 +96,49 @@ describe("VoucherReviewCard — collapsed states", () => {
   it("renders amber warnings", () => {
     renderCard({ ...paymentINR, warnings: ["Total mismatch"] });
     expect(screen.getByText("Total mismatch")).toBeInTheDocument();
+  });
+
+  it("shows the supplier invoice number when reference is set", () => {
+    renderCard(purchaseINR);
+    expect(screen.getByText("Invoice #:")).toBeInTheDocument();
+    expect(screen.getByText("PINV-FLOW-01")).toBeInTheDocument();
+  });
+
+  it("shows an em-dash for the invoice number when reference is null", () => {
+    renderCard({ ...paymentINR, reference: null });
+    expect(screen.getByText("Invoice #:")).toBeInTheDocument();
+    const invoiceField = screen.getByText("Invoice #:").closest("div")!;
+    expect(invoiceField).toHaveTextContent("Invoice #: —");
+  });
+});
+
+describe("VoucherReviewCard — duplicate state", () => {
+  it("renders a red banner naming the matched voucher and reason", () => {
+    renderCard(purchaseDuplicate);
+    const banner = screen.getByTestId(`voucher-duplicate-banner-${purchaseDuplicate.id}`);
+    expect(banner).toHaveTextContent(
+      "⚠ Duplicate of voucher #12 (written 10-Apr-2026) — same invoice no for party. Not written.",
+    );
+    expect(banner.className).toContain("red");
+  });
+
+  it("disables the Write to Tally button when status is duplicate", () => {
+    renderCard(purchaseDuplicate);
+    expect(screen.getByText("Write to Tally").closest("button")).toBeDisabled();
+  });
+
+  it("keeps Discard and Edit enabled when status is duplicate", () => {
+    renderCard(purchaseDuplicate);
+    expect(screen.getByText("Discard").closest("button")).not.toBeDisabled();
+    expect(screen.getByText("Edit Entry").closest("button")).not.toBeDisabled();
+  });
+
+  it("does not render the duplicate banner for a draft entry (regression)", () => {
+    renderCard(purchaseINR);
+    expect(
+      screen.queryByTestId(`voucher-duplicate-banner-${purchaseINR.id}`),
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("Write to Tally").closest("button")).not.toBeDisabled();
   });
 });
 

@@ -130,6 +130,8 @@ def build_create_payment_voucher(
     company: str,
     gst_entries: list[dict] | None = None,
     bill_allocations: list[dict] | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML to create a Payment voucher in Tally.
 
@@ -153,6 +155,7 @@ def build_create_payment_voucher(
     _require(credit_ledger, "credit_ledger")
     _require(narration, "narration")
     _require(company, "company")
+    _validate_reference_date(reference_date)
 
     base_amount = amount - gst_total
 
@@ -182,8 +185,9 @@ def build_create_payment_voucher(
     )
 
     entries_xml = "\n".join(entries)
+    ref_xml = _render_reference_block(reference, reference_date)
     voucher_xml = f"""<VOUCHER VCHTYPE="Payment" ACTION="Create">
-<DATE>{_esc(date)}</DATE>
+<DATE>{_esc(date)}</DATE>{ref_xml}
 <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
 <NARRATION>{_esc(narration)}</NARRATION>
 <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
@@ -204,6 +208,8 @@ def _build_ledger_invoice_voucher(
     bill_ref: str | None = None,
     bill_type: str = "New Ref",
     party_on_debit: bool = False,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML for ledger-only invoice-style vouchers (Purchase / Sales /
     Debit Note / Credit Note).
@@ -239,6 +245,7 @@ def _build_ledger_invoice_voucher(
     _require(contra_ledger, "contra_ledger")
     _require(narration, "narration")
     _require(company, "company")
+    _validate_reference_date(reference_date)
 
     gst_total = sum(e["amount"] for e in (gst_entries or []))
     if gst_total < 0 or gst_total > amount:
@@ -289,8 +296,9 @@ def _build_ledger_invoice_voucher(
     )
 
     entries_xml = "\n".join(entries)
+    ref_xml = _render_reference_block(reference, reference_date)
     voucher_xml = f"""<VOUCHER VCHTYPE="{_esc(vch_type)}" ACTION="Create">
-<DATE>{_esc(date)}</DATE>
+<DATE>{_esc(date)}</DATE>{ref_xml}
 <VOUCHERTYPENAME>{_esc(vch_type)}</VOUCHERTYPENAME>
 <NARRATION>{_esc(narration)}</NARRATION>
 <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
@@ -309,6 +317,8 @@ def build_create_debit_note(
     company: str,
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML to create a Debit Note in Tally (purchase return).
 
@@ -324,6 +334,7 @@ def build_create_debit_note(
         contra_ledger=purchase_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
         bill_type="Agst Ref", party_on_debit=True,
+        reference=reference, reference_date=reference_date,
     )
 
 
@@ -336,6 +347,8 @@ def build_create_credit_note(
     company: str,
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML to create a Credit Note in Tally (sales return).
 
@@ -351,6 +364,7 @@ def build_create_credit_note(
         contra_ledger=sales_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
         bill_type="Agst Ref", party_on_debit=False,
+        reference=reference, reference_date=reference_date,
     )
 
 
@@ -363,6 +377,8 @@ def build_create_purchase_voucher_ledger(
     company: str,
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML for a ledger-only Purchase voucher (party + contra + GST).
 
@@ -376,6 +392,7 @@ def build_create_purchase_voucher_ledger(
         contra_ledger=purchase_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
         bill_type="New Ref", party_on_debit=False,
+        reference=reference, reference_date=reference_date,
     )
 
 
@@ -388,6 +405,8 @@ def build_create_sales_voucher_ledger(
     company: str,
     gst_entries: list[dict] | None = None,
     bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML for a ledger-only Sales voucher (party + contra + GST).
 
@@ -400,6 +419,7 @@ def build_create_sales_voucher_ledger(
         contra_ledger=sales_ledger, amount=amount, narration=narration,
         company=company, gst_entries=gst_entries, bill_ref=bill_ref,
         bill_type="New Ref", party_on_debit=True,
+        reference=reference, reference_date=reference_date,
     )
 
 

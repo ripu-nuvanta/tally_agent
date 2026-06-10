@@ -226,6 +226,18 @@ describe("VoucherEditForm — save & validation", () => {
     expect(updates.debit_ledger).not.toBe(updates.party_ledger);
   });
 
+  it("edits and round-trips the supplier invoice number (reference) on save", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseINR, onSave);
+    const field = screen.getByLabelText("Supplier Invoice No.") as HTMLInputElement;
+    expect(field.value).toBe("PINV-FLOW-01");
+    fireEvent.change(field, { target: { value: "PINV-FLOW-99" } });
+    fireEvent.click(screen.getByText("Save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ reference: "PINV-FLOW-99" }),
+    );
+  });
+
   it("maps party to credit ledger for Purchase on save", () => {
     const onSave = vi.fn();
     renderForm(purchaseINR, onSave);

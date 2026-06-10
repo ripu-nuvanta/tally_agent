@@ -191,7 +191,8 @@ class Orchestrator(BaseAgent):
             }
 
         with open(file_path, "rb") as f:
-            image_data = base64.b64encode(f.read()).decode("utf-8")
+            raw_bytes = f.read()
+        image_data = base64.b64encode(raw_bytes).decode("utf-8")
 
         # Map MIME type for Claude Vision
         media_type = mime_type or "image/jpeg"
@@ -243,6 +244,8 @@ class Orchestrator(BaseAgent):
 
         # 2b. Persist the uploaded-file audit row (DB mode only). The DB id then
         # becomes the review card's file_id so a later write can link back.
+        from backend.services.dedup import sha256_bytes
+        content_hash = sha256_bytes(raw_bytes)
         if db is not None and user_id and workspace_id and conversation_id:
             from backend.db.models import UploadedFile
             uploaded = UploadedFile(
@@ -254,6 +257,7 @@ class Orchestrator(BaseAgent):
                 file_size=os.path.getsize(file_path),
                 storage_path=file_path,
                 extracted_data=_extracted_to_jsonable(extracted),
+                content_hash=content_hash,
                 status="extracted",
             )
             db.add(uploaded)
@@ -381,6 +385,37 @@ class Orchestrator(BaseAgent):
                 f"(entry can't be written yet)."
             ]
 
+        # 5b. Supplier invoice no + date (Phase 1 Part A). The reference is the
+        # extracted invoice number; reference_date is the doc date as YYYYMMDD
+        # (Tally import format). Only convert a YYYY-MM-DD doc date.
+        reference = extracted.original_invoice_ref or None
+        reference_date: str | None = None
+        if extracted.date:
+            digits = extracted.date.replace("-", "")
+            if len(digits) == 8 and digits.isdigit():
+                reference_date = digits
+
+        # 5c. Duplicate detection (Phase 1 Part B). Hard block on upload — runs
+        # only in DB mode (needs the persisted UploadedFile + VoucherEntry rows).
+        # No invoice number → B2 skipped (B1 still applies); add a soft note.
+        duplicate_of: dict | None = None
+        dedup_party = voucher.party_ledger or extracted.party_name or extracted.vendor_name
+        if db is not None and workspace_id:
+            from backend.services.dedup import find_duplicate
+            duplicate_of = await find_duplicate(
+                db, client,
+                workspace_id=workspace_id,
+                content_hash=content_hash,
+                party_ledger=dedup_party,
+                invoice_ref=reference,
+                company=getattr(session, "company", None),
+                exclude_file_id=file_id,
+            )
+        if not reference:
+            warnings = warnings + [
+                "No invoice number found — duplicate check limited to exact file."
+            ]
+
         # 6. Assemble review card response
         entry_id = str(uuid_mod.uuid4())
         review_data = {
@@ -397,7 +432,10 @@ class Orchestrator(BaseAgent):
                 "credit_ledger": voucher.credit_ledger,
                 "narration": voucher.narration,
                 "gst_entries": voucher.gst_entries,
-                "status": "draft",
+                "reference": reference,
+                "reference_date": reference_date,
+                "duplicate_of": duplicate_of,
+                "status": "duplicate" if duplicate_of else "draft",
                 "warnings": warnings,
                 "is_new_ledger": mapping.is_new_ledger,
                 "suggested_parent": mapping.suggested_parent,
@@ -444,6 +482,15 @@ class Orchestrator(BaseAgent):
             f"Please review the entry below and click **Write to Tally** to create "
             f"the {voucher.voucher_type.lower()} voucher, or **Edit Entry** to make corrections."
         )
+        if duplicate_of:
+            vno = duplicate_of.get("voucher_no")
+            dref = f" (voucher #{vno})" if vno else ""
+            message += (
+                f"\n\n🚫 **Duplicate detected — not written.** "
+                f"{duplicate_of.get('reason', 'duplicate')}{dref}. "
+                f"This entry is blocked; you can discard it or edit the invoice "
+                f"number if it was mis-read."
+            )
         if warnings:
             message += "\n\n⚠️ " + " | ".join(warnings)
 
