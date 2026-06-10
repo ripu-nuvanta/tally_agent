@@ -147,6 +147,153 @@ def test_credit_note_dispatch_calls_create_credit_note(client):
     assert kw["bill_ref"] == "INV-FEB-001"
 
 
+def _inventory_purchase_entry():
+    return {
+        "id": "inv1", "voucher_type": "Purchase", "date": "20260210",
+        "debit_ledger": "Purchase Accounts", "credit_ledger": "Croma Electronics",
+        "party_ledger": "Croma Electronics", "amount": 70210.0,
+        "narration": "Goods purchase", "gst_entries": [
+            {"ledger": "CGST Input", "amount": 5355.0},
+            {"ledger": "SGST Input", "amount": 5355.0},
+        ],
+        "bill_reference": "CRO-9001", "bill_type": "New Ref",
+        "reference": "CRO-9001", "reference_date": "20260210",
+        "is_inventory": True,
+        "default_stock_group": "Primary",
+        "available_stock_items": ["A4 Paper Ream 500 sheets"],
+        "line_items": [
+            {"description": "A4 Paper Ream 500 sheets", "qty": 10.0, "rate": 500.0,
+             "unit": "Nos", "gst_rate": 18.0, "amount": 5000.0,
+             "matched_item": "A4 Paper Ream 500 sheets", "create_new": False,
+             "stock_name": "A4 Paper Ream 500 sheets", "stock_group": "Primary",
+             "hsn": "", "ledger": "Purchase Accounts"},
+            {"description": "Brother Toner Cartridge", "qty": 5.0, "rate": 10900.0,
+             "unit": "Nos", "gst_rate": 18.0, "amount": 54500.0,
+             "matched_item": None, "create_new": True,
+             "stock_name": "Brother Toner Cartridge", "stock_group": "Primary",
+             "hsn": "8443", "ledger": "Purchase Accounts"},
+        ],
+    }
+
+
+def test_inventory_purchase_creates_new_stock_item_then_voucher(client):
+    """An inventory purchase: the new line's stock item is created (idempotent),
+    then the STOCK-based create_purchase_voucher is called with item tuples."""
+    entry = _inventory_purchase_entry()
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_item, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    # Only the NEW line gets a stock-item create.
+    m_item.assert_awaited_once()
+    assert m_item.await_args.kwargs.get("name", m_item.await_args.args[0] if m_item.await_args.args else None) == "Brother Toner Cartridge" or \
+        "Brother Toner Cartridge" in m_item.await_args.args
+    # Stock voucher built with item tuples + reference.
+    m_vch.assert_awaited_once()
+    kw = m_vch.await_args.kwargs
+    items = kw["items"]
+    assert len(items) == 2
+    names = {t[0] for t in items}
+    assert names == {"A4 Paper Ream 500 sheets", "Brother Toner Cartridge"}
+    # tuple shape: (name, qty, rate, ledger, uom, gst_rate)
+    a4 = next(t for t in items if t[0] == "A4 Paper Ream 500 sheets")
+    assert a4[1] == 10.0 and a4[2] == 500.0 and a4[3] == "Purchase Accounts"
+    assert a4[4] == "Nos" and a4[5] == 18
+    assert kw["gst_mode"] == "intra"
+    assert kw["reference"] == "CRO-9001"
+    assert kw["reference_date"] == "20260210"
+    assert kw["party"] == "Croma Electronics"
+
+
+def test_inventory_purchase_skips_create_for_matched_only(client):
+    """When all lines match existing items, no stock item is created."""
+    entry = _inventory_purchase_entry()
+    entry["line_items"] = [entry["line_items"][0]]  # only the matched line
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_item, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    m_item.assert_not_awaited()
+    m_vch.assert_awaited_once()
+
+
+def test_inventory_sales_calls_stock_sales_voucher(client):
+    entry = _inventory_purchase_entry()
+    entry.update({
+        "voucher_type": "Sales", "party_ledger": "Infosys Ltd",
+        "debit_ledger": "Infosys Ltd", "credit_ledger": "Sales Accounts",
+        "gst_entries": [
+            {"ledger": "IGST Output", "amount": 12600.0},
+        ],
+    })
+    for li in entry["line_items"]:
+        li["ledger"] = "Sales Accounts"
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_group",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_sales_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    m_vch.assert_awaited_once()
+    kw = m_vch.await_args.kwargs
+    assert kw["gst_mode"] == "inter"  # IGST → interstate
+    assert kw["items"][0][3] == "Sales Accounts"
+
+
+def test_non_inventory_purchase_uses_ledger_writer(client):
+    """Regression: a Purchase without is_inventory still uses the ledger writer."""
+    entry = {
+        "id": "pu9", "voucher_type": "Purchase", "date": "20260210",
+        "debit_ledger": "Purchase Accounts", "credit_ledger": "Croma Electronics",
+        "party_ledger": "Croma Electronics", "amount": 15340.0,
+        "narration": "Service", "gst_entries": [],
+        "bill_reference": "CRO-1", "bill_type": "New Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_ledger, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_stock:
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    m_ledger.assert_awaited_once()
+    m_stock.assert_not_awaited()
+
+
 def test_debit_note_edit_form_mapping_keeps_legs_distinct(client):
     """Contract guard: an edit-form DN entry (party on DEBIT, purchase-returns on
     CREDIT — the correct return polarity) must dispatch with the party as

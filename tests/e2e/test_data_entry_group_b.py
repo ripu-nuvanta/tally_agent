@@ -105,7 +105,7 @@ class TestPurchasePipeline:
     def test_purchase_inr_upload_classify_write(self, client):
         """Upload purchase invoice → routed to Purchase → party (creditor) +
         purchase ledger + GST → write succeeds."""
-        up = _upload(client, "purchase_office_inr", "purchase invoice")
+        up = _upload(client, "purchase_service_inr", "purchase invoice")
         assert up.status_code == 200, up.text
         data = up.json()
         assert data["data"]["type"] == "voucher_review"

@@ -213,7 +213,7 @@ async def test_db_purchase_upload_write_creates_audit_rows(db_app):
         conv_id = await _create_conversation(ac, token, ws_id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        up = await _upload(ac, headers, "purchase_office_inr", ws_id, conv_id, "purchase")
+        up = await _upload(ac, headers, "purchase_service_inr", ws_id, conv_id, "purchase")
         assert up.status_code == 200, up.text
         body = up.json()
         assert body["data"]["type"] == "voucher_review"
@@ -412,7 +412,7 @@ async def test_db_discard_creates_uploaded_file_no_voucher_entry(db_app):
         conv_id = await _create_conversation(ac, token, ws_id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        up = await _upload(ac, headers, "purchase_office_inr", ws_id, conv_id, "discard")
+        up = await _upload(ac, headers, "purchase_service_inr", ws_id, conv_id, "discard")
         file_id = up.json()["data"]["file_id"]
         entry = up.json()["data"]["entries"][0]
 
@@ -450,7 +450,7 @@ async def test_db_edit_then_write_persists_edited_values(db_app):
         conv_id = await _create_conversation(ac, token, ws_id)
         headers = {"Authorization": f"Bearer {token}"}
 
-        up = await _upload(ac, headers, "purchase_office_inr", ws_id, conv_id, "edit")
+        up = await _upload(ac, headers, "purchase_service_inr", ws_id, conv_id, "edit")
         entry = up.json()["data"]["entries"][0]
         file_id = up.json()["data"]["file_id"]
 

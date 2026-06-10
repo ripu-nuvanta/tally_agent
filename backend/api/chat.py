@@ -178,6 +178,104 @@ async def chat_with_file(
     )
 
 
+def _gst_mode_from_entries(gst_entries: list[dict] | None) -> str:
+    """Derive Tally GST mode: 'inter' when only IGST present, else 'intra'."""
+    names = " ".join((e.get("ledger") or "") for e in (gst_entries or [])).lower()
+    if "igst" in names and "cgst" not in names and "sgst" not in names:
+        return "inter"
+    return "intra"
+
+
+async def _write_inventory_voucher(
+    writer,
+    entry: dict,
+    reference: str | None,
+    reference_date: str | None,
+) -> dict:
+    """Pre-flight new stock masters then post a stock-based Purchase/Sales voucher.
+
+    For each line marked ``create_new`` (or with no matched item), idempotently
+    ensure the unit and stock group exist, then create the stock item. Creates
+    are best-effort idempotent — an "already exists" failure is treated as OK.
+    Builds ``(stock_name, qty, rate, ledger, uom, gst_rate)`` tuples and calls
+    the stock-based writer with the GST mode + Phase-1 reference + a New Ref bill
+    allocation for the gross.
+    """
+    voucher_type = entry["voucher_type"]
+    party = entry["party_ledger"]
+    lines = entry.get("line_items") or []
+    default_group = entry.get("default_stock_group") or "Primary"
+
+    async def _idempotent(coro):
+        """Run a create; swallow 'already exists' style failures."""
+        try:
+            await coro
+        except Exception as e:  # noqa: BLE001 — masters are idempotent
+            msg = str(e).lower()
+            if "exist" not in msg and "duplicate" not in msg:
+                logger.info("Stock master pre-flight note: %s", e)
+
+    seen_units: set[str] = set()
+    seen_groups: set[str] = set()
+    for line in lines:
+        if not (line.get("create_new") or not line.get("matched_item")):
+            continue
+        unit = (line.get("unit") or "Nos").strip() or "Nos"
+        group = (line.get("stock_group") or default_group).strip() or "Primary"
+        if unit not in seen_units:
+            seen_units.add(unit)
+            await _idempotent(writer.create_unit(unit, unit))
+        if group not in seen_groups and group.lower() != "primary":
+            seen_groups.add(group)
+            await _idempotent(writer.create_stock_group(group, ""))
+        await _idempotent(writer.create_stock_item(
+            name=line.get("stock_name") or line["description"],
+            group=group,
+            uom=unit,
+            opening_qty=0,
+            opening_rate=0,
+            hsn_code=str(line.get("hsn") or ""),
+            gst_rate=int(round(float(line.get("gst_rate") or 0))),
+        ))
+
+    items = [
+        (
+            line.get("stock_name") or line["description"],
+            float(line.get("qty") or 0),
+            float(line.get("rate") or 0),
+            line.get("ledger") or entry.get("debit_ledger") or entry.get("credit_ledger"),
+            (line.get("unit") or "Nos").strip() or "Nos",
+            int(round(float(line.get("gst_rate") or 0))),
+        )
+        for line in lines
+    ]
+    gst_mode = _gst_mode_from_entries(entry.get("gst_entries"))
+
+    # The supplier/customer invoice number doubles as the voucher number; fall
+    # back to a date-derived value when none was extracted.
+    voucher_number = reference or entry.get("bill_reference") or f"AUTO-{entry['date']}"
+    bill_allocations = [{
+        "name": (entry.get("bill_reference") or reference or voucher_number),
+        "type": "New Ref",
+        "amount": float(entry["amount"]),
+    }]
+
+    common = dict(
+        date=entry["date"],
+        voucher_number=voucher_number,
+        party=party,
+        items=items,
+        narration=entry["narration"],
+        gst_mode=gst_mode,
+        bill_allocations=bill_allocations,
+        reference=reference,
+        reference_date=reference_date,
+    )
+    if voucher_type == "Purchase":
+        return await writer.create_purchase_voucher(**common)
+    return await writer.create_sales_voucher(**common)
+
+
 @router.post("/chat/voucher-action", response_model=ChatResponse)
 async def voucher_action(
     request: VoucherActionRequest,
@@ -350,6 +448,14 @@ async def voucher_action(
                     gst_entries=gst_entries,
                     reference=reference,
                     reference_date=reference_date,
+                )
+            elif entry.get("is_inventory") and voucher_type in ("Purchase", "Sales"):
+                # Inventory (goods) invoice — write to the Tally STOCK grid.
+                # Pre-flight: idempotently ensure each new line's unit, stock
+                # group, and stock item exist; then post the stock-based voucher
+                # with item tuples + GST mode + the Phase-1 reference + New Ref.
+                result = await _write_inventory_voucher(
+                    writer, entry, reference, reference_date,
                 )
             elif voucher_type == "Purchase":
                 result = await writer.create_purchase_voucher_ledger(

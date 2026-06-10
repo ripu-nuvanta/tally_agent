@@ -21,6 +21,7 @@ class LineItem:
     rate: Decimal | None = None
     gst_rate: Decimal | None = None
     gst_amount: Decimal | None = None
+    unit: str | None = None  # unit of measure as printed (e.g. "Nos"/"Pcs"/"kg")
 
 
 @dataclass
@@ -90,7 +91,8 @@ Return ONLY valid JSON with this exact structure:
             "description": "string",
             "amount": number,
             "quantity": number or null,
-            "rate": number or null
+            "rate": number or null,
+            "unit": "unit of measure as printed, e.g. Nos/Pcs/kg, or null if not shown"
         }
     ],
     "gst": {
@@ -163,6 +165,7 @@ def parse_vision_response(response_text: str) -> ExtractedDocument:
             rate=_to_decimal(item["rate"]) if item.get("rate") is not None else None,
             gst_rate=_to_decimal(item["gst_rate"]) if item.get("gst_rate") is not None else None,
             gst_amount=_to_decimal(item["gst_amount"]) if item.get("gst_amount") is not None else None,
+            unit=(str(item["unit"]).strip() or None) if item.get("unit") is not None else None,
         ))
 
     gst = None

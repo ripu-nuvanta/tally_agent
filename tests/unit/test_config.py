@@ -46,3 +46,14 @@ class TestConfigDefaults:
             s = TestSettings()
             assert s.FX_DEFAULT_RATES == ""
             assert s.FX_DEFAULT_RATE == 0.0
+
+    def test_default_stock_group_default_primary(self):
+        """DEFAULT_STOCK_GROUP defaults to 'Primary' (inventory Phase 2)."""
+        with patch.dict(os.environ, {}, clear=True):
+            from backend.config import Settings
+
+            class TestSettings(Settings):
+                model_config = {"env_file": None, "extra": "ignore"}
+
+            s = TestSettings()
+            assert s.DEFAULT_STOCK_GROUP == "Primary"

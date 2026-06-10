@@ -55,6 +55,16 @@ def _temp_file():
             os.remove(path)
 
 
+from backend.tally_bridge.models import StockItem
+
+# Stock items the company already has (used by inventory goods detection).
+_STOCK_ITEMS = [
+    StockItem(name="A4 Paper Ream 500 sheets", parent_group="Primary", base_units="Nos"),
+    StockItem(name="HP Laptop 15s", parent_group="Primary", base_units="Nos"),
+    StockItem(name="Logitech Wireless Mouse", parent_group="Primary", base_units="Nos"),
+]
+
+
 async def _run_upload(fixture_name, party_vouchers=None):
     """Drive process_file_upload for a fixture; return the result dict."""
     orch = Orchestrator()
@@ -65,6 +75,9 @@ async def _run_upload(fixture_name, party_vouchers=None):
     ), patch(
         "backend.tally_bridge.response_parser.parse_ledger_list",
         return_value=_LEDGERS,
+    ), patch(
+        "backend.services.stock_resolver.list_stock_items",
+        new=AsyncMock(return_value=_STOCK_ITEMS),
     ), patch(
         "backend.tally_bridge.queries.vouchers.get_party_vouchers",
         new=AsyncMock(return_value=party_vouchers or []),
@@ -223,6 +236,61 @@ async def test_missing_gst_ledger_warns_no_leg():
     entry = result["data"]["entries"][0]
     assert entry["gst_entries"] == []
     assert any("not found" in w for w in entry["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_goods_purchase_is_inventory_with_line_items():
+    """A purchase with quantity-bearing lines → inventory path."""
+    result = await _run_upload("purchase_goods_inr")
+    entry = _entry(result)
+    assert entry["voucher_type"] == "Purchase"
+    assert entry["is_inventory"] is True
+    assert len(entry["line_items"]) == 2
+    # First line matches a seeded item, second is new.
+    by_desc = {li["description"]: li for li in entry["line_items"]}
+    assert by_desc["A4 Paper Ream 500 sheets"]["matched_item"] == "A4 Paper Ream 500 sheets"
+    assert by_desc["A4 Paper Ream 500 sheets"]["create_new"] is False
+    assert by_desc["Brother Toner Cartridge TN-2380"]["create_new"] is True
+    # Per-line ledger defaults to the chosen purchase contra ledger.
+    assert by_desc["A4 Paper Ream 500 sheets"]["ledger"] == "Purchase Accounts"
+    assert "A4 Paper Ream 500 sheets" in entry["available_stock_items"]
+    assert entry["default_stock_group"] == "Primary"
+
+
+@pytest.mark.asyncio
+async def test_goods_sales_is_inventory_with_line_items():
+    result = await _run_upload("sales_goods_inr")
+    entry = _entry(result)
+    assert entry["voucher_type"] == "Sales"
+    assert entry["is_inventory"] is True
+    assert len(entry["line_items"]) == 2
+    by_desc = {li["description"]: li for li in entry["line_items"]}
+    assert by_desc["HP Laptop 15s"]["matched_item"] == "HP Laptop 15s"
+    # Per-line ledger defaults to the chosen sales contra ledger.
+    assert by_desc["HP Laptop 15s"]["ledger"] == "Sales Accounts"
+
+
+@pytest.mark.asyncio
+async def test_services_purchase_stays_accounting_only():
+    """A purchase whose lines have no quantity → accounting-only (no inventory)."""
+    result = await _run_upload("purchase_saas_usd")
+    entry = _entry(result)
+    assert entry.get("is_inventory") in (False, None)
+    assert entry.get("line_items") in (None, [])
+
+
+@pytest.mark.asyncio
+async def test_services_sales_stays_accounting_only():
+    result = await _run_upload("sales_service_inr")
+    entry = _entry(result)
+    assert entry.get("is_inventory") in (False, None)
+
+
+@pytest.mark.asyncio
+async def test_payment_never_inventory():
+    result = await _run_upload("payment_petty_cash_inr")
+    entry = _entry(result)
+    assert entry.get("is_inventory") in (False, None)
 
 
 @pytest.mark.asyncio

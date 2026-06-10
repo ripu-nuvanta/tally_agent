@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     TALLY_WRITE_ENABLED: bool = False
     TALLY_DRY_RUN: bool = False
 
+    # Inventory line items (invoice entry Phase 2)
+    DEFAULT_STOCK_GROUP: str = "Primary"  # parent group for auto-created stock items
+
     # FX → INR conversion (write-flow Group B, Slice A)
     FX_DEFAULT_RATES: str = ""  # per-currency defaults, e.g. "USD:83.5,EUR:90"
     FX_DEFAULT_RATE: float = 0.0  # global fallback rate (0.0 = unknown)

@@ -99,7 +99,7 @@ async def _upload(db_session, ctx, fixture):
 @pytest.mark.asyncio
 async def test_upload_creates_uploaded_file_row(db_session, ctx):
     user, ws, conv = ctx
-    await _upload(db_session, ctx, "purchase_office_inr")
+    await _upload(db_session, ctx, "purchase_service_inr")
     rows = (await db_session.execute(
         select(UploadedFile).where(UploadedFile.workspace_id == ws.id)
     )).scalars().all()
@@ -116,7 +116,7 @@ async def test_upload_creates_uploaded_file_row(db_session, ctx):
 async def test_upload_returns_db_file_id(db_session, ctx):
     """The review card's file_id is the DB UploadedFile id, not the random one."""
     user, ws, conv = ctx
-    result = await _upload(db_session, ctx, "purchase_office_inr")
+    result = await _upload(db_session, ctx, "purchase_service_inr")
     file_id = result["data"]["file_id"]
     row = (await db_session.execute(
         select(UploadedFile).where(UploadedFile.id == file_id)
@@ -127,7 +127,7 @@ async def test_upload_returns_db_file_id(db_session, ctx):
 @pytest.mark.asyncio
 async def test_successful_write_creates_voucher_entry(db_session, ctx):
     user, ws, conv = ctx
-    upload = await _upload(db_session, ctx, "purchase_office_inr")
+    upload = await _upload(db_session, ctx, "purchase_service_inr")
     file_id = upload["data"]["file_id"]
     entry = upload["data"]["entries"][0]
     entry["file_id"] = file_id

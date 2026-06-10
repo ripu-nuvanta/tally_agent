@@ -294,12 +294,16 @@ class Orchestrator(BaseAgent):
         # folding it into the contra. Missing ledgers warn + fall back to no leg.
         gst_warnings: list[str] = []
 
+        # Track the contra (purchase/sales) ledger chosen for goods invoices so
+        # the inventory path can default each line's ledger to it.
+        contra_ledger: str | None = None
         if doc_type in ("purchase", "debit_note"):
             party_name = extracted.party_name or "Unknown Supplier"
             mapping = await mapper.find_mapping(
                 party_name, doc_type, tally_ledgers=supplier_ledgers or ledger_names,
             )
             purchase_ledger = purchase_ledgers[0]
+            contra_ledger = purchase_ledger
             gst_ledgers, gst_warnings = _resolve_gst_ledgers(
                 tally_ledgers, "input", extracted,
             )
@@ -325,6 +329,7 @@ class Orchestrator(BaseAgent):
                 party_name, doc_type, tally_ledgers=customer_ledgers or ledger_names,
             )
             sales_ledger = sales_ledgers[0]
+            contra_ledger = sales_ledger
             gst_ledgers, gst_warnings = _resolve_gst_ledgers(
                 tally_ledgers, "output", extracted,
             )
@@ -416,6 +421,36 @@ class Orchestrator(BaseAgent):
                 "No invoice number found — duplicate check limited to exact file."
             ]
 
+        # 5d. Goods detection (inventory Phase 2). For Purchase/Sales, if ANY
+        # line item carries a quantity, the document is itemised goods → resolve
+        # each line against the company's existing stock items and surface the
+        # inventory fields on the entry. The accounting-only voucher (amount/GST
+        # /party leg) computed above is preserved; the inventory path layers on
+        # top. No-qty docs (services/expenses) keep the accounting-only path.
+        is_inventory = False
+        resolved_lines: list[dict] = []
+        available_stock_items: list[str] = []
+        default_stock_group = settings.DEFAULT_STOCK_GROUP
+        if doc_type in ("purchase", "sales"):
+            has_qty = any(
+                li.quantity is not None for li in (extracted.line_items or [])
+            )
+            if has_qty:
+                from backend.services import stock_resolver
+                from backend.services.stock_resolver import resolve_line_items
+
+                stock_items = await stock_resolver.list_stock_items(client)
+                available_stock_items = [li.name for li in stock_items]
+                resolved_lines = await resolve_line_items(
+                    client, extracted,
+                    direction=doc_type,
+                    default_group=default_stock_group,
+                )
+                # Default each line's posting ledger to the chosen contra ledger.
+                for line in resolved_lines:
+                    line["ledger"] = contra_ledger
+                is_inventory = bool(resolved_lines)
+
         # 6. Assemble review card response
         entry_id = str(uuid_mod.uuid4())
         review_data = {
@@ -454,6 +489,13 @@ class Orchestrator(BaseAgent):
                 "fx_rate": float(voucher.fx_rate),
                 "inr_amount": float(voucher.amount),
                 "original_gst_entries": voucher.original_gst_entries,
+                # Inventory line items (Phase 2). is_inventory gates the
+                # stock-grid write in voucher_action; non-goods entries omit
+                # these (accounting-only path).
+                "is_inventory": is_inventory,
+                "line_items": resolved_lines,
+                "available_stock_items": available_stock_items,
+                "default_stock_group": default_stock_group,
             }],
             "available_ledgers": ledger_names,
             "available_payment_ledgers": payment_ledgers,
