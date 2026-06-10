@@ -18,6 +18,10 @@ export interface VoucherEntry {
   warnings: string[];
   is_new_ledger: boolean;
   suggested_parent: string | null;
+  // Invoice-entry Phase 1
+  reference?: string | null;
+  reference_date?: string | null;
+  duplicate_of?: { voucher_no: string; date: string; reason: string } | null;
   // Group B additions
   party_name?: string | null;
   party_ledger?: string | null;
@@ -94,6 +98,7 @@ export default function VoucherReviewCard({
         const isForeign = !!entry.original_currency && entry.original_currency !== "INR";
         const partyLabel = entry.party_name || entry.vendor_name || "—";
         const isReturn = entry.voucher_type === "Debit Note" || entry.voucher_type === "Credit Note";
+        const isDuplicate = entry.status === "duplicate";
 
         return (
           <div
@@ -105,6 +110,8 @@ export default function VoucherReviewCard({
                 ? "border-gray-200 bg-gray-50 opacity-60"
                 : entry.status === "pending"
                 ? "border-yellow-200 bg-yellow-50"
+                : isDuplicate
+                ? "border-red-300 bg-red-50"
                 : "border-blue-200 bg-blue-50"
             }`}
             data-testid={`voucher-review-${entry.id}`}
@@ -126,10 +133,23 @@ export default function VoucherReviewCard({
                     ? "Discarded"
                     : entry.status === "pending"
                     ? "Pending"
+                    : isDuplicate
+                    ? "Duplicate"
                     : "Draft"}
                 </span>
               </div>
             </div>
+
+            {isDuplicate && entry.duplicate_of && (
+              <div
+                className="mb-3 rounded-md border border-red-300 bg-red-100 px-3 py-2 text-sm font-medium text-red-800"
+                data-testid={`voucher-duplicate-banner-${entry.id}`}
+              >
+                {`⚠ Duplicate of voucher #${entry.duplicate_of.voucher_no} (written ${formatDate(
+                  entry.duplicate_of.date,
+                )}) — ${entry.duplicate_of.reason}. Not written.`}
+              </div>
+            )}
 
             {isEditing ? (
               <VoucherEditForm
@@ -154,6 +174,7 @@ export default function VoucherReviewCard({
                     <Field label="Vendor" value={entry.vendor_name || "—"} />
                   )}
                   <Field label="Date" value={formatDate(entry.date)} />
+                  <Field label="Invoice #" value={entry.reference || "—"} muted={!entry.reference} />
                   <Field label="Amount" value={formatINR(entry.amount)} />
                   {isForeign && (
                     <Field
@@ -190,40 +211,51 @@ export default function VoucherReviewCard({
 
                 {isExpanded && <VoucherReviewExpanded entry={entry} />}
 
-                {(entry.status === "draft" || entry.status === "pending") && (
+                {(entry.status === "draft" || entry.status === "pending" || isDuplicate) && (
                   <div className="flex flex-wrap gap-2 mt-3">
-                    <button
-                      type="button"
-                      onClick={() => onApprove(entry.id)}
-                      disabled={entry.status === "pending"}
-                      className={`px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm transition-colors flex items-center gap-1.5 ${
-                        entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-green-700"
-                      }`}
-                    >
-                      {pendingAction?.entryId === entry.id && pendingAction.action === "approve" && <Spinner />}
-                      Write to Tally
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setEditingId(entry.id)}
-                      disabled={entry.status === "pending"}
-                      className={`px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm transition-colors ${
-                        entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
-                      }`}
-                    >
-                      Edit Entry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => onDiscard(entry.id)}
-                      disabled={entry.status === "pending"}
-                      className={`px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm transition-colors flex items-center gap-1.5 ${
-                        entry.status === "pending" ? "opacity-50 cursor-not-allowed" : "hover:bg-red-50"
-                      }`}
-                    >
-                      {pendingAction?.entryId === entry.id && pendingAction.action === "discard" && <Spinner />}
-                      Discard
-                    </button>
+                    {(() => {
+                      // Pending blocks every action; a duplicate hard-blocks the
+                      // write only (Edit/Discard stay live so a mis-read invoice
+                      // no. can be corrected or the entry dropped).
+                      const blockAll = entry.status === "pending";
+                      const writeDisabled = blockAll || isDuplicate;
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => onApprove(entry.id)}
+                            disabled={writeDisabled}
+                            className={`px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm transition-colors flex items-center gap-1.5 ${
+                              writeDisabled ? "opacity-50 cursor-not-allowed" : "hover:bg-green-700"
+                            }`}
+                          >
+                            {pendingAction?.entryId === entry.id && pendingAction.action === "approve" && <Spinner />}
+                            Write to Tally
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingId(entry.id)}
+                            disabled={blockAll}
+                            className={`px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm transition-colors ${
+                              blockAll ? "opacity-50 cursor-not-allowed" : "hover:bg-gray-50"
+                            }`}
+                          >
+                            Edit Entry
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => onDiscard(entry.id)}
+                            disabled={blockAll}
+                            className={`px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm transition-colors flex items-center gap-1.5 ${
+                              blockAll ? "opacity-50 cursor-not-allowed" : "hover:bg-red-50"
+                            }`}
+                          >
+                            {pendingAction?.entryId === entry.id && pendingAction.action === "discard" && <Spinner />}
+                            Discard
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
                 )}
               </>
@@ -235,11 +267,11 @@ export default function VoucherReviewCard({
   );
 }
 
-function Field({ label, value }: { label: string; value: string }) {
+function Field({ label, value, muted = false }: { label: string; value: string; muted?: boolean }) {
   return (
     <div>
       <span className="text-gray-500">{label}:</span>{" "}
-      <span className="text-gray-900">{value}</span>
+      <span className={muted ? "text-gray-400" : "text-gray-900"}>{value}</span>
     </div>
   );
 }
