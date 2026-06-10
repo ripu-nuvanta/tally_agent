@@ -9,6 +9,8 @@ import {
   salesINR,
   debitNoteINR,
   creditNoteINR,
+  purchaseInventory,
+  purchaseInventoryDuplicate,
   availableLedgers,
   availablePaymentLedgers,
   availableSupplierLedgers,
@@ -177,6 +179,69 @@ describe("VoucherReviewCard — progressive disclosure", () => {
     renderCard(paymentINR);
     fireEvent.click(screen.getByText("Show details"));
     expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
+  });
+});
+
+describe("VoucherReviewCard — inventory line items", () => {
+  it("renders a line-items table for an inventory entry in the expanded view", () => {
+    renderCard(purchaseInventory);
+    fireEvent.click(screen.getByText("Show details"));
+    const table = screen.getByTestId(`voucher-line-items-${purchaseInventory.id}`);
+    expect(table).toBeInTheDocument();
+    // column headers
+    expect(screen.getByText("Item")).toBeInTheDocument();
+    expect(screen.getByText("Qty")).toBeInTheDocument();
+    expect(screen.getByText("Rate")).toBeInTheDocument();
+    expect(screen.getByText("Amount")).toBeInTheDocument();
+  });
+
+  it("shows the resolved item name, qty+unit, rate and amount per line", () => {
+    renderCard(purchaseInventory);
+    fireEvent.click(screen.getByText("Show details"));
+    const table = screen.getByTestId(`voucher-line-items-${purchaseInventory.id}`);
+    // matched line shows the matched_item name
+    expect(table).toHaveTextContent("A4 Paper Ream");
+    // qty with unit
+    expect(table).toHaveTextContent("10 Nos");
+    expect(table).toHaveTextContent("2 Nos");
+    // rate + amount (INR formatted)
+    expect(table).toHaveTextContent("₹250.00");
+    expect(table).toHaveTextContent("₹2,500.00");
+    expect(table).toHaveTextContent("₹9,000.00");
+  });
+
+  it("shows a 'new' badge with the stock_name on a create_new line", () => {
+    renderCard(purchaseInventory);
+    fireEvent.click(screen.getByText("Show details"));
+    const table = screen.getByTestId(`voucher-line-items-${purchaseInventory.id}`);
+    // create_new line shows its stock_name and a "new" badge
+    expect(table).toHaveTextContent("Ergonomic Chair");
+    expect(screen.getByTestId(`line-new-badge-${purchaseInventory.id}-1`)).toHaveTextContent(/new/i);
+  });
+
+  it("does not render the new badge on a matched line", () => {
+    renderCard(purchaseInventory);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(
+      screen.queryByTestId(`line-new-badge-${purchaseInventory.id}-0`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("does not render a line-items table for an accounting-only invoice (regression)", () => {
+    renderCard(purchaseINR);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(
+      screen.queryByTestId(`voucher-line-items-${purchaseINR.id}`),
+    ).not.toBeInTheDocument();
+  });
+
+  it("still renders the line table for a duplicate inventory entry but blocks Write", () => {
+    renderCard(purchaseInventoryDuplicate);
+    fireEvent.click(screen.getByText("Show details"));
+    expect(
+      screen.getByTestId(`voucher-line-items-${purchaseInventoryDuplicate.id}`),
+    ).toBeInTheDocument();
+    expect(screen.getByText("Write to Tally").closest("button")).toBeDisabled();
   });
 });
 

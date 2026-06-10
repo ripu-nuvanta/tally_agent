@@ -1,6 +1,7 @@
 import { useState } from "react";
-import type { VoucherEntry } from "./VoucherReviewCard";
+import type { VoucherEntry, LineItem } from "./VoucherReviewCard";
 import LineItemEditor from "./LineItemEditor";
+import InventoryLineEditor from "./InventoryLineEditor";
 import VoucherRefSelect from "./VoucherRefSelect";
 
 export const VOUCHER_TYPES = ["Payment", "Purchase", "Sales", "Debit Note", "Credit Note"] as const;
@@ -89,6 +90,12 @@ export default function VoucherEditForm({
   const [billReference, setBillReference] = useState(entry.bill_reference || "");
   const [reference, setReference] = useState(entry.reference || "");
   const [error, setError] = useState("");
+
+  // Inventory line items (Phase 2). Editable only for goods Purchase/Sales.
+  const isInventory = !!entry.is_inventory && !!entry.line_items?.length;
+  const [lineItems, setLineItems] = useState<LineItem[]>(
+    entry.line_items ? entry.line_items.map((l) => ({ ...l })) : [],
+  );
 
   // Primary (non-party) ledger = the contra/returns/expense ledger. It sits on
   // the side OPPOSITE the party. Party-on-debit types (Sales, Debit Note) keep
@@ -180,6 +187,11 @@ export default function VoucherEditForm({
     } else {
       updates.bill_reference = "";
       updates.bill_type = "";
+    }
+    // Inventory: emit the edited line array. Each row carries its match-or-create
+    // state plus qty/rate/amount so the backend can build the stock grid.
+    if (isInventory) {
+      updates.line_items = lineItems;
     }
     onSave(updates);
   };
@@ -273,16 +285,25 @@ export default function VoucherEditForm({
         />
       </div>
 
-      <LineItemEditor
-        ledgerLabel={primaryLedgerLabel(voucherType)}
-        amount={amount}
-        onAmountChange={setAmount}
-        ledger={primaryLedger}
-        onLedgerChange={setPrimaryLedger}
-        availableLedgers={availableLedgers}
-        narration={narration}
-        onNarrationChange={setNarration}
-      />
+      {isInventory ? (
+        <InventoryLineEditor
+          lines={lineItems}
+          availableStockItems={entry.available_stock_items || []}
+          defaultStockGroup={entry.default_stock_group || "Primary"}
+          onChange={setLineItems}
+        />
+      ) : (
+        <LineItemEditor
+          ledgerLabel={primaryLedgerLabel(voucherType)}
+          amount={amount}
+          onAmountChange={setAmount}
+          ledger={primaryLedger}
+          onLedgerChange={setPrimaryLedger}
+          availableLedgers={availableLedgers}
+          narration={narration}
+          onNarrationChange={setNarration}
+        />
+      )}
 
       {voucherType === "Payment" && (
         <div>

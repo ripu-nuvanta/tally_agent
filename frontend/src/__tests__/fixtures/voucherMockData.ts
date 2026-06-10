@@ -1,4 +1,4 @@
-import type { VoucherEntry } from "../../components/VoucherReviewCard";
+import type { VoucherEntry, LineItem } from "../../components/VoucherReviewCard";
 
 // Base entry — INR Payment (back-compat shape)
 export const paymentINR: VoucherEntry = {
@@ -141,6 +141,91 @@ export const creditNoteINR: VoucherEntry = {
   warnings: [],
   is_new_ledger: false,
   suggested_parent: null,
+};
+
+// --- Invoice-entry Phase 2 (inventory line items) ---
+
+export const availableStockItems = [
+  "A4 Paper Ream",
+  "Stapler",
+  "Wireless Mouse",
+  "USB Cable",
+];
+
+// A matched line resolves to an existing stock item; a create_new line carries
+// a brand-new stock_name/unit/group/gst_rate.
+export const lineItemMatched: LineItem = {
+  description: "A4 Paper Ream 500 sheets",
+  qty: 10,
+  rate: 250,
+  unit: "Nos",
+  gst_rate: 18,
+  amount: 2500,
+  matched_item: "A4 Paper Ream",
+  create_new: false,
+  stock_name: "A4 Paper Ream 500 sheets",
+  stock_group: "Office Supplies",
+  hsn: "4802",
+  ledger: "Purchase Accounts",
+};
+
+export const lineItemNew: LineItem = {
+  description: "Ergonomic Chair",
+  qty: 2,
+  rate: 4500,
+  unit: "Nos",
+  gst_rate: 18,
+  amount: 9000,
+  matched_item: null,
+  create_new: true,
+  stock_name: "Ergonomic Chair",
+  stock_group: "Office Supplies",
+  hsn: "9401",
+  ledger: "Purchase Accounts",
+};
+
+// Goods Purchase with 2 line items (one matched, one new). amount = lines + GST
+// (11500 base + 2070 GST = 13570) — backend-derived, left on the entry.
+export const purchaseInventory: VoucherEntry = {
+  id: "v-purchase-inventory",
+  voucher_type: "Purchase",
+  date: "20260410",
+  vendor_name: "Acme Supplies",
+  party_name: "Acme Supplies",
+  party_ledger: "Acme Supplies",
+  is_party_ledger: true,
+  amount: 13570,
+  debit_ledger: "Purchase Accounts",
+  credit_ledger: "Acme Supplies",
+  narration: "Purchase — Acme Supplies",
+  reference: "PINV-INV-01",
+  reference_date: "20260410",
+  bill_reference: "PINV-INV-01",
+  bill_type: "New Ref",
+  gst_entries: [
+    { ledger: "INPUT CGST", amount: 1035 },
+    { ledger: "INPUT SGST", amount: 1035 },
+  ],
+  status: "draft",
+  warnings: [],
+  is_new_ledger: false,
+  suggested_parent: null,
+  is_inventory: true,
+  line_items: [lineItemMatched, lineItemNew],
+  available_stock_items: availableStockItems,
+  default_stock_group: "Office Supplies",
+};
+
+// Duplicate inventory entry — write must be hard-blocked, line table read-only.
+export const purchaseInventoryDuplicate: VoucherEntry = {
+  ...purchaseInventory,
+  id: "v-purchase-inventory-duplicate",
+  status: "duplicate",
+  duplicate_of: {
+    voucher_no: "12",
+    date: "20260410",
+    reason: "same invoice no for party",
+  },
 };
 
 export const availableLedgers = [
