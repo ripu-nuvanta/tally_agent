@@ -9,6 +9,7 @@ from backend.tally_bridge.request_builder import (
     build_list_companies,
     build_list_ledgers,
     build_list_stock_items,
+    build_list_stock_groups,
     build_list_groups,
 )
 from backend.tally_bridge.response_parser import (
@@ -16,6 +17,7 @@ from backend.tally_bridge.response_parser import (
     parse_company_list,
     parse_ledger_list,
     parse_stock_items,
+    parse_stock_group_list,
     parse_groups,
     sanitize_xml,
 )
@@ -88,6 +90,15 @@ async def list_stock_items(client: TallyClient) -> list[StockItem]:
         raise TallyResponseError(error)
     parsed = parse_stock_items(raw)
     return [StockItem(**row) for row in parsed]
+
+
+async def list_stock_groups(client: TallyClient) -> list[str]:
+    """Fetch all stock group names (used to skip re-creating existing groups)."""
+    raw = await client.post_xml(build_list_stock_groups())
+    error = detect_error(raw)
+    if error:
+        raise TallyResponseError(error)
+    return parse_stock_group_list(raw)
 
 
 async def list_groups(client: TallyClient) -> list[AccountGroup]:

@@ -225,6 +225,10 @@ def build_list_stock_items() -> str:
     return _wrap_collection_envelope("CustomStockItemList", "StockItem", ["Name", "Parent", "BaseUnits", "ClosingBalance", "ClosingRate", "ClosingValue"])
 
 
+def build_list_stock_groups() -> str:
+    return _wrap_collection_envelope("CustomStockGroupList", "StockGroup", ["Name"])
+
+
 # --- Report Queries ---
 
 def build_trial_balance(from_date: str, to_date: str, company: str | None = None) -> str:

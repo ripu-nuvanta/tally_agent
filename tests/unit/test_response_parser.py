@@ -4,6 +4,7 @@ from backend.tally_bridge.response_parser import (
     parse_amount, parse_trial_balance, parse_ledger_list, detect_error,
     parse_profit_and_loss, parse_balance_sheet, parse_stock_summary,
     parse_bills, sanitize_xml, parse_stock_items, parse_groups, parse_cash_flow,
+    parse_stock_group_list,
 )
 
 FIXTURES_DIR = os.path.join(os.path.dirname(__file__), "..", "fixtures")
@@ -586,6 +587,36 @@ class TestParseStockItems:
         </COLLECTION></DATA></BODY></ENVELOPE>"""
         items = parse_stock_items(xml)
         assert items == []
+
+
+# ---------------------------------------------------------------------------
+# parse_stock_group_list
+# ---------------------------------------------------------------------------
+class TestParseStockGroupList:
+    def test_parses_group_names(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <STOCKGROUP NAME="Electronics"><NAME>Electronics</NAME></STOCKGROUP>
+        <STOCKGROUP NAME="AI Imported Items"><NAME>AI Imported Items</NAME></STOCKGROUP>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        names = parse_stock_group_list(xml)
+        assert names == ["Electronics", "AI Imported Items"]
+
+    def test_uses_name_attribute_when_no_child(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <STOCKGROUP NAME="Stationery"></STOCKGROUP>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        assert parse_stock_group_list(xml) == ["Stationery"]
+
+    def test_empty_collection(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        assert parse_stock_group_list(xml) == []
+
+    def test_skips_nameless(self):
+        xml = """<ENVELOPE><BODY><DATA><COLLECTION>
+        <STOCKGROUP NAME=""><NAME></NAME></STOCKGROUP>
+        </COLLECTION></DATA></BODY></ENVELOPE>"""
+        assert parse_stock_group_list(xml) == []
 
 
 # ---------------------------------------------------------------------------

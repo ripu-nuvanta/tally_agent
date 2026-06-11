@@ -1,5 +1,6 @@
 from backend.tally_bridge.request_builder import (
     build_list_companies, build_list_ledgers, build_list_groups, build_list_stock_items,
+    build_list_stock_groups,
     build_trial_balance, build_profit_and_loss, build_balance_sheet,
     build_bills_receivable, build_bills_payable, build_stock_summary,
     build_day_book, build_ledger_vouchers, build_sales_register, build_purchase_register,
@@ -56,6 +57,16 @@ class TestMasterBuilders:
     def test_list_stock_items_has_stock_type(self):
         xml = build_list_stock_items()
         assert "<TYPE>StockItem</TYPE>" in xml
+
+    def test_list_stock_groups_has_stock_group_type(self):
+        xml = build_list_stock_groups()
+        assert "<TYPE>StockGroup</TYPE>" in xml
+
+    def test_list_stock_groups_collection_has_name_method(self):
+        xml = build_list_stock_groups()
+        assert "<NATIVEMETHOD>Name</NATIVEMETHOD>" in xml
+        assert 'TALLYREQUEST>Export' in xml
+        assert '<TYPE>Collection</TYPE>' in xml
 
 
 class TestReportBuilders:
