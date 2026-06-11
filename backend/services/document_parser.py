@@ -53,7 +53,8 @@ class ExtractedDocument:
     party_name: str | None = None       # canonical: vendor or customer
     original_amount: Decimal = Decimal("0")  # total in the document's currency
     inr_amount: Decimal = Decimal("0")       # total converted to INR (== total when no rate)
-    original_invoice_ref: str | None = None  # for DN/CN: original invoice reference
+    invoice_number: str | None = None        # this document's OWN invoice/bill number
+    original_invoice_ref: str | None = None  # DN/CN only: the ORIGINAL invoice being adjusted
 
 
 _STRUCTURED_EXTENSIONS = {".csv", ".xlsx", ".xls", ".ofx"}
@@ -105,7 +106,8 @@ Return ONLY valid JSON with this exact structure:
         "gstin": "vendor/customer GSTIN or null"
     } or null,
     "payment_mode": "cash" | "bank" | "upi" | "card" | null,
-    "original_invoice_ref": "string or null (original invoice number for debit/credit notes)"
+    "invoice_number": "string or null (this document's own invoice/bill number, e.g. Invoice No / Bill No / Inv #)",
+    "original_invoice_ref": "string or null ((debit/credit notes only) the ORIGINAL invoice being adjusted — NOT this document's own number)"
 }
 
 Classification rules:
@@ -123,7 +125,8 @@ Currency rules:
 
 Other rules:
 - Date in YYYY-MM-DD format.
-- For debit/credit notes, set "original_invoice_ref" to the referenced original invoice number if shown; otherwise null.
+- "invoice_number": always set this to THIS document's own invoice/bill number (Invoice No, Bill No, Inv #) for every doc type, if shown; otherwise null.
+- "original_invoice_ref": ONLY for debit/credit notes — the ORIGINAL invoice being adjusted/returned. This is NOT this document's own number. Set null for plain invoices and when not shown.
 - If GST is not mentioned or not applicable, set gst to null.
 - If unsure about a field, set it to null rather than guessing.
 - Return ONLY the JSON, no markdown formatting or explanation."""
@@ -211,6 +214,7 @@ def parse_vision_response(response_text: str) -> ExtractedDocument:
         original_amount=total,
         fx_rate=fx_rate,
         inr_amount=inr_amount,
+        invoice_number=data.get("invoice_number"),
         original_invoice_ref=data.get("original_invoice_ref"),
     )
 

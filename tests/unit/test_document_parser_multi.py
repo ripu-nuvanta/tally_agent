@@ -91,6 +91,33 @@ class TestParseMultiType:
         doc = parse_vision_response(_load("payment_petty_cash_inr.json"))
         assert doc.vendor_name == doc.party_name
 
+    def test_invoice_number_captured(self):
+        """A plain invoice's OWN number is captured into invoice_number."""
+        doc = parse_vision_response(_load("purchase_office_inr.json"))
+        assert doc.invoice_number == "CRO-2026-5678"
+
+    def test_invoice_number_distinct_from_original_ref(self):
+        """invoice_number (doc's own no) is separate from original_invoice_ref."""
+        resp = json.dumps({
+            "doc_type": "purchase",
+            "party_name": "Acme",
+            "date": "2026-02-10",
+            "total_amount": 100,
+            "invoice_number": "OWN-123",
+            "original_invoice_ref": "AGAINST-999",
+        })
+        doc = parse_vision_response(resp)
+        assert doc.invoice_number == "OWN-123"
+        assert doc.original_invoice_ref == "AGAINST-999"
+
+    def test_invoice_number_defaults_none_when_absent(self):
+        resp = json.dumps({
+            "doc_type": "payment", "party_name": "X", "date": "2026-01-01",
+            "total_amount": 10,
+        })
+        doc = parse_vision_response(resp)
+        assert doc.invoice_number is None
+
 
 class TestVisionPromptMultiType:
     """Updated Vision prompt includes multi-currency + 5-type classification."""
@@ -108,6 +135,18 @@ class TestVisionPromptMultiType:
     def test_prompt_includes_invoice_ref(self):
         prompt = build_vision_prompt()
         assert "original_invoice_ref" in prompt
+
+    def test_prompt_includes_invoice_number(self):
+        """Prompt asks for the document's OWN invoice number distinctly."""
+        prompt = build_vision_prompt()
+        assert "invoice_number" in prompt
+
+    def test_prompt_original_invoice_ref_scoped_to_dn_cn(self):
+        """original_invoice_ref description tightened to DN/CN only, not own number."""
+        prompt = build_vision_prompt()
+        # The schema line for original_invoice_ref must scope it to debit/credit
+        # notes and explicitly say it is NOT this document's own number.
+        assert "NOT this document's own number" in prompt
 
 
 class TestValidateFX:

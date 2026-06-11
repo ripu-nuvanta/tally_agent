@@ -105,7 +105,7 @@ async def _upload(db_session, ctx, fixture, content=b"\xff\xd8\xff\xe0PDFBYTESA"
 async def test_entry_carries_reference_fields(db_session, ctx):
     result = await _upload(db_session, ctx, "purchase_service_inr")
     entry = result["data"]["entries"][0]
-    # purchase_service_inr fixture: original_invoice_ref=CRO-2026-5678, date 2026-02-10
+    # purchase_service_inr fixture: invoice_number=CRO-2026-5678, date 2026-02-10
     assert entry["reference"] == "CRO-2026-5678"
     assert entry["reference_date"] == "20260210"
     assert entry["status"] == "draft"
