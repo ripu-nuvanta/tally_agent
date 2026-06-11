@@ -74,7 +74,17 @@ Correctness is proven live; these are hardening/quality items:
   invoice no. written to Tally's `REFERENCE` (live-verified) + shown on the card; duplicate **hard block**
   (file-hash + party/invoice-no vs DB & Tally, **server-side re-derived** so it's not client-bypassable,
   per-workspace). Spec `specs/2026-06-10-invoice-entry-phase1-design.md`; review `code-review-invoice-dedup-2026-06-10.md`.
-- **Invoice entry Phase 2 — Inventory line items (HIGH — next feature).** The agent invoice write-path uses the
+- **Invoice entry Phase 2 — Inventory line items** ✅ **Merged 2026-06-11.** Goods invoices now post line
+  items into the Tally **stock grid** (qty/rate) via the stock-based builder, with Vision unit extraction,
+  a stock-item fuzzy resolver, goods-vs-services routing, and match/create-in-card UI. Create-new items:
+  GST-Not-Applicable when no HSN, non-reserved group, only-create-missing masters (fixed a duplicate-master
+  modal that froze Tally). **Live-verified 5/5** (items in grid, balanced voucher, books restored).
+  Spec `specs/2026-06-10-invoice-entry-phase2-inventory-design.md`; review `code-review-invoice-inventory-2026-06-10.md`.
+  Follow-up: on-the-fly stock-item creation needs HSN to set master GST (currently GST-NA + voucher-level GST);
+  add an HSN field to the create-new card if master-level GST is wanted.
+
+<!-- superseded — was: -->
+- **(superseded) Inventory line items** — original gap note. The agent invoice write-path used the
   **accounting-only** ledger builder (`_build_ledger_invoice_voucher`): it lumps the base on a single
   purchase/sales ledger and puts the extracted item names in the **narration** — no stock items, qty, or
   rate in the inventory grid. Vision already extracts `line_items` (description/qty/rate/amount); they're
