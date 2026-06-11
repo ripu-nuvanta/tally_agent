@@ -391,9 +391,12 @@ class Orchestrator(BaseAgent):
             ]
 
         # 5b. Supplier invoice no + date (Phase 1 Part A). The reference is the
-        # extracted invoice number; reference_date is the doc date as YYYYMMDD
-        # (Tally import format). Only convert a YYYY-MM-DD doc date.
-        reference = extracted.original_invoice_ref or None
+        # document's OWN invoice number (invoice_number), for ALL voucher types.
+        # For DN/CN the against-bill reference (bill_reference) comes separately
+        # from original_invoice_ref (handled in the voucher builders above).
+        # reference_date is the doc date as YYYYMMDD (Tally import format).
+        # Only convert a YYYY-MM-DD doc date.
+        reference = extracted.invoice_number or None
         reference_date: str | None = None
         if extracted.date:
             digits = extracted.date.replace("-", "")

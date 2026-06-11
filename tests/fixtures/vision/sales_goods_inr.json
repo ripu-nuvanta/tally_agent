@@ -2,19 +2,35 @@
   "doc_type": "sales",
   "party_name": "Infosys Ltd",
   "date": "2026-03-01",
-  "total_amount": 70800.00,
+  "total_amount": 70800.0,
   "original_currency": "INR",
   "fx_rate": null,
   "line_items": [
-    {"description": "HP Laptop 15s", "amount": 50000.00, "quantity": 1, "rate": 50000.00, "unit": "Nos"},
-    {"description": "Logitech Wireless Mouse", "amount": 10000.00, "quantity": 5, "rate": 2000.00, "unit": "Nos"}
+    {
+      "description": "HP Laptop 15s",
+      "amount": 50000.0,
+      "quantity": 1,
+      "rate": 50000.0,
+      "unit": "Nos"
+    },
+    {
+      "description": "Logitech Wireless Mouse",
+      "amount": 10000.0,
+      "quantity": 5,
+      "rate": 2000.0,
+      "unit": "Nos"
+    }
   ],
   "gst": {
-    "cgst_rate": 9.0, "cgst_amount": 5400.00,
-    "sgst_rate": 9.0, "sgst_amount": 5400.00,
-    "igst_rate": null, "igst_amount": null,
+    "cgst_rate": 9.0,
+    "cgst_amount": 5400.0,
+    "sgst_rate": 9.0,
+    "sgst_amount": 5400.0,
+    "igst_rate": null,
+    "igst_amount": null,
     "gstin": "27AABCI1234F1G5"
   },
   "payment_mode": null,
-  "original_invoice_ref": "INV-9100"
+  "original_invoice_ref": null,
+  "invoice_number": "INV-9100"
 }

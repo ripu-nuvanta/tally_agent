@@ -2,18 +2,27 @@
   "doc_type": "debit_note",
   "party_name": "Croma Electronics",
   "date": "2026-03-05",
-  "total_amount": 4718.00,
+  "total_amount": 4718.0,
   "original_currency": "INR",
   "fx_rate": null,
   "line_items": [
-    {"description": "Return: USB-C Hub (defective)", "amount": 3999.00, "quantity": 1, "rate": 3999.00}
+    {
+      "description": "Return: USB-C Hub (defective)",
+      "amount": 3999.0,
+      "quantity": 1,
+      "rate": 3999.0
+    }
   ],
   "gst": {
-    "cgst_rate": 9.0, "cgst_amount": 359.91,
-    "sgst_rate": 9.0, "sgst_amount": 359.91,
-    "igst_rate": null, "igst_amount": null,
+    "cgst_rate": 9.0,
+    "cgst_amount": 359.91,
+    "sgst_rate": 9.0,
+    "sgst_amount": 359.91,
+    "igst_rate": null,
+    "igst_amount": null,
     "gstin": "27AABCC1234D1Z5"
   },
   "payment_mode": null,
-  "original_invoice_ref": "CRO-2026-5678"
+  "original_invoice_ref": "CRO-2026-5678",
+  "invoice_number": "DN-2026-001"
 }

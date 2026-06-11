@@ -161,6 +161,82 @@ async def test_credit_note_routes_with_against_invoice_options():
     assert entry["against_invoice_options"]
 
 
+@pytest.mark.asyncio
+async def test_purchase_reference_is_invoice_number():
+    """A plain purchase's review reference comes from invoice_number (its OWN
+    number), NOT original_invoice_ref."""
+    result = await _run_upload("purchase_office_inr")
+    entry = _entry(result)
+    # purchase_office_inr: invoice_number = CRO-2026-5678, original_invoice_ref = null
+    assert entry["reference"] == "CRO-2026-5678"
+    # No "limited to exact file" warning when an invoice number is present.
+    assert not any("limited to exact file" in w for w in entry["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_sales_reference_is_invoice_number():
+    result = await _run_upload("sales_goods_inr")
+    entry = _entry(result)
+    # sales_goods_inr: invoice_number = INV-9100
+    assert entry["reference"] == "INV-9100"
+    assert not any("limited to exact file" in w for w in entry["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_missing_invoice_number_warns_limited_dedup():
+    """No invoice_number → soft warning that dedup is limited to exact file."""
+    result = await _run_upload("sales_service_inr")  # invoice_number = null
+    entry = _entry(result)
+    assert entry["reference"] is None
+    assert any("limited to exact file" in w for w in entry["warnings"])
+
+
+@pytest.mark.asyncio
+async def test_debit_note_bill_reference_from_original_ref():
+    """DN bill_reference (against-bill) still comes from original_invoice_ref,
+    independent of the doc's own invoice_number."""
+    sample = [
+        {"voucher_number": "CRO-2026-5678", "date": "2026-02-10",
+         "voucher_type": "Purchase", "amount": 15340.0, "reference": "CRO-2026-5678"},
+    ]
+    result = await _run_upload("debit_note_return_inr", party_vouchers=sample)
+    entry = _entry(result)
+    # against-bill is the ORIGINAL invoice (original_invoice_ref)
+    assert entry["bill_reference"] == "CRO-2026-5678"
+    # the DN's OWN number (invoice_number) populates reference, separately.
+    assert entry["reference"] == "DN-2026-001"
+
+
+@pytest.mark.asyncio
+async def test_dedup_keys_on_invoice_number():
+    """The business-key dedup call uses invoice_number as invoice_ref."""
+    orch = Orchestrator()
+    session = SessionContext(session_id="s1")
+    fake_find = AsyncMock(return_value=None)
+    with _temp_file() as path, patch(
+        "backend.agents.orchestrator.anthropic_client.messages.create",
+        new=AsyncMock(return_value=vision_docs.vision_message("purchase_office_inr")),
+    ), patch(
+        "backend.tally_bridge.response_parser.parse_ledger_list",
+        return_value=_LEDGERS,
+    ), patch(
+        "backend.services.stock_resolver.list_stock_items",
+        new=AsyncMock(return_value=_STOCK_ITEMS),
+    ), patch(
+        "backend.tally_bridge.queries.vouchers.get_party_vouchers",
+        new=AsyncMock(return_value=[]),
+    ), patch(
+        "backend.services.dedup.find_duplicate", new=fake_find,
+    ):
+        await orch.process_file_upload(
+            file_path=path, filename="doc.jpg", mime_type="image/jpeg",
+            user_message="entry", client=_FakeClient(), session=session,
+            file_id="file-1", db=object(), workspace_id="ws-1",
+        )
+    fake_find.assert_awaited_once()
+    assert fake_find.await_args.kwargs["invoice_ref"] == "CRO-2026-5678"
+
+
 def _gst_ledger_names(entry):
     return {e["ledger"] for e in entry.get("gst_entries", [])}
 
