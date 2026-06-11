@@ -107,9 +107,11 @@ def test_build_create_stock_item_12pct_rate_splits_correctly():
     assert gd.findtext("SGSTRATE") == "6"
 
 
-def test_build_create_stock_item_empty_hsn_omits_hsn_but_keeps_gst():
-    """Vision often extracts no HSN. An empty hsn_code must not raise and must
-    omit the <HSNCODE>/<HSN> elements while still emitting the GST rate block."""
+def test_build_create_stock_item_empty_hsn_is_gst_not_applicable_no_gstdetails():
+    """Vision often extracts no HSN. GST-applicable-without-HSN triggers Tally's
+    blocking "HSN/SAC required" modal, locking the API. So when hsn_code is empty
+    the item must be plain name+unit+group: GSTAPPLICABLE=Not Applicable, and NO
+    GSTDETAILS.LIST / HSN elements at all (GST is posted via voucher tax lines)."""
     from backend.tally_bridge.import_builder import build_create_stock_item
     xml = build_create_stock_item(
         name="Generic Widget",
@@ -128,18 +130,14 @@ def test_build_create_stock_item_empty_hsn_omits_hsn_but_keeps_gst():
     assert si.find("NAME.LIST/NAME").text == "Generic Widget"
     assert si.findtext("PARENT") == "Electronics"
     assert si.findtext("BASEUNITS") == "Nos"
-    assert si.findtext("GSTAPPLICABLE") == "Applicable"
-    # No bogus HSN emitted (element absent or empty)
+    # GST disabled at master level — avoids the HSN-mandatory modal
+    assert si.findtext("GSTAPPLICABLE") == "Not Applicable"
+    # No HSN of any form
     assert not (si.findtext("HSNCODE") or "")
     assert not (si.findtext("HSN") or "")
     assert si.find("HSNDETAILS.LIST") is None
-    # GST rate block still applies
-    gd = si.find("GSTDETAILS.LIST")
-    assert gd is not None
-    assert gd.findtext("IGSTRATE") == "18"
-    assert gd.findtext("CGSTRATE") == "9"
-    assert gd.findtext("SGSTRATE") == "9"
-    assert gd.findtext("TAXABILITY") == "Taxable"
+    # No GST rate block at all
+    assert si.find("GSTDETAILS.LIST") is None
 
 
 def test_build_create_stock_item_with_hsn_still_emits_hsn():
