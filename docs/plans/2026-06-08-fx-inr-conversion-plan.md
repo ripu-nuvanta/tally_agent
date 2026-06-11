@@ -1,5 +1,7 @@
 # Plan — Foreign-currency → INR conversion
 
+> **✅ STATUS: COMPLETE — merged to `dev` 2026-06-08.** All tasks (T1–T12) implemented, reviewed, and live-verified. Review: `docs/code-review-fx-inr-2026-06-08.md`.
+
 Spec: `docs/specs/2026-06-08-fx-inr-conversion-design.md`. Branch: `feat/fx-inr-conversion`.
 All tasks TDD (test first). DB mode only. Backend run on port 7000 locally (see `.claude.local.md`).
 

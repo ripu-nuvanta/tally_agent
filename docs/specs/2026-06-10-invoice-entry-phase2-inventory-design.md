@@ -1,5 +1,7 @@
 # Spec — Invoice entry Phase 2: inventory line items
 
+> **✅ STATUS: COMPLETE — merged to `dev` 2026-06-11.** Built spec-driven (no separate plan doc). Live-verified 5/5 (items in the Tally stock grid with qty/rate). Review: `docs/code-review-invoice-inventory-2026-06-10.md`.
+
 **Date:** 2026-06-10
 **Scope:** the document-upload → review → write flow for **Purchase & Sales** invoices that have
 itemised line items. Phase 2 of "proper invoice entry" (Phase 1 = invoice no. + dedup, merged).

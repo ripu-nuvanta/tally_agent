@@ -1,5 +1,7 @@
 # Spec — Invoice entry Phase 1: Supplier Invoice No. + duplicate blocking
 
+> **✅ STATUS: COMPLETE — merged to `dev` 2026-06-10.** Built spec-driven (no separate plan doc). Live-verified (REFERENCE written to Tally). Review: `docs/code-review-invoice-dedup-2026-06-10.md`.
+
 **Date:** 2026-06-10
 **Scope:** the document-upload → review → write flow (all 5 voucher types). Phase 1 of the
 "proper invoice entry" feature. **Phase 2 (separate spec): inventory line items.**
