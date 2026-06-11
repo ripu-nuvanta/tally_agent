@@ -250,7 +250,8 @@ def _parse_inventory_entries(raw: str, narration_match: str) -> tuple[list[InvLi
 
     Looks for inventory line items in the stock-grid blocks — NOT the narration.
     """
-    root = ET.fromstring(raw)
+    from backend.tally_bridge.response_parser import sanitize_xml
+    root = ET.fromstring(sanitize_xml(raw))
     for vch in root.iter("VOUCHER"):
         narr = (vch.findtext("NARRATION") or "")
         if narration_match.lower() not in narr.lower():
