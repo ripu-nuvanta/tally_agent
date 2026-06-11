@@ -342,6 +342,81 @@ class TestWriteErrorAssertion:
             )
 
 
+class TestMasterCreateIdempotentAltered:
+    """BUG 1: a master pre-flight create against an ALREADY-EXISTING master makes
+    Tally answer CREATED=0, ALTERED=1, ERRORS=0, EXCEPTIONS=0. That is benign
+    ("already there") and the master create methods must treat it as success —
+    not raise TallyWriteError on CREATED<1.
+    """
+
+    def _altered_client(self):
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>0</CREATED><ALTERED>1</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        return FakeClient()
+
+    @pytest.mark.asyncio
+    async def test_create_stock_group_accepts_altered_as_success(self):
+        writer = TallyWriter(client=self._altered_client(), company="X")
+        result = await writer.create_stock_group("AI Imported Items", "")
+        assert result["altered"] == 1
+        assert result["created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_create_unit_accepts_altered_as_success(self):
+        writer = TallyWriter(client=self._altered_client(), company="X")
+        result = await writer.create_unit("Nos", "Numbers")
+        assert result["altered"] == 1
+
+    @pytest.mark.asyncio
+    async def test_create_stock_item_accepts_altered_as_success(self):
+        writer = TallyWriter(client=self._altered_client(), company="X")
+        result = await writer.create_stock_item(
+            "Generic Widget", group="Electronics", uom="Nos",
+            opening_qty=0, opening_rate=0, hsn_code="", gst_rate=18,
+        )
+        assert result["altered"] == 1
+
+    @pytest.mark.asyncio
+    async def test_create_stock_group_still_raises_on_nothing_persisted(self):
+        """CREATED=0 AND ALTERED=0 (errors=0) is a genuine silent drop — raise."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError):
+            await writer.create_stock_group("AI Imported Items", "")
+
+    @pytest.mark.asyncio
+    async def test_create_stock_group_still_raises_on_exception(self):
+        """EXCEPTIONS=1 must always raise, even with ALTERED=1."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<LINEERROR>bad group</LINEERROR>'
+                    '<CREATED>0</CREATED><ALTERED>1</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>1</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError):
+            await writer.create_stock_group("AI Imported Items", "")
+
+
 def _silent_drop_client():
     """Returns a fake client that always returns the live silent-drop response."""
     class FakeClient:

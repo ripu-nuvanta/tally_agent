@@ -35,6 +35,7 @@ STATIC_FIXTURES: dict[str, str] = {
     "Bills Payable": "bills_payable.xml",
     "Stock Summary": "stock_summary.xml",
     "CustomStockItemList": "stock_items_list.xml",
+    "CustomStockGroupList": "stock_groups_list.xml",
     "CustomGroupList": "groups_list.xml",
     "Cash Flow": "cash_flow.xml",
 }

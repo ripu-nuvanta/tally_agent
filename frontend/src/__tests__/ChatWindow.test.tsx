@@ -305,7 +305,11 @@ describe("ChatWindow", () => {
       renderWithProvider();
       await uploadVoucher(user);
 
-      mockedApi.voucherAction.mockResolvedValue({ message: "Discarded", session_id: "sess-fx" });
+      mockedApi.voucherAction.mockResolvedValue({
+        message: "Entry discarded.",
+        data: { type: "voucher_discarded", entry_id: "v-1" } as never,
+        session_id: "sess-fx",
+      });
       await user.click(screen.getByText("Discard"));
       await waitFor(() => {
         expect(mockedApi.voucherAction).toHaveBeenCalled();
@@ -320,6 +324,92 @@ describe("ChatWindow", () => {
       expect(mockedApi.sendChat).toHaveBeenLastCalledWith(
         expect.not.objectContaining({ pending_entry: expect.anything() }),
       );
+    });
+  });
+
+  describe("voucher write result handling (BUG 2 — failed write must not show Written)", () => {
+    const voucherReviewData = {
+      type: "voucher_review",
+      entries: [
+        {
+          id: "v-9",
+          voucher_type: "Purchase",
+          date: "20260404",
+          vendor_name: "Croma",
+          amount: 8350,
+          debit_ledger: "Purchase Accounts",
+          credit_ledger: "Croma",
+          narration: "Croma",
+          gst_entries: [],
+          status: "draft",
+          warnings: [],
+          is_new_ledger: false,
+          suggested_parent: null,
+        },
+      ],
+      available_ledgers: ["Purchase Accounts"],
+      available_payment_ledgers: ["Croma"],
+    };
+
+    async function uploadVoucher(user: ReturnType<typeof userEvent.setup>) {
+      mockedApi.sendChatWithFile.mockResolvedValue({
+        message: "Review this entry",
+        data: voucherReviewData as never,
+        session_id: "sess-w",
+      });
+      const fileInput = screen.getByTestId("file-input");
+      const file = new File(["x"], "invoice.png", { type: "image/png" });
+      await user.upload(fileInput, file);
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() => {
+        expect(screen.getByText("Review this entry")).toBeInTheDocument();
+      });
+    }
+
+    it("does NOT mark the entry Written when the write returns a voucher_error", async () => {
+      const user = userEvent.setup();
+      renderWithProvider();
+      await uploadVoucher(user);
+
+      mockedApi.voucherAction.mockResolvedValue({
+        message: "Couldn't create stock group in Tally — add it manually.",
+        data: { type: "voucher_error", entry_id: "v-9" } as never,
+        session_id: "sess-w",
+      });
+      await user.click(screen.getByRole("button", { name: /Write to Tally/ }));
+
+      await waitFor(() => {
+        expect(mockedApi.voucherAction).toHaveBeenCalled();
+      });
+      // The error message is surfaced...
+      await waitFor(() => {
+        expect(
+          screen.getByText("Couldn't create stock group in Tally — add it manually."),
+        ).toBeInTheDocument();
+      });
+      // ...the entry must NOT be shown as Written...
+      expect(screen.queryByText("Written")).not.toBeInTheDocument();
+      // ...and its status reverts to draft (action buttons available again).
+      expect(screen.getByRole("button", { name: /Write to Tally/ })).toBeInTheDocument();
+    });
+
+    it("marks the entry Written when the write returns voucher_written (regression)", async () => {
+      const user = userEvent.setup();
+      renderWithProvider();
+      await uploadVoucher(user);
+
+      mockedApi.voucherAction.mockResolvedValue({
+        message: "Voucher written to Tally.",
+        data: { type: "voucher_written", entry_id: "v-9" } as never,
+        session_id: "sess-w",
+      });
+      await user.click(screen.getByRole("button", { name: /Write to Tally/ }));
+
+      await waitFor(() => {
+        expect(screen.getByText("Written")).toBeInTheDocument();
+      });
+      // Terminal state: the write button is gone.
+      expect(screen.queryByRole("button", { name: /Write to Tally/ })).not.toBeInTheDocument();
     });
   });
 

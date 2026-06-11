@@ -30,3 +30,15 @@ async def test_list_groups_returns_group_list():
     assert len(groups) == 1
     assert groups[0].name == "Sales Accounts"
     assert groups[0].parent == "Revenue"
+
+
+@pytest.mark.asyncio
+async def test_list_stock_groups_returns_names():
+    mock_client = AsyncMock()
+    mock_client.post_xml.return_value = """<ENVELOPE><BODY><DATA><COLLECTION>
+    <STOCKGROUP NAME="Electronics"><NAME>Electronics</NAME></STOCKGROUP>
+    <STOCKGROUP NAME="AI Imported Items"><NAME>AI Imported Items</NAME></STOCKGROUP>
+    </COLLECTION></DATA></BODY></ENVELOPE>"""
+    from backend.tally_bridge.queries.masters import list_stock_groups
+    groups = await list_stock_groups(mock_client)
+    assert groups == ["Electronics", "AI Imported Items"]

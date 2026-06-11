@@ -202,7 +202,7 @@ async def _write_inventory_voucher(
     allocation for the gross.
     """
     from backend.tally_bridge.import_builder import compute_invoice_gross
-    from backend.tally_bridge.queries.masters import list_stock_items
+    from backend.tally_bridge.queries.masters import list_stock_items, list_stock_groups
 
     voucher_type = entry["voucher_type"]
     party = entry["party_ledger"]
@@ -218,6 +218,19 @@ async def _write_inventory_voucher(
     existing_item_names = {s.name.casefold() for s in existing}
     known_units = {s.base_units.casefold() for s in existing if s.base_units}
     known_groups = {s.parent_group.casefold() for s in existing if s.parent_group}
+
+    # An EMPTY stock group (present in Tally but with no items, e.g. a default
+    # "AI Imported Items" left from a prior run) is NOT covered by the item-derived
+    # parent_group set above. Re-sending create_stock_group for it pops a blocking
+    # modal that freezes the gateway, so list existing stock groups directly and
+    # fold them into known_groups. Defensive: if the list query fails, fall back to
+    # the item-derived set (the altered=1-idempotent path is the secondary net).
+    try:
+        for grp in await list_stock_groups(writer.client):
+            if grp:
+                known_groups.add(grp.casefold())
+    except Exception as e:
+        logger.warning("list_stock_groups failed; using item-derived groups only: %s", e)
 
     async def _idempotent(coro):
         """Run a master create; swallow ONLY a genuine already-exists failure.
