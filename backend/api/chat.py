@@ -202,20 +202,33 @@ async def _write_inventory_voucher(
     allocation for the gross.
     """
     from backend.tally_bridge.import_builder import compute_invoice_gross
+    from backend.tally_bridge.queries.masters import list_stock_items
 
     voucher_type = entry["voucher_type"]
     party = entry["party_ledger"]
     lines = entry.get("line_items") or []
     default_group = entry.get("default_stock_group") or settings.DEFAULT_STOCK_GROUP or "AI Imported Items"
 
+    # ROOT CAUSE FIX: never send a CREATE for a master that ALREADY EXISTS. This
+    # Tally instance answers a duplicate-master CREATE import with a blocking
+    # modal (not a clean error), which freezes the HTTP gateway. So we fetch the
+    # existing stock items ONCE and derive the sets of known item names / units /
+    # groups; a create is issued only for genuinely-missing masters.
+    existing = await list_stock_items(writer.client)
+    existing_item_names = {s.name.casefold() for s in existing}
+    known_units = {s.base_units.casefold() for s in existing if s.base_units}
+    known_groups = {s.parent_group.casefold() for s in existing if s.parent_group}
+
     async def _idempotent(coro):
         """Run a master create; swallow ONLY a genuine already-exists failure.
 
-        Finding 4: masters are pre-flighted idempotently, so an "already exists"
-        response from Tally is expected and benign. ANY other failure (bad
-        group, Tally down, permissions, malformed XML) must NOT be swallowed —
-        it would surface later as a confusing "item not found" on the voucher
-        post. Log it and re-raise.
+        Secondary safety net (the primary mechanism is "don't create what
+        exists" above). An "already exists" response is benign and swallowed.
+        ANY other failure (bad group, Tally down, permissions, malformed XML,
+        transport timeout) must NOT be swallowed — it would surface later as a
+        confusing "item not found" on the voucher post, or silently wedge the
+        request behind a modal. Log it and re-raise so the caller turns it into
+        a clean voucher_error instead of hanging.
         """
         try:
             await coro
@@ -227,32 +240,50 @@ async def _write_inventory_voucher(
             logger.error("Stock master pre-flight failed (not an already-exists case): %s", e)
             raise
 
-    seen_units: set[str] = set()
-    seen_groups: set[str] = set()
+    async def _create_master(coro, kind: str, name: str):
+        """Wrap a master-create so a transport timeout becomes a clear error
+        instead of a hung request (a future blocking modal must never silently
+        wedge the gateway)."""
+        try:
+            await _idempotent(coro)
+        except Exception as e:
+            raise RuntimeError(
+                f"Couldn't create {kind} '{name}' in Tally — add it manually or "
+                f"pick an existing item. ({e})"
+            ) from e
+
     for line in lines:
+        # Matched line (matched_item set / item already exists): create NOTHING.
         if not (line.get("create_new") or not line.get("matched_item")):
             continue
         unit = (line.get("unit") or "Nos").strip() or "Nos"
         group = (line.get("stock_group") or default_group).strip() or "AI Imported Items"
-        if unit not in seen_units:
-            seen_units.add(unit)
-            await _idempotent(writer.create_unit(unit, unit))
-        # Always ensure the parent group exists (mirrors the seeder, which creates
-        # a real named group before its items). "Primary" is reserved in Tally and
-        # creating/using it can trigger a blocking modal — so we use a non-reserved
-        # default group and create it on demand.
-        if group not in seen_groups:
-            seen_groups.add(group)
-            await _idempotent(writer.create_stock_group(group, ""))
-        await _idempotent(writer.create_stock_item(
-            name=line.get("stock_name") or line["description"],
+        stock_name = line.get("stock_name") or line["description"]
+
+        # If the item already exists, skip ALL creates for this line — even if
+        # the line was flagged create_new (the flag can be stale / wrong).
+        if stock_name.casefold() in existing_item_names:
+            continue
+
+        if unit.casefold() not in known_units:
+            known_units.add(unit.casefold())
+            await _create_master(writer.create_unit(unit, unit), "unit", unit)
+        # Ensure the parent group exists (mirrors the seeder). "Primary" is
+        # reserved in Tally and creating/using it can trigger a blocking modal —
+        # so a non-reserved default group is created on demand only when missing.
+        if group.casefold() not in known_groups:
+            known_groups.add(group.casefold())
+            await _create_master(writer.create_stock_group(group, ""), "stock group", group)
+        existing_item_names.add(stock_name.casefold())
+        await _create_master(writer.create_stock_item(
+            name=stock_name,
             group=group,
             uom=unit,
             opening_qty=0,
             opening_rate=0,
             hsn_code=str(line.get("hsn") or ""),
             gst_rate=int(round(float(line.get("gst_rate") or 0))),
-        ))
+        ), "stock item", stock_name)
 
     items = [
         (
@@ -520,9 +551,19 @@ async def voucher_action(
                         session_id=session_id,
                     )
 
-                result = await _write_inventory_voucher(
-                    writer, entry, reference, reference_date,
-                )
+                try:
+                    result = await _write_inventory_voucher(
+                        writer, entry, reference, reference_date,
+                    )
+                except RuntimeError as e:
+                    # A master-create failed/timed out (e.g. a blocking modal):
+                    # return a clean voucher_error instead of hanging or 500ing.
+                    logger.error("Inventory master pre-flight failed: %s", e)
+                    return ChatResponse(
+                        message=str(e),
+                        data={"type": "voucher_error", "entry_id": entry.get("id")},
+                        session_id=session_id,
+                    )
             elif voucher_type == "Purchase":
                 result = await writer.create_purchase_voucher_ledger(
                     date=entry["date"],

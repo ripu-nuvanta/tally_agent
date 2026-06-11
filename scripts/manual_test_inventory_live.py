@@ -65,6 +65,7 @@ import httpx
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.import_builder import _esc, _wrap_import
 from backend.tally_bridge.models import OutstandingBill
+from backend.tally_bridge.queries.masters import list_stock_items
 from backend.tally_bridge.queries.reports import bills_payable
 from backend.tally_bridge.request_builder import build_list_ledgers
 from backend.tally_bridge.response_parser import parse_import_response
@@ -354,54 +355,66 @@ async def run(host: str, port: int) -> None:
                True)
 
         # ── Step 2: Create-new masters (unit + stock item) — pre-flight ────
-        # Mirrors _write_inventory_voucher: idempotent create_unit + create_stock_item
-        # for the create-new line. "Nos" + "Primary" likely pre-exist (idempotent).
+        # Mirrors _write_inventory_voucher's ROOT-CAUSE FIX: NEVER send a CREATE
+        # for a master that ALREADY EXISTS — this Tally answers a duplicate-master
+        # CREATE with a BLOCKING MODAL that freezes the gateway. So fetch existing
+        # stock items once, derive known units/groups/item-names, and create only
+        # genuinely-missing masters. "Nos" pre-exists (seeded items use it) → we
+        # must NOT call create_unit('Nos'); only the new group/item are created.
         banner(f"Step 2 — Pre-flight create-new masters (unit {NEW_UOM!r}, "
-               f"item {NEW_ITEM!r}) [mirror _write_inventory_voucher]")
-        # Unit (idempotent — swallow already-exists, mirroring chat.py _idempotent).
-        try:
-            r = await writer.create_unit(NEW_UOM, NEW_UOM)
-            print(f"  create_unit({NEW_UOM!r}) -> {json.dumps(r)}")
-        except Exception as e:  # noqa: BLE001
-            msg = str(e).lower()
-            if "exist" in msg or "duplicate" in msg:
-                print(f"  create_unit({NEW_UOM!r}) — already exists (OK): {e}")
-            else:
+               f"item {NEW_ITEM!r}) [mirror _write_inventory_voucher existence check]")
+        existing = await list_stock_items(client)
+        existing_item_names = {s.name.casefold() for s in existing}
+        known_units = {s.base_units.casefold() for s in existing if s.base_units}
+        known_groups = {s.parent_group.casefold() for s in existing if s.parent_group}
+        print(f"  [existence check] {len(existing)} existing stock items; "
+              f"{len(known_units)} known units, {len(known_groups)} known groups")
+        # Unit — create ONLY if genuinely missing (never CREATE an existing 'Nos').
+        if NEW_UOM.casefold() in known_units:
+            print(f"  create_unit({NEW_UOM!r}) — SKIPPED (already exists; would block on modal)")
+        else:
+            try:
+                r = await writer.create_unit(NEW_UOM, NEW_UOM)
+                known_units.add(NEW_UOM.casefold())
+                print(f"  create_unit({NEW_UOM!r}) -> {json.dumps(r)}")
+            except Exception as e:  # noqa: BLE001
                 print(f"  create_unit({NEW_UOM!r}) — note: {type(e).__name__}: {e}")
-        # Stock group (idempotent) — the non-reserved default group must exist first.
-        try:
-            r = await writer.create_stock_group(NEW_GROUP, "")
-            print(f"  create_stock_group({NEW_GROUP!r}) -> {json.dumps(r)}")
-        except Exception as e:  # noqa: BLE001
-            msg = str(e).lower()
-            if "exist" in msg or "duplicate" in msg:
-                print(f"  create_stock_group({NEW_GROUP!r}) — already exists (OK): {e}")
-            else:
+        # Stock group — create ONLY if genuinely missing.
+        if NEW_GROUP.casefold() in known_groups:
+            print(f"  create_stock_group({NEW_GROUP!r}) — SKIPPED (already exists)")
+        else:
+            try:
+                r = await writer.create_stock_group(NEW_GROUP, "")
+                known_groups.add(NEW_GROUP.casefold())
+                print(f"  create_stock_group({NEW_GROUP!r}) -> {json.dumps(r)}")
+            except Exception as e:  # noqa: BLE001
                 print(f"  create_stock_group({NEW_GROUP!r}) — note: {type(e).__name__}: {e}")
-        # Stock item create-new (group AI Imported Items, uom Nos, opening 0/0, no HSN, gst 18 → GST-NA).
-        try:
-            r = await writer.create_stock_item(
-                name=NEW_ITEM, group=NEW_GROUP, uom=NEW_UOM,
-                opening_qty=0, opening_rate=0, hsn_code="", gst_rate=NEW_GST,
-            )
-            new_item_created = True
-            print(f"  create_stock_item({NEW_ITEM!r}) -> {json.dumps(r)}")
+        # If the item already exists, skip creating it (and skip cleanup of a pre-existing item).
+        if NEW_ITEM.casefold() in existing_item_names:
+            new_item_created = False
+            print(f"  create_stock_item({NEW_ITEM!r}) — SKIPPED (already exists)")
             record("2-create-new-item",
-                   f"stock item {NEW_ITEM!r} created (or already exists)",
-                   f"create_stock_item returned {json.dumps(r)}",
-                   True)
-        except Exception as e:  # noqa: BLE001 — idempotent: already-exists is OK
-            msg = str(e).lower()
-            already = "exist" in msg or "duplicate" in msg
-            if already:
-                new_item_created = True  # present → still must be cleaned up
-            print(f"  create_stock_item({NEW_ITEM!r}) -> "
-                  f"{'already exists (OK)' if already else 'FAILED'}: {e}")
-            record("2-create-new-item",
-                   f"stock item {NEW_ITEM!r} created (or already exists)",
-                   ("already exists (OK)" if already
-                    else f"EXCEPTION {type(e).__name__}: {e}"),
-                   already)
+                   f"stock item {NEW_ITEM!r} already exists (no create)",
+                   "already exists — skipped", True)
+        else:
+            # Stock item create-new (group AI Imported Items, uom Nos, opening 0/0, no HSN, gst 18 → GST-NA).
+            try:
+                r = await writer.create_stock_item(
+                    name=NEW_ITEM, group=NEW_GROUP, uom=NEW_UOM,
+                    opening_qty=0, opening_rate=0, hsn_code="", gst_rate=NEW_GST,
+                )
+                new_item_created = True
+                print(f"  create_stock_item({NEW_ITEM!r}) -> {json.dumps(r)}")
+                record("2-create-new-item",
+                       f"stock item {NEW_ITEM!r} created",
+                       f"create_stock_item returned {json.dumps(r)}",
+                       True)
+            except Exception as e:  # noqa: BLE001
+                print(f"  create_stock_item({NEW_ITEM!r}) -> FAILED: {e}")
+                record("2-create-new-item",
+                       f"stock item {NEW_ITEM!r} created",
+                       f"EXCEPTION {type(e).__name__}: {e}",
+                       False)
 
         # ── Step 3: Write ONE stock-based Purchase voucher (both lines) ────
         # Item tuple order = (name, qty, rate, ledger, uom, gst_rate) — exactly the
