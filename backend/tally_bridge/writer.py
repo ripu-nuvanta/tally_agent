@@ -68,6 +68,27 @@ def _assert_created(parsed: dict, op: str) -> dict:
     return parsed
 
 
+def _assert_master_persisted(parsed: dict, op: str) -> dict:
+    """Like ``_assert_created`` but for idempotent master pre-flight creates.
+
+    A master CREATE for an entity that ALREADY EXISTS (e.g. a stock group seeded
+    earlier) makes Tally answer CREATED=0, ALTERED=1, ERRORS=0, EXCEPTIONS=0 —
+    benign ("already there"). For these idempotent masters that is success, not a
+    silent drop. So accept CREATED>=1 OR ALTERED>=1 (with no errors/exceptions).
+    A genuine drop (CREATED=0 AND ALTERED=0) or any ERRORS/EXCEPTIONS still raises.
+
+    Voucher creates keep using the strict ``_assert_created`` (CREATED>=1).
+    """
+    if not parsed.get("success", False):
+        msg = parsed.get("error_message") or "Tally returned EXCEPTIONS=1 with no error message"
+        raise TallyWriteError(f"{op} silently failed: {msg} (parsed={parsed})")
+    if parsed.get("created", 0) < 1 and parsed.get("altered", 0) < 1:
+        raise TallyWriteError(
+            f"{op} did not persist an entity (CREATED=0, ALTERED=0). parsed={parsed}"
+        )
+    return parsed
+
+
 class TallyWriter:
     """Validates and writes vouchers/masters to Tally."""
 
@@ -200,13 +221,13 @@ class TallyWriter:
         """Create a unit of measure in Tally."""
         xml = build_create_unit(name, formal_name, self.company)
         response_xml = await self.client.post_xml(xml)
-        return _assert_created(parse_import_response(response_xml), "create_unit")
+        return _assert_master_persisted(parse_import_response(response_xml), "create_unit")
 
     async def create_stock_group(self, name: str, parent: str = "") -> dict:
         """Create a stock group in Tally."""
         xml = build_create_stock_group(name, parent, self.company)
         response_xml = await self.client.post_xml(xml)
-        return _assert_created(parse_import_response(response_xml), "create_stock_group")
+        return _assert_master_persisted(parse_import_response(response_xml), "create_stock_group")
 
     async def create_stock_item(
         self, name: str, group: str, uom: str, opening_qty: float,
@@ -217,7 +238,7 @@ class TallyWriter:
             name, group, uom, opening_qty, opening_rate, hsn_code, gst_rate, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return _assert_created(parse_import_response(response_xml), "create_stock_item")
+        return _assert_master_persisted(parse_import_response(response_xml), "create_stock_item")
 
     async def create_gst_ledger(self, name: str, duty_head: str) -> dict:
         """Create a GST duty ledger in Tally."""

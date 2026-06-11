@@ -228,6 +228,64 @@ async def test_bill_alloc_gross_matches_builder_party_total(db_session, ctx):
 
 
 @pytest.mark.asyncio
+async def test_preexisting_stock_group_altered_does_not_abort_write(db_session, ctx):
+    """BUG 1 (live-caught): a create-new item references a stock group that
+    ALREADY EXISTS (empty). Tally answers that group CREATE with
+    CREATED=0, ALTERED=1, ERRORS=0, EXCEPTIONS=0 — benign. The inventory write
+    must NOT abort with a voucher_error; the voucher must still post.
+
+    The real create_stock_group runs (not mocked); its client returns the
+    altered envelope, exercising _assert_master_persisted end-to-end.
+    """
+    user, ws, conv = ctx
+    result = await _upload(db_session, ctx, "purchase_goods_inr",
+                           content=b"GOODS-PURCHASE-ALTERED")
+    entry = result["data"]["entries"][0]
+    entry["conversation_id"] = str(conv.id)
+    entry["file_id"] = result["data"]["file_id"]
+    req = VoucherActionRequest(action="approve", entry=entry,
+                               workspace_id=str(ws.id), session_id=str(conv.id))
+
+    _ALTERED = (
+        '<RESPONSE>'
+        '<CREATED>0</CREATED><ALTERED>1</ALTERED><DELETED>0</DELETED>'
+        '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+        '<LASTVCHID>0</LASTVCHID>'
+        '</RESPONSE>'
+    )
+
+    async def _post_xml(self, xml):
+        # The only un-mocked writer call that hits post_xml is create_stock_group.
+        return _ALTERED
+
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_unit",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        # create_stock_group is NOT mocked — the real method + _assert_master_persisted run.
+        "backend.tally_bridge.client.TallyClient.post_xml",
+        new=_post_xml,
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_stock_item",
+        new=AsyncMock(return_value=_SUCCESS),
+    ), patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_vch, patch(
+        "backend.services.dedup.get_party_vouchers", new=AsyncMock(return_value=[]),
+    ), patch(
+        "backend.tally_bridge.queries.masters.list_stock_items",
+        new=AsyncMock(return_value=list(_STOCK_ITEMS)),
+    ):
+        resp = await voucher_action(
+            req, client=TallyClient("localhost", 9000),
+            user_id=str(user.id), db=db_session,
+        )
+    assert resp.data["type"] == "voucher_written", resp.data
+    m_vch.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_zero_qty_line_blocks_write(db_session, ctx):
     """Finding 2: a line with qty<=0 or rate<=0 must block the write."""
     user, ws, conv = ctx

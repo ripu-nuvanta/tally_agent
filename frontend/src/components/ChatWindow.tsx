@@ -207,20 +207,36 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           content: response.message,
           data: response.data,
         };
-        // Mark the acted-upon entry terminal in its original voucher_review
-        // message so it's no longer treated as pending (clears pending_entry
-        // forwarding). approve → written, discard → deleted.
-        const terminalStatus =
-          action === "approve" ? "written" : action === "discard" ? "deleted" : null;
+        // The HTTP call can succeed (200) while the write itself FAILED — the
+        // backend returns data.type === "voucher_error" with the reason in
+        // response.message. Only mark the entry terminal on a genuine success
+        // (approve → voucher_written, discard → voucher_discarded); otherwise
+        // revert to draft so the buttons reappear and "Written" is NOT shown.
+        const responseType = (response.data as Record<string, unknown> | undefined)?.type;
+        const succeeded =
+          action === "approve"
+            ? responseType === "voucher_written"
+            : action === "discard"
+            ? responseType === "voucher_discarded"
+            : false;
+        const isError = responseType === "voucher_error";
+        const nextStatus = succeeded
+          ? action === "approve"
+            ? "written"
+            : "deleted"
+          : isError
+          ? "draft" // failed write: revert so the action buttons reappear
+          : null; // unknown type: leave the entry as-is (pending cleared in finally)
+        if (isError) resultMsg.isError = true;
         setMessages((prev) =>
           prev.map((m) => {
             if (m.id === loadingMsg.id) return resultMsg;
-            if (!terminalStatus) return m;
+            if (!nextStatus) return m;
             if (!m.data || !("entries" in (m.data as Record<string, unknown>))) return m;
             const d = m.data as Record<string, unknown>;
             const entries = d.entries as Array<Record<string, unknown>>;
             const updated = entries.map((e) =>
-              e.id === entryId ? { ...e, status: terminalStatus } : e
+              e.id === entryId ? { ...e, status: nextStatus } : e
             );
             return { ...m, data: { ...d, entries: updated } };
           })
