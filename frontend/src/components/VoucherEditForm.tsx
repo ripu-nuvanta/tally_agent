@@ -1,6 +1,7 @@
 import { useState } from "react";
-import type { VoucherEntry } from "./VoucherReviewCard";
+import type { VoucherEntry, LineItem } from "./VoucherReviewCard";
 import LineItemEditor from "./LineItemEditor";
+import InventoryLineEditor from "./InventoryLineEditor";
 import VoucherRefSelect from "./VoucherRefSelect";
 
 export const VOUCHER_TYPES = ["Payment", "Purchase", "Sales", "Debit Note", "Credit Note"] as const;
@@ -90,6 +91,12 @@ export default function VoucherEditForm({
   const [reference, setReference] = useState(entry.reference || "");
   const [error, setError] = useState("");
 
+  // Inventory line items (Phase 2). Editable only for goods Purchase/Sales.
+  const isInventory = !!entry.is_inventory && !!entry.line_items?.length;
+  const [lineItems, setLineItems] = useState<LineItem[]>(
+    entry.line_items ? entry.line_items.map((l) => ({ ...l })) : [],
+  );
+
   // Primary (non-party) ledger = the contra/returns/expense ledger. It sits on
   // the side OPPOSITE the party. Party-on-debit types (Sales, Debit Note) keep
   // the contra on credit; party-on-credit types (Payment, Purchase, Credit
@@ -112,6 +119,10 @@ export default function VoucherEditForm({
     availableCustomerLedgers,
   );
   const againstOptions = entry.against_invoice_options || [];
+  // Finding 5: a row is invalid when it's neither matched nor create_new. Used
+  // to disable Save (with a hint) so an unresolved row can't be written.
+  const hasInvalidInventoryRow =
+    isInventory && lineItems.some((l) => !l.create_new && !l.matched_item);
 
   const handleSave = () => {
     if (showParty && !partyLedger) {
@@ -121,6 +132,22 @@ export default function VoucherEditForm({
     if (!primaryLedger) {
       setError("Select a ledger.");
       return;
+    }
+    // Finding 5: every inventory row must be EITHER matched to an existing item
+    // OR create_new — never neither. Toggling "Create new" off without picking
+    // an existing item leaves the row invalid (create_new=false && matched_item
+    // =null); block the write until it's resolved.
+    if (isInventory) {
+      const invalid = lineItems.findIndex(
+        (l) => !l.create_new && !l.matched_item,
+      );
+      if (invalid !== -1) {
+        const label = lineItems[invalid].description || `Item ${invalid + 1}`;
+        setError(
+          `Line '${label}': select an existing item or toggle Create new.`,
+        );
+        return;
+      }
     }
 
     // Map fields back onto debit/credit by voucher direction. A return (DN/CN)
@@ -180,6 +207,11 @@ export default function VoucherEditForm({
     } else {
       updates.bill_reference = "";
       updates.bill_type = "";
+    }
+    // Inventory: emit the edited line array. Each row carries its match-or-create
+    // state plus qty/rate/amount so the backend can build the stock grid.
+    if (isInventory) {
+      updates.line_items = lineItems;
     }
     onSave(updates);
   };
@@ -273,16 +305,25 @@ export default function VoucherEditForm({
         />
       </div>
 
-      <LineItemEditor
-        ledgerLabel={primaryLedgerLabel(voucherType)}
-        amount={amount}
-        onAmountChange={setAmount}
-        ledger={primaryLedger}
-        onLedgerChange={setPrimaryLedger}
-        availableLedgers={availableLedgers}
-        narration={narration}
-        onNarrationChange={setNarration}
-      />
+      {isInventory ? (
+        <InventoryLineEditor
+          lines={lineItems}
+          availableStockItems={entry.available_stock_items || []}
+          defaultStockGroup={entry.default_stock_group || "Primary"}
+          onChange={setLineItems}
+        />
+      ) : (
+        <LineItemEditor
+          ledgerLabel={primaryLedgerLabel(voucherType)}
+          amount={amount}
+          onAmountChange={setAmount}
+          ledger={primaryLedger}
+          onLedgerChange={setPrimaryLedger}
+          availableLedgers={availableLedgers}
+          narration={narration}
+          onNarrationChange={setNarration}
+        />
+      )}
 
       {voucherType === "Payment" && (
         <div>
@@ -335,11 +376,24 @@ export default function VoucherEditForm({
         />
       )}
 
+      {hasInvalidInventoryRow && (
+        <div className="text-xs text-red-600" role="alert">
+          Each item must be matched to an existing stock item or marked Create
+          new before you can save.
+        </div>
+      )}
+
       <div className="flex gap-2">
         <button
           type="button"
           onClick={handleSave}
-          className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700"
+          disabled={hasInvalidInventoryRow}
+          title={
+            hasInvalidInventoryRow
+              ? "Each item must be matched to an existing stock item or marked Create new."
+              : undefined
+          }
+          className="px-3 py-1.5 rounded-lg bg-green-600 text-white text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Save
         </button>

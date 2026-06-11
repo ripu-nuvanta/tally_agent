@@ -302,6 +302,25 @@ class TestWriteErrorAssertion:
         assert result["created"] == 1
 
     @pytest.mark.asyncio
+    async def test_create_stock_item_accepts_empty_hsn(self):
+        """Vision often has no HSN — create_stock_item must not raise on empty hsn."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>1</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        result = await writer.create_stock_item(
+            "Generic Widget", group="Electronics", uom="Nos",
+            opening_qty=0, opening_rate=0, hsn_code="", gst_rate=18,
+        )
+        assert result["created"] == 1
+
+    @pytest.mark.asyncio
     async def test_create_sales_voucher_raises_on_silent_drop(self):
         """Specifically the failure mode hit live: voucher silently dropped."""
         class FakeClient:

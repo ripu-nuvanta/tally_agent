@@ -27,6 +27,26 @@ def _validate_reference_date(reference_date: str | None) -> None:
         )
 
 
+def compute_invoice_gross(items: list[tuple], gst_mode: str) -> float:
+    """Compute the party gross (base + GST) for a stock-based invoice.
+
+    Single source of truth for the inventory party leg: the New Ref bill
+    allocation amount AND the posted party AMOUNT must both equal this value so
+    the voucher balances exactly. Mirrors the builder calc in
+    ``build_create_purchase_voucher`` / ``build_create_sales_voucher``: groups
+    the taxable base by gst_rate, applies tax, sums.
+
+    items shape: (name, qty, rate, ledger, uom, gst_rate). intra (CGST+SGST) and
+    inter (IGST) yield the same gross, so gst_mode is informational only.
+    """
+    rate_buckets: dict[int, float] = {}
+    for _name, qty, rate, _ledger, _uom, gst_rate in items:
+        rate_buckets[gst_rate] = rate_buckets.get(gst_rate, 0.0) + (qty * rate)
+    base = sum(rate_buckets.values())
+    tax = sum(b * r / 100 for r, b in rate_buckets.items() if r > 0)
+    return round(base + tax, 2)
+
+
 def _render_reference_block(reference: str | None, reference_date: str | None) -> str:
     """Render <REFERENCE> + <REFERENCEDATE> elements (each emitted only when
     its arg is provided). Returns leading-newline string ready to inline."""
@@ -550,16 +570,28 @@ def build_create_stock_item(
     company: str,
     applicable_from: str = "20250401",
 ) -> str:
-    """Build XML to create a stock item with HSN + per-item GST rate.
+    """Build XML to create a stock item, GST-applicable only when an HSN is given.
 
     Splits gst_rate evenly across CGST/SGST (intra-state) and uses full rate for IGST
     (inter-state). E.g. 18% → 9 CGST + 9 SGST + 18 IGST.
+
+    HSN-driven GST gating (live-caught bug, feat/invoice-inventory-items):
+    Vision frequently extracts no HSN code. TallyPrime treats a stock item that is
+    GST-applicable WITHOUT an HSN/SAC as invalid and pops a blocking
+    "HSN/SAC required" modal, which fails the create and locks Tally's API.
+    GST on the voucher is posted via explicit tax ledger lines regardless of the
+    item's master GST setup, so the item does NOT need master-level GST/HSN.
+
+    - hsn_code non-empty: GSTAPPLICABLE=Applicable + HSN elements + GSTDETAILS rates
+      (matches the seeder's proven items).
+    - hsn_code empty: GSTAPPLICABLE=Not Applicable, and the entire HSN + GSTDETAILS
+      blocks are omitted — a plain name+unit+group+opening stock item.
+
     See docs/tally-write-exploration-v4.md Op 3.
     """
     _require(name, "name")
     _require(group, "group")
     _require(uom, "uom")
-    _require(hsn_code, "hsn_code")
     _require(company, "company")
     if opening_qty < 0 or opening_rate < 0:
         raise ValueError("opening_qty and opening_rate must be non-negative")
@@ -571,18 +603,16 @@ def build_create_stock_item(
     igst_str = f"{gst_rate:g}"
     opening_value = opening_qty * opening_rate
 
-    si_xml = f"""<STOCKITEM NAME="{_esc(name)}" ACTION="Create">
-<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
-<PARENT>{_esc(group)}</PARENT>
-<BASEUNITS>{_esc(uom)}</BASEUNITS>
-<GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
+    hsn_str = (hsn_code or "").strip()
+    if hsn_str:
+        gst_block = f"""<GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
 <GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY>
-<HSNCODE>{_esc(hsn_code)}</HSNCODE>
-<HSN>{_esc(hsn_code)}</HSN>
+<HSNCODE>{_esc(hsn_str)}</HSNCODE>
+<HSN>{_esc(hsn_str)}</HSN>
 <HSNDETAILS.LIST>
 <APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
-<HSNCODE>{_esc(hsn_code)}</HSNCODE>
-<HSN>{_esc(hsn_code)}</HSN>
+<HSNCODE>{_esc(hsn_str)}</HSNCODE>
+<HSN>{_esc(hsn_str)}</HSN>
 </HSNDETAILS.LIST>
 <GSTDETAILS.LIST>
 <APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
@@ -598,7 +628,16 @@ def build_create_stock_item(
 <RATEDETAILS.LIST><GSTRATEDUTYHEAD>Cess</GSTRATEDUTYHEAD><GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE>0</GSTRATE></RATEDETAILS.LIST>
 </STATEWISEDETAILS.LIST>
 </GSTDETAILS.LIST>
-<OPENINGBALANCE>{opening_qty:g} {_esc(uom)}</OPENINGBALANCE>
+"""
+    else:
+        # No HSN → master-level GST off; voucher tax lines carry the GST.
+        gst_block = "<GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>\n"
+
+    si_xml = f"""<STOCKITEM NAME="{_esc(name)}" ACTION="Create">
+<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
+<PARENT>{_esc(group)}</PARENT>
+<BASEUNITS>{_esc(uom)}</BASEUNITS>
+{gst_block}<OPENINGBALANCE>{opening_qty:g} {_esc(uom)}</OPENINGBALANCE>
 <OPENINGRATE>{opening_rate:.2f}/{_esc(uom)}</OPENINGRATE>
 <OPENINGVALUE>{opening_value:.2f}</OPENINGVALUE>
 </STOCKITEM>"""

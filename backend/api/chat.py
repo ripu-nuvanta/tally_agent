@@ -178,6 +178,157 @@ async def chat_with_file(
     )
 
 
+def _gst_mode_from_entries(gst_entries: list[dict] | None) -> str:
+    """Derive Tally GST mode: 'inter' when only IGST present, else 'intra'."""
+    names = " ".join((e.get("ledger") or "") for e in (gst_entries or [])).lower()
+    if "igst" in names and "cgst" not in names and "sgst" not in names:
+        return "inter"
+    return "intra"
+
+
+async def _write_inventory_voucher(
+    writer,
+    entry: dict,
+    reference: str | None,
+    reference_date: str | None,
+) -> dict:
+    """Pre-flight new stock masters then post a stock-based Purchase/Sales voucher.
+
+    For each line marked ``create_new`` (or with no matched item), idempotently
+    ensure the unit and stock group exist, then create the stock item. Creates
+    are best-effort idempotent — an "already exists" failure is treated as OK.
+    Builds ``(stock_name, qty, rate, ledger, uom, gst_rate)`` tuples and calls
+    the stock-based writer with the GST mode + Phase-1 reference + a New Ref bill
+    allocation for the gross.
+    """
+    from backend.tally_bridge.import_builder import compute_invoice_gross
+    from backend.tally_bridge.queries.masters import list_stock_items
+
+    voucher_type = entry["voucher_type"]
+    party = entry["party_ledger"]
+    lines = entry.get("line_items") or []
+    default_group = entry.get("default_stock_group") or settings.DEFAULT_STOCK_GROUP or "AI Imported Items"
+
+    # ROOT CAUSE FIX: never send a CREATE for a master that ALREADY EXISTS. This
+    # Tally instance answers a duplicate-master CREATE import with a blocking
+    # modal (not a clean error), which freezes the HTTP gateway. So we fetch the
+    # existing stock items ONCE and derive the sets of known item names / units /
+    # groups; a create is issued only for genuinely-missing masters.
+    existing = await list_stock_items(writer.client)
+    existing_item_names = {s.name.casefold() for s in existing}
+    known_units = {s.base_units.casefold() for s in existing if s.base_units}
+    known_groups = {s.parent_group.casefold() for s in existing if s.parent_group}
+
+    async def _idempotent(coro):
+        """Run a master create; swallow ONLY a genuine already-exists failure.
+
+        Secondary safety net (the primary mechanism is "don't create what
+        exists" above). An "already exists" response is benign and swallowed.
+        ANY other failure (bad group, Tally down, permissions, malformed XML,
+        transport timeout) must NOT be swallowed — it would surface later as a
+        confusing "item not found" on the voucher post, or silently wedge the
+        request behind a modal. Log it and re-raise so the caller turns it into
+        a clean voucher_error instead of hanging.
+        """
+        try:
+            await coro
+        except Exception as e:
+            msg = str(e).lower()
+            if "already exist" in msg or "duplicate" in msg:
+                logger.info("Stock master already exists (idempotent skip): %s", e)
+                return
+            logger.error("Stock master pre-flight failed (not an already-exists case): %s", e)
+            raise
+
+    async def _create_master(coro, kind: str, name: str):
+        """Wrap a master-create so a transport timeout becomes a clear error
+        instead of a hung request (a future blocking modal must never silently
+        wedge the gateway)."""
+        try:
+            await _idempotent(coro)
+        except Exception as e:
+            raise RuntimeError(
+                f"Couldn't create {kind} '{name}' in Tally — add it manually or "
+                f"pick an existing item. ({e})"
+            ) from e
+
+    for line in lines:
+        # Matched line (matched_item set / item already exists): create NOTHING.
+        if not (line.get("create_new") or not line.get("matched_item")):
+            continue
+        unit = (line.get("unit") or "Nos").strip() or "Nos"
+        group = (line.get("stock_group") or default_group).strip() or "AI Imported Items"
+        stock_name = line.get("stock_name") or line["description"]
+
+        # If the item already exists, skip ALL creates for this line — even if
+        # the line was flagged create_new (the flag can be stale / wrong).
+        if stock_name.casefold() in existing_item_names:
+            continue
+
+        if unit.casefold() not in known_units:
+            known_units.add(unit.casefold())
+            await _create_master(writer.create_unit(unit, unit), "unit", unit)
+        # Ensure the parent group exists (mirrors the seeder). "Primary" is
+        # reserved in Tally and creating/using it can trigger a blocking modal —
+        # so a non-reserved default group is created on demand only when missing.
+        if group.casefold() not in known_groups:
+            known_groups.add(group.casefold())
+            await _create_master(writer.create_stock_group(group, ""), "stock group", group)
+        existing_item_names.add(stock_name.casefold())
+        await _create_master(writer.create_stock_item(
+            name=stock_name,
+            group=group,
+            uom=unit,
+            opening_qty=0,
+            opening_rate=0,
+            hsn_code=str(line.get("hsn") or ""),
+            gst_rate=int(round(float(line.get("gst_rate") or 0))),
+        ), "stock item", stock_name)
+
+    items = [
+        (
+            line.get("stock_name") or line["description"],
+            float(line.get("qty") or 0),
+            float(line.get("rate") or 0),
+            line.get("ledger") or entry.get("debit_ledger") or entry.get("credit_ledger"),
+            (line.get("unit") or "Nos").strip() or "Nos",
+            int(round(float(line.get("gst_rate") or 0))),
+        )
+        for line in lines
+    ]
+    gst_mode = _gst_mode_from_entries(entry.get("gst_entries"))
+
+    # Finding 1: the party leg (and its New Ref bill allocation) must equal the
+    # gross computed from the SAME item tuples the builder posts (Σ qty×rate +
+    # per-bucket GST), never Vision's extracted total. After a user edits
+    # qty/rate, Vision's total is stale; using it imbalances the voucher.
+    gross = compute_invoice_gross(items, gst_mode)
+
+    # The supplier/customer invoice number doubles as the voucher number; fall
+    # back to a date-derived value when none was extracted.
+    voucher_number = reference or entry.get("bill_reference") or f"AUTO-{entry['date']}"
+    bill_allocations = [{
+        "name": (entry.get("bill_reference") or reference or voucher_number),
+        "type": "New Ref",
+        "amount": gross,
+    }]
+
+    common = dict(
+        date=entry["date"],
+        voucher_number=voucher_number,
+        party=party,
+        items=items,
+        narration=entry["narration"],
+        gst_mode=gst_mode,
+        bill_allocations=bill_allocations,
+        reference=reference,
+        reference_date=reference_date,
+    )
+    if voucher_type == "Purchase":
+        return await writer.create_purchase_voucher(**common)
+    return await writer.create_sales_voucher(**common)
+
+
 @router.post("/chat/voucher-action", response_model=ChatResponse)
 async def voucher_action(
     request: VoucherActionRequest,
@@ -351,6 +502,68 @@ async def voucher_action(
                     reference=reference,
                     reference_date=reference_date,
                 )
+            elif entry.get("is_inventory") and voucher_type in ("Purchase", "Sales"):
+                # Inventory (goods) invoice — write to the Tally STOCK grid.
+                # Pre-flight: idempotently ensure each new line's unit, stock
+                # group, and stock item exist; then post the stock-based voucher
+                # with item tuples + GST mode + the Phase-1 reference + New Ref.
+
+                # Finding 3: block when the original invoice had qty-null lines
+                # that the resolver dropped — posting only the qty lines would
+                # silently under-post. Tell the user which descriptions need a
+                # quantity (they fill them in the review card).
+                if entry.get("has_unquantified_lines"):
+                    missing = entry.get("unquantified_descriptions") or []
+                    names = ", ".join(f"'{d}'" for d in missing if d) or "some lines"
+                    return ChatResponse(
+                        message=(
+                            f"These lines need a quantity before writing: {names}. "
+                            "Add quantities in the card, then write."
+                        ),
+                        data={"type": "voucher_error", "entry_id": entry.get("id")},
+                        session_id=session_id,
+                    )
+
+                # Finding 2: block any line with qty<=0 or rate<=0 — never post a
+                # zero-qty/zero-rate stock line.
+                bad_line = None
+                for line in (entry.get("line_items") or []):
+                    try:
+                        q = float(line.get("qty") or 0)
+                        r = float(line.get("rate") or 0)
+                    except (TypeError, ValueError):
+                        q = r = 0.0
+                    if q <= 0 or r <= 0:
+                        bad_line = (
+                            line.get("stock_name")
+                            or line.get("matched_item")
+                            or line.get("description")
+                            or "line"
+                        )
+                        break
+                if bad_line is not None:
+                    return ChatResponse(
+                        message=(
+                            f"Line '{bad_line}' is missing quantity or rate — "
+                            "fix it before writing."
+                        ),
+                        data={"type": "voucher_error", "entry_id": entry.get("id")},
+                        session_id=session_id,
+                    )
+
+                try:
+                    result = await _write_inventory_voucher(
+                        writer, entry, reference, reference_date,
+                    )
+                except RuntimeError as e:
+                    # A master-create failed/timed out (e.g. a blocking modal):
+                    # return a clean voucher_error instead of hanging or 500ing.
+                    logger.error("Inventory master pre-flight failed: %s", e)
+                    return ChatResponse(
+                        message=str(e),
+                        data={"type": "voucher_error", "entry_id": entry.get("id")},
+                        session_id=session_id,
+                    )
             elif voucher_type == "Purchase":
                 result = await writer.create_purchase_voucher_ledger(
                     date=entry["date"],

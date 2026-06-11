@@ -63,6 +63,11 @@ class TestVisionPrompt:
         assert "original currency" in lower
         assert "not convert" in lower or "do not convert" in lower
 
+    def test_prompt_asks_for_line_item_unit(self):
+        """Per-line schema must include a unit field (inventory Phase 2)."""
+        prompt = build_vision_prompt()
+        assert '"unit"' in prompt
+
 
 class TestParseVisionResponse:
     def test_basic_expense(self):
@@ -97,6 +102,36 @@ class TestParseVisionResponse:
         doc = parse_vision_response(response_json)
         assert doc.gst is not None
         assert doc.gst.cgst_amount == Decimal("90.00")
+
+    def test_line_item_unit_captured(self):
+        """A line item's printed unit is captured onto LineItem.unit."""
+        response_json = json.dumps({
+            "doc_type": "purchase", "party_name": "Acme", "date": "2026-04-04",
+            "total_amount": 1000.00,
+            "line_items": [
+                {"description": "Pens", "amount": 1000.00,
+                 "quantity": 10, "rate": 100, "unit": "Pcs"},
+            ],
+            "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.line_items[0].unit == "Pcs"
+
+    def test_line_item_unit_null_becomes_none(self):
+        """A null/absent unit parses to None (default applied later at build time)."""
+        response_json = json.dumps({
+            "doc_type": "purchase", "party_name": "Acme", "date": "2026-04-04",
+            "total_amount": 1000.00,
+            "line_items": [
+                {"description": "Widget", "amount": 1000.00,
+                 "quantity": 5, "rate": 200, "unit": None},
+                {"description": "Gadget", "amount": 50.00, "quantity": 1, "rate": 50},
+            ],
+            "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.line_items[0].unit is None
+        assert doc.line_items[1].unit is None
 
     def test_strips_markdown_code_fences(self):
         """Claude sometimes wraps JSON in ```json ... ``` even when told not to."""

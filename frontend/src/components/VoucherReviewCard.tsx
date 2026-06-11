@@ -4,6 +4,24 @@ import VoucherReviewExpanded from "./VoucherReviewExpanded";
 import VoucherEditForm from "./VoucherEditForm";
 import type { AgainstInvoiceOption } from "./VoucherRefSelect";
 
+/** A single inventory line on a goods Purchase/Sales invoice (Phase 2). */
+export interface LineItem {
+  description: string;
+  qty: number;
+  rate: number;
+  unit: string;
+  gst_rate: number;
+  amount: number;
+  /** Existing Tally stock item this line resolves to, or null when creating new. */
+  matched_item: string | null;
+  /** When true, a new stock item is created from stock_name/unit/group/gst_rate. */
+  create_new: boolean;
+  stock_name: string;
+  stock_group: string;
+  hsn: string;
+  ledger: string;
+}
+
 export interface VoucherEntry {
   id: string;
   voucher_type: string;
@@ -34,6 +52,11 @@ export interface VoucherEntry {
   fx_rate?: number;
   inr_amount?: number;
   original_gst_entries?: Array<{ ledger: string; amount: number }>;
+  // Invoice-entry Phase 2 (inventory line items)
+  is_inventory?: boolean;
+  line_items?: LineItem[];
+  available_stock_items?: string[];
+  default_stock_group?: string;
 }
 
 interface VoucherReviewCardProps {

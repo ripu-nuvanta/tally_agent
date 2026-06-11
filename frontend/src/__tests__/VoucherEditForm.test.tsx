@@ -8,6 +8,7 @@ import {
   salesINR,
   debitNoteINR,
   creditNoteINR,
+  purchaseInventory,
   availableLedgers,
   availablePaymentLedgers,
   availableSupplierLedgers,
@@ -162,6 +163,134 @@ describe("VoucherEditForm — FX override", () => {
     fireEvent.change(screen.getByLabelText("INR Amount"), { target: { value: "9000" } });
     fireEvent.click(screen.getByText("Save"));
     expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ amount: 9000 }));
+  });
+});
+
+describe("VoucherEditForm — inventory line items", () => {
+  it("renders an editable line-items section for an inventory entry", () => {
+    renderForm(purchaseInventory);
+    expect(screen.getByTestId("line-items-edit")).toBeInTheDocument();
+    // one editor row per line item
+    expect(screen.getAllByTestId(/^line-item-row-/)).toHaveLength(2);
+  });
+
+  it("does not render the line-items section for an accounting-only invoice", () => {
+    renderForm(purchaseINR);
+    expect(screen.queryByTestId("line-items-edit")).not.toBeInTheDocument();
+  });
+
+  it("matched line shows a stock-item dropdown populated from available items", () => {
+    renderForm(purchaseInventory);
+    const select = screen.getByLabelText("Stock Item 1") as HTMLSelectElement;
+    const values = Array.from(select.options).map((o) => o.value);
+    expect(values).toContain("A4 Paper Ream");
+    expect(values).toContain("Stapler");
+    // matched line preselects its matched_item
+    expect(select.value).toBe("A4 Paper Ream");
+  });
+
+  it("toggling 'Create new' reveals stock_name/unit/group/gst fields", () => {
+    renderForm(purchaseInventory);
+    // matched line (row 0) starts without the create-new fields
+    expect(screen.queryByLabelText("New Item Name 1")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Create new 1"));
+    expect(screen.getByLabelText("New Item Name 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Unit 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("Stock Group 1")).toBeInTheDocument();
+    expect(screen.getByLabelText("GST Rate 1")).toBeInTheDocument();
+  });
+
+  it("create-new line defaults unit to Nos and group to default_stock_group", () => {
+    renderForm(purchaseInventory);
+    // row 1 (lineItemNew) is already create_new
+    expect((screen.getByLabelText("Unit 2") as HTMLInputElement).value).toBe("Nos");
+    expect((screen.getByLabelText("Stock Group 2") as HTMLInputElement).value).toBe(
+      "Office Supplies",
+    );
+  });
+
+  it("editing qty and rate recomputes the displayed amount", () => {
+    renderForm(purchaseInventory);
+    fireEvent.change(screen.getByLabelText("Qty 1"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Rate 1"), { target: { value: "100" } });
+    expect(screen.getByTestId("line-amount-0")).toHaveTextContent("₹400.00");
+  });
+
+  it("emits the updated line_items array on save", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseInventory, onSave);
+    fireEvent.change(screen.getByLabelText("Qty 1"), { target: { value: "4" } });
+    fireEvent.change(screen.getByLabelText("Rate 1"), { target: { value: "100" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.line_items).toHaveLength(2);
+    const matched = updates.line_items[0];
+    expect(matched.matched_item).toBe("A4 Paper Ream");
+    expect(matched.create_new).toBe(false);
+    expect(matched.qty).toBe(4);
+    expect(matched.rate).toBe(100);
+    expect(matched.amount).toBe(400);
+    const created = updates.line_items[1];
+    expect(created.create_new).toBe(true);
+    expect(created.stock_name).toBe("Ergonomic Chair");
+    expect(created.unit).toBe("Nos");
+    expect(created.stock_group).toBe("Office Supplies");
+    expect(created.gst_rate).toBe(18);
+  });
+
+  it("switching a matched line to Create new emits create_new with cleared matched_item", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseInventory, onSave);
+    fireEvent.click(screen.getByLabelText("Create new 1"));
+    fireEvent.change(screen.getByLabelText("New Item Name 1"), {
+      target: { value: "Premium A4 Paper" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    const line = onSave.mock.calls[0][0].line_items[0];
+    expect(line.create_new).toBe(true);
+    expect(line.matched_item).toBeNull();
+    expect(line.stock_name).toBe("Premium A4 Paper");
+    expect(line.unit).toBe("Nos");
+    expect(line.stock_group).toBe("Office Supplies");
+  });
+
+  it("blocks save when an inventory row is neither matched nor create_new", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseInventory, onSave);
+    // Row 2 is create_new; toggling it off clears matched_item → invalid state
+    // (create_new=false AND matched_item=null). Save must be blocked.
+    fireEvent.click(screen.getByLabelText("Create new 2"));
+    fireEvent.click(screen.getByText("Save"));
+    expect(onSave).not.toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      /matched to an existing stock item or marked Create new/i,
+    );
+  });
+
+  it("re-selecting an existing item on a toggled-off row restores a valid save", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseInventory, onSave);
+    fireEvent.click(screen.getByLabelText("Create new 2"));
+    // Now a dropdown is shown for row 2; pick an existing item.
+    fireEvent.change(screen.getByLabelText("Stock Item 2"), {
+      target: { value: "Stapler" },
+    });
+    fireEvent.click(screen.getByText("Save"));
+    expect(onSave).toHaveBeenCalled();
+    const line = onSave.mock.calls[0][0].line_items[1];
+    expect(line.create_new).toBe(false);
+    expect(line.matched_item).toBe("Stapler");
+  });
+
+  it("keeps non-inventory edit fields working for an accounting-only purchase", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseINR, onSave);
+    fireEvent.click(screen.getByText("Save"));
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({ voucher_type: "Purchase", party_ledger: "Acme Supplies" }),
+    );
+    // no line_items emitted for accounting-only
+    expect(onSave.mock.calls[0][0].line_items).toBeUndefined();
   });
 });
 

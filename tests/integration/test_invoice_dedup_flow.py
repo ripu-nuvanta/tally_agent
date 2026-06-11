@@ -103,9 +103,9 @@ async def _upload(db_session, ctx, fixture, content=b"\xff\xd8\xff\xe0PDFBYTESA"
 
 @pytest.mark.asyncio
 async def test_entry_carries_reference_fields(db_session, ctx):
-    result = await _upload(db_session, ctx, "purchase_office_inr")
+    result = await _upload(db_session, ctx, "purchase_service_inr")
     entry = result["data"]["entries"][0]
-    # purchase_office_inr fixture: original_invoice_ref=CRO-2026-5678, date 2026-02-10
+    # purchase_service_inr fixture: original_invoice_ref=CRO-2026-5678, date 2026-02-10
     assert entry["reference"] == "CRO-2026-5678"
     assert entry["reference_date"] == "20260210"
     assert entry["status"] == "draft"
@@ -116,7 +116,7 @@ async def test_entry_carries_reference_fields(db_session, ctx):
 async def test_b1_same_file_twice_blocks_second(db_session, ctx):
     user, ws, conv = ctx
     same_bytes = b"\xff\xd8\xff\xe0IDENTICALFILE"
-    first = await _upload(db_session, ctx, "purchase_office_inr", content=same_bytes)
+    first = await _upload(db_session, ctx, "purchase_service_inr", content=same_bytes)
     entry1 = first["data"]["entries"][0]
     assert entry1["status"] == "draft"
 
@@ -136,7 +136,7 @@ async def test_b1_same_file_twice_blocks_second(db_session, ctx):
         )
 
     # Upload-time B1: the same file again is flagged "same file".
-    second = await _upload(db_session, ctx, "purchase_office_inr", content=same_bytes)
+    second = await _upload(db_session, ctx, "purchase_service_inr", content=same_bytes)
     entry2 = second["data"]["entries"][0]
     assert entry2["status"] == "duplicate"
     assert entry2["duplicate_of"]["reason"] == "same file"
@@ -166,7 +166,7 @@ async def test_b1_same_file_twice_blocks_second(db_session, ctx):
 async def test_b2_same_invoice_no_different_file_blocks(db_session, ctx):
     user, ws, conv = ctx
     # First upload + write to create a written VoucherEntry with the reference.
-    first = await _upload(db_session, ctx, "purchase_office_inr",
+    first = await _upload(db_session, ctx, "purchase_service_inr",
                           content=b"FILE-ONE-BYTES")
     entry1 = first["data"]["entries"][0]
     entry1["conversation_id"] = str(conv.id)
@@ -185,7 +185,7 @@ async def test_b2_same_invoice_no_different_file_blocks(db_session, ctx):
         )
 
     # Second upload: DIFFERENT bytes, SAME invoice no + party → blocked by DB B2.
-    second = await _upload(db_session, ctx, "purchase_office_inr",
+    second = await _upload(db_session, ctx, "purchase_service_inr",
                            content=b"FILE-TWO-DIFFERENT-BYTES")
     entry2 = second["data"]["entries"][0]
     assert entry2["status"] == "duplicate"
@@ -195,7 +195,7 @@ async def test_b2_same_invoice_no_different_file_blocks(db_session, ctx):
 @pytest.mark.asyncio
 async def test_distinct_invoice_writes_with_reference(db_session, ctx):
     user, ws, conv = ctx
-    upload = await _upload(db_session, ctx, "purchase_office_inr",
+    upload = await _upload(db_session, ctx, "purchase_service_inr",
                            content=b"UNIQUE-FILE-XYZ")
     entry = upload["data"]["entries"][0]
     assert entry["status"] == "draft"
@@ -232,7 +232,7 @@ async def test_write_time_recheck_blocks_even_with_client_status_draft(db_sessio
     """
     user, ws, conv = ctx
     # First upload + write to create a written VoucherEntry with the reference.
-    first = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-FILE-ONE")
+    first = await _upload(db_session, ctx, "purchase_service_inr", content=b"WT-FILE-ONE")
     entry1 = first["data"]["entries"][0]
     entry1["conversation_id"] = str(conv.id)
     entry1["file_id"] = first["data"]["file_id"]
@@ -274,7 +274,7 @@ async def test_write_time_recheck_blocks_even_with_client_status_draft(db_sessio
 async def test_edit_reference_to_non_duplicate_allows_write(db_session, ctx):
     """Finding 1: editing the reference to a NON-duplicate value lets the write proceed."""
     user, ws, conv = ctx
-    first = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-EDIT-ONE")
+    first = await _upload(db_session, ctx, "purchase_service_inr", content=b"WT-EDIT-ONE")
     entry1 = first["data"]["entries"][0]
     entry1["conversation_id"] = str(conv.id)
     entry1["file_id"] = first["data"]["file_id"]
@@ -291,7 +291,7 @@ async def test_edit_reference_to_non_duplicate_allows_write(db_session, ctx):
         )
 
     # Second doc with same party but a CORRECTED (different) invoice no.
-    second = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-EDIT-TWO")
+    second = await _upload(db_session, ctx, "purchase_service_inr", content=b"WT-EDIT-TWO")
     entry2 = second["data"]["entries"][0]
     entry2["conversation_id"] = str(conv.id)
     entry2["file_id"] = second["data"]["file_id"]
@@ -323,7 +323,7 @@ async def test_edit_reference_to_non_duplicate_allows_write(db_session, ctx):
 async def test_write_time_recheck_normalizes_reference(db_session, ctx):
     """Finding 1+2: trimmed/case-different reference still detected at write time."""
     user, ws, conv = ctx
-    first = await _upload(db_session, ctx, "purchase_office_inr", content=b"WT-NORM-ONE")
+    first = await _upload(db_session, ctx, "purchase_service_inr", content=b"WT-NORM-ONE")
     entry1 = first["data"]["entries"][0]
     entry1["conversation_id"] = str(conv.id)
     entry1["file_id"] = first["data"]["file_id"]
@@ -364,7 +364,7 @@ async def test_write_time_recheck_normalizes_reference(db_session, ctx):
 @pytest.mark.asyncio
 async def test_uploaded_file_row_stores_content_hash(db_session, ctx):
     user, ws, conv = ctx
-    await _upload(db_session, ctx, "purchase_office_inr", content=b"HASHME")
+    await _upload(db_session, ctx, "purchase_service_inr", content=b"HASHME")
     row = (await db_session.execute(
         select(UploadedFile).where(UploadedFile.workspace_id == ws.id)
     )).scalars().first()
