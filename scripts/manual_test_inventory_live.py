@@ -96,7 +96,7 @@ NEW_ITEM = f"{NPFX} Widget"   # "_MTINV Widget"
 NEW_QTY = 2.0
 NEW_RATE = 500.0
 NEW_UOM = "Nos"
-NEW_GROUP = "Primary"
+NEW_GROUP = "AI Imported Items"
 NEW_GST = 18
 
 # Voucher identity.
@@ -368,7 +368,17 @@ async def run(host: str, port: int) -> None:
                 print(f"  create_unit({NEW_UOM!r}) — already exists (OK): {e}")
             else:
                 print(f"  create_unit({NEW_UOM!r}) — note: {type(e).__name__}: {e}")
-        # Stock item create-new (group Primary, uom Nos, opening 0/0, no HSN, gst 18).
+        # Stock group (idempotent) — the non-reserved default group must exist first.
+        try:
+            r = await writer.create_stock_group(NEW_GROUP, "")
+            print(f"  create_stock_group({NEW_GROUP!r}) -> {json.dumps(r)}")
+        except Exception as e:  # noqa: BLE001
+            msg = str(e).lower()
+            if "exist" in msg or "duplicate" in msg:
+                print(f"  create_stock_group({NEW_GROUP!r}) — already exists (OK): {e}")
+            else:
+                print(f"  create_stock_group({NEW_GROUP!r}) — note: {type(e).__name__}: {e}")
+        # Stock item create-new (group AI Imported Items, uom Nos, opening 0/0, no HSN, gst 18 → GST-NA).
         try:
             r = await writer.create_stock_item(
                 name=NEW_ITEM, group=NEW_GROUP, uom=NEW_UOM,

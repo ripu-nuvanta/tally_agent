@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     TALLY_DRY_RUN: bool = False
 
     # Inventory line items (invoice entry Phase 2)
-    DEFAULT_STOCK_GROUP: str = "Primary"  # parent group for auto-created stock items
+    DEFAULT_STOCK_GROUP: str = "AI Imported Items"  # parent group for auto-created stock items (non-reserved; created on demand)
 
     # FX → INR conversion (write-flow Group B, Slice A)
     FX_DEFAULT_RATES: str = ""  # per-currency defaults, e.g. "USD:83.5,EUR:90"

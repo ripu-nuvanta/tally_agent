@@ -206,7 +206,7 @@ async def _write_inventory_voucher(
     voucher_type = entry["voucher_type"]
     party = entry["party_ledger"]
     lines = entry.get("line_items") or []
-    default_group = entry.get("default_stock_group") or "Primary"
+    default_group = entry.get("default_stock_group") or settings.DEFAULT_STOCK_GROUP or "AI Imported Items"
 
     async def _idempotent(coro):
         """Run a master create; swallow ONLY a genuine already-exists failure.
@@ -233,11 +233,15 @@ async def _write_inventory_voucher(
         if not (line.get("create_new") or not line.get("matched_item")):
             continue
         unit = (line.get("unit") or "Nos").strip() or "Nos"
-        group = (line.get("stock_group") or default_group).strip() or "Primary"
+        group = (line.get("stock_group") or default_group).strip() or "AI Imported Items"
         if unit not in seen_units:
             seen_units.add(unit)
             await _idempotent(writer.create_unit(unit, unit))
-        if group not in seen_groups and group.lower() != "primary":
+        # Always ensure the parent group exists (mirrors the seeder, which creates
+        # a real named group before its items). "Primary" is reserved in Tally and
+        # creating/using it can trigger a blocking modal — so we use a non-reserved
+        # default group and create it on demand.
+        if group not in seen_groups:
             seen_groups.add(group)
             await _idempotent(writer.create_stock_group(group, ""))
         await _idempotent(writer.create_stock_item(

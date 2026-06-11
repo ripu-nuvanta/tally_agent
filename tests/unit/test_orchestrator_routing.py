@@ -254,7 +254,7 @@ async def test_goods_purchase_is_inventory_with_line_items():
     # Per-line ledger defaults to the chosen purchase contra ledger.
     assert by_desc["A4 Paper Ream 500 sheets"]["ledger"] == "Purchase Accounts"
     assert "A4 Paper Ream 500 sheets" in entry["available_stock_items"]
-    assert entry["default_stock_group"] == "Primary"
+    assert entry["default_stock_group"] == "AI Imported Items"
 
 
 @pytest.mark.asyncio

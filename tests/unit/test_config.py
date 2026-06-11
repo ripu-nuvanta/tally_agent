@@ -56,4 +56,4 @@ class TestConfigDefaults:
                 model_config = {"env_file": None, "extra": "ignore"}
 
             s = TestSettings()
-            assert s.DEFAULT_STOCK_GROUP == "Primary"
+            assert s.DEFAULT_STOCK_GROUP == "AI Imported Items"
