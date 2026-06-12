@@ -82,6 +82,20 @@ Correctness is proven live; these are hardening/quality items:
   Spec `specs/2026-06-10-invoice-entry-phase2-inventory-design.md`; review `code-review-invoice-inventory-2026-06-10.md`.
   Follow-up: on-the-fly stock-item creation needs HSN to set master GST (currently GST-NA + voucher-level GST);
   add an HSN field to the create-new card if master-level GST is wanted.
+  - **Post-merge live-testing fixes (2026-06-11/12)** — found by manual upload, each TDD'd + live-verified:
+    - **Invoice-number extraction.** A purchase/sales invoice's OWN number was never captured (the prompt only had
+      `original_invoice_ref`, scoped to DN/CN). Added a distinct `invoice_number` field → drives the card "Invoice #",
+      the Tally `REFERENCE`, and the party+invoice-no dedup key (DN/CN keep `original_invoice_ref` for the against-bill).
+      Real Vision verified extracting `invoice_number`. (`fix/invoice-number-extraction`, merged.)
+    - **Master-create idempotency + no false success.** A duplicate-master CREATE froze Tally with a modal; an existing
+      group returning `altered=1` aborted the write. Now: list items+groups (incl. empty groups via new
+      `list_stock_groups`) and only create missing masters; treat `altered=1, errors=0` as already-exists success;
+      frontend reverts the optimistic "Written" badge on a `voucher_error`. See [`LESSONS.md` §15 rules 10–14](../LESSONS.md).
+      (`fix/inventory-master-altered-idempotent`, merged.)
+    - **Tally gotchas captured** in `LESSONS.md` §15 (duplicate-master modal freeze, GST-needs-HSN, reserved "Primary"
+      group, future-dated silent drop, Sales hides REFERENCE).
+  - **Open follow-up (declined this session):** also append the invoice number to the **Narration** so it's visible
+    on the Sales voucher screen (Tally hides REFERENCE there by default). Not implemented.
 
 <!-- superseded — was: -->
 - **(superseded) Inventory line items** — original gap note. The agent invoice write-path used the

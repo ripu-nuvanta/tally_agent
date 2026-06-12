@@ -199,7 +199,7 @@ TALLY_WRITE_ENABLED=true             # required for write paths (Set B1a, Group 
 
 ## Testing
 
-_Approximate counts as of 2026-05-08 (Stage 2 closeout); ~1,450+ tests total, 0 failures, backend coverage ~89%._
+_Approximate counts as of 2026-06-12 (invoice Phase 2 closeout); ~1,542 backend + ~322 frontend, 0 failures, backend coverage ~89%._
 
 - **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting, mock handler, auth utils, pricing, DB models. ~956 tests.
 - **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle + mock format parity. Also includes DB integration tests (auth flow, workspace CRUD, conversation persistence) — these require `TEST_DATABASE_URL`. ~132 + 15 DB tests.
@@ -328,5 +328,7 @@ Closed phases in build order, with one-line learnings. For what's next, see [`do
 | FX → INR (Slice A / F2) | ✅ merged 2026-06-08 | Stop model converting; extract original currency+amount, code-computed rate (doc→default→fallback), chat-only override, INR-only into Tally, no-rate writes blocked. Spec/review: `docs/specs/2026-06-08-fx-inr-conversion-design.md`, `docs/code-review-fx-inr-2026-06-08.md`. |
 | Group B — write-agent (F1+F3+B1b/B1c) | ✅ merged 2026-06-09 | Upload→Vision classifies 5 types (payment/purchase/sales/DN/CN)→route→party+GST+bill alloc→write; company dropdown (test-connection); DB audit. Task 0 probes E1–E8 + TDS + bank done (`docs/group-b-task0-probe-results-2026-06-08.md`). Review: `docs/code-review-group-b-2026-06-09.md`. |
 | GST on invoices + DN/CN direction | ✅ merged 2026-06-09 | GST line items → Input/Output GST ledgers (resolved from Duties & Taxes). DN/CN posting direction fixed (was inverted) — **all live-verified** (real Vision/PDF → live Tally → read-back, `logs/manual_test_*_live.log`). Write-flow eval added (`docs/eval-write-flow-2026-06-09.md`). |
+| Invoice entry Phase 1 — Invoice No. + dedup | ✅ merged 2026-06-10 | Supplier invoice no. → Tally `REFERENCE` + shown on card; duplicate **hard block** (file-hash + party/invoice-no vs DB & Tally, server-side re-derived). Spec `docs/specs/2026-06-10-invoice-entry-phase1-design.md`; review `docs/code-review-invoice-dedup-2026-06-10.md`. |
+| Invoice entry Phase 2 — Inventory line items | ✅ merged 2026-06-11 | Goods invoices post line items into the Tally **stock grid** (qty/rate) via the stock-based builder; Vision unit extraction, stock-item fuzzy resolver, goods-vs-services routing, match/create-in-card UI. **Live-verified 5/5.** Post-merge live fixes (2026-06-11/12): distinct `invoice_number` extraction, only-create-missing masters + `altered=1`=already-exists, FE reverts false "Written". New Tally gotchas in [`LESSONS.md`](LESSONS.md) §15 rules 10–14. |
 
 **Up next:** hardening from the write-flow code analysis (`docs/code-analysis-write-flow-2026-06-09.md`) — SSRF host/port allowlist, entry-dict typing + sign-convention single-source, cheap correctness warnings (DN/CN no-ref, currency-defaulted-to-INR, GST-ledger-missing block), eval mock GST ledgers. Then future slices (supplier-payment-against-bill, TDS journals, bank reconciliation) — each needs its own spec. See [`docs/roadmap.md`](docs/roadmap.md).
