@@ -324,3 +324,30 @@ FastAPI's `File`/`Form`/`UploadFile` (used by `/api/chat/upload`) require `pytho
 
 ### Playwright route mocks must account for query strings
 `page.route("**/api/health", ...)` does **not** match `/api/health?host=localhost&port=9000` — Playwright globs don't span the query string. The per-workspace heartbeat badge sends host/port as query params, so the mock never fulfilled and the badge stuck on "Checking…". Use `**/api/health**` (trailing `**`) for any endpoint the frontend calls with query params. Also: for async header badges, add a settle wait (`await expect(badge).not.toContainText("Checking")`) before `toHaveScreenshot` to keep screenshots deterministic.
+
+## 17. DB-mode persistence: every chat-producing endpoint must persist `Message` rows
+
+In DB mode the conversation is rehydrated **solely** from `Message` rows
+(`getConversation` → `GET /workspaces/.../conversations/...`). Anything an endpoint
+returns to the frontend but does **not** write as a `Message` row is lost on refresh/relogin.
+
+- **`/chat/upload` must persist messages.** It originally wrote only an `UploadedFile`
+  audit row, so uploaded `voucher_review` cards vanished on reload. Fix: persist a user
+  `Message` (`"<msg> [filename]"`) + assistant `Message` (`data=result["data"]`), set
+  `conversation.title`/`updated_at`, and `flush()` the user message before the assistant
+  one so the per-row `created_at` default preserves order. (`_chat_db_mode` already does
+  all this — mirror it in any new chat-producing endpoint.)
+- **Persist *state changes* too, and thread `conversation_id` via the REQUEST.**
+  `/chat/voucher-action` must update the originating `voucher_review` Message entry's
+  `status` (→ `"written"`/`"deleted"`) so a written/discarded card doesn't reload as
+  actionable `"draft"`. In-place JSONB mutation needs
+  `sqlalchemy.orm.attributes.flag_modified(msg, "data")` or SQLAlchemy won't detect it.
+  **Gotcha:** the production review-card `entry` dict has **no `conversation_id`** (the
+  orchestrator never adds it, the frontend passes `entry` through unmodified) — so any
+  `entry.get("conversation_id")` gate silently no-ops in production (this had already
+  been silently skipping the `VoucherEntry` audit row). Pass `conversation_id` as an
+  explicit request field and use `request.conversation_id or entry.get(...)`.
+- **Test at the real shape.** A test that injects `conversation_id` *into the entry dict*
+  passes while production no-ops. Pass it via the request body, and add a revert
+  sanity-check (remove the threading → test must fail). See
+  [`docs/code-review-upload-voucher-persistence-2026-06-12.md`](docs/code-review-upload-voucher-persistence-2026-06-12.md).

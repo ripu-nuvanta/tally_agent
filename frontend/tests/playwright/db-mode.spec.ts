@@ -732,12 +732,14 @@ test.describe("DB-mode visual tests", () => {
     const writeBtn = page.locator("button", { hasText: "Write to Tally" });
     await expect(writeBtn).toBeDisabled();
 
-    // Verify "Pending" label is shown in the voucher card
-    await expect(page.locator("text=Expense Entry — Pending")).toBeVisible();
+    // Verify "Pending" status word is shown in the voucher card (scoped to the
+    // card so it doesn't match the sidebar "Pending Voucher" button)
+    const pendingCard = page.locator('[data-testid="voucher-review-entry-pending"]');
+    await expect(pendingCard.getByText("Pending", { exact: true })).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Voucher card has yellow/amber border (pending status styling)
-    // - "Expense Entry — Pending" status label visible in the card header
+    // - "Journal" type badge + "Pending" status word visible in the card header
     // - Action buttons visible but DISABLED (opacity-50 / grayed appearance)
     // - Spinner or loading indicator on the "Write to Tally" button area
     // - Buttons should not look clickable (disabled cursor style)
@@ -822,17 +824,18 @@ test.describe("DB-mode visual tests", () => {
 
     await page.waitForSelector('[data-testid="voucher-review-entry-written"]', { timeout: 10000 });
 
-    // Verify "Written" label in the voucher card
-    await expect(page.locator("text=Expense Entry — Written")).toBeVisible();
+    // Verify "Written" status word in the voucher card (scoped to the card so it
+    // doesn't match the sidebar "Written Voucher" button)
+    const writtenCard = page.locator('[data-testid="voucher-review-entry-written"]');
+    await expect(writtenCard.getByText("Written", { exact: true })).toBeVisible();
 
     // No action buttons should be present inside the voucher card
-    const writtenCard = page.locator('[data-testid="voucher-review-entry-written"]');
     await expect(writtenCard.locator("button", { hasText: "Write to Tally" })).not.toBeVisible();
     await expect(writtenCard.locator("button", { hasText: "Discard" })).not.toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Voucher card has green border and/or green background tint (written status styling)
-    // - "Expense Entry — Written" status label visible in the card header
+    // - "Journal" type badge + "Written" status word visible in the card header
     // - Entry fields still readable: "Amazon India", ₹12,000, date 11-Apr-2025
     // - NOT visible: no "Write to Tally" action button
     // - NOT visible: no "Edit Entry" action button
@@ -917,17 +920,18 @@ test.describe("DB-mode visual tests", () => {
 
     await page.waitForSelector('[data-testid="voucher-review-entry-deleted"]', { timeout: 10000 });
 
-    // Verify "Discarded" label in the voucher card
-    await expect(page.locator("text=Expense Entry — Discarded")).toBeVisible();
+    // Verify "Discarded" status word in the voucher card (scoped to the card so it
+    // doesn't match the sidebar "Discarded Voucher" button)
+    const discardedCard = page.locator('[data-testid="voucher-review-entry-deleted"]');
+    await expect(discardedCard.getByText("Discarded", { exact: true })).toBeVisible();
 
     // No action buttons inside the voucher card
-    const discardedCard = page.locator('[data-testid="voucher-review-entry-deleted"]');
     await expect(discardedCard.locator("button", { hasText: "Write to Tally" })).not.toBeVisible();
     await expect(discardedCard.locator("button", { hasText: "Edit Entry" })).not.toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Voucher card has gray border and/or reduced opacity (discarded/deleted status styling)
-    // - "Expense Entry — Discarded" status label visible in the card header
+    // - "Journal" type badge + "Discarded" status word visible in the card header
     // - Entry fields dimmed/muted: "Flipkart India", ₹8,500, date 12-Apr-2025
     // - NOT visible: no "Write to Tally" action button
     // - NOT visible: no "Edit Entry" action button
@@ -1496,27 +1500,31 @@ test.describe("DB-mode visual tests", () => {
     // Click "Edit Entry" to open the inline edit form
     await page.locator("button", { hasText: "Edit Entry" }).click();
 
-    // Wait for edit form inputs to appear
-    await page.waitForSelector('input[aria-label="Vendor"]', { timeout: 5000 });
+    // Wait for the edit form to appear (data-testid on the form root)
+    await page.waitForSelector('[data-testid="voucher-edit-form"]', { timeout: 5000 });
 
-    // Verify edit form fields are visible
-    await expect(page.locator('input[aria-label="Vendor"]')).toBeVisible();
+    // Verify edit form fields are visible. For a "Journal" voucher the form
+    // renders: Voucher Type, Date, Supplier Invoice No., and the primary money
+    // line (Narration / Amount / Ledger). The non-party-ledger label defaults to
+    // "Ledger" for Journal (see primaryLedgerLabel in VoucherEditForm.tsx).
+    await expect(page.locator('select[aria-label="Voucher Type"]')).toBeVisible();
     await expect(page.locator('input[aria-label="Date"]')).toBeVisible();
+    await expect(page.locator('input[aria-label="Supplier Invoice No."]')).toBeVisible();
     await expect(page.locator('input[aria-label="Amount"]')).toBeVisible();
-    await expect(page.locator('select[aria-label="Expense Ledger"]')).toBeVisible();
-    await expect(page.locator('select[aria-label="Payment Ledger"]')).toBeVisible();
-    await expect(page.locator("button", { hasText: "Confirm & Write to Tally" })).toBeVisible();
+    await expect(page.locator('select[aria-label="Ledger"]')).toBeVisible();
+    await expect(page.locator('input[aria-label="Narration"]')).toBeVisible();
+    await expect(page.locator("button", { hasText: "Save" })).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Inline edit form visible within the voucher card (replaces the review display)
-    // - "Vendor" input field visible and editable (pre-filled "Staples India")
+    // - "Voucher Type" select visible (pre-selected "Journal")
     // - "Date" input field visible (pre-filled "2025-04-10" or formatted equivalent)
+    // - "Supplier Invoice No." input field visible
     // - "Amount" input field visible (pre-filled "5000")
-    // - "Expense Ledger" dropdown/select visible (pre-selected "Office Supplies")
-    // - "Payment Ledger" dropdown/select visible (pre-selected "ICICI Bank")
-    // - "Narration" text input visible
-    // - "Confirm & Write to Tally" button visible (green)
-    // - "Edit Again" button visible (secondary styling)
+    // - "Ledger" dropdown/select visible (pre-selected "Office Supplies")
+    // - "Narration" / Description text input visible
+    // - "Save" button visible (green)
+    // - "Cancel" button visible (secondary styling)
     // - NOT visible: "Write to Tally" standalone button (replaced by inline form)
     // - NOT visible: "Discard" button
     {

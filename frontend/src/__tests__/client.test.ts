@@ -20,7 +20,7 @@ vi.mock("axios", () => ({
 }));
 
 // Import after the mock is registered.
-const { testConnection } = await import("../api/client");
+const { testConnection, voucherAction } = await import("../api/client");
 
 describe("testConnection", () => {
   beforeEach(() => {
@@ -59,5 +59,35 @@ describe("testConnection", () => {
   it("propagates network rejections", async () => {
     mockPost.mockRejectedValue(new Error("Network error"));
     await expect(testConnection("localhost", 9000)).rejects.toThrow("Network error");
+  });
+});
+
+describe("voucherAction", () => {
+  beforeEach(() => {
+    mockPost.mockReset();
+  });
+
+  it("POSTs conversation_id in the body so the backend can persist status", async () => {
+    mockPost.mockResolvedValue({
+      data: { message: "ok", data: { type: "voucher_written" }, session_id: "s1" },
+    });
+
+    await voucherAction(
+      "approve",
+      { id: "e1" },
+      "Bharat Traders",
+      "sess-1",
+      "ws-1",
+      "conv-1",
+    );
+
+    expect(mockPost).toHaveBeenCalledWith("/chat/voucher-action", {
+      action: "approve",
+      entry: { id: "e1" },
+      company: "Bharat Traders",
+      session_id: "sess-1",
+      workspace_id: "ws-1",
+      conversation_id: "conv-1",
+    });
   });
 });

@@ -406,6 +406,230 @@ async def test_db_fx_upload_override_approve_full_flow(db_app):
         assert "successfully" in body["message"].lower()
 
 
+async def _create_conversation(client: AsyncClient, token: str, ws_id: str) -> str:
+    """Create a conversation in the workspace and return its id."""
+    resp = await client.post(
+        f"/api/workspaces/{ws_id}/conversations",
+        json={"title": None},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert resp.status_code in (200, 201), resp.text
+    return resp.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_db_upload_persists_voucher_card_on_reload(db_app):
+    """Upload a receipt in DB mode → both the user message and the assistant
+    voucher_review card survive a conversation reload (previously they did NOT
+    persist), and the conversation gets an upload-first title."""
+    from unittest.mock import patch
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "Reload Co", tally_company="Test Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_msg = _mock_vision_message("OfficeMax", 1200.0, "2026-04-05")
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=mock_msg),
+        ):
+            resp = await ac.post(
+                "/api/chat/upload",
+                files={"file": ("receipt.jpg", io.BytesIO(_FAKE_JPEG), "image/jpeg")},
+                data={
+                    "message": "office supplies",
+                    "workspace_id": ws_id,
+                    "conversation_id": conv_id,
+                },
+                headers=headers,
+            )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["data"]["type"] == "voucher_review"
+
+        # RELOAD the conversation — messages + card must now be persisted.
+        reload = await ac.get(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}",
+            headers=headers,
+        )
+        assert reload.status_code == 200, reload.text
+        conv = reload.json()
+        messages = conv["messages"]
+        assert len(messages) >= 2, f"expected >=2 persisted messages, got {messages}"
+
+        user_msgs = [m for m in messages if m["role"] == "user"]
+        assert any("[receipt.jpg]" in m["content"] for m in user_msgs), (
+            f"no user message carrying the filename in [...]: {user_msgs}"
+        )
+
+        assistant_cards = [
+            m for m in messages
+            if m["role"] == "assistant"
+            and isinstance(m["data"], dict)
+            and m["data"].get("type") == "voucher_review"
+        ]
+        assert assistant_cards, f"no persisted voucher_review card: {messages}"
+        entry = assistant_cards[0]["data"]["entries"][0]
+        assert entry["vendor_name"] == "OfficeMax"
+        assert entry["amount"] == 1200.0
+
+        # Upload-first title fix: conversation is titled after the upload.
+        assert conv["title"], f"conversation title still null after upload: {conv}"
+
+
+@pytest.mark.asyncio
+async def test_db_upload_approve_persists_written_status_on_reload(db_app):
+    """Upload → approve (conv_id threaded via REQUEST body, not the entry) →
+    the originating card's entry status reads 'written' after reload, and a
+    VoucherEntry audit row exists for the conversation."""
+    from unittest.mock import patch
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "ApproveReload Co", tally_company="Test Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_msg = _mock_vision_message("CabService", 350.0, "2026-04-06")
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=mock_msg),
+        ):
+            up = await ac.post(
+                "/api/chat/upload",
+                files={"file": ("receipt.jpg", io.BytesIO(_FAKE_JPEG), "image/jpeg")},
+                data={
+                    "message": "cab expense",
+                    "workspace_id": ws_id,
+                    "conversation_id": conv_id,
+                },
+                headers=headers,
+            )
+        assert up.status_code == 200, up.text
+        entry = up.json()["data"]["entries"][0]
+
+        # Approve — conversation_id goes in the REQUEST body (mirrors production:
+        # the entry dict never carries it). Writes succeed via mock Tally mode.
+        approve = await ac.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "approve",
+                "entry": {
+                    "id": entry.get("id", "approve-reload"),
+                    "date": entry.get("date", "20260406"),
+                    "debit_ledger": entry.get("debit_ledger", "Travel Expenses"),
+                    "credit_ledger": entry.get("credit_ledger", "Cash"),
+                    "amount": entry["amount"],
+                    "narration": entry.get("narration", "CabService expense"),
+                    "gst_entries": entry.get("gst_entries", []),
+                },
+                "company": "Test Co",
+                "session_id": "approve-reload-session",
+                "workspace_id": ws_id,
+                "conversation_id": conv_id,
+            },
+            headers=headers,
+        )
+        assert approve.status_code == 200, approve.text
+        assert approve.json()["data"]["type"] == "voucher_written", approve.text
+
+        # RELOAD — the card's entry status must now read 'written'.
+        reload = await ac.get(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}",
+            headers=headers,
+        )
+        assert reload.status_code == 200, reload.text
+        cards = [
+            m for m in reload.json()["messages"]
+            if m["role"] == "assistant"
+            and isinstance(m["data"], dict)
+            and m["data"].get("type") == "voucher_review"
+        ]
+        assert cards, "no persisted voucher_review card after approve"
+        reloaded_entry = cards[0]["data"]["entries"][0]
+        assert reloaded_entry["status"] == "written", (
+            f"expected status 'written', got {reloaded_entry.get('status')!r}"
+        )
+
+        # A VoucherEntry audit row must exist for this conversation.
+        from sqlalchemy import select as _select
+        from backend.db.models import VoucherEntry as VoucherEntryDB
+        audit_engine = create_async_engine(_TEST_DB_URL)
+        try:
+            async with audit_engine.connect() as conn:
+                res = await conn.execute(
+                    _select(VoucherEntryDB.status).where(
+                        VoucherEntryDB.conversation_id == conv_id
+                    )
+                )
+                statuses = [r[0] for r in res.fetchall()]
+        finally:
+            await audit_engine.dispose()
+        assert statuses, "no VoucherEntry audit row persisted for the conversation"
+        assert "written" in statuses, f"audit row statuses: {statuses}"
+
+
+@pytest.mark.asyncio
+async def test_db_upload_discard_persists_deleted_status_on_reload(db_app):
+    """Upload → discard (conv_id via request body) → the card's entry status
+    reads 'deleted' after reload."""
+    from unittest.mock import patch
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "DiscardReload Co", tally_company="Test Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        mock_msg = _mock_vision_message("OfficeMax", 800.0, "2026-04-07")
+        with patch(
+            "backend.agents.orchestrator.anthropic_client.messages.create",
+            new=AsyncMock(return_value=mock_msg),
+        ):
+            up = await ac.post(
+                "/api/chat/upload",
+                files={"file": ("receipt.jpg", io.BytesIO(_FAKE_JPEG), "image/jpeg")},
+                data={
+                    "message": "office supplies",
+                    "workspace_id": ws_id,
+                    "conversation_id": conv_id,
+                },
+                headers=headers,
+            )
+        assert up.status_code == 200, up.text
+        entry = up.json()["data"]["entries"][0]
+
+        discard = await ac.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "discard",
+                "entry": {"id": entry.get("id", "discard-reload")},
+                "session_id": "discard-reload-session",
+                "workspace_id": ws_id,
+                "conversation_id": conv_id,
+            },
+            headers=headers,
+        )
+        assert discard.status_code == 200, discard.text
+        assert discard.json()["data"]["type"] == "voucher_discarded", discard.text
+
+        # RELOAD — the card's entry status must now read 'deleted'.
+        reload = await ac.get(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}",
+            headers=headers,
+        )
+        assert reload.status_code == 200, reload.text
+        cards = [
+            m for m in reload.json()["messages"]
+            if m["role"] == "assistant"
+            and isinstance(m["data"], dict)
+            and m["data"].get("type") == "voucher_review"
+        ]
+        assert cards, "no persisted voucher_review card after discard"
+        reloaded_entry = cards[0]["data"]["entries"][0]
+        assert reloaded_entry["status"] == "deleted", (
+            f"expected status 'deleted', got {reloaded_entry.get('status')!r}"
+        )
+
+
 @pytest.mark.asyncio
 async def test_db_upload_requires_workspace_id(db_app):
     """Upload without workspace_id → 400 in DB mode."""

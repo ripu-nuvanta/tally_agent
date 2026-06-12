@@ -194,6 +194,7 @@ export async function voucherAction(
   company: string,
   sessionId: string,
   workspaceId: string,
+  conversationId: string,
 ): Promise<ChatResponse> {
   const { data } = await api.post<ChatResponse>("/chat/voucher-action", {
     action,
@@ -201,6 +202,7 @@ export async function voucherAction(
     company,
     session_id: sessionId,
     workspace_id: workspaceId,
+    conversation_id: conversationId,
   });
   return data;
 }
