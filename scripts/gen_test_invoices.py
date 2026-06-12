@@ -76,6 +76,9 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tag", default=datetime.now().strftime("%m%d%H%M"),
                     help="unique batch tag woven into invoice numbers (default: timestamp)")
+    ap.add_argument("--date", default="15-Jun-2025",
+                    help="invoice date, DD-Mon-YYYY (e.g. 15-May-2026). Note dates "
+                         "remain 1 day later. Must be within Tally's open period / working date.")
     ap.add_argument("--outdir", default=os.path.expanduser("~/Downloads/tally-test-pdfs"))
     args = ap.parse_args()
     tag = args.tag
@@ -83,8 +86,9 @@ def main() -> None:
 
     pinv = f"PINV-{tag}"
     sinv = f"SINV-{tag}"
-    date = "15-Jun-2025"
-    ndate = "16-Jun-2025"
+    inv_dt = datetime.strptime(args.date, "%d-%b-%Y")
+    date = inv_dt.strftime("%d-%b-%Y")
+    ndate = (inv_dt.replace(day=inv_dt.day + 1) if inv_dt.day < 28 else inv_dt).strftime("%d-%b-%Y")
 
     specs = [
         ("purchase_invoice.pdf",
