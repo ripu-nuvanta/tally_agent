@@ -58,6 +58,18 @@ The documented **Group B** (`specs/2026-04-12-group-b-voucher-types-design.md`) 
 | **Write-flow eval** | Eval framework extended for upload→review→write (upload/action turns, `voucher_correctness` rubric, DB-mode login) | ✅ **Merged 2026-06-09.** `docs/eval-write-flow-2026-06-09.md`. |
 | **End-to-end live verification** | Real document/PDF → real Claude Vision → classify → live Tally write → read-back → cleanup, all 5 types | ✅ **Verified 2026-06-09** (`logs/manual_test_*_live.log`). |
 
+### UI / persistence (2026-06-12)
+
+- **Upload/voucher review cards survive reload** ✅ **Fixed — `fix/upload-voucher-persistence`, pending merge.**
+  `/chat/upload` now persists user+assistant Messages (was audit-row only) and `/chat/voucher-action`
+  persists written/discarded status (threading `conversation_id` via the request). Review
+  `code-review-upload-voucher-persistence-2026-06-12.md`; lesson `LESSONS.md` §17.
+- **Sidebar conversation actions — rename + delete** ✅ **Built — `feat/sidebar-conversation-actions`, pending merge.**
+  ChatGPT-style per-conversation kebab (⋯) menu: inline Rename (PATCH) + Delete with confirm (soft-delete);
+  deleting the active chat returns to the workspace landing; menu flips up near the list bottom; a11y roles added.
+  Frontend-only (backend `DELETE`/`PATCH` pre-existed). Spec `specs/2026-06-12-sidebar-conversation-actions-design.md`;
+  review `code-review-sidebar-conversation-actions-2026-06-12.md`. Tests: 351 FE unit, +3 backend E2E, 12 Playwright (×3 viewports).
+
 **Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 verified (DN/CN creation, company list, party-voucher filter). Two extra probes: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import, so reconciliation needs Tally's dedicated mechanism.
 
 ### Next up — from the write-flow code analysis (`docs/code-analysis-write-flow-2026-06-09.md`)

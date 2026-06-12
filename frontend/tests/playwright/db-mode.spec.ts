@@ -1775,4 +1775,222 @@ test.describe("DB-mode visual tests", () => {
     // - NOT visible: green/Live badge, gray/Checking badge, orange/Demo badge
     await expect(page).toHaveScreenshot("header-tally-offline.png");
   });
+
+  // ---------------------------------------------------------------------------
+  // Conversation row kebab (⋯) menu: Rename + Delete
+  // ---------------------------------------------------------------------------
+  // Shared conversation list: conv-1 ("P&L last month") is the row we drive.
+  // We navigate to /c/conv-1 so conv-1 is the ACTIVE row — its kebab button is
+  // always visible (opacity full) across all viewports, so we can click it
+  // reliably on mobile/tablet/desktop without depending on hover opacity.
+  const convMenuList = [
+    { id: "conv-1", title: "P&L last month", tag: null, created_at: "2025-04-10T10:00:00Z", updated_at: "2025-04-10T10:05:00Z" },
+    { id: "conv-2", title: "Expense Entry", tag: null, created_at: "2025-04-09T09:00:00Z", updated_at: "2025-04-09T09:30:00Z" },
+  ];
+
+  /** Mock workspaces + the conv-menu conversation list + the conv-1 GET, and open the
+   *  sidebar drawer on mobile. Returns whether the viewport is mobile. */
+  async function setupConvMenu(
+    page: import("@playwright/test").Page,
+    viewport: { width: number; height: number } | null,
+    conversations: typeof convMenuList | [],
+  ) {
+    await mockLoggedIn(page);
+
+    await page.route("**/api/workspaces", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockWorkspaces) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // List endpoint (trailing ** to also match any query string).
+    await page.route("**/api/workspaces/ws-1/conversations**", (route) => {
+      if (route.request().method() === "GET" && !/\/conversations\/[^/?]+/.test(route.request().url())) {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(conversations) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // ws-2 list — keep the second workspace empty to reduce sidebar noise.
+    await page.route("**/api/workspaces/ws-2/conversations**", (route) => {
+      if (route.request().method() === "GET" && !/\/conversations\/[^/?]+/.test(route.request().url())) {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // Specific conversation GET so /c/conv-1 resolves.
+    await page.route("**/api/workspaces/ws-1/conversations/conv-1", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "conv-1",
+            title: "P&L last month",
+            workspace_id: "ws-1",
+            messages: [],
+            created_at: "2025-04-10T10:00:00Z",
+            updated_at: "2025-04-10T10:05:00Z",
+          }),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    await page.goto("/c/conv-1");
+
+    if (isMobile) {
+      // On mobile the sidebar lives behind the hamburger drawer — open it.
+      const hamburger = page.locator('[aria-label="Open sidebar"]');
+      await hamburger.waitFor({ timeout: 10000 });
+      await hamburger.click();
+    }
+    return isMobile;
+  }
+
+  // Test 25: Conversation row kebab menu — Rename + Delete options visible
+  test("conversation-row-menu", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, convMenuList);
+
+    // conv-1 is the active row → its kebab is always visible. Click it to open the menu.
+    // .last() handles mobile, where the hidden desktop sidebar also has the row in the DOM.
+    const kebab = page.getByTestId("conv-menu-btn-conv-1");
+    await (isMobile ? kebab.last() : kebab.first()).waitFor({ state: "visible", timeout: 10000 });
+    await (isMobile ? kebab.last() : kebab.first()).click();
+
+    const menu = page.getByTestId("conv-menu-conv-1");
+    await expect(isMobile ? menu.last() : menu.first()).toBeVisible();
+    await expect((isMobile ? menu.last() : menu.first()).getByText("Rename")).toBeVisible();
+    await expect((isMobile ? menu.last() : menu.first()).getByText("Delete")).toBeVisible();
+
+    // VISUAL CHECKLIST:
+    // - Layout: a small dropdown menu anchored to the right edge, just below the
+    //   "P&L last month" conversation row in the sidebar (drawer on mobile).
+    // - Text: menu contains exactly two items — "Rename" and "Delete".
+    // - Colors/highlights: "Delete" is red text; "Rename" is gray/neutral text;
+    //   menu has a white background with a thin border + drop shadow.
+    //   The active "P&L last month" row keeps its bg-blue-100 highlight.
+    // - Spacing: menu items stacked vertically with even padding; menu does not
+    //   overlap the "+ New Chat" button awkwardly.
+    // - NOT visible: no inline rename input, no delete-confirm dialog, no
+    //   "Delete this chat?" text yet.
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-row-menu.png");
+  });
+
+  // Test 26: Conversation rename — inline input prefilled with the row's title
+  test("conversation-rename", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, convMenuList);
+
+    const kebab = page.getByTestId("conv-menu-btn-conv-1");
+    await (isMobile ? kebab.last() : kebab.first()).waitFor({ state: "visible", timeout: 10000 });
+    await (isMobile ? kebab.last() : kebab.first()).click();
+
+    const menu = page.getByTestId("conv-menu-conv-1");
+    await (isMobile ? menu.last() : menu.first()).getByText("Rename").click();
+
+    const input = page.getByTestId("conv-rename-input-conv-1");
+    const target = isMobile ? input.last() : input.first();
+    await expect(target).toBeVisible();
+    await expect(target).toHaveValue("P&L last month");
+
+    // VISUAL CHECKLIST:
+    // - Layout: the "P&L last month" conversation row is replaced in-place by a
+    //   text input spanning the row width in the sidebar (drawer on mobile).
+    // - Text: the input value is exactly "P&L last month" (prefilled title).
+    // - Colors/highlights: input has a blue focus border/ring (it is autofocused).
+    // - Spacing: input sits flush where the row was; "Expense Entry" row and
+    //   "+ New Chat" button remain below it.
+    // - NOT visible: no kebab dropdown menu, no delete-confirm dialog, no plain
+    //   "P&L last month" button row (it is now the editable input).
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-rename.png");
+  });
+
+  // Test 27: Conversation delete confirm — confirmation dialog visible
+  test("conversation-delete-confirm", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, convMenuList);
+
+    const kebab = page.getByTestId("conv-menu-btn-conv-1");
+    await (isMobile ? kebab.last() : kebab.first()).waitFor({ state: "visible", timeout: 10000 });
+    await (isMobile ? kebab.last() : kebab.first()).click();
+
+    const menu = page.getByTestId("conv-menu-conv-1");
+    await (isMobile ? menu.last() : menu.first()).getByText("Delete").click();
+
+    const confirm = page.getByTestId("conv-delete-confirm-conv-1");
+    const target = isMobile ? confirm.last() : confirm.first();
+    await expect(target).toBeVisible();
+    await expect(target).toContainText("Delete this chat? This can't be undone.");
+    await expect(page.getByTestId("conv-delete-confirm-btn-conv-1").first()).toBeVisible();
+
+    // VISUAL CHECKLIST:
+    // - Layout: a confirmation popover anchored to the right, below the
+    //   "P&L last month" row in the sidebar (drawer on mobile); wider than the
+    //   kebab menu.
+    // - Text: prompt reads exactly "Delete this chat? This can't be undone."
+    //   Two buttons below it: "Cancel" and "Delete".
+    // - Colors/highlights: the "Delete" confirm button is solid red with white
+    //   text; "Cancel" is neutral/gray text. White popover with border + shadow.
+    // - Spacing: prompt text on its own line, buttons right-aligned in a row below.
+    // - NOT visible: no kebab "Rename"/"Delete" menu (replaced by this dialog),
+    //   no inline rename input.
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-delete-confirm.png");
+  });
+
+  // Test 28: Sidebar empty after delete — empty list shows only "+ New Chat"
+  // Static render of the empty-list state (no actual delete performed).
+  test("conversation-empty-after-delete", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, []);
+
+    // No conversation rows should exist for ws-1; only the "+ New Chat" button.
+    await expect(page.getByTestId("conv-menu-btn-conv-1")).toHaveCount(0);
+    await expect(page.getByTestId("conv-menu-btn-conv-2")).toHaveCount(0);
+
+    const newChat = page.locator("text=+ New Chat");
+    await (isMobile ? newChat.last() : newChat.first()).waitFor({ state: "visible", timeout: 10000 });
+    await expect(isMobile ? newChat.last() : newChat.first()).toBeVisible();
+
+    // VISUAL CHECKLIST:
+    // - Layout: under the "Bharat Traders Private Limited (Bharat Traders)"
+    //   workspace header, the conversation list is empty — only the "+ New Chat"
+    //   button is shown.
+    // - Text: "+ New Chat" button present; NO "P&L last month" or "Expense Entry"
+    //   rows anywhere in the sidebar (drawer on mobile).
+    // - Colors/highlights: workspace header retains its active bg-blue-50 tint.
+    // - Spacing: "+ New Chat" sits directly under the workspace header with no
+    //   conversation rows between them.
+    // - NOT visible: no conversation rows, no kebab (⋯) buttons, no menu, no
+    //   rename input, no delete-confirm dialog.
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-empty-after-delete.png");
+  });
 });

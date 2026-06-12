@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { getConversations, getWorkspaces } from "../api/client";
+import { deleteConversation, getConversations, getWorkspaces, updateConversation } from "../api/client";
 import type { ConversationSummary, WorkspaceData } from "../types";
 import ConversationList from "./ConversationList";
 import ConnectCompanyModal from "./ConnectCompanyModal";
@@ -12,9 +12,10 @@ interface SidebarProps {
   refreshTrigger?: number;
   onWorkspaceResolved?: (workspaceId: string, workspaceName: string, workspaceConfig?: Record<string, unknown>, conversationTitle?: string | null) => void;
   onWorkspacesLoaded?: (count: number, firstWorkspaceId?: string) => void;
+  onActiveConversationDeleted?: (workspaceId: string) => void;
 }
 
-export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved, onWorkspacesLoaded }: SidebarProps) {
+export default function Sidebar({ activeConversationId, activeWorkspaceId, onConversationSelect, onNewChat, refreshTrigger, onWorkspaceResolved, onWorkspacesLoaded, onActiveConversationDeleted }: SidebarProps) {
   const [workspaces, setWorkspaces] = useState<WorkspaceData[]>([]);
   const [conversations, setConversations] = useState<Record<string, ConversationSummary[]>>({});
   const [showModal, setShowModal] = useState(false);
@@ -45,6 +46,31 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
           onWorkspaceResolved(w.id, w.name, w.config as Record<string, unknown>, null);
         }
       }
+    }
+  };
+
+  const handleRename = async (wsId: string, id: string, title: string) => {
+    try {
+      await updateConversation(wsId, id, { title });
+      setConversations((prev) => ({
+        ...prev,
+        [wsId]: (prev[wsId] || []).map((c) => (c.id === id ? { ...c, title } : c)),
+      }));
+    } catch {
+      loadData();
+    }
+  };
+
+  const handleDelete = async (wsId: string, id: string) => {
+    try {
+      await deleteConversation(wsId, id);
+      setConversations((prev) => ({
+        ...prev,
+        [wsId]: (prev[wsId] || []).filter((c) => c.id !== id),
+      }));
+      if (id === activeConversationId) onActiveConversationDeleted?.(wsId);
+    } catch {
+      loadData();
     }
   };
 
@@ -92,7 +118,9 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
                   activeConversationId={activeConversationId}
                   isLandingPage={isActive && !activeConversationId}
                   onSelect={(cid, title) => onConversationSelect(ws.id, cid, ws.name, ws.config as Record<string, unknown>, title)}
-                  onNewChat={() => onNewChat(ws.id, ws.name, ws.config as Record<string, unknown>)} />
+                  onNewChat={() => onNewChat(ws.id, ws.name, ws.config as Record<string, unknown>)}
+                  onRename={(id, title) => handleRename(ws.id, id, title)}
+                  onDelete={(id) => handleDelete(ws.id, id)} />
               )}
             </div>
           );
