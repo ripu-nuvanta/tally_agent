@@ -246,4 +246,124 @@ describe("Sidebar", () => {
 
     expect(onNewChat).toHaveBeenCalledWith("ws-1", "Bharat Traders Pvt Ltd", {});
   });
+
+  describe("conversation rename + delete", () => {
+    it("handleDelete removes the conversation from the rendered list", async () => {
+      mockedClient.deleteConversation.mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Trial Balance" })).not.toBeInTheDocument();
+      });
+      expect(mockedClient.deleteConversation).toHaveBeenCalledWith("ws-1", "conv-1");
+    });
+
+    it("calls onActiveConversationDeleted with the workspace id when the deleted conversation is active", async () => {
+      mockedClient.deleteConversation.mockResolvedValue(undefined);
+      const onActiveConversationDeleted = vi.fn();
+      const user = userEvent.setup();
+      renderSidebar({ activeConversationId: "conv-1", onActiveConversationDeleted });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(onActiveConversationDeleted).toHaveBeenCalledWith("ws-1");
+      });
+    });
+
+    it("does not call onActiveConversationDeleted when the deleted conversation is not active", async () => {
+      mockedClient.deleteConversation.mockResolvedValue(undefined);
+      const onActiveConversationDeleted = vi.fn();
+      const user = userEvent.setup();
+      renderSidebar({ activeConversationId: "conv-2", onActiveConversationDeleted });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Trial Balance" })).not.toBeInTheDocument();
+      });
+      expect(onActiveConversationDeleted).not.toHaveBeenCalled();
+    });
+
+    it("handleRename updates the displayed title", async () => {
+      mockedClient.updateConversation.mockResolvedValue({
+        id: "conv-1", title: "Renamed Chat", tag: null,
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      });
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "Renamed Chat{Enter}");
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Renamed Chat" })).toBeInTheDocument();
+      });
+      expect(mockedClient.updateConversation).toHaveBeenCalledWith("ws-1", "conv-1", { title: "Renamed Chat" });
+    });
+
+    it("re-invokes loadData (getConversations) when deleteConversation rejects", async () => {
+      mockedClient.deleteConversation.mockRejectedValue(new Error("boom"));
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+      const callsBefore = mockedClient.getConversations.mock.calls.length;
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(mockedClient.getConversations.mock.calls.length).toBeGreaterThan(callsBefore);
+      });
+      // Item restored
+      expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+    });
+
+    it("re-invokes loadData (getConversations) when updateConversation rejects", async () => {
+      mockedClient.updateConversation.mockRejectedValue(new Error("boom"));
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+      const callsBefore = mockedClient.getConversations.mock.calls.length;
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "Renamed Chat{Enter}");
+
+      await waitFor(() => {
+        expect(mockedClient.getConversations.mock.calls.length).toBeGreaterThan(callsBefore);
+      });
+    });
+  });
 });

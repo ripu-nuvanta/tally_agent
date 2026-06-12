@@ -455,3 +455,124 @@ async def test_db_conversation_crud(db_app):
         resp = await ac.get(f"/api/workspaces/{ws_id}/conversations", headers=headers)
         assert resp.status_code == 200
         assert len(resp.json()) == 0
+
+
+@pytest.mark.asyncio
+async def test_db_conversation_rename_reflected_in_detail(db_app):
+    """PATCH a conversation title → GET .../conversations/{id} (detail) returns the new title."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "convrename@example.com", "password": "Str0ng!Pass#99", "name": "Conv Rename",
+        })
+        assert resp.status_code == 200, resp.text
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        # Create workspace
+        resp = await ac.post("/api/workspaces", json={"name": "Rename Co"}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        ws_id = resp.json()["id"]
+
+        # Create conversation with a title
+        resp = await ac.post(
+            f"/api/workspaces/{ws_id}/conversations",
+            json={"title": "Before Rename"},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        conv_id = resp.json()["id"]
+
+        # Rename
+        resp = await ac.patch(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}",
+            json={"title": "After Rename"},
+            headers=headers,
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["title"] == "After Rename"
+
+        # The detail endpoint (GET .../conversations/{id}) must reflect the new title
+        resp = await ac.get(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["title"] == "After Rename"
+
+
+@pytest.mark.asyncio
+async def test_db_conversation_delete_then_detail_404(db_app):
+    """DELETE a conversation → 204; subsequent GET .../conversations/{id} returns 404."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # Register
+        resp = await ac.post("/api/auth/register", json={
+            "email": "convdel404@example.com", "password": "Str0ng!Pass#99", "name": "Conv Del",
+        })
+        assert resp.status_code == 200, resp.text
+        headers = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        # Create workspace + conversation
+        resp = await ac.post("/api/workspaces", json={"name": "Del Co"}, headers=headers)
+        assert resp.status_code == 201, resp.text
+        ws_id = resp.json()["id"]
+        resp = await ac.post(
+            f"/api/workspaces/{ws_id}/conversations",
+            json={"title": "Doomed"},
+            headers=headers,
+        )
+        assert resp.status_code == 201, resp.text
+        conv_id = resp.json()["id"]
+
+        # Delete → 204
+        resp = await ac.delete(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers
+        )
+        assert resp.status_code == 204
+
+        # Detail endpoint now 404 (soft-deleted rows are filtered out)
+        resp = await ac.get(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers
+        )
+        assert resp.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_db_conversation_delete_scoped_to_owner(db_app):
+    """User 2 cannot DELETE User 1's conversation → 404 (not found / not owned), and it survives."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        # User 1 — owns the workspace + conversation
+        resp = await ac.post("/api/auth/register", json={
+            "email": "convowner1@example.com", "password": "Str0ng!Pass#99", "name": "Owner 1",
+        })
+        assert resp.status_code == 200, resp.text
+        headers1 = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        resp = await ac.post("/api/workspaces", json={"name": "Owner1 Co"}, headers=headers1)
+        assert resp.status_code == 201, resp.text
+        ws_id = resp.json()["id"]
+        resp = await ac.post(
+            f"/api/workspaces/{ws_id}/conversations",
+            json={"title": "Private Conv"},
+            headers=headers1,
+        )
+        assert resp.status_code == 201, resp.text
+        conv_id = resp.json()["id"]
+
+        # User 2 — a different, unrelated user
+        resp = await ac.post("/api/auth/register", json={
+            "email": "convowner2@example.com", "password": "Str0ng!Pass#99", "name": "Owner 2",
+        })
+        assert resp.status_code == 200, resp.text
+        headers2 = {"Authorization": f"Bearer {resp.json()['access_token']}"}
+
+        # User 2 attempts to delete User 1's conversation → 404 (workspace not owned)
+        resp = await ac.delete(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers2
+        )
+        assert resp.status_code == 404
+
+        # The conversation still exists for its owner
+        resp = await ac.get(
+            f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers1
+        )
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["title"] == "Private Conv"

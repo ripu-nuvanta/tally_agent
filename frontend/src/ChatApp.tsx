@@ -127,6 +127,11 @@ export default function ChatApp() {
             refreshTrigger={sidebarRefresh}
             onWorkspaceResolved={handleWorkspaceResolved}
             onWorkspacesLoaded={handleWorkspacesLoaded}
+            onActiveConversationDeleted={(ws) => {
+              setActiveConversationTitle(null);
+              navigate(`/w/${ws}`);
+              setSidebarOpen(false);
+            }}
           />
         </div>
 
@@ -156,6 +161,11 @@ export default function ChatApp() {
                   refreshTrigger={sidebarRefresh}
                   onWorkspaceResolved={handleWorkspaceResolved}
                   onWorkspacesLoaded={handleWorkspacesLoaded}
+                  onActiveConversationDeleted={(ws) => {
+                    setActiveConversationTitle(null);
+                    navigate(`/w/${ws}`);
+                    setSidebarOpen(false);
+                  }}
                 />
               </div>
             </div>
