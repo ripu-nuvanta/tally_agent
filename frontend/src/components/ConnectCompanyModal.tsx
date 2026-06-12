@@ -18,6 +18,7 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
   const [connectionState, setConnectionState] = useState<ConnectionState>("idle");
   const [companies, setCompanies] = useState<string[]>([]);
   const [selectedCompany, setSelectedCompany] = useState("");
+  const [nickname, setNickname] = useState("");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [workspace, setWorkspace] = useState<WorkspaceData | null>(null);
@@ -65,7 +66,7 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
     const safePort = Number.isNaN(portNum) ? 9000 : portNum;
     try {
       const ws = await createWorkspace({
-        name: selectedCompany,
+        name: nickname.trim() || selectedCompany,
         config: {
           tally_host: tallyHost,
           tally_port: safePort,
@@ -187,10 +188,39 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
               type="button"
               onClick={handleTestConnection}
               disabled={connectionState === "connecting"}
-              className="w-full px-4 py-2 text-sm text-white bg-blue-600 hover:bg-blue-700 rounded-md disabled:opacity-50"
+              className="w-full px-4 py-2 text-sm rounded-lg bg-white border border-gray-300 text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
             >
-              {connectionState === "connecting" ? "Connecting..." : "Test Connection"}
+              {connectionState === "connecting" ? "Checking..." : "Check Connection"}
             </button>
+          )}
+
+          {!mockMode && connectionState === "error" && (
+            <div
+              data-testid="connect-steps"
+              className="rounded-md border border-gray-200 bg-gray-50 p-3 text-sm text-gray-700"
+            >
+              <p className="font-medium">To enable the connection:</p>
+              <ol className="list-decimal ml-5 mt-1 space-y-1">
+                <li>Open TallyPrime and load your company.</li>
+                <li>
+                  Press <strong>F1 (Help) → Settings → Connectivity</strong>.
+                </li>
+                <li>
+                  Under <strong>Client/Server configuration</strong>, set{" "}
+                  <strong>TallyPrime acts as: Both</strong>.
+                </li>
+                <li>
+                  Set <strong>Port</strong> to 9000 (or match the port above).
+                </li>
+                <li>
+                  Ensure this device can reach the Tally machine (same network; allow the
+                  port through the firewall).
+                </li>
+              </ol>
+              <p className="mt-1">
+                Then click <strong>Check Connection</strong> again.
+              </p>
+            </div>
           )}
 
           {connectionState === "connected" && companies.length > 0 && (
@@ -221,6 +251,25 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
                   ))}
                 </select>
               )}
+            </div>
+          )}
+
+          {connectionState === "connected" && (
+            <div>
+              <label htmlFor="connect-name" className="block text-sm font-medium text-gray-700">
+                Name (optional)
+              </label>
+              <input
+                id="connect-name"
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder={selectedCompany || "e.g. My Books"}
+                className="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+              />
+              <p className="mt-1 text-xs text-gray-500">
+                Shown in the sidebar — defaults to the company name.
+              </p>
             </div>
           )}
 

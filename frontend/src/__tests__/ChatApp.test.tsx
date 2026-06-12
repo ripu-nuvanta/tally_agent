@@ -210,7 +210,7 @@ describe("ChatApp", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
     );

@@ -1400,19 +1400,21 @@ test.describe("DB-mode visual tests", () => {
     await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
 
     // Verify modal form fields are visible
-    await expect(page.locator("text=Friendly Name")).toBeVisible();
     await expect(page.locator("text=Tally Host")).toBeVisible();
     await expect(page.locator("text=Tally Port")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Check Connection" })).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Modal overlay visible with semi-transparent backdrop behind it
     // - Modal title "Connect Tally Company" visible at the top
-    // - Form fields visible: "Friendly Name" input, "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
+    // - Form fields visible: "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
     // - "Demo Mode" toggle switch visible in the form
-    // - "Cancel" and "Connect" buttons visible at the bottom of the modal
+    // - "Check Connection" button visible (live mode, before checking)
+    // - "Cancel" and "Create Workspace" buttons visible at the bottom of the modal
     // - Modal is centered on the screen with appropriate width (not full screen)
     // - Backdrop dims the sidebar and main content behind the modal
     // - Proper vertical spacing between form fields (no cramping)
+    // - NOT visible: Company field, Name (optional) field (appear only after a successful check)
     {
       const badge = page.getByTestId("header-workspace-badge");
       if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
@@ -1694,8 +1696,8 @@ test.describe("DB-mode visual tests", () => {
     await mockWorkspaceData(page);
     await page.route("**/api/health**", (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "healthy", tally_connected: true, tally_url: "http://localhost:9000", mode: "live" }) }));
-    await page.route("**/api/companies**", (route) =>
-      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ companies: [{ name: "Bharat Traders Private Limited" }] }) }));
+    await page.route("**/api/tally/test-connection**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ connected: true, companies: ["Bharat Traders Private Limited"] }) }));
     await page.route("**/api/workspaces", (route) => {
       if (route.request().method() === "POST") {
         route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "ws-new", name: "My Books", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }) });
@@ -1719,10 +1721,12 @@ test.describe("DB-mode visual tests", () => {
     const connectBtn = page.locator("text=+ Connect Company");
     await (isMobile ? connectBtn.last() : connectBtn.first()).click();
     await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
-    // fill friendly name and submit
+    // check connection → Company + Name fields appear
+    await page.getByRole("button", { name: "Check Connection" }).click();
+    await expect(page.locator("#connect-company")).toHaveText("Bharat Traders Private Limited");
+    // fill friendly name and create workspace
     await page.locator("#connect-name").fill("My Books");
-    // exact:true to avoid matching the sidebar "+ Connect Company" button
-    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByRole("button", { name: "Create Workspace" }).click();
     // confirmation screen
     await expect(page.getByTestId("connect-confirm-company")).toHaveText("Bharat Traders Private Limited");
     await expect(page.getByTestId("connect-confirm-name")).toHaveText("My Books");
@@ -1730,10 +1734,46 @@ test.describe("DB-mode visual tests", () => {
     // VISUAL CHECKLIST:
     // - Modal centered with backdrop; green check + "Company Connected" title
     // - "TALLY COMPANY" label with value "Bharat Traders Private Limited"
-    // - "FRIENDLY NAME" label with value "My Books"
+    // - "WORKSPACE" label with value "My Books"
     // - "Close" (secondary) and blue "Start chat" buttons, right-aligned
-    // - NOT visible: the form fields (Friendly Name input, Tally Host/Port, Demo toggle), no error banner
+    // - NOT visible: the form fields (Tally Host/Port, Demo toggle, Check Connection), no error banner
     await expect(page).toHaveScreenshot("connect-company-confirmation.png");
+  });
+
+  test("connect-company-steps", async ({ page, viewport }) => {
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "healthy", tally_connected: true, tally_url: "http://localhost:9000", mode: "live" }) }));
+    await page.route("**/api/tally/test-connection**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ connected: false, companies: [], error: "Could not reach Tally." }) }));
+    await page.goto("/");
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    // open the connect modal (mirror the connect-company-modal test's mobile/desktop handling)
+    if (isMobile) {
+      const hamburger = page.locator('[aria-label="Open sidebar"]');
+      await hamburger.waitFor({ timeout: 10000 });
+      await hamburger.click();
+      await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
+    } else {
+      await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
+    }
+    const connectBtn = page.locator("text=+ Connect Company");
+    await (isMobile ? connectBtn.last() : connectBtn.first()).click();
+    await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
+    // failed check → steps panel appears
+    await page.getByRole("button", { name: "Check Connection" }).click();
+    const steps = page.getByTestId("connect-steps");
+    await expect(steps).toBeVisible();
+    await expect(steps).toContainText("To enable the connection:");
+    await expect(steps).toContainText("TallyPrime acts as");
+    // VISUAL CHECKLIST:
+    // - Modal centered with backdrop; title "Connect Tally Company"
+    // - Gray steps panel with heading "To enable the connection:" and a numbered list
+    // - List mentions "TallyPrime acts as: Both" and "Check Connection" again
+    // - "Check Connection" button still visible above/around the steps (live mode, error state)
+    // - NOT visible: Company field, Name (optional) field, confirmation screen
+    await expect(page).toHaveScreenshot("connect-company-steps.png");
   });
 
   // Test 23: Header Tally live — health reports connected → green "Live" badge

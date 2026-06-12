@@ -99,7 +99,11 @@ export default function Sidebar({ activeConversationId, activeWorkspaceId, onCon
           const isActive = ws.id === activeWorkspaceId;
           const isCollapsed = collapsed[ws.id] && !isActive;
           const tallyCompany = ws.config?.tally_company;
-          const label = typeof tallyCompany === "string" && tallyCompany ? `${tallyCompany} (${ws.name})` : ws.name;
+          const company = typeof tallyCompany === "string" ? tallyCompany.trim() : "";
+          const nick = (ws.name || "").trim();
+          const label = company
+            ? (nick && nick.toLowerCase() !== company.toLowerCase() ? `${company} (${nick})` : company)
+            : nick;
           return (
             <div key={ws.id} className={isActive ? "bg-blue-50 rounded-lg px-1 py-0.5" : ""}>
               <button

@@ -179,6 +179,39 @@ describe("Sidebar", () => {
       });
     });
 
+    it("shows company with nickname in parentheses when they differ", async () => {
+      mockedClient.getWorkspaces.mockResolvedValue([
+        { id: "ws-1", name: "My Books", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited (My Books)")).toBeInTheDocument();
+      });
+    });
+
+    it("shows only the company name (no duplication) when name equals company", async () => {
+      mockedClient.getWorkspaces.mockResolvedValue([
+        { id: "ws-1", name: "Bharat Traders Private Limited", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByText("Bharat Traders Private Limited (Bharat Traders Private Limited)"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows only the company name when name differs only by case/whitespace", async () => {
+      mockedClient.getWorkspaces.mockResolvedValue([
+        { id: "ws-1", name: "  bharat traders private limited  ", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited")).toBeInTheDocument();
+      });
+    });
+
     it("falls back to friendly name when tally_company is missing", async () => {
       renderSidebar();
       await waitFor(() => {
@@ -232,7 +265,7 @@ describe("Sidebar", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
 
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
     );

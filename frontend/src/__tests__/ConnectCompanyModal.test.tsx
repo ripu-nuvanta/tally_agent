@@ -32,18 +32,18 @@ describe("ConnectCompanyModal", () => {
   });
 
   // --- Initial state ---
-  it("renders host + port fields and a Test Connection button, no dropdown", () => {
+  it("renders host + port fields and a Check Connection button, no dropdown", () => {
     renderModal();
     expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     expect(screen.getByText("Tally Host")).toBeInTheDocument();
     expect(screen.getByText("Tally Port")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Test Connection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check Connection" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
   // --- Connecting state ---
-  it("shows a connecting label while test-connection is in flight", async () => {
+  it("shows a checking label while check-connection is in flight", async () => {
     let resolve!: (v: { connected: boolean; companies: string[] }) => void;
     mockedClient.testConnection.mockReturnValue(
       new Promise((r) => {
@@ -52,11 +52,11 @@ describe("ConnectCompanyModal", () => {
     );
     const user = userEvent.setup();
     renderModal();
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
-    expect(screen.getByText("Connecting...")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    expect(screen.getByText("Checking...")).toBeInTheDocument();
     resolve({ connected: true, companies: ["Bharat Traders Pvt Ltd"] });
     await waitFor(() =>
-      expect(screen.queryByText("Connecting...")).not.toBeInTheDocument(),
+      expect(screen.queryByText("Checking...")).not.toBeInTheDocument(),
     );
   });
 
@@ -64,7 +64,7 @@ describe("ConnectCompanyModal", () => {
   it("auto-selects a single returned company and enables Create Workspace", async () => {
     const user = userEvent.setup();
     renderModal();
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
 
     await waitFor(() =>
       expect(mockedClient.testConnection).toHaveBeenCalledWith("localhost", 9000),
@@ -82,7 +82,7 @@ describe("ConnectCompanyModal", () => {
     });
     const user = userEvent.setup();
     renderModal();
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
 
     const select = await screen.findByLabelText("Company");
     expect(select).toBeInTheDocument();
@@ -99,7 +99,7 @@ describe("ConnectCompanyModal", () => {
     const user = userEvent.setup();
     renderModal(vi.fn(), onCreated);
 
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
     );
@@ -137,13 +137,13 @@ describe("ConnectCompanyModal", () => {
     });
     const user = userEvent.setup();
     renderModal();
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
 
     await waitFor(() =>
       expect(screen.getByText("Connection refused")).toBeInTheDocument(),
     );
     // Retry button still available
-    expect(screen.getByRole("button", { name: "Test Connection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check Connection" })).toBeInTheDocument();
     expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
   });
 
@@ -152,7 +152,7 @@ describe("ConnectCompanyModal", () => {
     mockedClient.testConnection.mockRejectedValue(new Error("boom"));
     const user = userEvent.setup();
     renderModal();
-    await user.click(screen.getByRole("button", { name: "Test Connection" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
 
     await waitFor(() =>
       expect(screen.getByText(/Could not reach Tally/i)).toBeInTheDocument(),
@@ -165,7 +165,7 @@ describe("ConnectCompanyModal", () => {
     renderModal();
     await user.click(screen.getByRole("checkbox"));
 
-    // No Test Connection needed; company already selected
+    // No Check Connection needed; company already selected
     expect(mockedClient.testConnection).not.toHaveBeenCalled();
     expect(screen.getAllByText("Bharat Traders Pvt Ltd").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled();
@@ -178,7 +178,7 @@ describe("ConnectCompanyModal", () => {
     await user.click(screen.getByRole("checkbox")); // on
     expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled();
     await user.click(screen.getByRole("checkbox")); // off
-    expect(screen.getByRole("button", { name: "Test Connection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check Connection" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Create Workspace" })).toBeDisabled();
   });
 
@@ -202,6 +202,97 @@ describe("ConnectCompanyModal", () => {
     renderModal(onClose);
     await user.click(screen.getByRole("button", { name: "Cancel" }));
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // --- Name (nickname) field ---
+  it("shows the optional Name field after a successful check", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    expect(document.querySelector("#connect-name")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument(),
+    );
+    expect(document.querySelector("#connect-name")).toBeInTheDocument();
+  });
+
+  it("shows the Name field in demo mode (connected state)", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument();
+  });
+
+  it("creates workspace with the typed nickname as name", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument(),
+    );
+    await user.type(screen.getByLabelText("Name (optional)"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "My Books",
+          config: expect.objectContaining({
+            tally_company: "Bharat Traders Pvt Ltd",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("creates workspace using the company name when nickname is blank", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Bharat Traders Pvt Ltd",
+          config: expect.objectContaining({
+            tally_company: "Bharat Traders Pvt Ltd",
+          }),
+        }),
+      ),
+    );
+  });
+
+  // --- Setup steps on failure ---
+  it("shows the setup steps panel when the check fails (API error)", async () => {
+    mockedClient.testConnection.mockResolvedValue({
+      connected: false,
+      companies: [],
+      error: "Connection refused",
+    });
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("connect-steps")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/To enable the connection/i)).toBeInTheDocument();
+  });
+
+  it("shows the setup steps panel when the check throws", async () => {
+    mockedClient.testConnection.mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("connect-steps")).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show the setup steps panel before a failed check", () => {
+    renderModal();
+    expect(screen.queryByTestId("connect-steps")).not.toBeInTheDocument();
   });
 
   it("renders modal with mobile-safe width classes", () => {
