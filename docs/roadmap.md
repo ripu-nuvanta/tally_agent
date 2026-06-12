@@ -69,6 +69,12 @@ The documented **Group B** (`specs/2026-04-12-group-b-voucher-types-design.md`) 
   deleting the active chat returns to the workspace landing; menu flips up near the list bottom; a11y roles added.
   Frontend-only (backend `DELETE`/`PATCH` pre-existed). Spec `specs/2026-06-12-sidebar-conversation-actions-design.md`;
   review `code-review-sidebar-conversation-actions-2026-06-12.md`. Tests: 351 FE unit, +3 backend E2E, 12 Playwright (×3 viewports).
+- **Connect-modal improvements** ✅ **Built — `feat/connect-modal-improvements`, pending merge.**
+  "Test Connection" → "Check Connection" (neutral restyle); setup-steps panel on a failed live check;
+  restored the optional workspace **Name (nickname)** field; sidebar shows `Company (nickname)` only when the
+  nickname differs (no more `Company (Company)` duplication). Frontend-only. Spec
+  `specs/2026-06-12-connect-modal-improvements-design.md`; review `code-review-connect-modal-improvements-2026-06-12.md`.
+  Tests: 363 FE unit; rewrote 2 stale connect-company Playwright specs + added connect-company-steps (9 × 3 viewports).
 
 **Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 verified (DN/CN creation, company list, party-voucher filter). Two extra probes: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import, so reconciliation needs Tally's dedicated mechanism.
 

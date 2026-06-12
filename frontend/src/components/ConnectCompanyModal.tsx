@@ -26,6 +26,7 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
   const handleTestConnection = async () => {
     setConnectionState("connecting");
     setError("");
+    setNickname("");
     const portNum = parseInt(tallyPort, 10);
     const safePort = Number.isNaN(portNum) ? 9000 : portNum;
     try {
@@ -47,6 +48,7 @@ export default function ConnectCompanyModal({ onClose, onCreated }: ConnectCompa
   const handleMockToggle = (checked: boolean) => {
     setMockMode(checked);
     setError("");
+    setNickname("");
     if (checked) {
       setCompanies([MOCK_COMPANY]);
       setSelectedCompany(MOCK_COMPANY);

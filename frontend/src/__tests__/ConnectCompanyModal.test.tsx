@@ -244,6 +244,32 @@ describe("ConnectCompanyModal", () => {
     );
   });
 
+  it("clears a typed nickname when demo mode is toggled (context switch)", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument(),
+    );
+    await user.type(screen.getByLabelText("Name (optional)"), "My Books");
+    expect(screen.getByLabelText("Name (optional)")).toHaveValue("My Books");
+
+    // Toggle demo mode on — context switches, nickname should reset.
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByLabelText("Name (optional)")).toHaveValue("");
+
+    // Creating now uses the (mock) company name, not the stale nickname.
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Bharat Traders Pvt Ltd",
+          config: expect.objectContaining({ mock_mode: true }),
+        }),
+      ),
+    );
+  });
+
   it("creates workspace using the company name when nickname is blank", async () => {
     const user = userEvent.setup();
     renderModal();
