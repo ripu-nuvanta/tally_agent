@@ -139,19 +139,19 @@ export default function ConversationList({ conversations, activeConversationId, 
               role="dialog"
               aria-modal="true"
               aria-label="Confirm delete"
-              className={`absolute right-1 z-20 w-56 rounded-md border border-gray-200 bg-white p-3 shadow-lg ${
+              className={`absolute right-1 z-20 w-56 rounded-lg border border-gray-200 bg-white p-3 shadow-lg ${
                 openUp ? "bottom-full mb-1" : "top-full mt-0.5"
               }`}>
-              <p className="text-sm text-gray-700 mb-2">Delete this chat? This can't be undone.</p>
+              <p className="text-sm text-gray-700 mb-3">Delete this chat? This can't be undone.</p>
               <div className="flex justify-end gap-2">
                 <button onClick={() => setConfirmDeleteId(null)}
-                  className="px-2 py-1 text-sm text-gray-600 rounded hover:bg-gray-100">
+                  className="px-3 py-1.5 rounded-lg bg-white border border-gray-300 text-gray-700 text-sm transition-colors hover:bg-gray-50">
                   Cancel
                 </button>
                 <button
                   data-testid={`conv-delete-confirm-btn-${conv.id}`}
                   onClick={() => { onDelete(conv.id); closeMenu(); }}
-                  className="px-2 py-1 text-sm text-white bg-red-600 rounded hover:bg-red-700">
+                  className="px-3 py-1.5 rounded-lg bg-white border border-red-200 text-red-600 text-sm transition-colors hover:bg-red-50">
                   Delete
                 </button>
               </div>
