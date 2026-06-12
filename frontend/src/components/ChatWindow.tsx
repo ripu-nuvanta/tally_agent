@@ -200,6 +200,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           company ?? "",
           sessionId ?? "",
           workspaceId ?? "",
+          conversationId ?? "",
         );
         const resultMsg: ChatMessage = {
           id: generateId(),

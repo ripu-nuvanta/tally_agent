@@ -96,6 +96,13 @@ Correctness is proven live; these are hardening/quality items:
       group, future-dated silent drop, Sales hides REFERENCE).
   - **Open follow-up (declined this session):** also append the invoice number to the **Narration** so it's visible
     on the Sales voucher screen (Tally hides REFERENCE there by default). Not implemented.
+  - **Upload/voucher review cards vanished on reload (2026-06-12)** ✅ **Fixed on `fix/upload-voucher-persistence`,
+    pending merge.** `/chat/upload` persisted only an `UploadedFile` audit row (no `Message` rows), so review cards
+    disappeared on refresh/relogin; `/chat/voucher-action` never persisted the written/discarded status (and its
+    `conversation_id` gate read a key the production entry dict never has — also a silent no-op for the `VoucherEntry`
+    audit row). Now persists user+assistant Messages + titles the conversation, and threads `conversation_id` via the
+    request to persist status. New lesson [`LESSONS.md` §17](../LESSONS.md); review
+    [`code-review-upload-voucher-persistence-2026-06-12.md`](code-review-upload-voucher-persistence-2026-06-12.md).
 
 <!-- superseded — was: -->
 - **(superseded) Inventory line items** — original gap note. The agent invoice write-path used the

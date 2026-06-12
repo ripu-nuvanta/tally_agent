@@ -39,6 +39,35 @@ async def _get_optional_db() -> AsyncGenerator[AsyncSession | None, None]:
 _SAFE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".pdf", ".csv", ".xlsx", ".xls"}
 
 
+async def _update_persisted_voucher_status(db, conversation_id, entry_id, new_status):
+    """Update the originating review-card Message so the entry's status survives reload.
+
+    Finds the assistant Message in this conversation whose data is a voucher_review
+    containing entry_id, sets that entry's status, and marks the JSONB column dirty.
+    No-op if not found.
+    """
+    if db is None or not conversation_id or not entry_id:
+        return
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from backend.db.models import Message
+    result = await db.execute(
+        select(Message).where(Message.conversation_id == conversation_id)
+    )
+    for msg in result.scalars().all():
+        data = msg.data
+        if not isinstance(data, dict) or data.get("type") != "voucher_review":
+            continue
+        entries = data.get("entries") or []
+        changed = False
+        for e in entries:
+            if isinstance(e, dict) and e.get("id") == entry_id:
+                e["status"] = new_status
+                changed = True
+        if changed:
+            flag_modified(msg, "data")
+
+
 async def _verify_workspace_ownership(
     workspace_id: str, user_id: str, db: AsyncSession,
 ):
@@ -153,6 +182,38 @@ async def chat_with_file(
             workspace_id=workspace_id if settings.db_mode else None,
             conversation_id=conversation_id if settings.db_mode else None,
         )
+        if settings.db_mode and db is not None and conversation_id:
+            from backend.db.models import Conversation, Message
+            user_content = (
+                f"{message} [{file.filename}]" if message
+                else f"Uploading file [{file.filename}]"
+            )
+            db.add(Message(
+                conversation_id=conversation_id, role="user", content=user_content,
+            ))
+            # Flush the user message before adding the assistant message so the
+            # per-row created_at default guarantees user→assistant reload order.
+            await db.flush()
+            db.add(Message(
+                conversation_id=conversation_id, role="assistant",
+                content=result["message"], data=result.get("data"),
+            ))
+            # Title an upload-first conversation and bump ordering, mirroring
+            # _chat_db_mode — otherwise it shows as "New Chat" forever and
+            # sorts stale in the sidebar.
+            conv_result = await db.execute(
+                select(Conversation).where(
+                    Conversation.id == conversation_id,
+                    Conversation.workspace_id == workspace_id,
+                    Conversation.user_id == user_id,
+                    Conversation.is_deleted.is_(False),
+                )
+            )
+            conversation = conv_result.scalar_one_or_none()
+            if conversation is not None:
+                if conversation.title is None:
+                    conversation.title = user_content[:100]
+                conversation.updated_at = datetime.now(timezone.utc)
         if settings.db_mode and db is not None:
             await db.commit()
     except HTTPException:
@@ -358,6 +419,10 @@ async def voucher_action(
 
     entry = request.entry
     session_id = request.session_id
+    # Conversation id is threaded through the request body (production) and
+    # falls back to the entry dict (legacy/tests). Computed once here so both
+    # the discard status-update and the success-write audit/status paths use it.
+    conv_id = request.conversation_id or entry.get("conversation_id")
 
     # In DB mode, verify workspace ownership and prefer the workspace's
     # configured company over the client-supplied value. This prevents a
@@ -382,6 +447,11 @@ async def voucher_action(
         company = request.company or "Default"
 
     if request.action == "discard":
+        if settings.db_mode and db is not None:
+            await _update_persisted_voucher_status(
+                db, conv_id, entry.get("id"), "deleted",
+            )
+            await db.commit()
         return ChatResponse(
             message="Entry discarded.",
             data={"type": "voucher_discarded", "entry_id": entry.get("id")},
@@ -655,9 +725,8 @@ async def voucher_action(
 
             # Persist audit trail (DB mode only) — VoucherEntry linked to the
             # file. Requires a real conversation_id (non-nullable FK); the
-            # frontend threads it through the review entry. If absent (legacy
+            # frontend threads it through the request body. If absent (legacy
             # entries / smoke tests), skip the audit row rather than crash.
-            conv_id = entry.get("conversation_id")
             if settings.db_mode and db is not None and conv_id:
                 from backend.db.models import VoucherEntry as VoucherEntryDB
                 ve = VoucherEntryDB(
@@ -672,6 +741,9 @@ async def voucher_action(
                     tally_voucher_number=str(vch_id),
                 )
                 db.add(ve)
+                await _update_persisted_voucher_status(
+                    db, conv_id, entry.get("id"), "written",
+                )
                 await db.commit()
 
             return ChatResponse(

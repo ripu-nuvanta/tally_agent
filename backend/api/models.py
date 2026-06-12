@@ -217,3 +217,4 @@ class VoucherActionRequest(BaseModel):
     company: str = ""
     session_id: str = ""
     workspace_id: str = ""
+    conversation_id: str = ""
