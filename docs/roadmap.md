@@ -60,11 +60,11 @@ The documented **Group B** (`specs/2026-04-12-group-b-voucher-types-design.md`) 
 
 ### UI / persistence (2026-06-12)
 
-- **Upload/voucher review cards survive reload** ✅ **Fixed — `fix/upload-voucher-persistence`, pending merge.**
+- **Upload/voucher review cards survive reload** ✅ **Merged 2026-06-12 into `dev`.**
   `/chat/upload` now persists user+assistant Messages (was audit-row only) and `/chat/voucher-action`
   persists written/discarded status (threading `conversation_id` via the request). Review
   `code-review-upload-voucher-persistence-2026-06-12.md`; lesson `LESSONS.md` §17.
-- **Sidebar conversation actions — rename + delete** ✅ **Built — `feat/sidebar-conversation-actions`, pending merge.**
+- **Sidebar conversation actions — rename + delete** ✅ **Merged 2026-06-12 into `dev`.**
   ChatGPT-style per-conversation kebab (⋯) menu: inline Rename (PATCH) + Delete with confirm (soft-delete);
   deleting the active chat returns to the workspace landing; menu flips up near the list bottom; a11y roles added.
   Frontend-only (backend `DELETE`/`PATCH` pre-existed). Spec `specs/2026-06-12-sidebar-conversation-actions-design.md`;
