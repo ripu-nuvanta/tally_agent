@@ -19,8 +19,9 @@ turns:
         sgst: 450
         date: "15-Jun-2025"
       checks:
-        - "classified as Purchase"
+        - "classified as Purchase (billed to our company Bharat Traders Private Limited)"
         - "party is Bharat Paper Supplies"
+        - "party is the supplier counterparty, NOT Bharat Traders Private Limited"
         - "amount 5900"
         - "CGST 450 + SGST 450 split out"
 

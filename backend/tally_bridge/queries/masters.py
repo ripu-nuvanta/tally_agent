@@ -64,9 +64,14 @@ async def get_company_list(client: TallyClient) -> list[str]:
     return parse_company_list(raw)
 
 
-async def list_ledgers(client: TallyClient) -> list[Ledger]:
-    """Fetch all ledgers with parent groups and balances."""
-    raw = await client.post_xml(build_list_ledgers())
+async def list_ledgers(client: TallyClient, company: str | None = None) -> list[Ledger]:
+    """Fetch all ledgers with parent groups and balances.
+
+    When ``company`` is given, the read is scoped to that company via
+    ``<SVCurrentCompany>`` (matches company-scoped writes). When None, reads
+    Tally's active UI company (back-compat).
+    """
+    raw = await client.post_xml(build_list_ledgers(company=company))
     error = detect_error(raw)
     if error:
         raise TallyResponseError(error)

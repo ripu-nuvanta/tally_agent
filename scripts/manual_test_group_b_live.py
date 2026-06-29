@@ -226,7 +226,21 @@ async def discover_ledgers(client: TallyClient) -> Ledgers:
             None,
         )
 
-    supplier = _by_group("sundry creditors") or FALLBACK_SUPPLIER
+    # Supplier MUST be a Sundry Creditor that is maintained BILL-BY-BILL — otherwise the
+    # Purchase "New Ref" bill allocation never shows up in bills_payable and the bill-wise
+    # read-back asserts payable 0.00 -> 0.00 / bill present=False (e.g. "Acme Computer
+    # Distributors Pvt Ltd" carries an on-account balance but is NOT bill-wise). So instead
+    # of taking the first sundry creditor, pick one that already appears in bills_payable
+    # as-on AS_ON (proves it is bill-wise); fall back to FALLBACK_SUPPLIER ("Bharat Paper
+    # Supplies", known bill-wise) if none is found.
+    payable_bills = await bills_payable(client, AS_ON, COMPANY)
+    bill_wise_parties = {b.party_name for b in payable_bills}
+    supplier = next(
+        (l["name"] for l in ledgers
+         if (l.get("parent_group") or "").lower() == "sundry creditors"
+         and l["name"] in bill_wise_parties),
+        FALLBACK_SUPPLIER,
+    )
     customer = _by_group("sundry debtors") or FALLBACK_CUSTOMER
     purchase = (
         _by_group("purchase accounts", "direct expenses", "indirect expenses")

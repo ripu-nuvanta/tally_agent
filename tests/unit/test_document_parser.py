@@ -68,6 +68,39 @@ class TestVisionPrompt:
         prompt = build_vision_prompt()
         assert '"unit"' in prompt
 
+    def test_no_company_matches_none_and_empty(self):
+        """Back-compat: no company / None / "" all yield the same prompt string."""
+        assert build_vision_prompt() == build_vision_prompt(None)
+        assert build_vision_prompt() == build_vision_prompt("")
+
+    def test_no_company_prompt_has_no_perspective_block(self):
+        """Falsy company must not inject the company-anchoring perspective block."""
+        prompt = build_vision_prompt()
+        assert "Perspective" not in prompt
+        assert "books belong to" not in prompt.lower()
+
+    def test_company_prompt_includes_company_name(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited")
+        assert "Bharat Traders Private Limited" in prompt
+
+    def test_company_prompt_states_issued_by_is_sales(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited").lower()
+        # issued BY our company → sales
+        assert "issued by" in prompt
+        assert "sales" in prompt
+
+    def test_company_prompt_states_billed_to_is_purchase(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited").lower()
+        # billed TO our company ("Bill To") → purchase
+        assert "billed to" in prompt or "bill to" in prompt
+        assert "purchase" in prompt
+
+    def test_company_prompt_party_is_counterparty(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited").lower()
+        assert "counterparty" in prompt
+        # party_name must never be our own company
+        assert "never" in prompt
+
 
 class TestParseVisionResponse:
     def test_basic_expense(self):

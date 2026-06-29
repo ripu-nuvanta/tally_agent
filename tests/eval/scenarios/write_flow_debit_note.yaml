@@ -1,0 +1,36 @@
+name: "Write Flow — Debit Note / Company Anchoring"
+description: >
+  Validates the company-anchored Vision classifier on a PURCHASE RETURN. Upload a
+  DEBIT NOTE issued BY our own company ("Bharat Traders Private Limited", the eval
+  books) against goods returned to a SUPPLIER counterparty ("Bharat Paper
+  Supplies"). A debit note reduces what we owe that supplier. Because the document
+  is anchored to our company, the classifier must read it as a DEBIT NOTE with the
+  SUPPLIER as the party (never our own company), then approve ("Write to Tally").
+  In live mode the write hits the configured Tally instance; prefer the *_mock
+  variant for routine runs to avoid live-Tally pollution.
+tags: [write_flow, upload, voucher, debit_note, company_anchoring]
+
+turns:
+  - type: upload
+    file_path: tests/eval/fixtures/debit_note.png
+    message: "Please record this debit note"
+    expect:
+      voucher:
+        voucher_type: Debit Note
+        party: "Bharat Paper Supplies"
+        amount: 35400
+        cgst: 2700
+        sgst: 2700
+        date: "20-Jun-2025"
+      checks:
+        - "classified as Debit Note (purchase return — reduces what we owe the supplier)"
+        - "party is the supplier counterparty Bharat Paper Supplies, NOT Bharat Traders Private Limited"
+        - "amount 35400"
+        - "CGST 2700 + SGST 2700 split out"
+
+  - type: action
+    button: "Write to Tally"
+    expect:
+      checks:
+        - "voucher written confirmation shown"
+        - "no error"

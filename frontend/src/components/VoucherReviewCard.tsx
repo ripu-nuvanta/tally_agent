@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { formatINR } from "../utils/format";
+import { newLedgerDisplay } from "../utils/voucher";
 import VoucherReviewExpanded from "./VoucherReviewExpanded";
 import VoucherEditForm from "./VoucherEditForm";
 import type { AgainstInvoiceOption } from "./VoucherRefSelect";
@@ -210,11 +211,15 @@ export default function VoucherReviewCard({
                   )}
                 </div>
 
-                {entry.is_new_ledger && (
-                  <div className="text-xs text-amber-600 mb-2">
-                    New ledger "{entry.debit_ledger}" will be created under "{entry.suggested_parent}"
-                  </div>
-                )}
+                {entry.is_new_ledger &&
+                  (() => {
+                    const { name, parent } = newLedgerDisplay(entry);
+                    return (
+                      <div className="text-xs text-amber-600 mb-2">
+                        New ledger "{name}" will be created under "{parent}"
+                      </div>
+                    );
+                  })()}
 
                 {entry.warnings.length > 0 && (
                   <div className="text-xs text-amber-600 mb-2" data-testid={`voucher-warnings-${entry.id}`}>

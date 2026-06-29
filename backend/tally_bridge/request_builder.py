@@ -26,8 +26,9 @@ def _wrap_envelope(header_id: str, body_desc: str) -> str:
 </ENVELOPE>"""
 
 
-def _wrap_collection_envelope(collection_name: str, object_type: str, native_methods: list[str]) -> str:
+def _wrap_collection_envelope(collection_name: str, object_type: str, native_methods: list[str], company: str | None = None) -> str:
     methods_xml = "\n".join(f"<NATIVEMETHOD>{m}</NATIVEMETHOD>" for m in native_methods)
+    company_var = f"<SVCurrentCompany>{xml_escape(company)}</SVCurrentCompany>" if company else ""
     return f"""<ENVELOPE>
 <HEADER>
 <VERSION>1</VERSION>
@@ -39,6 +40,7 @@ def _wrap_collection_envelope(collection_name: str, object_type: str, native_met
 <DESC>
 <STATICVARIABLES>
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+{company_var}
 </STATICVARIABLES>
 <TDL>
 <TDLMESSAGE>
@@ -215,8 +217,8 @@ def build_party_vouchers(
 </ENVELOPE>"""
 
 
-def build_list_ledgers() -> str:
-    return _wrap_collection_envelope("CustomLedgerList", "Ledger", ["Name", "Parent", "ClosingBalance", "OpeningBalance"])
+def build_list_ledgers(company: str | None = None) -> str:
+    return _wrap_collection_envelope("CustomLedgerList", "Ledger", ["Name", "Parent", "ClosingBalance", "OpeningBalance"], company=company)
 
 def build_list_groups() -> str:
     return _wrap_collection_envelope("CustomGroupList", "Group", ["Name", "Parent"])

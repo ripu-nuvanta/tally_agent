@@ -74,8 +74,29 @@ def detect_file_type(filename: str, mime_type: str) -> str:
     return "unsupported"
 
 
-def build_vision_prompt() -> str:
-    """Build the Claude Vision extraction prompt for all document types."""
+def build_vision_prompt(company_name: str | None = None) -> str:
+    """Build the Claude Vision extraction prompt for all document types.
+
+    When ``company_name`` is provided, a "Perspective" block anchors the
+    purchase-vs-sales direction to the user's own company (the books being
+    kept): a document *issued by* the company is a sale, a document *billed to*
+    the company is a purchase, and ``party_name`` is always the counterparty.
+    When ``company_name`` is falsy (None/empty), the prompt is unchanged from
+    the original framing-based rules (back-compat for legacy/tests).
+    """
+    perspective = ""
+    if company_name:
+        perspective = f"""
+Perspective (whose books are these?):
+- These books belong to "{company_name}". Classify direction from THIS company's point of view.
+- If the document was ISSUED BY "{company_name}" (we are the seller / "from" party) → "sales" (or "credit_note" for a sales return).
+- If the document is BILLED TO "{company_name}" (we are the buyer — look for a "Bill To" naming "{company_name}") → "purchase" (or "debit_note" for a purchase return; "payment" for an immediately-paid expense).
+- "party_name" is ALWAYS the COUNTERPARTY (the other business), NEVER "{company_name}" itself.
+"""
+    return _vision_prompt_body(perspective)
+
+
+def _vision_prompt_body(perspective: str) -> str:
     return """Analyze this document (expense receipt, purchase invoice, sales invoice, debit note, or credit note) and extract structured data.
 
 Return ONLY valid JSON with this exact structure:
@@ -116,7 +137,7 @@ Classification rules:
 - "sales": Invoice issued to a customer for goods or services.
 - "debit_note": Return or adjustment against a purchase (reduces amount owed to supplier).
 - "credit_note": Return or adjustment against a sale (reduces amount owed by customer).
-
+""" + perspective + """
 Currency rules:
 - Report amounts in the document's ORIGINAL currency exactly as printed. Do NOT convert to INR.
 - Amounts as positive numbers.

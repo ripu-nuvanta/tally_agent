@@ -39,6 +39,44 @@ async def _get_optional_db() -> AsyncGenerator[AsyncSession | None, None]:
 _SAFE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".pdf", ".csv", ".xlsx", ".xls"}
 
 
+async def _record_voucher_revision(
+    db, *, workspace_id, conversation_id, entry_id, source, voucher_data, file_id=None
+):
+    """Append a version row to the voucher_entry_revisions edit-history trail.
+
+    Computes the next monotonic ``version_no`` per (conversation_id, entry_id)
+    and inserts a FULL snapshot of the entry. DB-only audit (not shown in the
+    chat UI). Does NOT commit — the caller commits in the same unit of work as
+    the existing message/status/audit writes. No-op outside DB mode or without a
+    real conversation_id / entry_id.
+    """
+    if db is None or not settings.db_mode or not conversation_id or not entry_id:
+        return
+    from sqlalchemy import func
+
+    from backend.db.models import VoucherEntryRevision
+    result = await db.execute(
+        select(func.coalesce(func.max(VoucherEntryRevision.version_no), 0)).where(
+            VoucherEntryRevision.conversation_id == conversation_id,
+            VoucherEntryRevision.entry_id == entry_id,
+        )
+    )
+    next_version = int(result.scalar() or 0) + 1
+    # Hard-link the revision to its original upload. Prefer the explicit
+    # file_id arg; otherwise derive from the entry snapshot. Nullable.
+    if file_id is None and isinstance(voucher_data, dict):
+        file_id = voucher_data.get("file_id") or None
+    db.add(VoucherEntryRevision(
+        workspace_id=workspace_id,
+        conversation_id=conversation_id,
+        entry_id=entry_id,
+        version_no=next_version,
+        source=source,
+        voucher_data=dict(voucher_data),
+        file_id=file_id,
+    ))
+
+
 async def _update_persisted_voucher_status(db, conversation_id, entry_id, new_status):
     """Update the originating review-card Message so the entry's status survives reload.
 
@@ -66,6 +104,65 @@ async def _update_persisted_voucher_status(db, conversation_id, entry_id, new_st
                 changed = True
         if changed:
             flag_modified(msg, "data")
+
+
+async def _update_persisted_voucher_entry(db, conversation_id, entry_id, new_entry):
+    """Replace the originating review-card entry's fields with ``new_entry``.
+
+    Mirrors ``_update_persisted_voucher_status`` but swaps the WHOLE entry so a
+    user's draft edits (reference, qty, ledgers, …) survive a conversation
+    reload. Preserves the entry ``id`` and forces ``status="draft"`` — a saved
+    draft is never a terminal (written/deleted) state. Marks the JSONB column
+    dirty so SQLAlchemy flushes it. No-op if the entry isn't found.
+    """
+    if db is None or not conversation_id or not entry_id:
+        return
+    from sqlalchemy.orm.attributes import flag_modified
+
+    from backend.db.models import Message
+    result = await db.execute(
+        select(Message).where(Message.conversation_id == conversation_id)
+    )
+    for msg in result.scalars().all():
+        data = msg.data
+        if not isinstance(data, dict) or data.get("type") != "voucher_review":
+            continue
+        entries = data.get("entries") or []
+        changed = False
+        for i, e in enumerate(entries):
+            if isinstance(e, dict) and e.get("id") == entry_id:
+                replacement = dict(new_entry)
+                replacement["id"] = entry_id
+                replacement["status"] = "draft"
+                entries[i] = replacement
+                changed = True
+        if changed:
+            flag_modified(msg, "data")
+
+
+async def _persist_action_response(db, conversation_id, message, data):
+    """Persist a voucher-action's terminal RESULT as an assistant Message row.
+
+    Without this, the result message (write success / duplicate block / write
+    error / discard) only existed client-side for the live session and vanished
+    on reload — the conversation rehydrates from Message rows only, leaving the
+    card's persisted status with no explanatory message (LESSONS §17 family).
+
+    Mirrors the returned ChatResponse: role="assistant", content=<message>,
+    data=<data> (so the type, e.g. voucher_written / voucher_error, survives).
+    The caller commits (alongside the status/audit updates). Per-row created_at
+    default orders this AFTER the originating review card. No-op outside DB mode
+    or without a real conversation_id.
+    """
+    if db is None or not conversation_id:
+        return
+    from backend.db.models import Message
+    db.add(Message(
+        conversation_id=conversation_id,
+        role="assistant",
+        content=message,
+        data=data,
+    ))
 
 
 async def _verify_workspace_ownership(
@@ -146,12 +243,18 @@ async def chat_with_file(
         raise HTTPException(status_code=400, detail="File is empty")
 
     # In DB mode, verify workspace ownership before running the pipeline.
+    # Capture the workspace's configured company so the Vision classifier can
+    # anchor purchase-vs-sales direction to the user's own books.
     if settings.db_mode:
         if not workspace_id:
             raise HTTPException(status_code=400, detail="workspace_id is required in DB mode")
         if db is None:
             raise HTTPException(status_code=500, detail="Database session not available")
-        await _verify_workspace_ownership(workspace_id, user_id, db)
+        workspace = await _verify_workspace_ownership(workspace_id, user_id, db)
+        ws_config = workspace.config or {}
+        company = ws_config.get("tally_company") or workspace.name or "Default"
+    else:
+        company = None
 
     # Save to local storage — sanitize the extension to a safe whitelist to
     # avoid stashing arbitrary user-supplied suffixes (e.g. ".jpg.php").
@@ -181,6 +284,7 @@ async def chat_with_file(
             user_id=user_id if settings.db_mode else None,
             workspace_id=workspace_id if settings.db_mode else None,
             conversation_id=conversation_id if settings.db_mode else None,
+            company=company,
         )
         if settings.db_mode and db is not None and conversation_id:
             from backend.db.models import Conversation, Message
@@ -214,6 +318,20 @@ async def chat_with_file(
                 if conversation.title is None:
                     conversation.title = user_content[:100]
                 conversation.updated_at = datetime.now(timezone.utc)
+            # Record version 1 of the edit-history trail for each card entry.
+            review = result.get("data") or {}
+            if isinstance(review, dict) and review.get("type") == "voucher_review":
+                for card_entry in review.get("entries") or []:
+                    if isinstance(card_entry, dict) and card_entry.get("id"):
+                        await _record_voucher_revision(
+                            db,
+                            workspace_id=workspace_id,
+                            conversation_id=conversation_id,
+                            entry_id=card_entry["id"],
+                            source="upload",
+                            voucher_data=card_entry,
+                            file_id=card_entry.get("file_id"),
+                        )
         if settings.db_mode and db is not None:
             await db.commit()
     except HTTPException:
@@ -447,19 +565,59 @@ async def voucher_action(
         company = request.company or "Default"
 
     if request.action == "discard":
+        discard_message = "Entry discarded."
+        discard_data = {"type": "voucher_discarded", "entry_id": entry.get("id")}
         if settings.db_mode and db is not None:
             await _update_persisted_voucher_status(
                 db, conv_id, entry.get("id"), "deleted",
             )
+            await _persist_action_response(db, conv_id, discard_message, discard_data)
             await db.commit()
         return ChatResponse(
-            message="Entry discarded.",
-            data={"type": "voucher_discarded", "entry_id": entry.get("id")},
+            message=discard_message,
+            data=discard_data,
+            session_id=session_id,
+        )
+
+    # save_draft persists the edited card to its Message row WITHOUT writing to
+    # Tally — so a user's draft edits (reference, qty, ledgers, …) survive a page
+    # reload. No TallyWriter, no dedup block, no VoucherEntry audit row. The user
+    # writes later via "Write to Tally" (approve). If conversation_id is missing
+    # (deferred-creation edge), return success WITHOUT persisting — the local
+    # state still holds and a later action carries the id.
+    if request.action == "save_draft":
+        if settings.db_mode and db is not None and conv_id:
+            await _update_persisted_voucher_entry(
+                db, conv_id, entry.get("id"), entry,
+            )
+            await _record_voucher_revision(
+                db,
+                workspace_id=request.workspace_id,
+                conversation_id=conv_id,
+                entry_id=entry.get("id"),
+                source="edit",
+                voucher_data=entry,
+                file_id=entry.get("file_id"),
+            )
+            await db.commit()
+        return ChatResponse(
+            message="Draft saved.",
+            data={"type": "voucher_draft_saved", "entry_id": entry.get("id")},
             session_id=session_id,
         )
 
     # approve and edit both write to Tally
     if request.action in ("approve", "edit"):
+        async def _terminal(message, data):
+            """Persist the terminal RESULT message (success / error / duplicate)
+            so it survives reload, then return the ChatResponse. In DB mode with
+            a real conv_id, commits the message alongside any prior status/audit
+            changes already staged on this session."""
+            if settings.db_mode and db is not None and conv_id:
+                await _persist_action_response(db, conv_id, message, data)
+                await db.commit()
+            return ChatResponse(message=message, data=data, session_id=session_id)
+
         # Duplicate hard block (Phase 1 Part B, Finding 1): re-derive the
         # business-key duplicate SERVER-SIDE before writing. We never trust the
         # client-sent ``status`` (bypassable, and it wrongly sticks after an edit
@@ -482,20 +640,18 @@ async def voucher_action(
                 when = dup.get("date")
                 vno_part = f" #{vno}" if vno else ""
                 when_part = f" (written {when})" if when else ""
-                return ChatResponse(
-                    message=(
+                return await _terminal(
+                    (
                         f"Duplicate of voucher{vno_part}{when_part} — {reason}. "
                         "Not written."
                     ),
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
 
         if not settings.TALLY_WRITE_ENABLED:
-            return ChatResponse(
-                message="Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
-                data={"type": "voucher_error", "entry_id": entry.get("id")},
-                session_id=session_id,
+            return await _terminal(
+                "Tally write is disabled. Set TALLY_WRITE_ENABLED=true to create vouchers.",
+                {"type": "voucher_error", "entry_id": entry.get("id")},
             )
 
         # FX no-rate guard (Finding 1): a foreign-currency entry with no
@@ -512,13 +668,12 @@ async def voucher_action(
             except (TypeError, ValueError):
                 amount = 0.0
             if fx_rate <= 0 or amount <= 0:
-                return ChatResponse(
-                    message=(
+                return await _terminal(
+                    (
                         "Set a conversion rate before writing — "
                         "reply 'use rate <n>' in chat."
                     ),
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
 
         # Party-ledger guard (Finding 3): Purchase/Sales/DN/CN need a party
@@ -528,41 +683,56 @@ async def voucher_action(
         vtype = entry.get("voucher_type", "Payment")
         if vtype in ("Purchase", "Sales", "Debit Note", "Credit Note"):
             if not (entry.get("party_ledger") or "").strip():
-                return ChatResponse(
-                    message="Select a party ledger before writing.",
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                return await _terminal(
+                    "Select a party ledger before writing.",
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
 
         writer = TallyWriter(client=client, company=company)
 
-        # Create new ledger first if the review card marked it as new
+        # Create new ledger first if the review card marked it as new.
+        # The ledger to create depends on voucher_type: for party vouchers
+        # (Purchase/Sales/DN/CN) the mapping describes the PARTY ledger (the
+        # debit_ledger is the existing purchase/sales account — creating it would
+        # re-parent live data); for Payment the mapping describes the expense
+        # (debit) ledger.
         if entry.get("is_new_ledger"):
-            ledger_name = entry.get("debit_ledger")
-            parent = entry.get("suggested_parent") or "Indirect Expenses"
+            if vtype in ("Purchase", "Sales", "Debit Note", "Credit Note"):
+                ledger_name = entry.get("party_ledger") or entry.get("party_name")
+                if vtype in ("Sales", "Credit Note"):
+                    parent = entry.get("suggested_parent") or "Sundry Debtors"
+                else:
+                    parent = entry.get("suggested_parent") or "Sundry Creditors"
+                # Party ledgers (Sundry Debtor/Creditor) MUST be bill-wise so the
+                # receivable/payable carries a bill reference (New Ref) for future
+                # "pay against bill". Expense ledgers stay non-bill-wise.
+                is_billwise = True
+            else:
+                ledger_name = entry.get("debit_ledger")
+                parent = entry.get("suggested_parent") or "Indirect Expenses"
+                is_billwise = False
             if not ledger_name:
-                return ChatResponse(
-                    message="Cannot create new ledger: debit_ledger is empty.",
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                return await _terminal(
+                    "Cannot create new ledger: ledger name is empty.",
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
             try:
-                ledger_result = await writer.create_ledger(name=ledger_name, parent=parent)
+                ledger_result = await writer.create_ledger(
+                    name=ledger_name, parent=parent, is_billwise=is_billwise
+                )
             except Exception as e:
                 logger.exception("Failed to create new ledger")
-                return ChatResponse(
-                    message=f"Failed to create new ledger '{ledger_name}': {e}",
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                return await _terminal(
+                    f"Failed to create new ledger '{ledger_name}': {e}",
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
             if not ledger_result["success"]:
-                return ChatResponse(
-                    message=(
+                return await _terminal(
+                    (
                         f"Failed to create new ledger '{ledger_name}': "
                         f"{ledger_result.get('error_message', 'Unknown error')}"
                     ),
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
 
         # Create the voucher — dispatch by voucher_type. Document-driven
@@ -598,13 +768,12 @@ async def voucher_action(
                 if entry.get("has_unquantified_lines"):
                     missing = entry.get("unquantified_descriptions") or []
                     names = ", ".join(f"'{d}'" for d in missing if d) or "some lines"
-                    return ChatResponse(
-                        message=(
+                    return await _terminal(
+                        (
                             f"These lines need a quantity before writing: {names}. "
                             "Add quantities in the card, then write."
                         ),
-                        data={"type": "voucher_error", "entry_id": entry.get("id")},
-                        session_id=session_id,
+                        {"type": "voucher_error", "entry_id": entry.get("id")},
                     )
 
                 # Finding 2: block any line with qty<=0 or rate<=0 — never post a
@@ -625,13 +794,12 @@ async def voucher_action(
                         )
                         break
                 if bad_line is not None:
-                    return ChatResponse(
-                        message=(
+                    return await _terminal(
+                        (
                             f"Line '{bad_line}' is missing quantity or rate — "
                             "fix it before writing."
                         ),
-                        data={"type": "voucher_error", "entry_id": entry.get("id")},
-                        session_id=session_id,
+                        {"type": "voucher_error", "entry_id": entry.get("id")},
                     )
 
                 try:
@@ -642,10 +810,9 @@ async def voucher_action(
                     # A master-create failed/timed out (e.g. a blocking modal):
                     # return a clean voucher_error instead of hanging or 500ing.
                     logger.error("Inventory master pre-flight failed: %s", e)
-                    return ChatResponse(
-                        message=str(e),
-                        data={"type": "voucher_error", "entry_id": entry.get("id")},
-                        session_id=session_id,
+                    return await _terminal(
+                        str(e),
+                        {"type": "voucher_error", "entry_id": entry.get("id")},
                     )
             elif voucher_type == "Purchase":
                 result = await writer.create_purchase_voucher_ledger(
@@ -702,26 +869,32 @@ async def voucher_action(
                     reference_date=reference_date,
                 )
             else:
-                return ChatResponse(
-                    message=f"Unknown voucher type: {voucher_type}",
-                    data={"type": "voucher_error", "entry_id": entry.get("id")},
-                    session_id=session_id,
+                return await _terminal(
+                    f"Unknown voucher type: {voucher_type}",
+                    {"type": "voucher_error", "entry_id": entry.get("id")},
                 )
         except ValidationError as e:
-            return ChatResponse(
-                message=f"Validation failed: {'; '.join(e.errors)}",
-                data={"type": "voucher_error", "entry_id": entry.get("id")},
-                session_id=session_id,
+            return await _terminal(
+                f"Validation failed: {'; '.join(e.errors)}",
+                {"type": "voucher_error", "entry_id": entry.get("id")},
             )
         except KeyError as e:
-            return ChatResponse(
-                message=f"Voucher entry is missing required field: {e}",
-                data={"type": "voucher_error", "entry_id": entry.get("id")},
-                session_id=session_id,
+            return await _terminal(
+                f"Voucher entry is missing required field: {e}",
+                {"type": "voucher_error", "entry_id": entry.get("id")},
             )
 
         if result["success"]:
             vch_id = result.get("last_vch_id") or ""
+            success_message = (
+                f"{voucher_type} voucher written to Tally successfully. "
+                f"Voucher ID: {vch_id}"
+            )
+            success_data = {
+                "type": "voucher_written",
+                "entry_id": entry.get("id"),
+                "tally_voucher_id": vch_id,
+            }
 
             # Persist audit trail (DB mode only) — VoucherEntry linked to the
             # file. Requires a real conversation_id (non-nullable FK); the
@@ -741,25 +914,35 @@ async def voucher_action(
                     tally_voucher_number=str(vch_id),
                 )
                 db.add(ve)
+                await _record_voucher_revision(
+                    db,
+                    workspace_id=request.workspace_id,
+                    conversation_id=conv_id,
+                    entry_id=entry.get("id"),
+                    source="write",
+                    voucher_data=entry,
+                    file_id=entry.get("file_id"),
+                )
                 await _update_persisted_voucher_status(
                     db, conv_id, entry.get("id"), "written",
+                )
+                # Persist the success RESULT message in the SAME commit as the
+                # status/audit changes so it survives reload and sorts after the
+                # review card (per-row created_at default).
+                await _persist_action_response(
+                    db, conv_id, success_message, success_data,
                 )
                 await db.commit()
 
             return ChatResponse(
-                message=f"{voucher_type} voucher written to Tally successfully. Voucher ID: {vch_id}",
-                data={
-                    "type": "voucher_written",
-                    "entry_id": entry.get("id"),
-                    "tally_voucher_id": vch_id,
-                },
+                message=success_message,
+                data=success_data,
                 session_id=session_id,
             )
         else:
-            return ChatResponse(
-                message=f"Failed to write to Tally: {result.get('error_message', 'Unknown error')}",
-                data={"type": "voucher_error", "entry_id": entry.get("id")},
-                session_id=session_id,
+            return await _terminal(
+                f"Failed to write to Tally: {result.get('error_message', 'Unknown error')}",
+                {"type": "voucher_error", "entry_id": entry.get("id")},
             )
 
     # Should be unreachable thanks to Literal[...] on VoucherActionRequest.action

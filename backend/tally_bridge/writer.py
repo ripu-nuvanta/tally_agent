@@ -12,6 +12,8 @@ Pre-flight validation runs locally before any Tally call:
 """
 from __future__ import annotations
 
+import logging
+
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.import_builder import (
     build_cancel_voucher,
@@ -34,7 +36,10 @@ from backend.tally_bridge.import_builder import (
     build_delete_ledger,
     build_delete_voucher,
 )
+from backend.tally_bridge.queries.masters import list_ledgers
 from backend.tally_bridge.response_parser import parse_import_response
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationError(Exception):
@@ -208,7 +213,51 @@ class TallyWriter:
         state: str | None = None, gst_reg_type: str | None = None,
         opening_balance: float | None = None, is_billwise: bool = False,
     ) -> dict:
-        """Create a ledger master in Tally."""
+        """Create a ledger master in Tally.
+
+        Existence-safe (defense in depth): Tally treats a create-import for a
+        name that already exists as an ALTER, which silently RE-PARENTS the
+        existing ledger — live data corruption. So we check existence first
+        (case-insensitive, scoped to the same company we write to) and:
+          - skip the post (benign already_exists) when a same-name ledger
+            exists under the SAME parent — safe idempotent no-op;
+          - FAIL when a same-name ledger exists under a DIFFERENT parent —
+            skipping would reuse the wrong-group ledger and a CREATE would
+            re-parent/corrupt it;
+          - otherwise post + assert.
+        A read-side error must never block a valid write: on read failure we
+        log a warning and fall through to the post path (the post +
+        _assert_master_persisted already guard persistence).
+        """
+        name_lower = (name or "").strip().lower()
+        parent_lower = (parent or "").strip().lower()
+        try:
+            existing = await list_ledgers(self.client, company=self.company)
+        except Exception as exc:  # read-side failure must not block the write
+            logger.warning(
+                "create_ledger existence pre-check failed for %r (proceeding to post): %s",
+                name, exc,
+            )
+        else:
+            for l in existing:
+                if (l.name or "").strip().lower() != name_lower:
+                    continue
+                existing_parent = (l.parent_group or "").strip()
+                if existing_parent.lower() == parent_lower:
+                    return {
+                        "success": True, "created": 0, "altered": 0,
+                        "already_exists": True, "errors": 0, "exceptions": 0,
+                        "deleted": 0, "last_vch_id": None, "error_message": None,
+                    }
+                return {
+                    "success": False, "created": 0, "altered": 0,
+                    "already_exists": False, "errors": 1, "exceptions": 0,
+                    "deleted": 0, "last_vch_id": None,
+                    "error_message": (
+                        f"Ledger '{name}' already exists under "
+                        f"'{existing_parent}', cannot create under '{parent}'."
+                    ),
+                }
         xml = build_create_ledger(
             name, parent, self.company, gstin=gstin, state=state,
             gst_reg_type=gst_reg_type, opening_balance=opening_balance,

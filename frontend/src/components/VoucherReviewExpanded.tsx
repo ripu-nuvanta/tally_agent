@@ -1,5 +1,6 @@
 import type { VoucherEntry } from "./VoucherReviewCard";
 import { formatINR } from "../utils/format";
+import { newLedgerDisplay } from "../utils/voucher";
 
 interface VoucherReviewExpandedProps {
   entry: VoucherEntry;
@@ -91,11 +92,15 @@ export default function VoucherReviewExpanded({ entry }: VoucherReviewExpandedPr
           <div className="text-xs text-gray-600">Against: Invoice #{entry.bill_reference}</div>
         )}
 
-      {entry.is_new_ledger && (
-        <div className="text-xs text-amber-600">
-          New ledger "{entry.debit_ledger}" will be created under "{entry.suggested_parent}"
-        </div>
-      )}
+      {entry.is_new_ledger &&
+        (() => {
+          const { name, parent } = newLedgerDisplay(entry);
+          return (
+            <div className="text-xs text-amber-600">
+              New ledger "{name}" will be created under "{parent}"
+            </div>
+          );
+        })()}
     </div>
   );
 }

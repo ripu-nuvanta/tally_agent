@@ -212,7 +212,7 @@ class VoucherReviewData(BaseModel):
 
 class VoucherActionRequest(BaseModel):
     """Request body for /chat/voucher-action endpoint."""
-    action: Literal["approve", "discard", "edit"]
+    action: Literal["approve", "discard", "edit", "save_draft"]
     entry: dict[str, Any]
     company: str = ""
     session_id: str = ""

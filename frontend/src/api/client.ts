@@ -186,7 +186,7 @@ export async function sendChatWithFile(
   return data;
 }
 
-export type VoucherAction = "approve" | "discard" | "edit";
+export type VoucherAction = "approve" | "discard" | "edit" | "save_draft";
 
 export async function voucherAction(
   action: VoucherAction,
@@ -205,6 +205,17 @@ export async function voucherAction(
     conversation_id: conversationId,
   });
   return data;
+}
+
+// Persist a voucher card's edited DRAFT to the DB without writing to Tally, so
+// the edits survive a page reload. Thin wrapper over voucherAction("save_draft").
+export async function saveVoucherDraft(
+  entry: Record<string, unknown>,
+  sessionId: string,
+  workspaceId: string,
+  conversationId: string,
+): Promise<ChatResponse> {
+  return voucherAction("save_draft", entry, "", sessionId, workspaceId, conversationId);
 }
 
 export async function getHealth(params?: { host?: string; port?: number }): Promise<HealthResponse> {

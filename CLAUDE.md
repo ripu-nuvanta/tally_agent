@@ -52,7 +52,19 @@ pytest tests/integration/ -v
 ANTHROPIC_API_KEY=test-key pytest tests/e2e/ -v
 
 # DB integration tests (requires Postgres)
+# TEST_DATABASE_URL is a SEPARATE test DB (create/drop schema) — it is NEVER read from
+# .env (which only carries the dev DATABASE_URL) and never falls back to it, so the dev
+# `tallyagent` DB is never clobbered. DB tests skip when TEST_DATABASE_URL is unset.
 TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost/tallyagent_test ANTHROPIC_API_KEY=test-key pytest tests/integration/test_auth_flow.py tests/integration/test_workspace_flow.py tests/integration/test_conversation_flow.py tests/e2e/test_db_smoke.py -v
+
+# --- This machine's local Postgres (verified 2026-06-23) ---
+# Server: Homebrew postgresql@16 (binaries under /opt/homebrew/opt/postgresql@16/bin).
+#   Start: brew services start postgresql@16   (durable; ask before running)
+# Superuser role is the macOS user `nuvanta-mac-3` (NO password); there is NO `postgres`
+# role, so the placeholder user:pass above does not apply here. Create the test DB once:
+#   createdb -h localhost tallyagent_test
+# Full DB suite (249 tests, ~14 min — integration + DB e2e + dedup), all green 2026-06-23:
+TEST_DATABASE_URL=postgresql+asyncpg://nuvanta-mac-3@localhost/tallyagent_test ANTHROPIC_API_KEY=test-key PYTHONPATH=. uv run pytest tests/integration/ tests/e2e/test_db_smoke.py tests/e2e/test_db_data_entry.py tests/e2e/test_db_data_entry_group_b.py tests/unit/test_dedup.py -q 2>&1 | tee logs/db-suite-run.log
 
 # All backend tests (unit + integration + E2E mock)
 ANTHROPIC_API_KEY=test-key pytest tests/ -v --ignore=tests/e2e_live/
@@ -145,7 +157,7 @@ npm run test:playwright              # Playwright visual tests (responsive + eva
 
 4. **Database Layer** (`backend/db/`) — PostgreSQL persistence (Set A1, optional via `DATABASE_URL`):
    - `engine.py` — Async SQLAlchemy engine + session factory
-   - `models.py` — ORM models: User, Workspace, Conversation, Message, UsageLog
+   - `models.py` — ORM models: User, Workspace, Conversation, Message, UploadedFile, VoucherEntry, VoucherEntryRevision (edit-history version trail), LedgerMapping, UsageLog
    - `migrations/` — Alembic migrations
 
 5. **Agent Registry** (`backend/agents/registry.py`) — Pluggable agent types keyed by `workspace.agent_type`. Currently registers "tally" → `Orchestrator`. `BaseAgent` interface in `backend/agents/base.py`.
@@ -199,14 +211,14 @@ TALLY_WRITE_ENABLED=true             # required for write paths (Set B1a, Group 
 
 ## Testing
 
-_Approximate counts as of 2026-06-12 (invoice Phase 2 closeout); ~1,542 backend + ~322 frontend, 0 failures, backend coverage ~89%._
+_Approximate counts as of 2026-06-29 (write-flow edit + edit-history closeout); ~1,625 backend + ~381 frontend, 0 failures. (Live-Tally e2e_live and eval are gated/expensive — see commands above.)_
 
 - **Unit tests** (`tests/unit/`): Pure logic, no I/O. Test request XML construction, response parsing, date utils, currency formatting, mock handler, auth utils, pricing, DB models. ~956 tests.
 - **Integration tests** (`tests/integration/`): Use mock Tally HTTP server (`tests/mocks/mock_tally_server.py`) built with aiohttp. Tests full request→parse→return cycle + mock format parity. Also includes DB integration tests (auth flow, workspace CRUD, conversation persistence) — these require `TEST_DATABASE_URL`. ~132 + 15 DB tests.
 - **E2E tests** (`tests/e2e/`): Full NL query → agent → Tally → response pipeline. Uses mock Claude API (`tests/mocks/mock_claude_api.py`) to avoid API costs. Includes legacy smoke tests and DB smoke tests (require `TEST_DATABASE_URL`). ~39 + 14 DB tests.
 - **E2E live tests** (`tests/e2e_live/`): End-to-end against real Tally + real Claude API. Gated by `RUN_LIVE_TESTS=1` env var OR `--tally-mode mock`. In mock mode, uses built-in mock handler (no real Tally needed, still needs Claude API key). 19 tests.
 - **Eval tests** (`tests/eval/`): Two-phase eval framework (collect → judge → report). Playwright drives multi-turn conversations against real frontend, LLM-as-a-judge scores responses across 5 dimensions (factual, quality, coherence, error handling, chart quality). 8 scenarios, 49 turns. Gated by `RUN_EVAL_TESTS=1`. Run standalone: `collect.py` → `judge.py` → `report.py`. Mock mode: `--tally-mode mock` auto-selects `*_mock.yaml` scenario variants when available.
-- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all components + utils. ~237 tests.
+- **Frontend unit tests** (`frontend/src/__tests__/`): Vitest + React Testing Library. Tests all components + utils. ~381 tests. NOTE: the default sandbox `TMPDIR` is not writable for vitest/Playwright — run with `TMPDIR="$PWD/.tmp_vitest"` (see § Workflow Preferences).
 - **Frontend Playwright tests** (`frontend/tests/playwright/`): Visual tests — responsive (5 page states × 3 viewports) + eval-visual (8 fixtures × 3 viewports) + db-mode (20 specs × 3 viewports, 11 viewport-specific skips) ≈ 49 pass + 11 skip. Discipline rules (state matrix, visual checklist, screenshot regeneration scope, main-agent visual review) live in § Workflow Preferences → Playwright discipline.
 - **Fixtures** in `tests/fixtures/` — Sample Tally XML/JSON responses for each report type.
 - **Test plan thoroughness** is mandatory for every design spec — see § Workflow Preferences → Spec & test plan thoroughness.
@@ -281,6 +293,21 @@ Every design spec must include:
 
 High-level "test these layers" tables alone are insufficient. Enumerate the surface; don't summarize it.
 
+### Test reality, not an ideal
+
+Two bug classes have repeatedly slipped through green test suites and were only caught by manual testing against the live app + seed company (e.g. 2026-06-24: voucher-edit Save didn't update the card; party ledgers under custom sub-groups flagged as "new"). Both share a root cause: the tests validated a simpler world than production. Rules to prevent recurrence:
+
+1. **Mock the network, not your own components.** Every user-facing flow (edit / approve / discard / reclassify) needs ≥1 test that renders the **top-level container** (e.g. `ChatWindow`), drives real clicks, and asserts the **rendered DOM** changed — stubbing only the true external boundary (the HTTP API call). Never stub the internal component handoff where the bug usually lives (parent state merge, prop wiring). Isolated tests with a mocked `onSave`/`onEdit` prove the callback fires, not that the UI updates.
+2. **Fixtures mirror the seed company, not an ideal.** Test masters/ledgers/groups must include the messy real shapes the live company has: **custom sub-groups** (e.g. `National Creditors`/`Local Creditors` under Sundry Creditors), **non-bill-wise parties**, duplicate names under different parents, custom GST-ledger parents. A fixture that puts every party directly under "Sundry Creditors" encodes the same wrong assumption as buggy code and will *confirm* the bug. Prefer golden fixtures generated from live Tally (`tests/eval/generate_golden.py`) so test data can't drift simpler than reality.
+3. **Adversarial fixture review.** Before trusting a green test, ask "what real-world variant is this fixture NOT modeling?" and add one fixture per variant.
+4. **A flagged gap is a TODO, not a footnote.** If a coverage gap is identified, write the test or get explicit sign-off to skip — do not silently downgrade it to "minor".
+5. **Test the blast radius, not just the diff lines.** When a change touches a flow (e.g. party resolution), exercise the whole flow's real-world variants — not only the literally changed lines (the defect is often in adjacent pre-existing code).
+6. **One real-app pass before claiming "covered."** For any touched user flow, run the actual app against real data once (per § Default to DB mode) before reporting coverage. "Layers exist and pass in isolation" ≠ "the connected real-data path works".
+7. **The refresh round-trip test (persisted flows).** A whole class of bugs (2026-06-24: edited voucher values lost on reload; voucher-action result messages lost on reload) survived green suites because no test exercised the **page-refresh / rehydration lifecycle**. For ANY flow that persists state, add an explicit *act → reload → re-assert* test, on BOTH layers:
+   - **Backend (DB e2e):** after the action, **re-fetch the conversation from the DB** (the same query rehydration uses — `Message` rows ordered by `created_at`) and assert the **entire user-visible state** is intact: the card's edited field VALUES, its `status`, AND any result/assistant messages — not just the one attribute the fix touched. A test that asserts only `status` survives will miss edits and messages (it did). Mirror the existing `..._persists_*_on_reload` tests but assert the whole object, and assert message COUNT (exactly one per action — not zero, not two).
+   - **Frontend:** don't rely on mocked-API unit tests for persistence — they never touch the real round-trip. Where feasible, drive a real reload (Playwright/eval harness "reload and re-assert" step) so FE rehydration + BE persistence are verified together across the seam.
+   - **Trigger:** any change that adds, removes, or alters a persistence path REQUIRES a refresh round-trip test before it's "done" — ESPECIALLY a fix that *removes* a write (e.g. making an action local-only silently drops persistence; that exact change caused the edit-lost-on-reload bug). When you change persistence semantics, immediately ask "does this survive a refresh?" and write the test that proves it.
+
 ### Playwright discipline
 
 - **State matrix before specs.** Build a `component × state × viewport` matrix before writing Playwright specs. Each state needs a mock data variant and a separate screenshot. For example: VoucherReviewCard = {draft / pending / written / discarded / error}; Sidebar = {expanded / collapsed / active-highlight / empty-workspace}; Header = {live-badge / demo-badge / long-name-truncation}.
@@ -332,5 +359,7 @@ Closed phases in build order, with one-line learnings. For what's next, see [`do
 | Invoice entry Phase 2 — Inventory line items | ✅ merged 2026-06-11 | Goods invoices post line items into the Tally **stock grid** (qty/rate) via the stock-based builder; Vision unit extraction, stock-item fuzzy resolver, goods-vs-services routing, match/create-in-card UI. **Live-verified 5/5.** Post-merge live fixes (2026-06-11/12): distinct `invoice_number` extraction, only-create-missing masters + `altered=1`=already-exists, FE reverts false "Written". New Tally gotchas in [`LESSONS.md`](LESSONS.md) §15 rules 10–14. |
 | Upload/voucher persistence fix | ✅ merged 2026-06-12 | DB mode rehydrates conversations from `Message` rows only; `/chat/upload` persisted none (cards vanished on reload) and `/chat/voucher-action` never persisted written/discarded status (gated on a `conversation_id` the entry dict never carried). Now persists upload Messages + titles the conversation, and threads `conversation_id` via the request to persist status. New lesson [`LESSONS.md`](LESSONS.md) §17; review `docs/code-review-upload-voucher-persistence-2026-06-12.md`. |
 | Sidebar conversation actions (rename + delete) | ✅ merged 2026-06-12 | ChatGPT-style per-conversation kebab (⋯) menu: inline Rename (PATCH) + Delete behind a confirm (soft-delete); deleting the open chat → workspace landing; menu flips up near the list bottom; a11y roles; theme-matched confirm dialog. Frontend-only (backend `DELETE`/`PATCH` pre-existed). Spec `docs/specs/2026-06-12-sidebar-conversation-actions-design.md`; review `docs/code-review-sidebar-conversation-actions-2026-06-12.md`. |
+| Classifier company-anchoring | ✅ 2026-06-19→29 | Vision prompt anchors purchase-vs-sales to the workspace's own company; hierarchy-aware ledger matching (custom creditor/debtor sub-groups); existence-safe `create_ledger`; billwise party ledgers. Spec `docs/specs/2026-06-19-classifier-company-anchoring-design.md`; review `docs/code-review-write-flow-fixes-2026-06-19.md`. |
+| Edit-flow correctness + edit-history + file_id linkage | ✅ 2026-06-29 | Edit Save = local merge (no premature write); draft edits + result messages persist across refresh; inventory edit recomputes total+GST; **`voucher_entry_revisions`** version trail (migration 004) + **`file_id`** join across upload→card→history→audit (migration 005). Full detail: `docs/specs/2026-06-29-edit-history-file-id-design.md`. |
 
 **Up next:** hardening from the write-flow code analysis (`docs/code-analysis-write-flow-2026-06-09.md`) — SSRF host/port allowlist, entry-dict typing + sign-convention single-source, cheap correctness warnings (DN/CN no-ref, currency-defaulted-to-INR, GST-ledger-missing block), eval mock GST ledgers. Then future slices (supplier-payment-against-bill, TDS journals, bank reconciliation) — each needs its own spec. See [`docs/roadmap.md`](docs/roadmap.md).

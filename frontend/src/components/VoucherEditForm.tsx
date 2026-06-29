@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { formatINR } from "../utils/format";
 import type { VoucherEntry, LineItem } from "./VoucherReviewCard";
 import LineItemEditor from "./LineItemEditor";
 import InventoryLineEditor from "./InventoryLineEditor";
@@ -124,6 +125,27 @@ export default function VoucherEditForm({
   const hasInvalidInventoryRow =
     isInventory && lineItems.some((l) => !l.create_new && !l.matched_item);
 
+  // Live recompute preview for the inventory editor (mirrors handleSave). Lets
+  // the user see the new total + GST before saving as qty/rate change.
+  const round2 = (n: number) => Math.round(n * 100) / 100;
+  const previewTaxable = round2(
+    lineItems.reduce((sum, l) => sum + (l.amount || 0), 0),
+  );
+  const oldGstTotal = entry.gst_entries.reduce((sum, g) => sum + (g.amount || 0), 0);
+  const oldTaxable = entry.amount - oldGstTotal;
+  const previewGstEntries =
+    oldTaxable > 0
+      ? entry.gst_entries.map((g) => ({
+          ...g,
+          amount: round2(g.amount * (previewTaxable / oldTaxable)),
+        }))
+      : entry.gst_entries;
+  const previewGstTotal = previewGstEntries.reduce(
+    (sum, g) => sum + (g.amount || 0),
+    0,
+  );
+  const previewTotal = round2(previewTaxable + previewGstTotal);
+
   const handleSave = () => {
     if (showParty && !partyLedger) {
       setError("Select a party ledger.");
@@ -210,8 +232,21 @@ export default function VoucherEditForm({
     }
     // Inventory: emit the edited line array. Each row carries its match-or-create
     // state plus qty/rate/amount so the backend can build the stock grid.
+    //
+    // BUG FIX: a qty/rate edit recomputes each LINE amount (qty×rate) but the
+    // voucher-level total `amount` and `gst_entries` were left stale — writing
+    // an inconsistent voucher (stock grid posts the new qty, but the party/bill
+    // leg used the old total). Recompute totals so they stay consistent:
+    //   taxable = Σ(line amounts)
+    //   gst_entries scaled proportionally by new_taxable / old_taxable
+    //   amount = taxable + Σ(scaled gst)
     if (isInventory) {
       updates.line_items = lineItems;
+      // previewTaxable / previewGstEntries / previewTotal already apply the
+      // proportional scale (with the oldTaxable<=0 guard) — reuse them so the
+      // saved values match what the user saw in the live preview.
+      updates.gst_entries = previewGstEntries;
+      updates.amount = previewTotal;
     }
     onSave(updates);
   };
@@ -306,12 +341,33 @@ export default function VoucherEditForm({
       </div>
 
       {isInventory ? (
-        <InventoryLineEditor
-          lines={lineItems}
-          availableStockItems={entry.available_stock_items || []}
-          defaultStockGroup={entry.default_stock_group || "Primary"}
-          onChange={setLineItems}
-        />
+        <>
+          <InventoryLineEditor
+            lines={lineItems}
+            availableStockItems={entry.available_stock_items || []}
+            defaultStockGroup={entry.default_stock_group || "Primary"}
+            onChange={setLineItems}
+          />
+          <div
+            className="rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-xs text-gray-700 space-y-0.5"
+            data-testid="inventory-totals-preview"
+          >
+            <div className="flex justify-between">
+              <span className="text-gray-500">Taxable</span>
+              <span data-testid="preview-taxable">{formatINR(previewTaxable)}</span>
+            </div>
+            {previewGstEntries.map((g) => (
+              <div key={g.ledger} className="flex justify-between">
+                <span className="text-gray-500">{g.ledger}</span>
+                <span>{formatINR(g.amount)}</span>
+              </div>
+            ))}
+            <div className="flex justify-between font-medium text-gray-900">
+              <span>Total</span>
+              <span data-testid="preview-total">{formatINR(previewTotal)}</span>
+            </div>
+          </div>
+        </>
       ) : (
         <LineItemEditor
           ledgerLabel={primaryLedgerLabel(voucherType)}

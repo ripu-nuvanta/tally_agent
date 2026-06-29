@@ -141,6 +141,7 @@ class Orchestrator(BaseAgent):
         user_id: str | None = None,
         workspace_id: str | None = None,
         conversation_id: str | None = None,
+        company: str | None = None,
     ) -> dict:
         """Process an uploaded file for data entry.
 
@@ -176,8 +177,14 @@ class Orchestrator(BaseAgent):
             build_sales_voucher_data,
         )
         from backend.tally_bridge.queries.vouchers import get_party_vouchers
-        from backend.tally_bridge.request_builder import build_list_ledgers
-        from backend.tally_bridge.response_parser import parse_ledger_list
+        from backend.tally_bridge.request_builder import (
+            build_list_groups,
+            build_list_ledgers,
+        )
+        from backend.tally_bridge.response_parser import (
+            parse_groups,
+            parse_ledger_list,
+        )
 
         # 1. Parse the document
         file_type = detect_file_type(filename, mime_type)
@@ -226,7 +233,7 @@ class Orchestrator(BaseAgent):
                 "role": "user",
                 "content": [
                     content_block,
-                    {"type": "text", "text": build_vision_prompt()},
+                    {"type": "text", "text": build_vision_prompt(company)},
                 ],
             }],
         )
@@ -269,11 +276,40 @@ class Orchestrator(BaseAgent):
         tally_ledgers = parse_ledger_list(ledger_xml)
         ledger_names = [l["name"] for l in tally_ledgers]
 
+        # Fetch the Tally group tree so ledger selection can be HIERARCHY-AWARE:
+        # real party ledgers commonly sit under custom sub-groups of Sundry
+        # Creditors/Debtors (e.g. "National Creditors" → "Sundry Creditors").
+        # An exact parent_group match would exclude those parties → they get
+        # wrongly flagged is_new_ledger and blocked on write. Build a
+        # child→parent map (lowercased) and walk lineage to a requested root.
+        # Defensive: any failure / empty read falls back to exact-match.
+        group_parent: dict[str, str] = {}
+        try:
+            tally_groups = parse_groups(await client.post_xml(build_list_groups()))
+            for g in tally_groups:
+                name = (g.get("name") or "").strip().lower()
+                parent = (g.get("parent") or "").strip().lower()
+                if name:
+                    group_parent[name] = parent
+        except Exception:
+            group_parent = {}
+
+        def _roots_to(group: str, wanted: set[str]) -> bool:
+            """True if ``group`` is one of ``wanted`` or its lineage reaches one."""
+            cur = (group or "").lower()
+            seen: set[str] = set()
+            while cur and cur not in seen:
+                if cur in wanted:
+                    return True
+                seen.add(cur)
+                cur = group_parent.get(cur, "")
+            return False
+
         def _ledgers_in(*groups: str) -> list[str]:
             wanted = {g.lower() for g in groups}
             return [
                 l["name"] for l in tally_ledgers
-                if l.get("parent_group", "").lower() in wanted
+                if _roots_to(l.get("parent_group", ""), wanted)
             ]
 
         payment_ledgers = _ledgers_in("cash-in-hand", "bank accounts", "bank occ a/c")
@@ -472,6 +508,12 @@ class Orchestrator(BaseAgent):
             "file_id": file_id,
             "entries": [{
                 "id": entry_id,
+                # Hard-link to the original upload: file_id is the uploaded_files
+                # row id (reassigned to str(uploaded.id) in DB mode above). MUST
+                # live on the entry itself — not just review_data — so the live
+                # card, the persisted Message entry, the VoucherEntry audit row
+                # and the version trail are all joinable to uploaded_files.id.
+                "file_id": file_id,
                 "voucher_type": voucher.voucher_type,
                 "date": voucher.date,
                 "vendor_name": extracted.party_name or extracted.vendor_name,
@@ -526,17 +568,9 @@ class Orchestrator(BaseAgent):
         }
         type_label = type_labels.get(voucher.voucher_type, "entry")
         party_display = extracted.party_name or extracted.vendor_name or "Unknown"
-        if voucher.original_currency.strip().upper() != "INR" and voucher.fx_rate:
-            amount_display = (
-                f"{voucher.original_currency} {float(voucher.original_amount):,.2f} "
-                f"(≈ ₹{float(voucher.amount):,.2f} @ {float(voucher.fx_rate):.2f})"
-            )
-        else:
-            amount_display = f"₹{float(voucher.amount):,.2f}"
 
         message = (
-            f"I've extracted the {type_label} details:\n\n"
-            f"**{party_display}** — {amount_display} on {extracted.date}\n\n"
+            f"I've extracted the {type_label} details for **{party_display}**.\n\n"
             f"Please review the entry below and click **Write to Tally** to create "
             f"the {voucher.voucher_type.lower()} voucher, or **Edit Entry** to make corrections."
         )

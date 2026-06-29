@@ -560,3 +560,437 @@ async def test_db_payment_regression_upload_write(db_app):
         rows = await _voucher_entries(file_id)
         assert len(rows) == 1
         assert rows[0].voucher_type == "Payment"
+
+
+# ---------------------------------------------------------------------------
+# Save draft — edited card persists to the Message row WITHOUT writing to Tally
+# ---------------------------------------------------------------------------
+
+async def _reload_card_entry(ac, headers, ws_id, conv_id):
+    """Re-fetch the conversation and return the first voucher_review entry."""
+    reload = await ac.get(
+        f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers,
+    )
+    assert reload.status_code == 200, reload.text
+    cards = [
+        m for m in reload.json()["messages"]
+        if m["role"] == "assistant"
+        and isinstance(m["data"], dict)
+        and m["data"].get("type") == "voucher_review"
+    ]
+    assert cards, "no persisted voucher_review card on reload"
+    return cards[0]["data"]["entries"][0]
+
+
+@pytest.mark.asyncio
+async def test_db_save_draft_persists_edits_without_tally_write(db_app):
+    """Upload a goods purchase → save_draft with an edited reference + line-item
+    quantity → the edited values survive a conversation reload, the entry stays
+    'draft', NO VoucherEntry audit row is created, and NO Tally write occurs."""
+    from unittest.mock import patch as _patch
+
+    from backend.tally_bridge import writer as writer_mod
+
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "SaveDraft Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        up = await _upload(ac, headers, "purchase_goods_inr", ws_id, conv_id, "goods")
+        assert up.status_code == 200, up.text
+        entry = up.json()["data"]["entries"][0]
+        file_id = up.json()["data"]["file_id"]
+        assert entry["voucher_type"] == "Purchase"
+        assert entry.get("line_items"), "fixture should carry line_items"
+        # Sanity: the originating reference is NOT our edited value.
+        assert entry.get("reference") != "EDITED-REF-999"
+
+        # Build an edited copy: change the reference + the first line's quantity.
+        edited = dict(entry)
+        edited["reference"] = "EDITED-REF-999"
+        edited_lines = [dict(li) for li in entry["line_items"]]
+        edited_lines[0]["qty"] = 77
+        edited_lines[0]["quantity"] = 77
+        edited["line_items"] = edited_lines
+
+        # Guard: a save_draft must NEVER instantiate the Tally writer.
+        with _patch.object(
+            writer_mod.TallyWriter, "__init__",
+            side_effect=AssertionError("save_draft must not write to Tally"),
+        ):
+            sd = await ac.post(
+                "/api/chat/voucher-action",
+                json={
+                    "action": "save_draft",
+                    "entry": edited,
+                    "company": "Test Co",
+                    "session_id": "db-save-draft",
+                    "workspace_id": ws_id,
+                    "conversation_id": conv_id,
+                },
+                headers=headers,
+            )
+        assert sd.status_code == 200, sd.text
+        body = sd.json()
+        assert body["data"]["type"] == "voucher_draft_saved", body
+        assert body["data"]["entry_id"] == entry["id"]
+
+        # NO audit row was created.
+        rows = await _voucher_entries(file_id)
+        assert rows == [], f"save_draft must not create a VoucherEntry row, got {rows}"
+
+        # Reload: the persisted card entry now carries the EDITED reference + qty,
+        # and the status is still 'draft'.
+        reloaded = await _reload_card_entry(ac, headers, ws_id, conv_id)
+        assert reloaded["reference"] == "EDITED-REF-999", reloaded
+        assert reloaded["status"] == "draft", reloaded
+        assert reloaded["line_items"][0]["qty"] == 77, reloaded["line_items"][0]
+
+
+@pytest.mark.asyncio
+async def test_db_save_draft_no_conversation_id_is_graceful_noop(db_app):
+    """save_draft with no conversation_id must return success without persisting
+    (deferred-creation edge) rather than 400 — the local state still holds."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "SaveDraftNoConv Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        up = await _upload(ac, headers, "purchase_goods_inr", ws_id, conv_id, "goods")
+        entry = dict(up.json()["data"]["entries"][0])
+        entry["reference"] = "WONT-PERSIST"
+
+        sd = await ac.post(
+            "/api/chat/voucher-action",
+            json={
+                "action": "save_draft",
+                "entry": entry,
+                "company": "Test Co",
+                "session_id": "db-save-draft-noconv",
+                "workspace_id": ws_id,
+                # conversation_id intentionally omitted
+            },
+            headers=headers,
+        )
+        assert sd.status_code == 200, sd.text
+        assert sd.json()["data"]["type"] == "voucher_draft_saved"
+
+        # The originating card was NOT mutated (graceful no-op).
+        reloaded = await _reload_card_entry(ac, headers, ws_id, conv_id)
+        assert reloaded["reference"] != "WONT-PERSIST", reloaded
+
+
+# ---------------------------------------------------------------------------
+# REFRESH ROUND-TRIP tests (CLAUDE.md § "Test reality, not an ideal" rule 7).
+#
+# Re-fetch the conversation exactly as rehydration does (GET endpoint → messages
+# ordered by created_at) and assert the WHOLE user-visible state survived: the
+# card's key fields (incl. line-item qty/rate, GST, voucher_type) AND status AND
+# the result/assistant messages AND message counts. Covers the goods/line-item
+# card, the silent edit→reload, duplicate-block→reload, reclassify→write→reload,
+# and the edit→write→reload chain at the Group B (voucher-type) surface.
+# ---------------------------------------------------------------------------
+
+
+async def _reload_messages(ac, headers, ws_id, conv_id):
+    reload = await ac.get(
+        f"/api/workspaces/{ws_id}/conversations/{conv_id}", headers=headers,
+    )
+    assert reload.status_code == 200, reload.text
+    return reload.json()["messages"]
+
+
+def _review_cards(messages):
+    return [
+        m for m in messages
+        if m["role"] == "assistant"
+        and isinstance(m["data"], dict)
+        and m["data"].get("type") == "voucher_review"
+    ]
+
+
+def _result_msgs(messages, data_type):
+    return [
+        m for m in messages
+        if m["role"] == "assistant"
+        and isinstance(m["data"], dict)
+        and m["data"].get("type") == data_type
+    ]
+
+
+@pytest.mark.asyncio
+async def test_db_refresh_roundtrip_goods_card_line_items_intact(db_app):
+    """(a) Upload a goods purchase → reload: the card carries ALL its key fields —
+    party, amount, voucher_type, reference/invoice_number, GST, and line-item
+    qty/rate — not just one attribute, status='draft'."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "RTGoods Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        up = await _upload(ac, headers, "purchase_goods_inr", ws_id, conv_id, "goods")
+        assert up.status_code == 200, up.text
+        live = up.json()["data"]["entries"][0]
+        assert live.get("line_items"), "fixture must carry line items"
+
+        cards = _review_cards(await _reload_messages(ac, headers, ws_id, conv_id))
+        assert len(cards) == 1
+        e = cards[0]["data"]["entries"][0]
+
+        # WHOLE-state assertion across the card.
+        assert e["voucher_type"] == "Purchase"
+        assert e["party_ledger"] == live["party_ledger"]
+        assert e["amount"] == live["amount"]
+        assert e["status"] == "draft"
+        # GST survived.
+        if live.get("gst_entries"):
+            assert e["gst_entries"] == live["gst_entries"]
+        # Line items survived with qty + rate intact (served card uses "qty").
+        assert len(e["line_items"]) == len(live["line_items"])
+        assert e["line_items"][0]["qty"] == live["line_items"][0]["qty"]
+        assert e["line_items"][0]["rate"] == live["line_items"][0]["rate"]
+        # No terminal message yet.
+        assert not _result_msgs(
+            await _reload_messages(ac, headers, ws_id, conv_id), "voucher_written"
+        )
+
+
+@pytest.mark.asyncio
+async def test_db_refresh_roundtrip_save_draft_whole_state_no_message(db_app):
+    """(b) Edit (save_draft) → reload: EVERY edited field persisted (reference AND
+    line-item qty AND narration), status stays 'draft', and NO assistant chat
+    message was added (save_draft is silent) — and the card count stays at one."""
+    from unittest.mock import patch as _patch
+    from backend.tally_bridge import writer as writer_mod
+
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "RTDraft Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        up = await _upload(ac, headers, "purchase_goods_inr", ws_id, conv_id, "goods")
+        entry = up.json()["data"]["entries"][0]
+
+        edited = dict(entry)
+        edited["reference"] = "RT-DRAFT-REF-321"
+        edited["narration"] = "RT edited narration"
+        edited_lines = [dict(li) for li in entry["line_items"]]
+        edited_lines[0]["qty"] = 88
+        edited_lines[0]["quantity"] = 88
+        edited["line_items"] = edited_lines
+
+        with _patch.object(
+            writer_mod.TallyWriter, "__init__",
+            side_effect=AssertionError("save_draft must not write to Tally"),
+        ):
+            sd = await ac.post(
+                "/api/chat/voucher-action",
+                json={
+                    "action": "save_draft",
+                    "entry": edited,
+                    "company": "Test Co",
+                    "session_id": "rt-draft",
+                    "workspace_id": ws_id,
+                    "conversation_id": conv_id,
+                },
+                headers=headers,
+            )
+        assert sd.status_code == 200, sd.text
+        assert sd.json()["data"]["type"] == "voucher_draft_saved"
+
+        messages = await _reload_messages(ac, headers, ws_id, conv_id)
+        cards = _review_cards(messages)
+        assert len(cards) == 1
+        e = cards[0]["data"]["entries"][0]
+        # Every edited field survived.
+        assert e["reference"] == "RT-DRAFT-REF-321"
+        assert e["narration"] == "RT edited narration"
+        assert e["line_items"][0]["quantity"] == 88
+        assert e["status"] == "draft"
+        # Silent: NO draft-saved assistant message persisted.
+        assert not _result_msgs(messages, "voucher_draft_saved")
+
+
+@pytest.mark.asyncio
+async def test_db_refresh_roundtrip_duplicate_block_card_and_message(db_app):
+    """(e) Duplicate block → reload: the second (duplicate) entry is NOT written,
+    its duplicate/error assistant message persisted exactly once, and that card
+    remains in a non-written state."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "RTDup Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        entry_payload = {
+            "id": "rt-dup-1",
+            "voucher_type": "Purchase",
+            "date": "20260210",
+            "debit_ledger": "Purchase - Electronics",
+            "credit_ledger": "Acme Supplies",
+            "party_ledger": "Acme Supplies",
+            "amount": 5000.0,
+            "narration": "Purchase from Acme",
+            "gst_entries": [],
+            "reference": "RT-INV-DUP-88",
+            "bill_reference": "RT-INV-DUP-88",
+            "conversation_id": conv_id,
+        }
+
+        with patch(
+            "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+            new=AsyncMock(return_value={"success": True, "last_vch_id": "301", "created": 1}),
+        ):
+            first = await ac.post(
+                "/api/chat/voucher-action",
+                json={"action": "approve", "entry": dict(entry_payload),
+                      "company": "Test Co", "session_id": "rt-dup",
+                      "workspace_id": ws_id, "conversation_id": conv_id},
+                headers=headers,
+            )
+            assert first.status_code == 200, first.text
+            assert first.json()["data"]["type"] == "voucher_written", first.text
+
+            second = dict(entry_payload)
+            second["id"] = "rt-dup-2"
+            dup = await ac.post(
+                "/api/chat/voucher-action",
+                json={"action": "approve", "entry": second,
+                      "company": "Test Co", "session_id": "rt-dup",
+                      "workspace_id": ws_id, "conversation_id": conv_id},
+                headers=headers,
+            )
+        assert dup.status_code == 200, dup.text
+        assert dup.json()["data"]["type"] == "voucher_error", dup.text
+        assert "duplicate" in dup.json()["message"].lower()
+
+        messages = await _reload_messages(ac, headers, ws_id, conv_id)
+        # The duplicate-block message persisted exactly once.
+        errors = [m for m in _result_msgs(messages, "voucher_error")
+                  if "duplicate" in m["content"].lower()]
+        assert len(errors) == 1, f"expected 1 duplicate message, got {len(errors)}"
+        # Exactly one write succeeded (one voucher_written result message).
+        assert len(_result_msgs(messages, "voucher_written")) == 1
+
+
+@pytest.mark.asyncio
+async def test_db_refresh_roundtrip_reclassify_then_write(db_app):
+    """(f) Reclassify then write → reload: Vision says Payment; user reclassifies
+    to Purchase (persisted via save_draft — the production sequence: inline edit
+    fires save_draft, THEN "Write to Tally" fires approve) and writes. The
+    reloaded card reflects the NEW voucher_type AND status 'written', and the
+    success result message persisted exactly once."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "RTReclass Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        up = await _upload(ac, headers, "payment_petty_cash_inr", ws_id, conv_id, "petty")
+        entry = up.json()["data"]["entries"][0]
+        file_id = up.json()["data"]["file_id"]
+        assert entry["voucher_type"] == "Payment"
+
+        edited = _write_entry(
+            entry, file_id, conv_id,
+            voucher_type="Purchase",
+            party_ledger="Croma Electronics",
+            credit_ledger="Croma Electronics",
+            debit_ledger="Purchase - Office Supplies",
+            bill_reference="RT-RECLASS-1",
+            is_new_ledger=False,
+        )
+
+        # Production sequence step 1: inline reclassify is persisted via save_draft
+        # (this is what swaps the WHOLE entry into the card, incl. voucher_type).
+        sd = await ac.post(
+            "/api/chat/voucher-action",
+            json={"action": "save_draft", "entry": edited, "company": "Test Co",
+                  "session_id": "rt-reclass", "workspace_id": ws_id,
+                  "conversation_id": conv_id},
+            headers=headers,
+        )
+        assert sd.status_code == 200, sd.text
+        assert sd.json()["data"]["type"] == "voucher_draft_saved"
+
+        # Production sequence step 2: "Write to Tally" fires approve.
+        w = await ac.post(
+            "/api/chat/voucher-action",
+            json={"action": "approve", "entry": edited, "company": "Test Co",
+                  "session_id": "rt-reclass", "workspace_id": ws_id},
+            headers=headers,
+        )
+        assert w.status_code == 200, w.text
+        assert w.json()["data"]["type"] == "voucher_written", w.text
+
+        messages = await _reload_messages(ac, headers, ws_id, conv_id)
+        cards = _review_cards(messages)
+        assert len(cards) == 1
+        e = cards[0]["data"]["entries"][0]
+        assert e["voucher_type"] == "Purchase", (
+            f"reload shows the original Payment, not reclassified: {e.get('voucher_type')!r}"
+        )
+        assert e["status"] == "written", e
+        assert len(_result_msgs(messages, "voucher_written")) == 1
+
+
+@pytest.mark.asyncio
+async def test_db_refresh_roundtrip_edit_then_write_shows_edited_values(db_app):
+    """(g) The full chain that bit the user, at the Group B surface: upload goods
+    purchase → save_draft with edited reference + line-item qty → approve(write
+    success) → reload → the WRITTEN card shows the EDITED values (not the original
+    upload values), status 'written', and the success message present once."""
+    async with AsyncClient(transport=ASGITransport(app=db_app), base_url="http://test") as ac:
+        token, _ = await _register_and_get_token(ac)
+        ws_id = await _create_workspace(ac, token, "RTEditWrite Co")
+        conv_id = await _create_conversation(ac, token, ws_id)
+        headers = {"Authorization": f"Bearer {token}"}
+
+        up = await _upload(ac, headers, "purchase_goods_inr", ws_id, conv_id, "goods")
+        entry = up.json()["data"]["entries"][0]
+        file_id = up.json()["data"]["file_id"]
+        entry_id = entry["id"]
+
+        # save_draft: edit reference + first line qty.
+        edited = dict(entry)
+        edited["reference"] = "RT-GB-EDIT-777"
+        edited_lines = [dict(li) for li in entry["line_items"]]
+        edited_lines[0]["qty"] = 33
+        edited_lines[0]["quantity"] = 33
+        edited["line_items"] = edited_lines
+        sd = await ac.post(
+            "/api/chat/voucher-action",
+            json={"action": "save_draft", "entry": edited, "company": "Test Co",
+                  "session_id": "rt-gb-editwrite", "workspace_id": ws_id,
+                  "conversation_id": conv_id},
+            headers=headers,
+        )
+        assert sd.status_code == 200, sd.text
+        assert sd.json()["data"]["type"] == "voucher_draft_saved"
+
+        # approve(write) the edited entry.
+        write_payload = _write_entry(edited, file_id, conv_id)
+        write_payload["id"] = entry_id
+        w = await ac.post(
+            "/api/chat/voucher-action",
+            json={"action": "approve", "entry": write_payload, "company": "Test Co",
+                  "session_id": "rt-gb-editwrite", "workspace_id": ws_id},
+            headers=headers,
+        )
+        assert w.status_code == 200, w.text
+        assert w.json()["data"]["type"] == "voucher_written", w.text
+
+        messages = await _reload_messages(ac, headers, ws_id, conv_id)
+        cards = _review_cards(messages)
+        assert len(cards) == 1
+        e = cards[0]["data"]["entries"][0]
+        assert e["reference"] == "RT-GB-EDIT-777", (
+            f"reload shows original (not edited) reference: {e.get('reference')!r}"
+        )
+        assert e["line_items"][0]["quantity"] == 33, e["line_items"][0]
+        assert e["status"] == "written", e
+        assert len(_result_msgs(messages, "voucher_written")) == 1

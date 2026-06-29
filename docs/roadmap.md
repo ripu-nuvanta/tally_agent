@@ -76,6 +76,28 @@ The documented **Group B** (`specs/2026-04-12-group-b-voucher-types-design.md`) 
   `specs/2026-06-12-connect-modal-improvements-design.md`; review `code-review-connect-modal-improvements-2026-06-12.md`.
   Tests: 363 FE unit; rewrote 2 stale connect-company Playwright specs + added connect-company-steps (9 × 3 viewports).
 
+### Write-flow edit fixes + edit-history + file_id linkage (2026-06-29)
+
+- **Classifier company-anchoring** ✅ **Committed locally (`1735e8c` on `feat/connect-modal-improvements`).**
+  Vision prompt anchors purchase-vs-sales to the workspace's own company; hierarchy-aware ledger matching
+  (parties under custom sub-groups like National/Local Creditors now match instead of being flagged new);
+  existence-safe `create_ledger` (name+parent match, company-scoped, fail-safe); party ledgers `is_billwise`.
+  Spec `specs/2026-06-19-classifier-company-anchoring-design.md`; review `code-review-write-flow-fixes-2026-06-19.md`.
+- **Edit-flow correctness (manual-testing-driven)** ✅ **Committed locally (`1735e8c`).**
+  Edit **Save** = local merge (no premature Tally write); draft edits + voucher-action result messages now
+  **persist across page refresh** (new `save_draft` action + `_update_persisted_voucher_entry` + `_persist_action_response`);
+  inventory edit **recomputes total + GST** proportionally; upload intro text no longer restates a mutable amount/date.
+- **Edit-history version trail** ✅ **Committed locally (`1735e8c`).** New `voucher_entry_revisions` table (migration **004**)
+  snapshots every version (`upload → edit → write`); original stays immutable in `uploaded_files.extracted_data`,
+  current card in `messages.data`, full trail queryable in `voucher_entry_revisions`.
+- **`file_id` linkage** ✅ **Committed locally (`1735e8c`).** Migration **005** + entry now carries `file_id`, so
+  original (`uploaded_files`) ↔ card ↔ revisions ↔ audit (`voucher_entries`) all join on `file_id`. Backfill
+  `scripts/backfill_entry_file_id.py` for legacy rows.
+- **Tests** ✅ refresh round-trip (act→reload→re-assert whole state), mock-Claude + live-Tally e2e
+  (`tests/e2e_live/test_db_write_live.py`, 5 voucher types, with cleanup), eval sales/DN/CN anchoring scenarios.
+  2,006 automated passing (1,625 backend + 381 frontend, 0 failures). Doc rules added: CLAUDE.md "Test reality" +
+  "refresh round-trip"; LESSONS.md §15 (ISINVOICE GST recompute, bill-wise reporting).
+
 **Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 verified (DN/CN creation, company list, party-voucher filter). Two extra probes: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import, so reconciliation needs Tally's dedicated mechanism.
 
 ### Next up — from the write-flow code analysis (`docs/code-analysis-write-flow-2026-06-09.md`)

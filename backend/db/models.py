@@ -128,6 +128,31 @@ class VoucherEntry(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, onupdate=_utcnow)
 
 
+class VoucherEntryRevision(Base):
+    """Immutable, queryable version trail for a review-card voucher entry.
+
+    One row per version (1-based, monotonic per conversation+entry). Captures a
+    FULL snapshot of the entry at three points: 'upload' (v1), 'edit' (each
+    save_draft), and 'write' (on successful Tally write). DB-only audit — never
+    shown in the chat UI.
+    """
+    __tablename__ = "voucher_entry_revisions"
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)
+    # Hard link back to the original upload. Nullable: legacy rows + entries
+    # without a file_id (e.g. no-conversation save_draft) lack it.
+    file_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("uploaded_files.id"), nullable=True, index=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("workspaces.id"), nullable=False, index=True)
+    conversation_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("conversations.id"), nullable=False)
+    entry_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    version_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    source: Mapped[str] = mapped_column(String(20), nullable=False)
+    voucher_data: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    __table_args__ = (
+        Index("ix_voucher_revisions_conv_entry_version", "conversation_id", "entry_id", "version_no"),
+    )
+
+
 class LedgerMapping(Base):
     __tablename__ = "ledger_mappings"
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=_uuid)

@@ -9,6 +9,7 @@ import {
   debitNoteINR,
   creditNoteINR,
   purchaseInventory,
+  lineItemMatched,
   availableLedgers,
   availablePaymentLedgers,
   availableSupplierLedgers,
@@ -291,6 +292,106 @@ describe("VoucherEditForm — inventory line items", () => {
     );
     // no line_items emitted for accounting-only
     expect(onSave.mock.calls[0][0].line_items).toBeUndefined();
+  });
+});
+
+describe("VoucherEditForm — inventory total/GST recompute", () => {
+  // BUG: editing a line qty/rate recomputed the LINE amount but left the
+  // voucher-level `amount` and `gst_entries` stale. Saving wrote an
+  // inconsistent voucher to Tally (stock grid posts the new qty, but the
+  // party/bill leg uses the stale total). Fix: on inventory save, recompute
+  // taxable = Σ(line amounts), scale gst proportionally, amount = taxable+gst.
+  it("recomputes total + GST proportionally when inventory qty edited", () => {
+    const onSave = vi.fn();
+    // Single-line inventory entry matching the worked example: qty 4, rate 3200,
+    // amount 12800; CGST 1152 + SGST 1152; entry.amount 15104.
+    const entry: VoucherEntry = {
+      ...purchaseInventory,
+      amount: 15104,
+      gst_entries: [
+        { ledger: "INPUT CGST", amount: 1152 },
+        { ledger: "INPUT SGST", amount: 1152 },
+      ],
+      line_items: [
+        {
+          ...lineItemMatched,
+          qty: 4,
+          rate: 3200,
+          amount: 12800,
+        },
+      ],
+    };
+    renderForm(entry, onSave);
+    fireEvent.change(screen.getByLabelText("Qty 1"), { target: { value: "41" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.line_items[0].amount).toBe(131200);
+    expect(updates.gst_entries).toEqual([
+      { ledger: "INPUT CGST", amount: 11808 },
+      { ledger: "INPUT SGST", amount: 11808 },
+    ]);
+    expect(updates.amount).toBe(154816);
+  });
+
+  it("recompute also triggers on rate edit", () => {
+    const onSave = vi.fn();
+    // qty 4, rate 3200 → taxable 12800, gst 1152+1152, amount 15104.
+    // Double the rate → 6400 → taxable 25600, scale 2 → gst 2304+2304,
+    // amount = 25600 + 4608 = 30208.
+    const entry: VoucherEntry = {
+      ...purchaseInventory,
+      amount: 15104,
+      gst_entries: [
+        { ledger: "INPUT CGST", amount: 1152 },
+        { ledger: "INPUT SGST", amount: 1152 },
+      ],
+      line_items: [{ ...lineItemMatched, qty: 4, rate: 3200, amount: 12800 }],
+    };
+    renderForm(entry, onSave);
+    fireEvent.change(screen.getByLabelText("Rate 1"), { target: { value: "6400" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.line_items[0].amount).toBe(25600);
+    expect(updates.gst_entries).toEqual([
+      { ledger: "INPUT CGST", amount: 2304 },
+      { ledger: "INPUT SGST", amount: 2304 },
+    ]);
+    expect(updates.amount).toBe(30208);
+  });
+
+  it("non-inventory entry: amount stays the user-edited value", () => {
+    const onSave = vi.fn();
+    renderForm(purchaseUSD, onSave);
+    fireEvent.change(screen.getByLabelText("INR Amount"), { target: { value: "9000" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    expect(updates.amount).toBe(9000);
+    expect(updates.line_items).toBeUndefined();
+  });
+
+  it("old_taxable<=0 guard: keeps gst, still sets amount = taxable + gst", () => {
+    const onSave = vi.fn();
+    // entry.amount equals Σ(gst) so old_taxable = 0 → divide-by-zero guard.
+    const entry: VoucherEntry = {
+      ...purchaseInventory,
+      amount: 2304,
+      gst_entries: [
+        { ledger: "INPUT CGST", amount: 1152 },
+        { ledger: "INPUT SGST", amount: 1152 },
+      ],
+      line_items: [{ ...lineItemMatched, qty: 4, rate: 3200, amount: 12800 }],
+    };
+    renderForm(entry, onSave);
+    fireEvent.change(screen.getByLabelText("Qty 1"), { target: { value: "5" } });
+    fireEvent.click(screen.getByText("Save"));
+    const updates = onSave.mock.calls[0][0];
+    // taxable = 5 * 3200 = 16000; gst kept as-is (1152+1152=2304); amount=18304.
+    expect(updates.line_items[0].amount).toBe(16000);
+    expect(updates.gst_entries).toEqual([
+      { ledger: "INPUT CGST", amount: 1152 },
+      { ledger: "INPUT SGST", amount: 1152 },
+    ]);
+    expect(updates.amount).toBe(18304);
   });
 });
 

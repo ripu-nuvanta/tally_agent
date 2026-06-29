@@ -50,6 +50,14 @@ class TestMasterBuilders:
         assert "<NATIVEMETHOD>Parent</NATIVEMETHOD>" in xml
         assert "<NATIVEMETHOD>ClosingBalance</NATIVEMETHOD>" in xml
 
+    def test_list_ledgers_with_company_has_svcurrentcompany(self):
+        xml = build_list_ledgers(company="ABC Pvt Ltd")
+        assert "<SVCurrentCompany>ABC Pvt Ltd</SVCurrentCompany>" in xml
+
+    def test_list_ledgers_without_company_omits_svcurrentcompany(self):
+        xml = build_list_ledgers()
+        assert "SVCurrentCompany" not in xml
+
     def test_list_groups_has_group_type(self):
         xml = build_list_groups()
         assert "<TYPE>Group</TYPE>" in xml

@@ -1,0 +1,36 @@
+name: "Write Flow — Credit Note / Company Anchoring"
+description: >
+  Validates the company-anchored Vision classifier on a SALES RETURN. Upload a
+  CREDIT NOTE issued BY our own company ("Bharat Traders Private Limited", the eval
+  books) to a CUSTOMER counterparty ("Sunrise Construction Ltd") for goods the
+  customer returned. A credit note reduces what that customer owes us. Because the
+  document is anchored to our company, the classifier must read it as a CREDIT NOTE
+  with the CUSTOMER as the party (never our own company), then approve ("Write to
+  Tally"). In live mode the write hits the configured Tally instance; prefer the
+  *_mock variant for routine runs to avoid live-Tally pollution.
+tags: [write_flow, upload, voucher, credit_note, company_anchoring]
+
+turns:
+  - type: upload
+    file_path: tests/eval/fixtures/credit_note.png
+    message: "Please record this credit note"
+    expect:
+      voucher:
+        voucher_type: Credit Note
+        party: "Sunrise Construction Ltd"
+        amount: 11800
+        cgst: 900
+        sgst: 900
+        date: "22-Jun-2025"
+      checks:
+        - "classified as Credit Note (sales return — reduces what the customer owes us)"
+        - "party is the customer counterparty Sunrise Construction Ltd, NOT Bharat Traders Private Limited"
+        - "amount 11800"
+        - "CGST 900 + SGST 900 split out"
+
+  - type: action
+    button: "Write to Tally"
+    expect:
+      checks:
+        - "voucher written confirmation shown"
+        - "no error"

@@ -1,6 +1,8 @@
-import { render, screen, fireEvent } from "@testing-library/react";
+import { useState } from "react";
+import { render, screen, fireEvent, within } from "@testing-library/react";
 import { describe, it, expect, vi } from "vitest";
 import VoucherReviewCard from "../components/VoucherReviewCard";
+import type { VoucherEntry } from "../components/VoucherReviewCard";
 import {
   paymentINR,
   purchaseINR,
@@ -95,6 +97,16 @@ describe("VoucherReviewCard — collapsed states", () => {
     expect(screen.getByText(/Indirect Expenses/)).toBeInTheDocument();
   });
 
+  it("new-ledger warning for a Purchase names the PARTY ledger, not debit_ledger", () => {
+    // purchaseINR: party_ledger "Acme Supplies" vs debit_ledger "Purchase Accounts"
+    renderCard({ ...purchaseINR, is_new_ledger: true, suggested_parent: null });
+    const warning = screen.getByText(/will be created/);
+    expect(warning).toHaveTextContent(
+      'New ledger "Acme Supplies" will be created under "Sundry Creditors"',
+    );
+    expect(warning).not.toHaveTextContent("Purchase Accounts");
+  });
+
   it("renders amber warnings", () => {
     renderCard({ ...paymentINR, warnings: ["Total mismatch"] });
     expect(screen.getByText("Total mismatch")).toBeInTheDocument();
@@ -180,6 +192,30 @@ describe("VoucherReviewCard — progressive disclosure", () => {
     fireEvent.click(screen.getByText("Show details"));
     expect(screen.queryByText(/@ ₹/)).not.toBeInTheDocument();
   });
+
+  it("expanded new-ledger label for a Purchase names the PARTY ledger, not debit_ledger", () => {
+    // Mirrors the collapsed-card assertion: VoucherReviewExpanded (reached by
+    // expanding the card) must label the new ledger with the PARTY ledger
+    // ("Acme Supplies" under "Sundry Creditors"), never the debit_ledger
+    // ("Purchase Accounts"). suggested_parent:null exercises the fallback.
+    renderCard({
+      ...purchaseINR,
+      is_new_ledger: true,
+      party_ledger: "Acme Supplies",
+      debit_ledger: "Purchase Accounts",
+      suggested_parent: null,
+    });
+    fireEvent.click(screen.getByText("Show details"));
+    const expanded = screen.getByTestId(`voucher-expanded-${purchaseINR.id}`);
+    // The label lives in the expanded view (which also renders a Debit field
+    // showing the debit_ledger). Scope the assertion to the new-ledger label so
+    // the unrelated Debit row's "Purchase Accounts" doesn't mask a regression.
+    const label = within(expanded).getByText(/will be created/);
+    expect(label).toHaveTextContent(
+      'New ledger "Acme Supplies" will be created under "Sundry Creditors"',
+    );
+    expect(label).not.toHaveTextContent("Purchase Accounts");
+  });
 });
 
 describe("VoucherReviewCard — inventory line items", () => {
@@ -242,6 +278,67 @@ describe("VoucherReviewCard — inventory line items", () => {
       screen.getByTestId(`voucher-line-items-${purchaseInventoryDuplicate.id}`),
     ).toBeInTheDocument();
     expect(screen.getByText("Write to Tally").closest("button")).toBeDisabled();
+  });
+});
+
+describe("VoucherReviewCard — edit then write preserves party-direction label", () => {
+  // The card does not own its entry state (the parent does, like ChatWindow).
+  // This controlled wrapper merges onEdit updates into the entry so the card
+  // re-renders with the edited entry — reproducing the real edit→write flow.
+  function ControlledCard({ initial }: { initial: VoucherEntry }) {
+    const [entry, setEntry] = useState(initial);
+    const [approvedId, setApprovedId] = useState<string | null>(null);
+    return (
+      <>
+        <VoucherReviewCard
+          entries={[entry]}
+          availableLedgers={availableLedgers}
+          availablePaymentLedgers={availablePaymentLedgers}
+          availableSupplierLedgers={availableSupplierLedgers}
+          availableCustomerLedgers={availableCustomerLedgers}
+          onApprove={(id) => setApprovedId(id)}
+          onDiscard={noop}
+          onEdit={(_id, updates) => setEntry((e) => ({ ...e, ...updates }))}
+        />
+        {approvedId && <div data-testid="approved-id">{approvedId}</div>}
+      </>
+    );
+  }
+
+  it("editing a new-ledger Purchase then writing keeps the PARTY ledger label (Sundry Creditors)", () => {
+    const entry: VoucherEntry = {
+      ...purchaseINR,
+      is_new_ledger: true,
+      party_ledger: "Acme Supplies",
+      debit_ledger: "Purchase Accounts",
+      suggested_parent: null,
+    };
+    render(<ControlledCard initial={entry} />);
+
+    // Before edit: collapsed label names the party under Sundry Creditors.
+    const before = screen.getByText(/will be created/);
+    expect(before).toHaveTextContent(
+      'New ledger "Acme Supplies" will be created under "Sundry Creditors"',
+    );
+
+    // Edit a field (supplier invoice no.) and save.
+    fireEvent.click(screen.getByText("Edit Entry"));
+    const invoiceField = screen.getByLabelText("Supplier Invoice No.") as HTMLInputElement;
+    fireEvent.change(invoiceField, { target: { value: "PINV-FLOW-99" } });
+    fireEvent.click(screen.getByText("Save"));
+
+    // After edit: the entry carries the new reference but the new-ledger label
+    // is unchanged — still the party ledger, not the debit_ledger.
+    expect(screen.getByText("PINV-FLOW-99")).toBeInTheDocument();
+    const after = screen.getByText(/will be created/);
+    expect(after).toHaveTextContent(
+      'New ledger "Acme Supplies" will be created under "Sundry Creditors"',
+    );
+    expect(after).not.toHaveTextContent("Purchase Accounts");
+
+    // Write to Tally still fires for the (edited) entry.
+    fireEvent.click(screen.getByText("Write to Tally"));
+    expect(screen.getByTestId("approved-id")).toHaveTextContent(purchaseINR.id);
   });
 });
 

@@ -463,6 +463,169 @@ def test_valid_party_ledger_still_writes(client):
     m.assert_awaited_once()
 
 
+def test_new_ledger_purchase_creates_party_not_debit_ledger(client):
+    """BUG fix: for a Purchase with is_new_ledger, the ledger to create is the
+    PARTY (Sundry Creditors), NOT the debit_ledger (the purchase account, which
+    already exists). Using debit_ledger re-parents the existing purchase ledger.
+    """
+    entry = {
+        "id": "nl1", "voucher_type": "Purchase", "date": "20260210",
+        "debit_ledger": "Purchase - Electronics", "credit_ledger": "Brand New Supplier Co",
+        "party_ledger": "Brand New Supplier Co", "amount": 15340.0,
+        "narration": "Purchase from new supplier", "gst_entries": [],
+        "is_new_ledger": True, "suggested_parent": "Sundry Creditors",
+        "bill_reference": "NS-1", "bill_type": "New Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_ledger, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_purchase_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ):
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    m_ledger.assert_awaited_once()
+    kw = m_ledger.await_args.kwargs
+    name = kw.get("name", m_ledger.await_args.args[0] if m_ledger.await_args.args else None)
+    parent = kw.get("parent", m_ledger.await_args.args[1] if len(m_ledger.await_args.args) > 1 else None)
+    assert name == "Brand New Supplier Co"
+    assert name != "Purchase - Electronics"
+    assert parent == "Sundry Creditors"
+    # BUG fix: party ledger (Sundry Creditor) MUST be bill-wise so the payable
+    # carries a bill reference (New Ref) for future "pay against bill".
+    is_billwise = kw.get(
+        "is_billwise",
+        m_ledger.await_args.args[2] if len(m_ledger.await_args.args) > 2 else None,
+    )
+    assert is_billwise is True
+
+
+def test_new_ledger_sales_creates_billwise_party(client):
+    """BUG fix: for a Sales with is_new_ledger, the new PARTY ledger (Sundry
+    Debtor) MUST be bill-wise so the receivable carries a bill reference."""
+    entry = {
+        "id": "nl_s", "voucher_type": "Sales", "date": "20260210",
+        "debit_ledger": "Brand New Customer Co", "credit_ledger": "Sales - Electronics",
+        "party_ledger": "Brand New Customer Co", "amount": 15340.0,
+        "narration": "Sale to new customer", "gst_entries": [],
+        "is_new_ledger": True, "suggested_parent": "Sundry Debtors",
+        "bill_reference": "NS-1", "bill_type": "New Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_ledger, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_sales_voucher_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ):
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    m_ledger.assert_awaited_once()
+    kw = m_ledger.await_args.kwargs
+    parent = kw.get("parent", m_ledger.await_args.args[1] if len(m_ledger.await_args.args) > 1 else None)
+    assert parent == "Sundry Debtors"
+    is_billwise = kw.get(
+        "is_billwise",
+        m_ledger.await_args.args[2] if len(m_ledger.await_args.args) > 2 else None,
+    )
+    assert is_billwise is True
+
+
+def test_new_ledger_debit_note_creates_billwise_party(client):
+    """BUG fix: Debit Note with is_new_ledger creates a Sundry Creditor party
+    ledger that MUST be bill-wise."""
+    entry = {
+        "id": "nl_dn", "voucher_type": "Debit Note", "date": "20260210",
+        "debit_ledger": "Brand New Supplier Co", "credit_ledger": "Purchase Returns",
+        "party_ledger": "Brand New Supplier Co", "amount": 1000.0,
+        "narration": "Debit note to new supplier", "gst_entries": [],
+        "is_new_ledger": True, "suggested_parent": "Sundry Creditors",
+        "bill_reference": "DN-1", "bill_type": "New Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_ledger, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_debit_note",
+        new=AsyncMock(return_value=_SUCCESS),
+    ):
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    m_ledger.assert_awaited_once()
+    kw = m_ledger.await_args.kwargs
+    is_billwise = kw.get(
+        "is_billwise",
+        m_ledger.await_args.args[2] if len(m_ledger.await_args.args) > 2 else None,
+    )
+    assert is_billwise is True
+
+
+def test_new_ledger_credit_note_creates_billwise_party(client):
+    """BUG fix: Credit Note with is_new_ledger creates a Sundry Debtor party
+    ledger that MUST be bill-wise."""
+    entry = {
+        "id": "nl_cn", "voucher_type": "Credit Note", "date": "20260210",
+        "debit_ledger": "Sales Returns", "credit_ledger": "Brand New Customer Co",
+        "party_ledger": "Brand New Customer Co", "amount": 1000.0,
+        "narration": "Credit note to new customer", "gst_entries": [],
+        "is_new_ledger": True, "suggested_parent": "Sundry Debtors",
+        "bill_reference": "CN-1", "bill_type": "New Ref",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_ledger, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_credit_note",
+        new=AsyncMock(return_value=_SUCCESS),
+    ):
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    m_ledger.assert_awaited_once()
+    kw = m_ledger.await_args.kwargs
+    is_billwise = kw.get(
+        "is_billwise",
+        m_ledger.await_args.args[2] if len(m_ledger.await_args.args) > 2 else None,
+    )
+    assert is_billwise is True
+
+
+def test_new_ledger_payment_still_creates_debit_ledger(client):
+    """For a Payment with is_new_ledger, the new ledger remains the expense
+    (debit) ledger — the mapping describes the debit side for Payment."""
+    entry = {
+        "id": "nl2", "voucher_type": "Payment", "date": "20260404",
+        "debit_ledger": "Brand New Expense", "credit_ledger": "Cash",
+        "amount": 500.0, "narration": "New expense", "gst_entries": [],
+        "is_new_ledger": True, "suggested_parent": "Indirect Expenses",
+    }
+    with patch(
+        "backend.tally_bridge.writer.TallyWriter.create_ledger",
+        new=AsyncMock(return_value=_SUCCESS),
+    ) as m_ledger, patch(
+        "backend.tally_bridge.writer.TallyWriter.create_payment_voucher",
+        new=AsyncMock(return_value=_SUCCESS),
+    ):
+        resp = _post(client, entry)
+    assert resp.status_code == 200, resp.text
+    assert resp.json()["data"]["type"] == "voucher_written"
+    m_ledger.assert_awaited_once()
+    kw = m_ledger.await_args.kwargs
+    name = kw.get("name", m_ledger.await_args.args[0] if m_ledger.await_args.args else None)
+    assert name == "Brand New Expense"
+    # Regression guard: expense (Indirect Expenses) ledgers must stay
+    # non-bill-wise.
+    is_billwise = kw.get(
+        "is_billwise",
+        m_ledger.await_args.args[2] if len(m_ledger.await_args.args) > 2 else None,
+    )
+    assert is_billwise is not True
+
+
 def test_fx_no_rate_guard_blocks_foreign_write(client):
     """Foreign-currency entry with no rate must NOT call any writer."""
     entry = {

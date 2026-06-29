@@ -83,7 +83,16 @@ class LedgerMapper:
 
         Override this or inject a real AI client for production use.
         """
-        parent = "Indirect Expenses" if voucher_type == "Payment" else "Sundry Creditors"
+        # Normalize so both the production lowercase Vision doc_type values
+        # ("payment", "sales", "credit_note", "purchase", "debit_note") AND any
+        # capitalized/spaced caller ("Payment", "Sales", "Credit Note") match.
+        vt = (voucher_type or "").strip().lower().replace(" ", "_")
+        if vt == "payment":
+            parent = "Indirect Expenses"
+        elif vt in ("sales", "credit_note"):
+            parent = "Sundry Debtors"  # party is a customer
+        else:  # purchase, debit_note, anything else
+            parent = "Sundry Creditors"  # party is a supplier
         return MappingResult(
             ledger_name=vendor_name,
             source="ai_suggestion",

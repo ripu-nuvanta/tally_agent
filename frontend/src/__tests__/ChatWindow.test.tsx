@@ -10,10 +10,10 @@ const mockedApi = vi.mocked(api);
 
 Element.prototype.scrollIntoView = vi.fn();
 
-function renderWithProvider() {
+function renderWithProvider(props?: { workspaceId?: string; conversationId?: string }) {
   return render(
     <SessionProvider>
-      <ChatWindow />
+      <ChatWindow {...props} />
     </SessionProvider>
   );
 }
@@ -410,6 +410,249 @@ describe("ChatWindow", () => {
       });
       // Terminal state: the write button is gone.
       expect(screen.queryByRole("button", { name: /Write to Tally/ })).not.toBeInTheDocument();
+    });
+  });
+
+  describe("voucher action persistence in deferred-creation flow (BUG — conversation_id lost)", () => {
+    const voucherReviewData = {
+      type: "voucher_review",
+      entries: [
+        {
+          id: "v-defer",
+          voucher_type: "Purchase",
+          date: "20260404",
+          vendor_name: "Croma",
+          amount: 8350,
+          debit_ledger: "Purchase Accounts",
+          credit_ledger: "Croma",
+          narration: "Croma",
+          gst_entries: [],
+          status: "draft",
+          warnings: [],
+          is_new_ledger: false,
+          suggested_parent: null,
+        },
+      ],
+      available_ledgers: ["Purchase Accounts"],
+      available_payment_ledgers: ["Croma"],
+    };
+
+    it("passes the just-created conversation id to voucherAction when uploading into a fresh chat", async () => {
+      const user = userEvent.setup();
+      const newConv = { id: "new-conv-123", title: null, tag: null, created_at: "2026-01-01", updated_at: "2026-01-01" };
+      mockedApi.createConversation.mockResolvedValue(newConv);
+      mockedApi.sendChatWithFile.mockResolvedValue({
+        message: "Review this entry",
+        data: voucherReviewData as never,
+        session_id: "sess-w",
+      });
+      // After deferred creation the parent navigates and re-renders the window
+      // with the new conversationId — getConversation is hit by the load effect.
+      mockedApi.getConversation.mockResolvedValue({
+        id: "new-conv-123",
+        title: null,
+        tag: null,
+        messages: [],
+      } as never);
+      mockedApi.voucherAction.mockResolvedValue({
+        message: "Voucher written to Tally.",
+        data: { type: "voucher_written", entry_id: "v-defer" } as never,
+        session_id: "sess-w",
+      });
+
+      function Wrapper(props: { conversationId?: string; workspaceId?: string }) {
+        return (
+          <SessionProvider>
+            <ChatWindow workspaceName="Test" {...props} />
+          </SessionProvider>
+        );
+      }
+
+      // Fresh chat: conversationId prop is undefined (deferred creation).
+      const { rerender } = render(<Wrapper workspaceId="ws-1" />);
+
+      const fileInput = screen.getByTestId("file-input");
+      const file = new File(["x"], "invoice.png", { type: "image/png" });
+      await user.upload(fileInput, file);
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() => {
+        expect(screen.getByText("Review this entry")).toBeInTheDocument();
+      });
+
+      // CRITICAL — reproduce the live timing: the parent navigates to /c/:id
+      // after deferred creation, so the conversationId prop updates to the new
+      // id. This fires the load effect that nulls justCreatedConvRef, exposing
+      // the stale-closure bug (the prior test skipped this rerender and so
+      // falsely passed).
+      await act(async () => {
+        rerender(<Wrapper workspaceId="ws-1" conversationId="new-conv-123" />);
+      });
+
+      await user.click(screen.getByRole("button", { name: /Write to Tally/ }));
+
+      await waitFor(() => {
+        expect(mockedApi.voucherAction).toHaveBeenCalled();
+      });
+      // The 6th positional arg is conversationId — it must be the deferred-created
+      // id, NOT "" (which makes the backend silently skip persistence).
+      expect(mockedApi.voucherAction).toHaveBeenCalledWith(
+        "approve",
+        expect.anything(),
+        expect.anything(),
+        expect.anything(),
+        "ws-1",
+        "new-conv-123",
+      );
+    });
+  });
+
+  describe("voucher edit save (BUG — Save must be a LOCAL merge, not a backend write)", () => {
+    const inventoryVoucherReview = {
+      type: "voucher_review",
+      entries: [
+        {
+          id: "v-edit",
+          voucher_type: "Purchase",
+          date: "20260410",
+          vendor_name: "Acme Supplies",
+          party_name: "Acme Supplies",
+          party_ledger: "Acme Supplies",
+          is_party_ledger: true,
+          amount: 13570,
+          debit_ledger: "Purchase Accounts",
+          credit_ledger: "Acme Supplies",
+          narration: "Purchase — Acme Supplies",
+          reference: "OLD-123",
+          gst_entries: [],
+          status: "draft",
+          warnings: [],
+          is_new_ledger: false,
+          suggested_parent: null,
+          is_inventory: true,
+          line_items: [
+            {
+              description: "A4 Paper Ream 500 sheets",
+              qty: 4,
+              rate: 250,
+              unit: "Nos",
+              gst_rate: 18,
+              amount: 1000,
+              matched_item: "A4 Paper Ream",
+              create_new: false,
+              stock_name: "A4 Paper Ream 500 sheets",
+              stock_group: "Office Supplies",
+              hsn: "4802",
+              ledger: "Purchase Accounts",
+            },
+          ],
+          available_stock_items: ["A4 Paper Ream", "Stapler"],
+          default_stock_group: "Office Supplies",
+        },
+      ],
+      available_ledgers: ["Purchase Accounts"],
+      available_payment_ledgers: ["Cash"],
+      available_supplier_ledgers: ["Acme Supplies", "Beta Traders"],
+      available_customer_ledgers: ["Globex Ltd"],
+    };
+
+    async function uploadInventoryVoucher(user: ReturnType<typeof userEvent.setup>) {
+      mockedApi.sendChatWithFile.mockResolvedValue({
+        message: "Review this entry",
+        data: inventoryVoucherReview as never,
+        session_id: "sess-edit",
+      });
+      const fileInput = screen.getByTestId("file-input");
+      const file = new File(["x"], "invoice.png", { type: "image/png" });
+      await user.upload(fileInput, file);
+      await user.click(screen.getByRole("button", { name: "Send message" }));
+      await waitFor(() => {
+        expect(screen.getByText("Review this entry")).toBeInTheDocument();
+      });
+    }
+
+    it("merges edited reference + qty locally on Save without writing to the backend", async () => {
+      const user = userEvent.setup();
+      // Save persists the draft (no Tally write) — stub it so the fire-and-forget
+      // call resolves; the assertion below is that the WRITE path is untouched.
+      mockedApi.saveVoucherDraft.mockResolvedValue({
+        message: "Draft saved.",
+        data: { type: "voucher_draft_saved", entry_id: "v-edit" } as never,
+        session_id: "sess-edit",
+      });
+      renderWithProvider();
+      await uploadInventoryVoucher(user);
+
+      // Pre-edit: the card shows the OLD invoice number.
+      expect(screen.getByText("OLD-123")).toBeInTheDocument();
+
+      // Open the edit form, change the Supplier Invoice No. and a line-item qty.
+      await user.click(screen.getByRole("button", { name: "Edit Entry" }));
+      const invoiceField = screen.getByLabelText("Supplier Invoice No.");
+      await user.clear(invoiceField);
+      await user.type(invoiceField, "NEW-999");
+      const qtyField = screen.getByLabelText("Qty 1");
+      await user.clear(qtyField);
+      await user.type(qtyField, "9");
+
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      // (a) The card re-renders with the NEW invoice number and NEW qty.
+      await waitFor(() => {
+        expect(screen.getByText("NEW-999")).toBeInTheDocument();
+      });
+      expect(screen.queryByText("OLD-123")).not.toBeInTheDocument();
+      // New qty visible in the expanded line table.
+      await user.click(screen.getByText("Show details"));
+      const table = screen.getByTestId("voucher-line-items-v-edit");
+      expect(table).toHaveTextContent("9 Nos");
+
+      // (b) The entry stays a draft — action buttons are back.
+      expect(screen.getByRole("button", { name: /Write to Tally/ })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Edit Entry" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Discard" })).toBeInTheDocument();
+
+      // (c) Save must NOT round-trip to the WRITE path (no premature write).
+      expect(mockedApi.voucherAction).not.toHaveBeenCalled();
+    });
+
+    it("persists the edited draft via save_draft (no write) on Save", async () => {
+      const user = userEvent.setup();
+      mockedApi.saveVoucherDraft.mockResolvedValue({
+        message: "Draft saved.",
+        data: { type: "voucher_draft_saved", entry_id: "v-edit" } as never,
+        session_id: "sess-edit",
+      });
+      mockedApi.createConversation.mockResolvedValue({
+        id: "new-conv-edit", title: null, tag: null,
+        created_at: "2026-01-01", updated_at: "2026-01-01",
+      });
+      renderWithProvider({ workspaceId: "ws-1" });
+      await uploadInventoryVoucher(user);
+
+      await user.click(screen.getByRole("button", { name: "Edit Entry" }));
+      const invoiceField = screen.getByLabelText("Supplier Invoice No.");
+      await user.clear(invoiceField);
+      await user.type(invoiceField, "NEW-999");
+      const qtyField = screen.getByLabelText("Qty 1");
+      await user.clear(qtyField);
+      await user.type(qtyField, "9");
+
+      await user.click(screen.getByRole("button", { name: "Save" }));
+
+      // Draft IS persisted with the merged edits…
+      await waitFor(() => {
+        expect(mockedApi.saveVoucherDraft).toHaveBeenCalled();
+      });
+      const savedEntry = mockedApi.saveVoucherDraft.mock.calls[0][0] as Record<
+        string,
+        unknown
+      >;
+      expect(savedEntry.id).toBe("v-edit");
+      expect(savedEntry.reference).toBe("NEW-999");
+      expect((savedEntry.line_items as Array<Record<string, unknown>>)[0].qty).toBe(9);
+
+      // …but the WRITE path is never hit.
+      expect(mockedApi.voucherAction).not.toHaveBeenCalled();
     });
   });
 
