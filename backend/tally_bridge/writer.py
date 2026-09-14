@@ -12,17 +12,23 @@ Pre-flight validation runs locally before any Tally call:
 """
 from __future__ import annotations
 
+import logging
+
 from backend.tally_bridge.client import TallyClient
 from backend.tally_bridge.import_builder import (
     build_cancel_voucher,
+    build_create_credit_note,
+    build_create_debit_note,
     build_create_group,
     build_create_gst_ledger,
     build_create_journal_voucher,
     build_create_ledger,
     build_create_payment_voucher,
     build_create_purchase_voucher,
+    build_create_purchase_voucher_ledger,
     build_create_receipt_voucher,
     build_create_sales_voucher,
+    build_create_sales_voucher_ledger,
     build_create_stock_group,
     build_create_stock_item,
     build_create_unit,
@@ -30,7 +36,10 @@ from backend.tally_bridge.import_builder import (
     build_delete_ledger,
     build_delete_voucher,
 )
+from backend.tally_bridge.queries.masters import list_ledgers
 from backend.tally_bridge.response_parser import parse_import_response
+
+logger = logging.getLogger(__name__)
 
 
 class ValidationError(Exception):
@@ -60,6 +69,27 @@ def _assert_created(parsed: dict, op: str) -> dict:
     if parsed.get("created", 0) < 1:
         raise TallyWriteError(
             f"{op} did not create an entity (CREATED=0). parsed={parsed}"
+        )
+    return parsed
+
+
+def _assert_master_persisted(parsed: dict, op: str) -> dict:
+    """Like ``_assert_created`` but for idempotent master pre-flight creates.
+
+    A master CREATE for an entity that ALREADY EXISTS (e.g. a stock group seeded
+    earlier) makes Tally answer CREATED=0, ALTERED=1, ERRORS=0, EXCEPTIONS=0 —
+    benign ("already there"). For these idempotent masters that is success, not a
+    silent drop. So accept CREATED>=1 OR ALTERED>=1 (with no errors/exceptions).
+    A genuine drop (CREATED=0 AND ALTERED=0) or any ERRORS/EXCEPTIONS still raises.
+
+    Voucher creates keep using the strict ``_assert_created`` (CREATED>=1).
+    """
+    if not parsed.get("success", False):
+        msg = parsed.get("error_message") or "Tally returned EXCEPTIONS=1 with no error message"
+        raise TallyWriteError(f"{op} silently failed: {msg} (parsed={parsed})")
+    if parsed.get("created", 0) < 1 and parsed.get("altered", 0) < 1:
+        raise TallyWriteError(
+            f"{op} did not persist an entity (CREATED=0, ALTERED=0). parsed={parsed}"
         )
     return parsed
 
@@ -111,6 +141,12 @@ class TallyWriter:
                 total = sum(float(e["amount"]) for e in valid_entries)
                 if abs(total) > 0.01:
                     errors.append(f"Ledger entries do not balance (sum={total:.2f})")
+                # Magnitude invariant: an all-zero voucher balances (0 == 0) but is
+                # never valid — e.g. a foreign entry with no resolvable rate yields
+                # amount 0. Reject it (defense in depth for the FX no-rate guard).
+                gross = sum(abs(float(e["amount"])) for e in valid_entries)
+                if gross <= 0.01:
+                    errors.append("Voucher total must be greater than zero")
             except (TypeError, ValueError) as e:
                 errors.append(f"Invalid amount in ledger entries: {e}")
 
@@ -133,6 +169,8 @@ class TallyWriter:
         gst_entries: list[dict] | None = None,
         known_ledgers: list[str] | None = None,
         bill_allocations: list[dict] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
     ) -> dict:
         """Create a Payment voucher in Tally with validation."""
         # Build voucher dict for validation
@@ -164,6 +202,8 @@ class TallyWriter:
             company=self.company,
             gst_entries=gst_entries,
             bill_allocations=bill_allocations,
+            reference=reference,
+            reference_date=reference_date,
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_payment_voucher")
@@ -173,7 +213,51 @@ class TallyWriter:
         state: str | None = None, gst_reg_type: str | None = None,
         opening_balance: float | None = None, is_billwise: bool = False,
     ) -> dict:
-        """Create a ledger master in Tally."""
+        """Create a ledger master in Tally.
+
+        Existence-safe (defense in depth): Tally treats a create-import for a
+        name that already exists as an ALTER, which silently RE-PARENTS the
+        existing ledger — live data corruption. So we check existence first
+        (case-insensitive, scoped to the same company we write to) and:
+          - skip the post (benign already_exists) when a same-name ledger
+            exists under the SAME parent — safe idempotent no-op;
+          - FAIL when a same-name ledger exists under a DIFFERENT parent —
+            skipping would reuse the wrong-group ledger and a CREATE would
+            re-parent/corrupt it;
+          - otherwise post + assert.
+        A read-side error must never block a valid write: on read failure we
+        log a warning and fall through to the post path (the post +
+        _assert_master_persisted already guard persistence).
+        """
+        name_lower = (name or "").strip().lower()
+        parent_lower = (parent or "").strip().lower()
+        try:
+            existing = await list_ledgers(self.client, company=self.company)
+        except Exception as exc:  # read-side failure must not block the write
+            logger.warning(
+                "create_ledger existence pre-check failed for %r (proceeding to post): %s",
+                name, exc,
+            )
+        else:
+            for l in existing:
+                if (l.name or "").strip().lower() != name_lower:
+                    continue
+                existing_parent = (l.parent_group or "").strip()
+                if existing_parent.lower() == parent_lower:
+                    return {
+                        "success": True, "created": 0, "altered": 0,
+                        "already_exists": True, "errors": 0, "exceptions": 0,
+                        "deleted": 0, "last_vch_id": None, "error_message": None,
+                    }
+                return {
+                    "success": False, "created": 0, "altered": 0,
+                    "already_exists": False, "errors": 1, "exceptions": 0,
+                    "deleted": 0, "last_vch_id": None,
+                    "error_message": (
+                        f"Ledger '{name}' already exists under "
+                        f"'{existing_parent}', cannot create under '{parent}'."
+                    ),
+                }
         xml = build_create_ledger(
             name, parent, self.company, gstin=gstin, state=state,
             gst_reg_type=gst_reg_type, opening_balance=opening_balance,
@@ -186,13 +270,13 @@ class TallyWriter:
         """Create a unit of measure in Tally."""
         xml = build_create_unit(name, formal_name, self.company)
         response_xml = await self.client.post_xml(xml)
-        return _assert_created(parse_import_response(response_xml), "create_unit")
+        return _assert_master_persisted(parse_import_response(response_xml), "create_unit")
 
     async def create_stock_group(self, name: str, parent: str = "") -> dict:
         """Create a stock group in Tally."""
         xml = build_create_stock_group(name, parent, self.company)
         response_xml = await self.client.post_xml(xml)
-        return _assert_created(parse_import_response(response_xml), "create_stock_group")
+        return _assert_master_persisted(parse_import_response(response_xml), "create_stock_group")
 
     async def create_stock_item(
         self, name: str, group: str, uom: str, opening_qty: float,
@@ -203,7 +287,7 @@ class TallyWriter:
             name, group, uom, opening_qty, opening_rate, hsn_code, gst_rate, self.company,
         )
         response_xml = await self.client.post_xml(xml)
-        return _assert_created(parse_import_response(response_xml), "create_stock_item")
+        return _assert_master_persisted(parse_import_response(response_xml), "create_stock_item")
 
     async def create_gst_ledger(self, name: str, duty_head: str) -> dict:
         """Create a GST duty ledger in Tally."""
@@ -266,6 +350,168 @@ class TallyWriter:
         )
         response_xml = await self.client.post_xml(xml)
         return _assert_created(parse_import_response(response_xml), "create_journal_voucher")
+
+    async def create_debit_note(
+        self, date: str, party_ledger: str, purchase_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
+    ) -> dict:
+        """Create a Debit Note in Tally with validation (mirrors Purchase polarity).
+
+        Validation legs: purchase ledger debit (-base), GST input debit (-),
+        party credit (+amount). These balance to zero.
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": purchase_ledger, "amount": -base_amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": -gst["amount"], "is_debit": True})
+        entries.append({"ledger": party_ledger, "amount": amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Debit Note", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_debit_note(
+            date=date, party_ledger=party_ledger, purchase_ledger=purchase_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_debit_note")
+
+    async def create_credit_note(
+        self, date: str, party_ledger: str, sales_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
+    ) -> dict:
+        """Create a Credit Note in Tally with validation (mirrors Sales polarity).
+
+        Validation legs: party debit (-amount), GST output credit (+),
+        sales ledger credit (+base). These balance to zero.
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": party_ledger, "amount": -amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": gst["amount"], "is_debit": False})
+        entries.append({"ledger": sales_ledger, "amount": base_amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Credit Note", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_credit_note(
+            date=date, party_ledger=party_ledger, sales_ledger=sales_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_credit_note")
+
+    async def create_purchase_voucher_ledger(
+        self, date: str, party_ledger: str, purchase_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
+    ) -> dict:
+        """Create a ledger-only Purchase voucher (Group B document path).
+
+        Mirrors Purchase polarity: purchase ledger debit (-base), GST input
+        debit (-), party (Sundry Creditors) credit (+amount). These balance to
+        zero. Distinct from the stock-based ``create_purchase_voucher`` (seeder).
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": purchase_ledger, "amount": -base_amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": -gst["amount"], "is_debit": True})
+        entries.append({"ledger": party_ledger, "amount": amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Purchase", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_purchase_voucher_ledger(
+            date=date, party_ledger=party_ledger, purchase_ledger=purchase_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_purchase_voucher_ledger")
+
+    async def create_sales_voucher_ledger(
+        self, date: str, party_ledger: str, sales_ledger: str,
+        amount: float, narration: str,
+        gst_entries: list[dict] | None = None,
+        bill_ref: str | None = None,
+        known_ledgers: list[str] | None = None,
+        reference: str | None = None,
+        reference_date: str | None = None,
+    ) -> dict:
+        """Create a ledger-only Sales voucher (Group B document path).
+
+        Mirrors Sales polarity: party (Sundry Debtors) debit (-amount), GST
+        output credit (+), sales ledger credit (+base). These balance to zero.
+        Distinct from the stock-based ``create_sales_voucher`` (seeder).
+        """
+        gst_total = sum(e["amount"] for e in (gst_entries or []))
+        base_amount = amount - gst_total
+        entries = [
+            {"ledger": party_ledger, "amount": -amount, "is_debit": True},
+        ]
+        for gst in gst_entries or []:
+            entries.append({"ledger": gst["ledger"], "amount": gst["amount"], "is_debit": False})
+        entries.append({"ledger": sales_ledger, "amount": base_amount, "is_debit": False})
+
+        errors = self.validate_voucher(
+            {"voucher_type": "Sales", "date": date, "narration": narration,
+             "ledger_entries": entries},
+            known_ledgers,
+        )
+        if errors:
+            raise ValidationError(errors)
+
+        xml = build_create_sales_voucher_ledger(
+            date=date, party_ledger=party_ledger, sales_ledger=sales_ledger,
+            amount=amount, narration=narration, company=self.company,
+            gst_entries=gst_entries, bill_ref=bill_ref,
+            reference=reference, reference_date=reference_date,
+        )
+        response_xml = await self.client.post_xml(xml)
+        return _assert_created(parse_import_response(response_xml), "create_sales_voucher_ledger")
 
     async def create_group(self, name: str, parent: str) -> dict:
         """Create an account group in Tally."""

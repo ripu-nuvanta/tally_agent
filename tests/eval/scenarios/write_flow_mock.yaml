@@ -1,0 +1,33 @@
+name: "Write Flow — Purchase Invoice (Mock)"
+description: >
+  Mock-mode variant. Upload a purchase invoice image, verify the agent extracts
+  the voucher correctly into the review card (type, party, amount, GST split),
+  then approve ("Write to Tally") against the mock Tally handler. Vision is real;
+  the write hits the mock handler so live Tally is not polluted.
+tags: [write_flow, upload, voucher, purchase, gst, mock]
+
+turns:
+  - type: upload
+    file_path: tests/eval/fixtures/purchase_invoice.png
+    message: "Please record this purchase invoice"
+    expect:
+      voucher:
+        voucher_type: Purchase
+        party: "Bharat Paper Supplies"
+        amount: 5900
+        cgst: 450
+        sgst: 450
+        date: "15-Jun-2025"
+      checks:
+        - "classified as Purchase (billed to our company Bharat Traders Private Limited)"
+        - "party is Bharat Paper Supplies"
+        - "party is the supplier counterparty, NOT Bharat Traders Private Limited"
+        - "amount 5900"
+        - "CGST 450 + SGST 450 split out"
+
+  - type: action
+    button: "Write to Tally"
+    expect:
+      checks:
+        - "voucher written confirmation shown"
+        - "no error"

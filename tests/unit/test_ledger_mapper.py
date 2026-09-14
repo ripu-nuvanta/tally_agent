@@ -93,6 +93,83 @@ class TestFuzzyMapping:
         assert result.suggested_parent is not None
 
 
+class TestAiSuggestParentDirection:
+    """The suggested parent for a new party ledger must be direction-aware:
+    Payment → expense; Sales/Credit Note → customer (Sundry Debtors);
+    Purchase/Debit Note → supplier (Sundry Creditors).
+
+    PRIMARY cases use the REAL production values the orchestrator passes:
+    the lowercase/underscored Vision doc_type strings ("payment", "sales",
+    "credit_note", "purchase", "debit_note"). The capitalized/spaced cases
+    below prove the normalization is case-insensitive.
+    """
+
+    # --- Production values: lowercase Vision doc_type (what the orchestrator
+    # actually passes via mapper.find_mapping(party, doc_type, ...)) ---
+
+    @pytest.mark.asyncio
+    async def test_payment_doctype_parent_is_indirect_expenses(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Random Shop", "payment", tally_ledgers=[])
+        assert result.suggested_parent == "Indirect Expenses"
+
+    @pytest.mark.asyncio
+    async def test_sales_doctype_parent_is_sundry_debtors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Sunrise Construction Ltd", "sales", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Debtors"
+
+    @pytest.mark.asyncio
+    async def test_credit_note_doctype_parent_is_sundry_debtors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Sunrise Construction Ltd", "credit_note", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Debtors"
+
+    @pytest.mark.asyncio
+    async def test_purchase_doctype_parent_is_sundry_creditors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Acme Suppliers", "purchase", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Creditors"
+
+    @pytest.mark.asyncio
+    async def test_debit_note_doctype_parent_is_sundry_creditors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Acme Suppliers", "debit_note", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Creditors"
+
+    # --- Case-insensitivity: capitalized / spaced callers must also work ---
+
+    @pytest.mark.asyncio
+    async def test_payment_capitalized_parent_is_indirect_expenses(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Random Shop", "Payment", tally_ledgers=[])
+        assert result.suggested_parent == "Indirect Expenses"
+
+    @pytest.mark.asyncio
+    async def test_sales_capitalized_parent_is_sundry_debtors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Sunrise Construction Ltd", "Sales", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Debtors"
+
+    @pytest.mark.asyncio
+    async def test_credit_note_spaced_parent_is_sundry_debtors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Sunrise Construction Ltd", "Credit Note", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Debtors"
+
+    @pytest.mark.asyncio
+    async def test_purchase_capitalized_parent_is_sundry_creditors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Acme Suppliers", "Purchase", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Creditors"
+
+    @pytest.mark.asyncio
+    async def test_debit_note_spaced_parent_is_sundry_creditors(self):
+        mapper = LedgerMapper()
+        result = await mapper._ai_suggest("Acme Suppliers", "Debit Note", tally_ledgers=[])
+        assert result.suggested_parent == "Sundry Creditors"
+
+
 class TestLearning:
     def test_store_user_correction(self):
         mapper = LedgerMapper()

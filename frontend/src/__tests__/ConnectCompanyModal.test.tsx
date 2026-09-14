@@ -9,7 +9,7 @@ const mockedClient = vi.mocked(await import("../api/client"));
 
 const mockWorkspace = {
   id: "ws-new",
-  name: "My Books",
+  name: "Bharat Traders Pvt Ltd",
   agent_type: "tally",
   config: { tally_company: "Bharat Traders Pvt Ltd" },
   memory: {},
@@ -24,131 +24,301 @@ function renderModal(onClose = vi.fn(), onCreated = vi.fn()) {
 describe("ConnectCompanyModal", () => {
   beforeEach(() => {
     vi.resetAllMocks();
-    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.testConnection.mockResolvedValue({
+      connected: true,
+      companies: ["Bharat Traders Pvt Ltd"],
+    });
+    mockedClient.createWorkspace.mockResolvedValue(mockWorkspace);
   });
 
-  it("renders the form with required fields and buttons", () => {
+  // --- Initial state ---
+  it("renders host + port fields and a Check Connection button, no dropdown", () => {
     renderModal();
     expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
-    expect(screen.getByText("Friendly Name")).toBeInTheDocument();
     expect(screen.getByText("Tally Host")).toBeInTheDocument();
     expect(screen.getByText("Tally Port")).toBeInTheDocument();
-    expect(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Check Connection" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeInTheDocument();
   });
 
-  it("toggles Demo Mode label when checkbox is clicked", async () => {
+  // --- Connecting state ---
+  it("shows a checking label while check-connection is in flight", async () => {
+    let resolve!: (v: { connected: boolean; companies: string[] }) => void;
+    mockedClient.testConnection.mockReturnValue(
+      new Promise((r) => {
+        resolve = r;
+      }),
+    );
     const user = userEvent.setup();
     renderModal();
-
-    // Default: "Connects to live Tally"
-    expect(screen.getByText("Connects to live Tally")).toBeInTheDocument();
-
-    // Click the Demo Mode toggle (visually hidden checkbox)
-    const checkbox = screen.getByRole("checkbox");
-    await user.click(checkbox);
-
-    expect(screen.getByText("Uses sample data")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    expect(screen.getByText("Checking...")).toBeInTheDocument();
+    resolve({ connected: true, companies: ["Bharat Traders Pvt Ltd"] });
+    await waitFor(() =>
+      expect(screen.queryByText("Checking...")).not.toBeInTheDocument(),
+    );
   });
 
-  it("verifies Tally company, creates workspace, shows confirmation, and fires onCreated on Start chat", async () => {
-    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
-    mockedClient.createWorkspace.mockResolvedValue(mockWorkspace);
+  // --- Connected: single company auto-selected ---
+  it("auto-selects a single returned company and enables Create Workspace", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+
+    await waitFor(() =>
+      expect(mockedClient.testConnection).toHaveBeenCalledWith("localhost", 9000),
+    );
+    // Single company shown (read-only confirmation, not a select)
+    expect(screen.getAllByText("Bharat Traders Pvt Ltd").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled();
+  });
+
+  // --- Connected: multiple companies require selection ---
+  it("renders a dropdown for multiple companies and requires a selection", async () => {
+    mockedClient.testConnection.mockResolvedValue({
+      connected: true,
+      companies: ["Bharat Traders Pvt Ltd", "Acme Exports"],
+    });
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+
+    const select = await screen.findByLabelText("Company");
+    expect(select).toBeInTheDocument();
+    // Create disabled until a company is picked
+    expect(screen.getByRole("button", { name: "Create Workspace" })).toBeDisabled();
+
+    await user.selectOptions(select, "Acme Exports");
+    expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled();
+  });
+
+  // --- Connected → create → confirm → onCreated(ws) ---
+  it("creates workspace using the selected company name and fires onCreated", async () => {
     const onCreated = vi.fn();
     const user = userEvent.setup();
     renderModal(vi.fn(), onCreated);
 
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
 
-    await waitFor(() => {
-      expect(mockedClient.getCompanies).toHaveBeenCalledWith({ host: "localhost", port: 9000 });
-    });
-
-    expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
-      expect.objectContaining({
-        name: "My Books",
-        config: expect.objectContaining({ tally_company: "Bharat Traders Pvt Ltd" }),
-      }),
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Bharat Traders Pvt Ltd",
+          config: expect.objectContaining({
+            tally_company: "Bharat Traders Pvt Ltd",
+            mock_mode: false,
+          }),
+        }),
+      ),
     );
 
-    // Confirmation screen
-    await waitFor(() => {
-      expect(screen.getByTestId("connect-confirm-company")).toHaveTextContent("Bharat Traders Pvt Ltd");
-    });
-    expect(screen.getByTestId("connect-confirm-name")).toHaveTextContent("My Books");
-
-    // onCreated not yet called
+    // Confirmation screen, then onCreated on Start chat
+    await waitFor(() =>
+      expect(screen.getByTestId("connect-confirm-company")).toHaveTextContent(
+        "Bharat Traders Pvt Ltd",
+      ),
+    );
     expect(onCreated).not.toHaveBeenCalled();
-
-    // Click Start chat
     await user.click(screen.getByRole("button", { name: "Start chat" }));
-    expect(onCreated).toHaveBeenCalledTimes(1);
     expect(onCreated).toHaveBeenCalledWith(mockWorkspace);
   });
 
-  it("shows error and stays on form when Tally is unreachable", async () => {
-    mockedClient.getCompanies.mockRejectedValue(new Error("Network error"));
-    const onCreated = vi.fn();
-    const user = userEvent.setup();
-    renderModal(vi.fn(), onCreated);
-
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/Check that Tally is running/i)).toBeInTheDocument();
+  // --- Connection failed (error from API) ---
+  it("shows an error message when the connection fails and allows retry", async () => {
+    mockedClient.testConnection.mockResolvedValue({
+      connected: false,
+      companies: [],
+      error: "Connection refused",
     });
-
-    expect(mockedClient.createWorkspace).not.toHaveBeenCalled();
-    // Stays on form
-    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
-    expect(onCreated).not.toHaveBeenCalled();
-  });
-
-  it("shows no-company message (not generic error) when getCompanies returns empty list", async () => {
-    mockedClient.getCompanies.mockResolvedValue({ companies: [] });
-    const onCreated = vi.fn();
-    const user = userEvent.setup();
-    renderModal(vi.fn(), onCreated);
-
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/no company is loaded in Tally/i)).toBeInTheDocument();
-    });
-
-    expect(mockedClient.createWorkspace).not.toHaveBeenCalled();
-    // Stays on form
-    expect(screen.getByRole("button", { name: "Connect" })).toBeInTheDocument();
-    expect(onCreated).not.toHaveBeenCalled();
-  });
-
-  it("passes mock:true to getCompanies when Demo Mode is enabled", async () => {
-    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
-    mockedClient.createWorkspace.mockResolvedValue(mockWorkspace);
     const user = userEvent.setup();
     renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
 
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("checkbox"));
-    await user.click(screen.getByRole("button", { name: "Connect" }));
-
-    await waitFor(() => {
-      expect(mockedClient.getCompanies).toHaveBeenCalledWith({ mock: true });
-    });
+    await waitFor(() =>
+      expect(screen.getByText("Connection refused")).toBeInTheDocument(),
+    );
+    // Retry button still available
+    expect(screen.getByRole("button", { name: "Check Connection" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Company")).not.toBeInTheDocument();
   });
 
-  it("calls onClose when Cancel button is clicked", async () => {
+  // --- Connection failed (thrown error) ---
+  it("shows a fallback error when test-connection throws", async () => {
+    mockedClient.testConnection.mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+
+    await waitFor(() =>
+      expect(screen.getByText(/Could not reach Tally/i)).toBeInTheDocument(),
+    );
+  });
+
+  // --- Mock mode on ---
+  it("auto-fills the fixture company in demo mode without calling testConnection", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("checkbox"));
+
+    // No Check Connection needed; company already selected
+    expect(mockedClient.testConnection).not.toHaveBeenCalled();
+    expect(screen.getAllByText("Bharat Traders Pvt Ltd").length).toBeGreaterThan(0);
+    expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled();
+  });
+
+  // --- Mock mode toggle resets state ---
+  it("resets connection state when demo mode is toggled off", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("checkbox")); // on
+    expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled();
+    await user.click(screen.getByRole("checkbox")); // off
+    expect(screen.getByRole("button", { name: "Check Connection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create Workspace" })).toBeDisabled();
+  });
+
+  it("sets mock_mode true in config when created in demo mode", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("checkbox"));
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          config: expect.objectContaining({ mock_mode: true }),
+        }),
+      ),
+    );
+  });
+
+  it("calls onClose when Cancel is clicked", async () => {
     const onClose = vi.fn();
     const user = userEvent.setup();
     renderModal(onClose);
-
     await user.click(screen.getByRole("button", { name: "Cancel" }));
-
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  // --- Name (nickname) field ---
+  it("shows the optional Name field after a successful check", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    expect(document.querySelector("#connect-name")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument(),
+    );
+    expect(document.querySelector("#connect-name")).toBeInTheDocument();
+  });
+
+  it("shows the Name field in demo mode (connected state)", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument();
+  });
+
+  it("creates workspace with the typed nickname as name", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument(),
+    );
+    await user.type(screen.getByLabelText("Name (optional)"), "My Books");
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "My Books",
+          config: expect.objectContaining({
+            tally_company: "Bharat Traders Pvt Ltd",
+          }),
+        }),
+      ),
+    );
+  });
+
+  it("clears a typed nickname when demo mode is toggled (context switch)", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByLabelText("Name (optional)")).toBeInTheDocument(),
+    );
+    await user.type(screen.getByLabelText("Name (optional)"), "My Books");
+    expect(screen.getByLabelText("Name (optional)")).toHaveValue("My Books");
+
+    // Toggle demo mode on — context switches, nickname should reset.
+    await user.click(screen.getByRole("checkbox"));
+    expect(screen.getByLabelText("Name (optional)")).toHaveValue("");
+
+    // Creating now uses the (mock) company name, not the stale nickname.
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Bharat Traders Pvt Ltd",
+          config: expect.objectContaining({ mock_mode: true }),
+        }),
+      ),
+    );
+  });
+
+  it("creates workspace using the company name when nickname is blank", async () => {
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(mockedClient.createWorkspace).toHaveBeenCalledWith(
+        expect.objectContaining({
+          name: "Bharat Traders Pvt Ltd",
+          config: expect.objectContaining({
+            tally_company: "Bharat Traders Pvt Ltd",
+          }),
+        }),
+      ),
+    );
+  });
+
+  // --- Setup steps on failure ---
+  it("shows the setup steps panel when the check fails (API error)", async () => {
+    mockedClient.testConnection.mockResolvedValue({
+      connected: false,
+      companies: [],
+      error: "Connection refused",
+    });
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("connect-steps")).toBeInTheDocument(),
+    );
+    expect(screen.getByText(/To enable the connection/i)).toBeInTheDocument();
+  });
+
+  it("shows the setup steps panel when the check throws", async () => {
+    mockedClient.testConnection.mockRejectedValue(new Error("boom"));
+    const user = userEvent.setup();
+    renderModal();
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByTestId("connect-steps")).toBeInTheDocument(),
+    );
+  });
+
+  it("does not show the setup steps panel before a failed check", () => {
+    renderModal();
+    expect(screen.queryByTestId("connect-steps")).not.toBeInTheDocument();
   });
 
   it("renders modal with mobile-safe width classes", () => {

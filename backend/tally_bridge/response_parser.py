@@ -414,6 +414,66 @@ def parse_groups(raw_xml: str) -> list[dict]:
     return groups
 
 
+def parse_stock_group_list(raw_xml: str) -> list[str]:
+    """Parse a CustomStockGroupList collection response into group names.
+
+    Mirrors ``parse_company_list`` — each STOCKGROUP yields a name from a child
+    ``<NAME>`` element, the ``NAME`` attribute, or inline text. Nameless entries
+    are skipped.
+    """
+    root = ET.fromstring(sanitize_xml(raw_xml))
+    names: list[str] = []
+    for grp in root.iter("STOCKGROUP"):
+        name = (_get_text(grp, "NAME") or grp.get("NAME", "") or (grp.text or "")).strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def parse_company_list(raw_xml: str) -> list[str]:
+    """Parse a `List of Companies` collection response into company names.
+
+    Handles both the COMPANY element shapes Tally emits (verified probe E7):
+    a child `<NAME>` element, a `NAME` attribute, or inline text. CMPINFO and
+    other envelope sections are ignored — only COMPANY elements are scanned.
+    """
+    root = ET.fromstring(sanitize_xml(raw_xml))
+    names: list[str] = []
+    for comp in root.iter("COMPANY"):
+        name = (_get_text(comp, "NAME") or comp.get("NAME", "") or (comp.text or "")).strip()
+        if name:
+            names.append(name)
+    return names
+
+
+def parse_party_vouchers(raw_xml: str) -> list[dict]:
+    """Parse a party-voucher collection response (verified probe E8).
+
+    Each VOUCHER yields: date, voucher_number, voucher_type, party, reference,
+    amount. Ghost/empty vouchers (no date, number, or type) are skipped.
+    """
+    root = ET.fromstring(sanitize_xml(raw_xml))
+    results: list[dict] = []
+    for v in root.iter("VOUCHER"):
+        date_str = _get_text(v, "DATE")
+        voucher_number = _get_text(v, "VOUCHERNUMBER")
+        voucher_type = _get_text(v, "VOUCHERTYPENAME")
+        party = _get_text(v, "PARTYLEDGERNAME")
+        reference = _get_text(v, "REFERENCE")
+        amount = parse_amount(_get_text(v, "AMOUNT"))
+        if not date_str and not voucher_number and not voucher_type:
+            continue
+        results.append({
+            "date": date_str,
+            "voucher_number": voucher_number,
+            "voucher_type": voucher_type,
+            "party": party,
+            "reference": reference,
+            "amount": amount,
+        })
+    return results
+
+
 def parse_cash_flow(raw_xml: str) -> list[dict]:
     """Parse Cash Flow report — assumed same sibling-pair structure as Trial Balance.
 

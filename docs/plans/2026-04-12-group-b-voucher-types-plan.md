@@ -1,5 +1,11 @@
 # Group B: Multi-Voucher Types Implementation Plan
 
+> **✅ STATUS: COMPLETE — merged to `dev` 2026-06-09.** All tasks (0–16) implemented and shipped; the
+> unticked `- [ ]` checkboxes below are a historical planning artifact (not re-ticked individually).
+> Live-verified end-to-end (real Vision → live Tally → read-back). See `docs/code-review-group-b-2026-06-09.md`,
+> `docs/group-b-task0-probe-results-2026-06-08.md`, and the roadmap. Follow-on slices (GST-on-invoices,
+> DN/CN direction fix, invoice no. + dedup, inventory line items) shipped separately — see roadmap.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Extend the data entry pipeline from Payment-only to 5 voucher types (Payment, Purchase, Sales, Debit Note, Credit Note), add multi-currency extraction, auto-populate workspace company name from Tally, upgrade the review card UI with progressive disclosure, and persist audit trail to DB.

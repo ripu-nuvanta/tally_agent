@@ -10,6 +10,7 @@ import type {
   LoginRequest,
   RegisterRequest,
   TallyModeResponse,
+  TestConnectionResponse,
   WorkspaceData,
 } from "../types";
 
@@ -185,7 +186,7 @@ export async function sendChatWithFile(
   return data;
 }
 
-export type VoucherAction = "approve" | "discard" | "edit";
+export type VoucherAction = "approve" | "discard" | "edit" | "save_draft";
 
 export async function voucherAction(
   action: VoucherAction,
@@ -193,6 +194,7 @@ export async function voucherAction(
   company: string,
   sessionId: string,
   workspaceId: string,
+  conversationId: string,
 ): Promise<ChatResponse> {
   const { data } = await api.post<ChatResponse>("/chat/voucher-action", {
     action,
@@ -200,8 +202,20 @@ export async function voucherAction(
     company,
     session_id: sessionId,
     workspace_id: workspaceId,
+    conversation_id: conversationId,
   });
   return data;
+}
+
+// Persist a voucher card's edited DRAFT to the DB without writing to Tally, so
+// the edits survive a page reload. Thin wrapper over voucherAction("save_draft").
+export async function saveVoucherDraft(
+  entry: Record<string, unknown>,
+  sessionId: string,
+  workspaceId: string,
+  conversationId: string,
+): Promise<ChatResponse> {
+  return voucherAction("save_draft", entry, "", sessionId, workspaceId, conversationId);
 }
 
 export async function getHealth(params?: { host?: string; port?: number }): Promise<HealthResponse> {
@@ -215,6 +229,17 @@ export async function getCompanies(params?: {
   mock?: boolean;
 }): Promise<CompaniesResponse> {
   const { data } = await api.get<CompaniesResponse>("/companies", { params });
+  return data;
+}
+
+export async function testConnection(
+  host: string,
+  port: number,
+): Promise<TestConnectionResponse> {
+  const { data } = await api.post<TestConnectionResponse>("/tally/test-connection", {
+    host,
+    port,
+  });
   return data;
 }
 

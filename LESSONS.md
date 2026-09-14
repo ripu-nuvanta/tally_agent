@@ -296,9 +296,22 @@ Distilled rules for any code path (or agent) that writes to Tally. Most of these
 6. **REFERENCEDATE silent-overwrite check:** Before writing supplier-invoice-date (or analogous external-doc-date), confirm the per-voucher-type "Use supplier invoice date" toggle is ON. If OFF, Tally substitutes the voucher's main `DATE` field — readback alone won't catch it (the value looks plausible). Detection: write a value that differs from voucher DATE, then readback; if readback equals voucher DATE, the toggle is OFF.
 7. **Voucher-type config is Tally-installation-scoped, not company-scoped.** A `.tbk` restored into a different Tally install does not carry the toggles. Fresh installs need toggles set manually before any write that depends on them.
 8. **Sales numbering default ("Automatic") silently overwrites `<VOUCHERNUMBER>`.** Only `Manual` and `Automatic (Manual Override)` honor the supplied number — and the toggle change must be made in the UI (per rule 4).
-9. **Distinguish "data is stored correctly" from "user can see it in UI."** Some fields (e.g. REFERENCE) are stored under any numbering mode but hidden in the UI unless a per-voucher-type F12 display toggle is on. Surface the relevant toggle to the user when behavior is config-dependent.
+9. **Distinguish "data is stored correctly" from "user can see it in UI."** Some fields (e.g. REFERENCE) are stored under any numbering mode but hidden in the UI unless a per-voucher-type F12 display toggle is on. Surface the relevant toggle to the user when behavior is config-dependent. Concretely (live 2026-06-12): **Purchase** vouchers show REFERENCE as "Supplier Invoice No." on the entry screen; **Sales** vouchers hide it unless F12 → "Provide Reference No." is on (it's still written + visible in print/registers). The seeder also mirrors the invoice no into the **Narration** so it's always visible — a useful pattern.
 
-When advising the user, distinguish these two failure modes and surface the relevant Tally config — the agent can't see it without probing.
+### Master-creation & inventory write gotchas (live-discovered 2026-06-11/12)
+
+10. **NEVER send a CREATE for a master that already exists.** Re-importing a `<UNIT>`/`<STOCKGROUP>`/`<STOCKITEM>` `ACTION="Create"` for an existing master makes Tally pop a **blocking modal** that freezes the HTTP gateway — reads keep working, the first such write **times out**, and every subsequent request hangs until the modal is dismissed (a full Tally restart may be needed). Mitigation: list existing masters first (`list_stock_items` → item names + their units/groups; `list_stock_groups` → empty groups too) and create only the genuinely-missing ones. This is the #1 cause of "Tally froze" during inventory writes.
+11. **`created=0, altered=1, errors=0` on a master CREATE = "already exists" (benign).** When Tally *does* respond (vs modal-hanging per #10), treat altered-only as success, not failure. Don't abort the voucher on it.
+12. **A GST-rated stock item REQUIRES an HSN.** Creating a `GSTAPPLICABLE=Applicable` stock item with GST rates but no HSN pops a mandatory "HSN/SAC" modal (freezes per #10). When no HSN is extracted, create the item `GSTAPPLICABLE=Not Applicable` (omit `GSTDETAILS.LIST`/HSN) — the voucher's explicit CGST/SGST/IGST ledger lines still post GST correctly, independent of the item master.
+13. **"Primary" is a reserved stock group name** — creating a group literally named "Primary" can modal. Use a non-reserved default (e.g. "AI Imported Items") and create it on demand.
+14. **Future-dated vouchers are silently dropped / not visible.** A voucher dated after Tally's working date (F2) or outside the open financial year won't post, or won't show in current-period reports. Before writing, set F2 ≥ the voucher date and ensure the period covers it — otherwise use an in-period date. (Same root cause as the seeder's F2 preflight.)
+
+When advising the user, distinguish these failure modes and surface the relevant Tally config — the agent can't see the modal it triggers without the user reading it on screen.
+
+### GST-invoice recompute & bill-wise reporting (live-discovered 2026-06-23)
+
+15. **`ISINVOICE=Yes` + auto-GST makes Tally RE-COMPUTE the bill total, overriding your `BILLALLOCATIONS` amount.** When a Purchase/Sales posts with `<ISINVOICE>Yes</ISINVOICE>` + `Invoice Voucher View` + GST ledger legs (Duties & Taxes), Tally's GST engine re-derives the assessable value and the party/bill total on its side. Live-observed: we POSTed a ₹11,800 gross (₹10,000 + ₹900 CGST + ₹900 SGST) with a `New Ref` bill of ₹11,800 — the **POSTed XML read back correct at every layer** (party `<AMOUNT>` and `<BILLALLOCATIONS><AMOUNT>` both 11,800), yet Tally **stored the bill as ₹9,440** (it back-computed a different assessable; exact 8,000-base derivation inferred from the stock items' own configured GST rates). **Detection:** read back the *bill's pending amount* (`bills_payable`/`bills_receivable`), not just the POSTed XML or `created=1`. **Mitigation:** goods/inventory invoices must go through the **stock-grid writer** (posts qty/rate; Tally computes consistently — live-verified correct), NOT the ledger-invoice writer (`create_*_voucher_ledger`) — that path with explicit GST legs is for **services** (no stock items). Never assert `bill == gross` for an inventory invoice written via the ledger path.
+16. **`bills_payable` / `bills_receivable` only return parties maintained BILL-BY-BILL.** A Sundry Creditor/Debtor with "Maintain balances bill-by-bill" OFF carries its balance **on-account** and never appears in these reports — even with a non-zero closing balance, and even after you post a `New Ref` bill against it (the allocation is silently dropped from the outstanding view). Live-observed: `Acme Computer Distributors Pvt Ltd` had closing ₹25,960 but ₹0 bill-wise pending, while `Bharat Paper Supplies` (bill-wise) showed ₹91,993.60. **Implication for tests/seeders/writers:** any read-back that asserts bill-wise outstanding (payable/receivable delta, "bill present") MUST target a party known to be bill-wise — select one that already appears in `bills_payable`/`_receivable`, don't pick an arbitrary creditor/debtor by group. (This is also why new party ledgers are created `is_billwise=True` — see the write-flow party-ledger path.)
 
 ---
 
@@ -316,3 +329,30 @@ FastAPI's `File`/`Form`/`UploadFile` (used by `/api/chat/upload`) require `pytho
 
 ### Playwright route mocks must account for query strings
 `page.route("**/api/health", ...)` does **not** match `/api/health?host=localhost&port=9000` — Playwright globs don't span the query string. The per-workspace heartbeat badge sends host/port as query params, so the mock never fulfilled and the badge stuck on "Checking…". Use `**/api/health**` (trailing `**`) for any endpoint the frontend calls with query params. Also: for async header badges, add a settle wait (`await expect(badge).not.toContainText("Checking")`) before `toHaveScreenshot` to keep screenshots deterministic.
+
+## 17. DB-mode persistence: every chat-producing endpoint must persist `Message` rows
+
+In DB mode the conversation is rehydrated **solely** from `Message` rows
+(`getConversation` → `GET /workspaces/.../conversations/...`). Anything an endpoint
+returns to the frontend but does **not** write as a `Message` row is lost on refresh/relogin.
+
+- **`/chat/upload` must persist messages.** It originally wrote only an `UploadedFile`
+  audit row, so uploaded `voucher_review` cards vanished on reload. Fix: persist a user
+  `Message` (`"<msg> [filename]"`) + assistant `Message` (`data=result["data"]`), set
+  `conversation.title`/`updated_at`, and `flush()` the user message before the assistant
+  one so the per-row `created_at` default preserves order. (`_chat_db_mode` already does
+  all this — mirror it in any new chat-producing endpoint.)
+- **Persist *state changes* too, and thread `conversation_id` via the REQUEST.**
+  `/chat/voucher-action` must update the originating `voucher_review` Message entry's
+  `status` (→ `"written"`/`"deleted"`) so a written/discarded card doesn't reload as
+  actionable `"draft"`. In-place JSONB mutation needs
+  `sqlalchemy.orm.attributes.flag_modified(msg, "data")` or SQLAlchemy won't detect it.
+  **Gotcha:** the production review-card `entry` dict has **no `conversation_id`** (the
+  orchestrator never adds it, the frontend passes `entry` through unmodified) — so any
+  `entry.get("conversation_id")` gate silently no-ops in production (this had already
+  been silently skipping the `VoucherEntry` audit row). Pass `conversation_id` as an
+  explicit request field and use `request.conversation_id or entry.get(...)`.
+- **Test at the real shape.** A test that injects `conversation_id` *into the entry dict*
+  passes while production no-ops. Pass it via the request body, and add a revert
+  sanity-check (remove the threading → test must fail). See
+  [`docs/code-review-upload-voucher-persistence-2026-06-12.md`](docs/code-review-upload-voucher-persistence-2026-06-12.md).

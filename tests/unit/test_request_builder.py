@@ -1,5 +1,6 @@
 from backend.tally_bridge.request_builder import (
     build_list_companies, build_list_ledgers, build_list_groups, build_list_stock_items,
+    build_list_stock_groups,
     build_trial_balance, build_profit_and_loss, build_balance_sheet,
     build_bills_receivable, build_bills_payable, build_stock_summary,
     build_day_book, build_ledger_vouchers, build_sales_register, build_purchase_register,
@@ -49,6 +50,14 @@ class TestMasterBuilders:
         assert "<NATIVEMETHOD>Parent</NATIVEMETHOD>" in xml
         assert "<NATIVEMETHOD>ClosingBalance</NATIVEMETHOD>" in xml
 
+    def test_list_ledgers_with_company_has_svcurrentcompany(self):
+        xml = build_list_ledgers(company="ABC Pvt Ltd")
+        assert "<SVCurrentCompany>ABC Pvt Ltd</SVCurrentCompany>" in xml
+
+    def test_list_ledgers_without_company_omits_svcurrentcompany(self):
+        xml = build_list_ledgers()
+        assert "SVCurrentCompany" not in xml
+
     def test_list_groups_has_group_type(self):
         xml = build_list_groups()
         assert "<TYPE>Group</TYPE>" in xml
@@ -56,6 +65,16 @@ class TestMasterBuilders:
     def test_list_stock_items_has_stock_type(self):
         xml = build_list_stock_items()
         assert "<TYPE>StockItem</TYPE>" in xml
+
+    def test_list_stock_groups_has_stock_group_type(self):
+        xml = build_list_stock_groups()
+        assert "<TYPE>StockGroup</TYPE>" in xml
+
+    def test_list_stock_groups_collection_has_name_method(self):
+        xml = build_list_stock_groups()
+        assert "<NATIVEMETHOD>Name</NATIVEMETHOD>" in xml
+        assert 'TALLYREQUEST>Export' in xml
+        assert '<TYPE>Collection</TYPE>' in xml
 
 
 class TestReportBuilders:

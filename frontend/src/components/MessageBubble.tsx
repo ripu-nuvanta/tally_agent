@@ -18,10 +18,14 @@ function isTableData(d: unknown): d is TableData {
 interface MessageBubbleProps {
   message: ChatMessage;
   onVoucherAction?: (action: VoucherAction, entry: Record<string, unknown>) => void;
+  // Edit-save: a PURELY LOCAL merge of edited fields into the entry (keeps it a
+  // draft). Distinct from onVoucherAction, which round-trips to the backend and
+  // would perform a premature write if used for Save.
+  onVoucherEdit?: (entryId: string, updates: Partial<VoucherEntry>) => void;
   pendingVoucherAction?: { entryId: string; action: "approve" | "discard" } | null;
 }
 
-export default function MessageBubble({ message, onVoucherAction, pendingVoucherAction }: MessageBubbleProps) {
+export default function MessageBubble({ message, onVoucherAction, onVoucherEdit, pendingVoucherAction }: MessageBubbleProps) {
   const isUser = message.role === "user";
 
   if (message.isLoading) {
@@ -119,6 +123,8 @@ export default function MessageBubble({ message, onVoucherAction, pendingVoucher
               entries={entries}
               availableLedgers={(voucherData.available_ledgers as string[]) || []}
               availablePaymentLedgers={(voucherData.available_payment_ledgers as string[]) || []}
+              availableSupplierLedgers={(voucherData.available_supplier_ledgers as string[]) || []}
+              availableCustomerLedgers={(voucherData.available_customer_ledgers as string[]) || []}
               pendingAction={pendingVoucherAction}
               onApprove={(id) => {
                 const entry = entries.find((e) => e.id === id);
@@ -133,9 +139,10 @@ export default function MessageBubble({ message, onVoucherAction, pendingVoucher
                 }
               }}
               onEdit={(id, updates) => {
-                const entry = entries.find((e) => e.id === id);
-                if (entry && onVoucherAction) {
-                  onVoucherAction("edit", { ...entry, ...updates } as unknown as Record<string, unknown>);
+                // Save is a LOCAL state merge — never a backend write. The user
+                // writes later via "Write to Tally".
+                if (onVoucherEdit) {
+                  onVoucherEdit(id, updates);
                 }
               }}
             />

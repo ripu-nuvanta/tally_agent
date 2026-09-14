@@ -1,0 +1,14 @@
+{
+  "doc_type": "debit_note",
+  "party_name": "Unknown Supplier",
+  "date": "2026-03-20",
+  "total_amount": 1000.00,
+  "original_currency": "INR",
+  "fx_rate": null,
+  "line_items": [
+    {"description": "Damaged goods return", "amount": 1000.00, "quantity": null, "rate": null}
+  ],
+  "gst": null,
+  "payment_mode": null,
+  "original_invoice_ref": null
+}

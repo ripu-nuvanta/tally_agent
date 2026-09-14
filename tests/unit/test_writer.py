@@ -147,6 +147,26 @@ class TestDryRunValidation:
         errors = writer.validate_voucher(voucher, known_ledgers=["Travel", "Cash"])
         assert any("narration" in e.lower() for e in errors)
 
+    def test_all_zero_amount_voucher_fails(self):
+        """A balanced-but-all-zero voucher (e.g. no-rate FX → ₹0) must be rejected.
+
+        Finding 1 (defense in depth): a Payment of 0 is never valid. The entries
+        balance (0 == 0) so the balance check alone passes; the magnitude
+        invariant must catch it.
+        """
+        writer = TallyWriter.__new__(TallyWriter)
+        voucher = {
+            "voucher_type": "Payment",
+            "date": "20260404",
+            "narration": "No-rate USD entry",
+            "ledger_entries": [
+                {"ledger": "Travel Expenses", "amount": 0.0},
+                {"ledger": "Cash", "amount": 0.0},
+            ],
+        }
+        errors = writer.validate_voucher(voucher, known_ledgers=["Travel Expenses", "Cash"])
+        assert any("zero" in e.lower() or "greater than" in e.lower() for e in errors)
+
 
 class TestWriteVoucher:
     @pytest.mark.asyncio
@@ -282,6 +302,25 @@ class TestWriteErrorAssertion:
         assert result["created"] == 1
 
     @pytest.mark.asyncio
+    async def test_create_stock_item_accepts_empty_hsn(self):
+        """Vision often has no HSN — create_stock_item must not raise on empty hsn."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>1</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        result = await writer.create_stock_item(
+            "Generic Widget", group="Electronics", uom="Nos",
+            opening_qty=0, opening_rate=0, hsn_code="", gst_rate=18,
+        )
+        assert result["created"] == 1
+
+    @pytest.mark.asyncio
     async def test_create_sales_voucher_raises_on_silent_drop(self):
         """Specifically the failure mode hit live: voucher silently dropped."""
         class FakeClient:
@@ -301,6 +340,199 @@ class TestWriteErrorAssertion:
                 items=[("HP Laptop 15s", 1, 45000, "Sales - Electronics", "Nos", 18)],
                 narration="X",
             )
+
+
+class TestMasterCreateIdempotentAltered:
+    """BUG 1: a master pre-flight create against an ALREADY-EXISTING master makes
+    Tally answer CREATED=0, ALTERED=1, ERRORS=0, EXCEPTIONS=0. That is benign
+    ("already there") and the master create methods must treat it as success —
+    not raise TallyWriteError on CREATED<1.
+    """
+
+    def _altered_client(self):
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>0</CREATED><ALTERED>1</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        return FakeClient()
+
+    @pytest.mark.asyncio
+    async def test_create_stock_group_accepts_altered_as_success(self):
+        writer = TallyWriter(client=self._altered_client(), company="X")
+        result = await writer.create_stock_group("AI Imported Items", "")
+        assert result["altered"] == 1
+        assert result["created"] == 0
+
+    @pytest.mark.asyncio
+    async def test_create_unit_accepts_altered_as_success(self):
+        writer = TallyWriter(client=self._altered_client(), company="X")
+        result = await writer.create_unit("Nos", "Numbers")
+        assert result["altered"] == 1
+
+    @pytest.mark.asyncio
+    async def test_create_stock_item_accepts_altered_as_success(self):
+        writer = TallyWriter(client=self._altered_client(), company="X")
+        result = await writer.create_stock_item(
+            "Generic Widget", group="Electronics", uom="Nos",
+            opening_qty=0, opening_rate=0, hsn_code="", gst_rate=18,
+        )
+        assert result["altered"] == 1
+
+    @pytest.mark.asyncio
+    async def test_create_stock_group_still_raises_on_nothing_persisted(self):
+        """CREATED=0 AND ALTERED=0 (errors=0) is a genuine silent drop — raise."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<CREATED>0</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError):
+            await writer.create_stock_group("AI Imported Items", "")
+
+    @pytest.mark.asyncio
+    async def test_create_stock_group_still_raises_on_exception(self):
+        """EXCEPTIONS=1 must always raise, even with ALTERED=1."""
+        class FakeClient:
+            async def post_xml(self, xml):
+                return (
+                    '<RESPONSE>'
+                    '<LINEERROR>bad group</LINEERROR>'
+                    '<CREATED>0</CREATED><ALTERED>1</ALTERED><DELETED>0</DELETED>'
+                    '<ERRORS>0</ERRORS><EXCEPTIONS>1</EXCEPTIONS>'
+                    '<LASTVCHID>0</LASTVCHID>'
+                    '</RESPONSE>'
+                )
+        writer = TallyWriter(client=FakeClient(), company="X")
+        with pytest.raises(TallyWriteError):
+            await writer.create_stock_group("AI Imported Items", "")
+
+
+class TestCreateLedgerExistenceSafe:
+    """Part B: create_ledger must never re-parent an existing ledger.
+
+    Tally treats an import for an existing-name ledger as an ALTER, which can
+    re-parent live data. create_ledger must check existence first (via
+    masters.list_ledgers, case-insensitive) and skip the post when present.
+    """
+
+    def _make_ledger(self, name, parent="Sundry Creditors"):
+        from backend.tally_bridge.models import Ledger
+        return Ledger(name=name, parent_group=parent)
+
+    @pytest.mark.asyncio
+    async def test_create_ledger_skips_post_when_already_exists(self, monkeypatch):
+        mock_client = AsyncMock()
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        existing = [self._make_ledger("Purchase - Electronics", "Sundry Creditors")]
+        monkeypatch.setattr(
+            "backend.tally_bridge.writer.list_ledgers",
+            AsyncMock(return_value=existing),
+        )
+        result = await writer.create_ledger(name="Purchase - Electronics", parent="Sundry Creditors")
+        assert result["already_exists"] is True
+        assert result["created"] == 0
+        assert result["altered"] == 0
+        assert result["success"] is True
+        mock_client.post_xml.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_ledger_existence_check_is_case_insensitive(self, monkeypatch):
+        """Both name AND parent comparisons are case-insensitive."""
+        mock_client = AsyncMock()
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        existing = [self._make_ledger("Purchase - Electronics", "Sundry Creditors")]
+        monkeypatch.setattr(
+            "backend.tally_bridge.writer.list_ledgers",
+            AsyncMock(return_value=existing),
+        )
+        result = await writer.create_ledger(name="purchase - electronics", parent="sundry creditors")
+        assert result["already_exists"] is True
+        mock_client.post_xml.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_ledger_conflicts_when_same_name_different_parent(self, monkeypatch):
+        """Same name under a DIFFERENT parent is a real conflict: fail, don't skip, don't post."""
+        mock_client = AsyncMock()
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        existing = [self._make_ledger("Acme Corp", "Sundry Debtors")]
+        monkeypatch.setattr(
+            "backend.tally_bridge.writer.list_ledgers",
+            AsyncMock(return_value=existing),
+        )
+        result = await writer.create_ledger(name="Acme Corp", parent="Sundry Creditors")
+        assert result["success"] is False
+        assert result["already_exists"] is False
+        assert result["errors"] == 1
+        assert "Sundry Debtors" in result["error_message"]
+        assert "Sundry Creditors" in result["error_message"]
+        mock_client.post_xml.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_create_ledger_proceeds_when_existence_read_raises(self, monkeypatch):
+        """#3 fail-safe: a read-side error must NOT block a valid write."""
+        mock_client = AsyncMock()
+        mock_client.post_xml.return_value = (
+            '<RESPONSE>'
+            '<CREATED>1</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+            '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+            '<LASTVCHID>0</LASTVCHID>'
+            '</RESPONSE>'
+        )
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        monkeypatch.setattr(
+            "backend.tally_bridge.writer.list_ledgers",
+            AsyncMock(side_effect=RuntimeError("tally read blew up")),
+        )
+        result = await writer.create_ledger(name="Brand New Co", parent="Sundry Creditors")
+        assert result["created"] >= 1
+        mock_client.post_xml.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_create_ledger_existence_read_scoped_to_company(self, monkeypatch):
+        """#2: existence read must be company-scoped to match the company-scoped write."""
+        mock_client = AsyncMock()
+        mock_client.post_xml.return_value = (
+            '<RESPONSE>'
+            '<CREATED>1</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+            '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+            '<LASTVCHID>0</LASTVCHID>'
+            '</RESPONSE>'
+        )
+        writer = TallyWriter(client=mock_client, company="Bharat Traders")
+        mock_list = AsyncMock(return_value=[])
+        monkeypatch.setattr("backend.tally_bridge.writer.list_ledgers", mock_list)
+        await writer.create_ledger(name="New Co", parent="Sundry Creditors")
+        assert mock_list.await_args.kwargs.get("company") == "Bharat Traders"
+
+    @pytest.mark.asyncio
+    async def test_create_ledger_posts_when_absent(self, monkeypatch):
+        mock_client = AsyncMock()
+        mock_client.post_xml.return_value = (
+            '<RESPONSE>'
+            '<CREATED>1</CREATED><ALTERED>0</ALTERED><DELETED>0</DELETED>'
+            '<ERRORS>0</ERRORS><EXCEPTIONS>0</EXCEPTIONS>'
+            '<LASTVCHID>0</LASTVCHID>'
+            '</RESPONSE>'
+        )
+        writer = TallyWriter(client=mock_client, company="Test Co")
+        existing = [self._make_ledger("Some Other Ledger")]
+        monkeypatch.setattr(
+            "backend.tally_bridge.writer.list_ledgers",
+            AsyncMock(return_value=existing),
+        )
+        result = await writer.create_ledger(name="Brand New Supplier Co", parent="Sundry Creditors")
+        assert result["created"] >= 1
+        mock_client.post_xml.assert_called_once()
 
 
 def _silent_drop_client():
@@ -353,7 +585,7 @@ ALL_CREATE_METHODS = [
 @pytest.mark.parametrize("method,args,kwargs", ALL_CREATE_METHODS,
                          ids=[m[0] for m in ALL_CREATE_METHODS])
 @pytest.mark.asyncio
-async def test_every_create_method_raises_on_silent_drop(method, args, kwargs):
+async def test_every_create_method_raises_on_silent_drop(method, args, kwargs, monkeypatch):
     """Regression guard: every TallyWriter.create_* method must raise
     TallyWriteError on EXCEPTIONS=1/CREATED=0.
 
@@ -361,6 +593,11 @@ async def test_every_create_method_raises_on_silent_drop(method, args, kwargs):
     parsed dict instead of asserting CREATED >= 1. This test ensures every
     create_* method now goes through _assert_created.
     """
+    # create_ledger now does an existence pre-check via list_ledgers; stub it to
+    # "absent" so the silent-drop POST path is exercised (not the existence path).
+    monkeypatch.setattr(
+        "backend.tally_bridge.writer.list_ledgers", AsyncMock(return_value=[]),
+    )
     writer = TallyWriter(client=_silent_drop_client(), company="X")
     fn = getattr(writer, method)
     with pytest.raises(TallyWriteError):

@@ -14,7 +14,9 @@ function renderConversationList(
   conversations = mockConversations,
   activeConversationId?: string,
   onSelect = vi.fn(),
-  onNewChat = vi.fn()
+  onNewChat = vi.fn(),
+  onRename = vi.fn(),
+  onDelete = vi.fn()
 ) {
   return render(
     <ConversationList
@@ -23,6 +25,8 @@ function renderConversationList(
       activeConversationId={activeConversationId}
       onSelect={onSelect}
       onNewChat={onNewChat}
+      onRename={onRename}
+      onDelete={onDelete}
     />
   );
 }
@@ -112,5 +116,257 @@ describe("ConversationList", () => {
     const btn = screen.getAllByRole("button").find((b) => b.textContent === "New Chat");
     expect(btn).toBeDefined();
     expect(btn).toHaveAttribute("title", "New Chat");
+  });
+
+  describe("kebab menu", () => {
+    it("kebab button is hidden by default (opacity-0) for non-active rows", () => {
+      renderConversationList();
+      const kebab = screen.getByTestId("conv-menu-btn-conv-1");
+      expect(kebab.className).toContain("opacity-0");
+      expect(kebab.className).toContain("group-hover:opacity-100");
+    });
+
+    it("kebab button is always visible for the active row (no opacity-0)", () => {
+      renderConversationList(mockConversations, "conv-1");
+      const kebab = screen.getByTestId("conv-menu-btn-conv-1");
+      expect(kebab.className).not.toContain("opacity-0");
+    });
+
+    it("clicking the kebab opens the menu with Rename and Delete", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      const menu = screen.getByTestId("conv-menu-conv-1");
+      expect(menu).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "Rename" })).toBeInTheDocument();
+      expect(screen.getByRole("menuitem", { name: "Delete" })).toBeInTheDocument();
+    });
+
+    it("clicking the kebab does not call onSelect", async () => {
+      const onSelect = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, onSelect);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    it("Escape closes the open menu", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      expect(screen.getByTestId("conv-menu-conv-1")).toBeInTheDocument();
+      await user.keyboard("{Escape}");
+      expect(screen.queryByTestId("conv-menu-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("outside click closes the open menu", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      expect(screen.getByTestId("conv-menu-conv-1")).toBeInTheDocument();
+      await user.click(document.body);
+      expect(screen.queryByTestId("conv-menu-conv-1")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("rename", () => {
+    it("clicking Rename shows an input prefilled with the current title", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1") as HTMLInputElement;
+      expect(input).toBeInTheDocument();
+      expect(input.value).toBe("Trial Balance Query");
+    });
+
+    it("Enter calls onRename with trimmed value and exits edit", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "  New Title  {Enter}");
+      expect(onRename).toHaveBeenCalledWith("conv-1", "New Title");
+      expect(screen.queryByTestId("conv-rename-input-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("Escape cancels rename without calling onRename", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "Whatever{Escape}");
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("conv-rename-input-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("empty/whitespace value + Enter does not call onRename", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "   {Enter}");
+      expect(onRename).not.toHaveBeenCalled();
+    });
+
+    it("blur COMMITS the rename (calls onRename with new value) and exits edit", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "  Blurred Title  ");
+      // Click elsewhere to blur the input
+      await user.click(screen.getByRole("button", { name: "+ New Chat" }));
+      expect(onRename).toHaveBeenCalledWith("conv-1", "Blurred Title");
+      expect(screen.queryByTestId("conv-rename-input-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("blur with unchanged value does NOT call onRename", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      // Value is prefilled with current title "Trial Balance Query" — do not change it
+      await user.click(screen.getByRole("button", { name: "+ New Chat" }));
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("conv-rename-input-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("blur with empty value does NOT call onRename", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.click(screen.getByRole("button", { name: "+ New Chat" }));
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("conv-rename-input-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("Escape never commits even though it triggers a blur", async () => {
+      const onRename = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), onRename);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "Changed But Escaped{Escape}");
+      expect(onRename).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("conv-rename-input-conv-1")).not.toBeInTheDocument();
+    });
+  });
+
+  describe("popover positioning (openUp)", () => {
+    it("opens the menu UPWARD (bottom-full) for the last row", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      // conv-3 is the last of 3 rows → openUp should be true
+      await user.click(screen.getByTestId("conv-menu-btn-conv-3"));
+      const menu = screen.getByTestId("conv-menu-conv-3");
+      expect(menu.className).toContain("bottom-full");
+      expect(menu.className).not.toContain("top-full");
+    });
+
+    it("opens the menu DOWNWARD (top-full) for the first row when 3+ rows", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      // conv-1 is the first of 3 rows → openUp false (index 0 < length-2)
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      const menu = screen.getByTestId("conv-menu-conv-1");
+      expect(menu.className).toContain("top-full");
+      expect(menu.className).not.toContain("bottom-full");
+    });
+
+    it("opens the delete-confirm UPWARD (bottom-full) for the last row", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-3"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      const dialog = screen.getByTestId("conv-delete-confirm-conv-3");
+      expect(dialog.className).toContain("bottom-full");
+      expect(dialog.className).not.toContain("top-full");
+    });
+  });
+
+  describe("accessibility", () => {
+    it("kebab button has aria-haspopup=menu and aria-expanded toggles", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      const kebab = screen.getByTestId("conv-menu-btn-conv-1");
+      expect(kebab).toHaveAttribute("aria-haspopup", "menu");
+      expect(kebab).toHaveAttribute("aria-expanded", "false");
+      await user.click(kebab);
+      expect(kebab).toHaveAttribute("aria-expanded", "true");
+    });
+
+    it("the open menu has role=menu and items have role=menuitem", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      const menu = screen.getByTestId("conv-menu-conv-1");
+      expect(menu).toHaveAttribute("role", "menu");
+      const items = screen.getAllByRole("menuitem");
+      expect(items).toHaveLength(2);
+    });
+
+    it("the delete-confirm popover is an accessible dialog", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      const dialog = screen.getByTestId("conv-delete-confirm-conv-1");
+      expect(dialog).toHaveAttribute("role", "dialog");
+      expect(dialog).toHaveAttribute("aria-modal", "true");
+      expect(dialog).toHaveAttribute("aria-label", "Confirm delete");
+    });
+  });
+
+  describe("delete", () => {
+    it("clicking Delete opens a confirm dialog", async () => {
+      const user = userEvent.setup();
+      renderConversationList();
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      const dialog = screen.getByTestId("conv-delete-confirm-conv-1");
+      expect(dialog).toBeInTheDocument();
+      expect(dialog).toHaveTextContent("Delete this chat? This can't be undone.");
+    });
+
+    it("Cancel closes the confirm dialog without calling onDelete", async () => {
+      const onDelete = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), vi.fn(), onDelete);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(onDelete).not.toHaveBeenCalled();
+      expect(screen.queryByTestId("conv-delete-confirm-conv-1")).not.toBeInTheDocument();
+    });
+
+    it("confirming Delete calls onDelete with the conversation id", async () => {
+      const onDelete = vi.fn();
+      const user = userEvent.setup();
+      renderConversationList(mockConversations, undefined, vi.fn(), vi.fn(), vi.fn(), onDelete);
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+      expect(onDelete).toHaveBeenCalledWith("conv-1");
+    });
   });
 });

@@ -732,12 +732,14 @@ test.describe("DB-mode visual tests", () => {
     const writeBtn = page.locator("button", { hasText: "Write to Tally" });
     await expect(writeBtn).toBeDisabled();
 
-    // Verify "Pending" label is shown in the voucher card
-    await expect(page.locator("text=Expense Entry — Pending")).toBeVisible();
+    // Verify "Pending" status word is shown in the voucher card (scoped to the
+    // card so it doesn't match the sidebar "Pending Voucher" button)
+    const pendingCard = page.locator('[data-testid="voucher-review-entry-pending"]');
+    await expect(pendingCard.getByText("Pending", { exact: true })).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Voucher card has yellow/amber border (pending status styling)
-    // - "Expense Entry — Pending" status label visible in the card header
+    // - "Journal" type badge + "Pending" status word visible in the card header
     // - Action buttons visible but DISABLED (opacity-50 / grayed appearance)
     // - Spinner or loading indicator on the "Write to Tally" button area
     // - Buttons should not look clickable (disabled cursor style)
@@ -822,17 +824,18 @@ test.describe("DB-mode visual tests", () => {
 
     await page.waitForSelector('[data-testid="voucher-review-entry-written"]', { timeout: 10000 });
 
-    // Verify "Written" label in the voucher card
-    await expect(page.locator("text=Expense Entry — Written")).toBeVisible();
+    // Verify "Written" status word in the voucher card (scoped to the card so it
+    // doesn't match the sidebar "Written Voucher" button)
+    const writtenCard = page.locator('[data-testid="voucher-review-entry-written"]');
+    await expect(writtenCard.getByText("Written", { exact: true })).toBeVisible();
 
     // No action buttons should be present inside the voucher card
-    const writtenCard = page.locator('[data-testid="voucher-review-entry-written"]');
     await expect(writtenCard.locator("button", { hasText: "Write to Tally" })).not.toBeVisible();
     await expect(writtenCard.locator("button", { hasText: "Discard" })).not.toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Voucher card has green border and/or green background tint (written status styling)
-    // - "Expense Entry — Written" status label visible in the card header
+    // - "Journal" type badge + "Written" status word visible in the card header
     // - Entry fields still readable: "Amazon India", ₹12,000, date 11-Apr-2025
     // - NOT visible: no "Write to Tally" action button
     // - NOT visible: no "Edit Entry" action button
@@ -917,17 +920,18 @@ test.describe("DB-mode visual tests", () => {
 
     await page.waitForSelector('[data-testid="voucher-review-entry-deleted"]', { timeout: 10000 });
 
-    // Verify "Discarded" label in the voucher card
-    await expect(page.locator("text=Expense Entry — Discarded")).toBeVisible();
+    // Verify "Discarded" status word in the voucher card (scoped to the card so it
+    // doesn't match the sidebar "Discarded Voucher" button)
+    const discardedCard = page.locator('[data-testid="voucher-review-entry-deleted"]');
+    await expect(discardedCard.getByText("Discarded", { exact: true })).toBeVisible();
 
     // No action buttons inside the voucher card
-    const discardedCard = page.locator('[data-testid="voucher-review-entry-deleted"]');
     await expect(discardedCard.locator("button", { hasText: "Write to Tally" })).not.toBeVisible();
     await expect(discardedCard.locator("button", { hasText: "Edit Entry" })).not.toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Voucher card has gray border and/or reduced opacity (discarded/deleted status styling)
-    // - "Expense Entry — Discarded" status label visible in the card header
+    // - "Journal" type badge + "Discarded" status word visible in the card header
     // - Entry fields dimmed/muted: "Flipkart India", ₹8,500, date 12-Apr-2025
     // - NOT visible: no "Write to Tally" action button
     // - NOT visible: no "Edit Entry" action button
@@ -1396,19 +1400,21 @@ test.describe("DB-mode visual tests", () => {
     await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
 
     // Verify modal form fields are visible
-    await expect(page.locator("text=Friendly Name")).toBeVisible();
     await expect(page.locator("text=Tally Host")).toBeVisible();
     await expect(page.locator("text=Tally Port")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Check Connection" })).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Modal overlay visible with semi-transparent backdrop behind it
     // - Modal title "Connect Tally Company" visible at the top
-    // - Form fields visible: "Friendly Name" input, "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
+    // - Form fields visible: "Tally Host" (pre-filled "localhost"), "Tally Port" (pre-filled "9000")
     // - "Demo Mode" toggle switch visible in the form
-    // - "Cancel" and "Connect" buttons visible at the bottom of the modal
+    // - "Check Connection" button visible (live mode, before checking)
+    // - "Cancel" and "Create Workspace" buttons visible at the bottom of the modal
     // - Modal is centered on the screen with appropriate width (not full screen)
     // - Backdrop dims the sidebar and main content behind the modal
     // - Proper vertical spacing between form fields (no cramping)
+    // - NOT visible: Company field, Name (optional) field (appear only after a successful check)
     {
       const badge = page.getByTestId("header-workspace-badge");
       if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
@@ -1496,27 +1502,31 @@ test.describe("DB-mode visual tests", () => {
     // Click "Edit Entry" to open the inline edit form
     await page.locator("button", { hasText: "Edit Entry" }).click();
 
-    // Wait for edit form inputs to appear
-    await page.waitForSelector('input[aria-label="Vendor"]', { timeout: 5000 });
+    // Wait for the edit form to appear (data-testid on the form root)
+    await page.waitForSelector('[data-testid="voucher-edit-form"]', { timeout: 5000 });
 
-    // Verify edit form fields are visible
-    await expect(page.locator('input[aria-label="Vendor"]')).toBeVisible();
+    // Verify edit form fields are visible. For a "Journal" voucher the form
+    // renders: Voucher Type, Date, Supplier Invoice No., and the primary money
+    // line (Narration / Amount / Ledger). The non-party-ledger label defaults to
+    // "Ledger" for Journal (see primaryLedgerLabel in VoucherEditForm.tsx).
+    await expect(page.locator('select[aria-label="Voucher Type"]')).toBeVisible();
     await expect(page.locator('input[aria-label="Date"]')).toBeVisible();
+    await expect(page.locator('input[aria-label="Supplier Invoice No."]')).toBeVisible();
     await expect(page.locator('input[aria-label="Amount"]')).toBeVisible();
-    await expect(page.locator('select[aria-label="Expense Ledger"]')).toBeVisible();
-    await expect(page.locator('select[aria-label="Payment Ledger"]')).toBeVisible();
-    await expect(page.locator("button", { hasText: "Confirm & Write to Tally" })).toBeVisible();
+    await expect(page.locator('select[aria-label="Ledger"]')).toBeVisible();
+    await expect(page.locator('input[aria-label="Narration"]')).toBeVisible();
+    await expect(page.locator("button", { hasText: "Save" })).toBeVisible();
 
     // VISUAL CHECKLIST:
     // - Inline edit form visible within the voucher card (replaces the review display)
-    // - "Vendor" input field visible and editable (pre-filled "Staples India")
+    // - "Voucher Type" select visible (pre-selected "Journal")
     // - "Date" input field visible (pre-filled "2025-04-10" or formatted equivalent)
+    // - "Supplier Invoice No." input field visible
     // - "Amount" input field visible (pre-filled "5000")
-    // - "Expense Ledger" dropdown/select visible (pre-selected "Office Supplies")
-    // - "Payment Ledger" dropdown/select visible (pre-selected "ICICI Bank")
-    // - "Narration" text input visible
-    // - "Confirm & Write to Tally" button visible (green)
-    // - "Edit Again" button visible (secondary styling)
+    // - "Ledger" dropdown/select visible (pre-selected "Office Supplies")
+    // - "Narration" / Description text input visible
+    // - "Save" button visible (green)
+    // - "Cancel" button visible (secondary styling)
     // - NOT visible: "Write to Tally" standalone button (replaced by inline form)
     // - NOT visible: "Discard" button
     {
@@ -1686,8 +1696,8 @@ test.describe("DB-mode visual tests", () => {
     await mockWorkspaceData(page);
     await page.route("**/api/health**", (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "healthy", tally_connected: true, tally_url: "http://localhost:9000", mode: "live" }) }));
-    await page.route("**/api/companies**", (route) =>
-      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ companies: [{ name: "Bharat Traders Private Limited" }] }) }));
+    await page.route("**/api/tally/test-connection**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ connected: true, companies: ["Bharat Traders Private Limited"] }) }));
     await page.route("**/api/workspaces", (route) => {
       if (route.request().method() === "POST") {
         route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: "ws-new", name: "My Books", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" }) });
@@ -1711,10 +1721,12 @@ test.describe("DB-mode visual tests", () => {
     const connectBtn = page.locator("text=+ Connect Company");
     await (isMobile ? connectBtn.last() : connectBtn.first()).click();
     await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
-    // fill friendly name and submit
+    // check connection → Company + Name fields appear
+    await page.getByRole("button", { name: "Check Connection" }).click();
+    await expect(page.locator("#connect-company")).toHaveText("Bharat Traders Private Limited");
+    // fill friendly name and create workspace
     await page.locator("#connect-name").fill("My Books");
-    // exact:true to avoid matching the sidebar "+ Connect Company" button
-    await page.getByRole("button", { name: "Connect", exact: true }).click();
+    await page.getByRole("button", { name: "Create Workspace" }).click();
     // confirmation screen
     await expect(page.getByTestId("connect-confirm-company")).toHaveText("Bharat Traders Private Limited");
     await expect(page.getByTestId("connect-confirm-name")).toHaveText("My Books");
@@ -1722,10 +1734,46 @@ test.describe("DB-mode visual tests", () => {
     // VISUAL CHECKLIST:
     // - Modal centered with backdrop; green check + "Company Connected" title
     // - "TALLY COMPANY" label with value "Bharat Traders Private Limited"
-    // - "FRIENDLY NAME" label with value "My Books"
+    // - "WORKSPACE" label with value "My Books"
     // - "Close" (secondary) and blue "Start chat" buttons, right-aligned
-    // - NOT visible: the form fields (Friendly Name input, Tally Host/Port, Demo toggle), no error banner
+    // - NOT visible: the form fields (Tally Host/Port, Demo toggle, Check Connection), no error banner
     await expect(page).toHaveScreenshot("connect-company-confirmation.png");
+  });
+
+  test("connect-company-steps", async ({ page, viewport }) => {
+    await mockLoggedIn(page);
+    await mockWorkspaceData(page);
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ status: "healthy", tally_connected: true, tally_url: "http://localhost:9000", mode: "live" }) }));
+    await page.route("**/api/tally/test-connection**", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ connected: false, companies: [], error: "Could not reach Tally." }) }));
+    await page.goto("/");
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    // open the connect modal (mirror the connect-company-modal test's mobile/desktop handling)
+    if (isMobile) {
+      const hamburger = page.locator('[aria-label="Open sidebar"]');
+      await hamburger.waitFor({ timeout: 10000 });
+      await hamburger.click();
+      await page.locator("text=Bharat Traders").last().waitFor({ state: "visible", timeout: 10000 });
+    } else {
+      await page.waitForSelector("text=Bharat Traders", { timeout: 10000 });
+    }
+    const connectBtn = page.locator("text=+ Connect Company");
+    await (isMobile ? connectBtn.last() : connectBtn.first()).click();
+    await page.waitForSelector("text=Connect Tally Company", { timeout: 10000 });
+    // failed check → steps panel appears
+    await page.getByRole("button", { name: "Check Connection" }).click();
+    const steps = page.getByTestId("connect-steps");
+    await expect(steps).toBeVisible();
+    await expect(steps).toContainText("To enable the connection:");
+    await expect(steps).toContainText("TallyPrime acts as");
+    // VISUAL CHECKLIST:
+    // - Modal centered with backdrop; title "Connect Tally Company"
+    // - Gray steps panel with heading "To enable the connection:" and a numbered list
+    // - List mentions "TallyPrime acts as: Both" and "Check Connection" again
+    // - "Check Connection" button still visible above/around the steps (live mode, error state)
+    // - NOT visible: Company field, Name (optional) field, confirmation screen
+    await expect(page).toHaveScreenshot("connect-company-steps.png");
   });
 
   // Test 23: Header Tally live — health reports connected → green "Live" badge
@@ -1774,5 +1822,223 @@ test.describe("DB-mode visual tests", () => {
     // - Header title line and workspace name "Bharat Traders" otherwise normal
     // - NOT visible: green/Live badge, gray/Checking badge, orange/Demo badge
     await expect(page).toHaveScreenshot("header-tally-offline.png");
+  });
+
+  // ---------------------------------------------------------------------------
+  // Conversation row kebab (⋯) menu: Rename + Delete
+  // ---------------------------------------------------------------------------
+  // Shared conversation list: conv-1 ("P&L last month") is the row we drive.
+  // We navigate to /c/conv-1 so conv-1 is the ACTIVE row — its kebab button is
+  // always visible (opacity full) across all viewports, so we can click it
+  // reliably on mobile/tablet/desktop without depending on hover opacity.
+  const convMenuList = [
+    { id: "conv-1", title: "P&L last month", tag: null, created_at: "2025-04-10T10:00:00Z", updated_at: "2025-04-10T10:05:00Z" },
+    { id: "conv-2", title: "Expense Entry", tag: null, created_at: "2025-04-09T09:00:00Z", updated_at: "2025-04-09T09:30:00Z" },
+  ];
+
+  /** Mock workspaces + the conv-menu conversation list + the conv-1 GET, and open the
+   *  sidebar drawer on mobile. Returns whether the viewport is mobile. */
+  async function setupConvMenu(
+    page: import("@playwright/test").Page,
+    viewport: { width: number; height: number } | null,
+    conversations: typeof convMenuList | [],
+  ) {
+    await mockLoggedIn(page);
+
+    await page.route("**/api/workspaces", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(mockWorkspaces) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // List endpoint (trailing ** to also match any query string).
+    await page.route("**/api/workspaces/ws-1/conversations**", (route) => {
+      if (route.request().method() === "GET" && !/\/conversations\/[^/?]+/.test(route.request().url())) {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(conversations) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // ws-2 list — keep the second workspace empty to reduce sidebar noise.
+    await page.route("**/api/workspaces/ws-2/conversations**", (route) => {
+      if (route.request().method() === "GET" && !/\/conversations\/[^/?]+/.test(route.request().url())) {
+        route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify([]) });
+      } else {
+        route.continue();
+      }
+    });
+
+    // Specific conversation GET so /c/conv-1 resolves.
+    await page.route("**/api/workspaces/ws-1/conversations/conv-1", (route) => {
+      if (route.request().method() === "GET") {
+        route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: JSON.stringify({
+            id: "conv-1",
+            title: "P&L last month",
+            workspace_id: "ws-1",
+            messages: [],
+            created_at: "2025-04-10T10:00:00Z",
+            updated_at: "2025-04-10T10:05:00Z",
+          }),
+        });
+      } else {
+        route.continue();
+      }
+    });
+
+    await page.route("**/api/health**", (route) =>
+      route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ status: "ok", tally_connected: true }),
+      }),
+    );
+
+    const isMobile = (viewport?.width ?? 1280) < 768;
+    await page.goto("/c/conv-1");
+
+    if (isMobile) {
+      // On mobile the sidebar lives behind the hamburger drawer — open it.
+      const hamburger = page.locator('[aria-label="Open sidebar"]');
+      await hamburger.waitFor({ timeout: 10000 });
+      await hamburger.click();
+    }
+    return isMobile;
+  }
+
+  // Test 25: Conversation row kebab menu — Rename + Delete options visible
+  test("conversation-row-menu", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, convMenuList);
+
+    // conv-1 is the active row → its kebab is always visible. Click it to open the menu.
+    // .last() handles mobile, where the hidden desktop sidebar also has the row in the DOM.
+    const kebab = page.getByTestId("conv-menu-btn-conv-1");
+    await (isMobile ? kebab.last() : kebab.first()).waitFor({ state: "visible", timeout: 10000 });
+    await (isMobile ? kebab.last() : kebab.first()).click();
+
+    const menu = page.getByTestId("conv-menu-conv-1");
+    await expect(isMobile ? menu.last() : menu.first()).toBeVisible();
+    await expect((isMobile ? menu.last() : menu.first()).getByText("Rename")).toBeVisible();
+    await expect((isMobile ? menu.last() : menu.first()).getByText("Delete")).toBeVisible();
+
+    // VISUAL CHECKLIST:
+    // - Layout: a small dropdown menu anchored to the right edge, just below the
+    //   "P&L last month" conversation row in the sidebar (drawer on mobile).
+    // - Text: menu contains exactly two items — "Rename" and "Delete".
+    // - Colors/highlights: "Delete" is red text; "Rename" is gray/neutral text;
+    //   menu has a white background with a thin border + drop shadow.
+    //   The active "P&L last month" row keeps its bg-blue-100 highlight.
+    // - Spacing: menu items stacked vertically with even padding; menu does not
+    //   overlap the "+ New Chat" button awkwardly.
+    // - NOT visible: no inline rename input, no delete-confirm dialog, no
+    //   "Delete this chat?" text yet.
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-row-menu.png");
+  });
+
+  // Test 26: Conversation rename — inline input prefilled with the row's title
+  test("conversation-rename", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, convMenuList);
+
+    const kebab = page.getByTestId("conv-menu-btn-conv-1");
+    await (isMobile ? kebab.last() : kebab.first()).waitFor({ state: "visible", timeout: 10000 });
+    await (isMobile ? kebab.last() : kebab.first()).click();
+
+    const menu = page.getByTestId("conv-menu-conv-1");
+    await (isMobile ? menu.last() : menu.first()).getByText("Rename").click();
+
+    const input = page.getByTestId("conv-rename-input-conv-1");
+    const target = isMobile ? input.last() : input.first();
+    await expect(target).toBeVisible();
+    await expect(target).toHaveValue("P&L last month");
+
+    // VISUAL CHECKLIST:
+    // - Layout: the "P&L last month" conversation row is replaced in-place by a
+    //   text input spanning the row width in the sidebar (drawer on mobile).
+    // - Text: the input value is exactly "P&L last month" (prefilled title).
+    // - Colors/highlights: input has a blue focus border/ring (it is autofocused).
+    // - Spacing: input sits flush where the row was; "Expense Entry" row and
+    //   "+ New Chat" button remain below it.
+    // - NOT visible: no kebab dropdown menu, no delete-confirm dialog, no plain
+    //   "P&L last month" button row (it is now the editable input).
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-rename.png");
+  });
+
+  // Test 27: Conversation delete confirm — confirmation dialog visible
+  test("conversation-delete-confirm", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, convMenuList);
+
+    const kebab = page.getByTestId("conv-menu-btn-conv-1");
+    await (isMobile ? kebab.last() : kebab.first()).waitFor({ state: "visible", timeout: 10000 });
+    await (isMobile ? kebab.last() : kebab.first()).click();
+
+    const menu = page.getByTestId("conv-menu-conv-1");
+    await (isMobile ? menu.last() : menu.first()).getByText("Delete").click();
+
+    const confirm = page.getByTestId("conv-delete-confirm-conv-1");
+    const target = isMobile ? confirm.last() : confirm.first();
+    await expect(target).toBeVisible();
+    await expect(target).toContainText("Delete this chat? This can't be undone.");
+    await expect(page.getByTestId("conv-delete-confirm-btn-conv-1").first()).toBeVisible();
+
+    // VISUAL CHECKLIST:
+    // - Layout: a confirmation popover anchored to the right, below the
+    //   "P&L last month" row in the sidebar (drawer on mobile); wider than the
+    //   kebab menu.
+    // - Text: prompt reads exactly "Delete this chat? This can't be undone."
+    //   Two buttons below it: "Cancel" and "Delete".
+    // - Colors/highlights: the "Delete" confirm button is solid red with white
+    //   text; "Cancel" is neutral/gray text. White popover with border + shadow.
+    // - Spacing: prompt text on its own line, buttons right-aligned in a row below.
+    // - NOT visible: no kebab "Rename"/"Delete" menu (replaced by this dialog),
+    //   no inline rename input.
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-delete-confirm.png");
+  });
+
+  // Test 28: Sidebar empty after delete — empty list shows only "+ New Chat"
+  // Static render of the empty-list state (no actual delete performed).
+  test("conversation-empty-after-delete", async ({ page, viewport }) => {
+    const isMobile = await setupConvMenu(page, viewport, []);
+
+    // No conversation rows should exist for ws-1; only the "+ New Chat" button.
+    await expect(page.getByTestId("conv-menu-btn-conv-1")).toHaveCount(0);
+    await expect(page.getByTestId("conv-menu-btn-conv-2")).toHaveCount(0);
+
+    const newChat = page.locator("text=+ New Chat");
+    await (isMobile ? newChat.last() : newChat.first()).waitFor({ state: "visible", timeout: 10000 });
+    await expect(isMobile ? newChat.last() : newChat.first()).toBeVisible();
+
+    // VISUAL CHECKLIST:
+    // - Layout: under the "Bharat Traders Private Limited (Bharat Traders)"
+    //   workspace header, the conversation list is empty — only the "+ New Chat"
+    //   button is shown.
+    // - Text: "+ New Chat" button present; NO "P&L last month" or "Expense Entry"
+    //   rows anywhere in the sidebar (drawer on mobile).
+    // - Colors/highlights: workspace header retains its active bg-blue-50 tint.
+    // - Spacing: "+ New Chat" sits directly under the workspace header with no
+    //   conversation rows between them.
+    // - NOT visible: no conversation rows, no kebab (⋯) buttons, no menu, no
+    //   rename input, no delete-confirm dialog.
+    {
+      const badge = page.getByTestId("header-workspace-badge");
+      if (await badge.count()) await expect(badge).not.toContainText("Checking", { timeout: 10000 });
+    }
+    await expect(page).toHaveScreenshot("conversation-empty-after-delete.png");
   });
 });

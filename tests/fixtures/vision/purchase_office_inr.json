@@ -1,0 +1,34 @@
+{
+  "doc_type": "purchase",
+  "party_name": "Croma Electronics",
+  "date": "2026-02-10",
+  "total_amount": 15340.0,
+  "original_currency": "INR",
+  "fx_rate": null,
+  "line_items": [
+    {
+      "description": "Logitech MX Keys keyboard",
+      "amount": 8999.0,
+      "quantity": 1,
+      "rate": 8999.0
+    },
+    {
+      "description": "USB-C Hub",
+      "amount": 3999.0,
+      "quantity": 1,
+      "rate": 3999.0
+    }
+  ],
+  "gst": {
+    "cgst_rate": 9.0,
+    "cgst_amount": 1171.0,
+    "sgst_rate": 9.0,
+    "sgst_amount": 1171.0,
+    "igst_rate": null,
+    "igst_amount": null,
+    "gstin": "27AABCC1234D1Z5"
+  },
+  "payment_mode": "bank",
+  "original_invoice_ref": null,
+  "invoice_number": "CRO-2026-5678"
+}

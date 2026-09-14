@@ -179,6 +179,39 @@ describe("Sidebar", () => {
       });
     });
 
+    it("shows company with nickname in parentheses when they differ", async () => {
+      mockedClient.getWorkspaces.mockResolvedValue([
+        { id: "ws-1", name: "My Books", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited (My Books)")).toBeInTheDocument();
+      });
+    });
+
+    it("shows only the company name (no duplication) when name equals company", async () => {
+      mockedClient.getWorkspaces.mockResolvedValue([
+        { id: "ws-1", name: "Bharat Traders Private Limited", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited")).toBeInTheDocument();
+      });
+      expect(
+        screen.queryByText("Bharat Traders Private Limited (Bharat Traders Private Limited)"),
+      ).not.toBeInTheDocument();
+    });
+
+    it("shows only the company name when name differs only by case/whitespace", async () => {
+      mockedClient.getWorkspaces.mockResolvedValue([
+        { id: "ws-1", name: "  bharat traders private limited  ", agent_type: "tally", config: { tally_company: "Bharat Traders Private Limited" }, memory: {}, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z" },
+      ]);
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByText("Bharat Traders Private Limited")).toBeInTheDocument();
+      });
+    });
+
     it("falls back to friendly name when tally_company is missing", async () => {
       renderSidebar();
       await waitFor(() => {
@@ -205,10 +238,13 @@ describe("Sidebar", () => {
   });
 
   it("calls onNewChat with the new workspace after completing the connect flow", async () => {
-    mockedClient.getCompanies.mockResolvedValue({ companies: [{ name: "Bharat Traders Pvt Ltd" }] });
+    mockedClient.testConnection.mockResolvedValue({
+      connected: true,
+      companies: ["Bharat Traders Pvt Ltd"],
+    });
     mockedClient.createWorkspace.mockResolvedValue({
       id: "ws-1",
-      name: "My Books",
+      name: "Bharat Traders Pvt Ltd",
       agent_type: "tally",
       config: {},
       memory: {},
@@ -229,8 +265,11 @@ describe("Sidebar", () => {
       expect(screen.getByText("Connect Tally Company")).toBeInTheDocument();
     });
 
-    await user.type(screen.getByPlaceholderText("e.g. Bharat Traders — Main Books"), "My Books");
-    await user.click(screen.getByRole("button", { name: "Connect" }));
+    await user.click(screen.getByRole("button", { name: "Check Connection" }));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Create Workspace" })).toBeEnabled(),
+    );
+    await user.click(screen.getByRole("button", { name: "Create Workspace" }));
 
     await waitFor(() => {
       expect(screen.getByRole("button", { name: "Start chat" })).toBeInTheDocument();
@@ -238,6 +277,126 @@ describe("Sidebar", () => {
 
     await user.click(screen.getByRole("button", { name: "Start chat" }));
 
-    expect(onNewChat).toHaveBeenCalledWith("ws-1", "My Books", {});
+    expect(onNewChat).toHaveBeenCalledWith("ws-1", "Bharat Traders Pvt Ltd", {});
+  });
+
+  describe("conversation rename + delete", () => {
+    it("handleDelete removes the conversation from the rendered list", async () => {
+      mockedClient.deleteConversation.mockResolvedValue(undefined);
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Trial Balance" })).not.toBeInTheDocument();
+      });
+      expect(mockedClient.deleteConversation).toHaveBeenCalledWith("ws-1", "conv-1");
+    });
+
+    it("calls onActiveConversationDeleted with the workspace id when the deleted conversation is active", async () => {
+      mockedClient.deleteConversation.mockResolvedValue(undefined);
+      const onActiveConversationDeleted = vi.fn();
+      const user = userEvent.setup();
+      renderSidebar({ activeConversationId: "conv-1", onActiveConversationDeleted });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(onActiveConversationDeleted).toHaveBeenCalledWith("ws-1");
+      });
+    });
+
+    it("does not call onActiveConversationDeleted when the deleted conversation is not active", async () => {
+      mockedClient.deleteConversation.mockResolvedValue(undefined);
+      const onActiveConversationDeleted = vi.fn();
+      const user = userEvent.setup();
+      renderSidebar({ activeConversationId: "conv-2", onActiveConversationDeleted });
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(screen.queryByRole("button", { name: "Trial Balance" })).not.toBeInTheDocument();
+      });
+      expect(onActiveConversationDeleted).not.toHaveBeenCalled();
+    });
+
+    it("handleRename updates the displayed title", async () => {
+      mockedClient.updateConversation.mockResolvedValue({
+        id: "conv-1", title: "Renamed Chat", tag: null,
+        created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z",
+      });
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "Renamed Chat{Enter}");
+
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Renamed Chat" })).toBeInTheDocument();
+      });
+      expect(mockedClient.updateConversation).toHaveBeenCalledWith("ws-1", "conv-1", { title: "Renamed Chat" });
+    });
+
+    it("re-invokes loadData (getConversations) when deleteConversation rejects", async () => {
+      mockedClient.deleteConversation.mockRejectedValue(new Error("boom"));
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+      const callsBefore = mockedClient.getConversations.mock.calls.length;
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Delete" }));
+      await user.click(screen.getByTestId("conv-delete-confirm-btn-conv-1"));
+
+      await waitFor(() => {
+        expect(mockedClient.getConversations.mock.calls.length).toBeGreaterThan(callsBefore);
+      });
+      // Item restored
+      expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+    });
+
+    it("re-invokes loadData (getConversations) when updateConversation rejects", async () => {
+      mockedClient.updateConversation.mockRejectedValue(new Error("boom"));
+      const user = userEvent.setup();
+      renderSidebar();
+      await waitFor(() => {
+        expect(screen.getByRole("button", { name: "Trial Balance" })).toBeInTheDocument();
+      });
+      const callsBefore = mockedClient.getConversations.mock.calls.length;
+
+      await user.click(screen.getByTestId("conv-menu-btn-conv-1"));
+      await user.click(screen.getByRole("menuitem", { name: "Rename" }));
+      const input = screen.getByTestId("conv-rename-input-conv-1");
+      await user.clear(input);
+      await user.type(input, "Renamed Chat{Enter}");
+
+      await waitFor(() => {
+        expect(mockedClient.getConversations.mock.calls.length).toBeGreaterThan(callsBefore);
+      });
+    });
   });
 });

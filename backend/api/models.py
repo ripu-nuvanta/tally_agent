@@ -20,6 +20,10 @@ class ChatRequest(BaseModel):
     company: str | None = None
     workspace_id: str | None = None
     conversation_id: str | None = None
+    # The currently-pending voucher_review entry (last one not approved/discarded),
+    # so a chat rate-override ("use rate 90") can recompute it before the query
+    # agent runs. None for ordinary queries. See T5 (FX→INR conversion).
+    pending_entry: dict[str, Any] | None = None
 
 
 class ChartSpec(BaseModel):
@@ -173,6 +177,7 @@ class VoucherReviewEntry(BaseModel):
     voucher_type: str
     date: str
     vendor_name: str | None = None
+    party_name: str | None = None       # canonical party (vendor or customer)
     amount: float
     debit_ledger: str
     credit_ledger: str
@@ -182,6 +187,18 @@ class VoucherReviewEntry(BaseModel):
     warnings: list[str] = []
     is_new_ledger: bool = False
     suggested_parent: str | None = None
+    # Group B additions (Purchase / Sales / Debit Note / Credit Note)
+    party_ledger: str | None = None
+    is_party_ledger: bool = False
+    bill_reference: str | None = None
+    bill_type: str = "New Ref"
+    against_invoice_options: list[dict[str, Any]] = []  # DN/CN reference dropdown
+    party_vouchers: list[dict[str, Any]] = []           # raw party voucher lookup
+    # FX fields (Slice A / Group B multi-currency)
+    original_currency: str = "INR"
+    original_amount: float | None = None
+    fx_rate: float | None = None
+    inr_amount: float | None = None
 
 
 class VoucherReviewData(BaseModel):
@@ -195,8 +212,9 @@ class VoucherReviewData(BaseModel):
 
 class VoucherActionRequest(BaseModel):
     """Request body for /chat/voucher-action endpoint."""
-    action: Literal["approve", "discard", "edit"]
+    action: Literal["approve", "discard", "edit", "save_draft"]
     entry: dict[str, Any]
     company: str = ""
     session_id: str = ""
     workspace_id: str = ""
+    conversation_id: str = ""

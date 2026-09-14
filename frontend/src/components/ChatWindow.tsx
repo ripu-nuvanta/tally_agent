@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { createConversation, getConversation, sendChat, sendChatWithFile, voucherAction, type VoucherAction } from "../api/client";
+import { createConversation, getConversation, saveVoucherDraft, sendChat, sendChatWithFile, voucherAction, type VoucherAction } from "../api/client";
 import { useSession } from "../context/SessionContext";
 import type { ChatMessage } from "../types";
 import { generateId } from "../utils/format";
@@ -23,13 +23,43 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
     action: "approve" | "discard";
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const messagesRef = useRef<ChatMessage[]>([]);
   const justCreatedConvRef = useRef<string | null>(null);
+  // Always holds the latest known conversation id, independent of closure
+  // timing and independent of justCreatedConvRef (which is intentionally
+  // cleared by the load effect). This is the real source for persistence:
+  // a ref read is always current even inside a memoized callback.
+  const activeConvIdRef = useRef<string | undefined>(conversationId);
   const sendingRef = useRef(false);
   const { sessionId, setSessionId, company } = useSession();
 
   useEffect(() => {
+    if (conversationId) activeConvIdRef.current = conversationId;
+  }, [conversationId]);
+
+  useEffect(() => {
+    messagesRef.current = messages;
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // Derive the current pending voucher entry from existing message state:
+  // the most recent voucher_review message's entry that is still actionable
+  // (status draft/pending — not yet written or discarded). No parallel state.
+  function getPendingEntry(): Record<string, unknown> | undefined {
+    const msgs = messagesRef.current;
+    for (let i = msgs.length - 1; i >= 0; i--) {
+      const data = msgs[i].data as Record<string, unknown> | undefined;
+      if (!data || data.type !== "voucher_review" || !Array.isArray(data.entries)) continue;
+      const entries = data.entries as Array<Record<string, unknown>>;
+      const actionable = entries.find(
+        (e) => e.status === "draft" || e.status === "pending",
+      );
+      // Stop at the most recent voucher_review message regardless of match —
+      // only one voucher is pending at a time (most recent).
+      return actionable;
+    }
+    return undefined;
+  }
 
   useEffect(() => {
     if (conversationId && workspaceId) {
@@ -94,9 +124,14 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           const conv = await createConversation(workspaceId);
           activeConvId = conv.id;
           justCreatedConvRef.current = conv.id;
+          // Make the id available immediately for persistence (e.g. a voucher
+          // Write before the conversationId prop has propagated from the parent
+          // navigation). Survives the load effect that nulls justCreatedConvRef.
+          activeConvIdRef.current = conv.id;
           onConversationCreated?.(conv.id);
         }
 
+        const pendingEntry = file ? undefined : getPendingEntry();
         const response = file
           ? await sendChatWithFile(file, text, workspaceId, activeConvId)
           : await sendChat({
@@ -105,6 +140,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
               company: company ?? undefined,
               workspace_id: workspaceId,
               conversation_id: activeConvId,
+              ...(pendingEntry ? { pending_entry: pendingEntry } : {}),
             });
 
         setSessionId(response.session_id);
@@ -143,6 +179,52 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
     [sessionId, company, setSessionId, workspaceId, conversationId, onMessageSent, onConversationCreated]
   );
 
+  // Edit-save is a PURELY LOCAL merge — NOT a backend write. The user later
+  // writes via the "Write to Tally" (approve) button. Merge the edited fields
+  // into the matching entry in messages[].data.entries, keep status "draft",
+  // and re-render the same card. Routing Save through handleVoucherAction
+  // ("edit") would round-trip to the backend, which performs a write — a
+  // premature, unwanted write before the user approves.
+  const handleVoucherEdit = useCallback(
+    (entryId: string, updates: Record<string, unknown>) => {
+      let mergedEntry: Record<string, unknown> | null = null;
+      setMessages((prev) =>
+        prev.map((m) => {
+          if (!m.data || !("entries" in (m.data as Record<string, unknown>))) return m;
+          const d = m.data as Record<string, unknown>;
+          const entries = d.entries as Array<Record<string, unknown>>;
+          const updated = entries.map((e) => {
+            if (e.id !== entryId) return e;
+            const merged = { ...e, ...updates, status: "draft" };
+            mergedEntry = merged;
+            return merged;
+          });
+          return { ...m, data: { ...d, entries: updated } };
+        })
+      );
+
+      // Persist the merged DRAFT to the DB so the edits survive a page reload —
+      // WITHOUT writing to Tally (the user writes later via "Write to Tally").
+      // Fire-and-forget: on error we keep the local state and just log; we do
+      // NOT revert the card, block the UI, or show a banner. A missing conv id
+      // (deferred creation) is a graceful backend no-op — the local state holds
+      // and a later action will carry the id.
+      if (mergedEntry) {
+        void Promise.resolve(
+          saveVoucherDraft(
+            mergedEntry,
+            sessionId ?? "",
+            workspaceId ?? "",
+            activeConvIdRef.current ?? "",
+          ),
+        ).catch((err) => {
+          console.error("Failed to persist voucher draft edit", err);
+        });
+      }
+    },
+    [sessionId, workspaceId]
+  );
+
   const handleVoucherAction = useCallback(
     async (action: VoucherAction, entry: Record<string, unknown>) => {
       const entryId = entry.id as string;
@@ -177,6 +259,11 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           company ?? "",
           sessionId ?? "",
           workspaceId ?? "",
+          // activeConvIdRef is always current (ref read) — it survives the
+          // load effect that nulls justCreatedConvRef and is set both on the
+          // conversationId prop and immediately after deferred creation, so
+          // the backend can persist the written/discarded status.
+          activeConvIdRef.current ?? "",
         );
         const resultMsg: ChatMessage = {
           id: generateId(),
@@ -184,8 +271,39 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
           content: response.message,
           data: response.data,
         };
+        // The HTTP call can succeed (200) while the write itself FAILED — the
+        // backend returns data.type === "voucher_error" with the reason in
+        // response.message. Only mark the entry terminal on a genuine success
+        // (approve → voucher_written, discard → voucher_discarded); otherwise
+        // revert to draft so the buttons reappear and "Written" is NOT shown.
+        const responseType = (response.data as Record<string, unknown> | undefined)?.type;
+        const succeeded =
+          action === "approve"
+            ? responseType === "voucher_written"
+            : action === "discard"
+            ? responseType === "voucher_discarded"
+            : false;
+        const isError = responseType === "voucher_error";
+        const nextStatus = succeeded
+          ? action === "approve"
+            ? "written"
+            : "deleted"
+          : isError
+          ? "draft" // failed write: revert so the action buttons reappear
+          : null; // unknown type: leave the entry as-is (pending cleared in finally)
+        if (isError) resultMsg.isError = true;
         setMessages((prev) =>
-          prev.map((m) => (m.id === loadingMsg.id ? resultMsg : m))
+          prev.map((m) => {
+            if (m.id === loadingMsg.id) return resultMsg;
+            if (!nextStatus) return m;
+            if (!m.data || !("entries" in (m.data as Record<string, unknown>))) return m;
+            const d = m.data as Record<string, unknown>;
+            const entries = d.entries as Array<Record<string, unknown>>;
+            const updated = entries.map((e) =>
+              e.id === entryId ? { ...e, status: nextStatus } : e
+            );
+            return { ...m, data: { ...d, entries: updated } };
+          })
         );
       } catch {
         // Revert entry status to draft on error
@@ -214,7 +332,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
         setPendingVoucherAction(null);
       }
     },
-    [company, sessionId, workspaceId]
+    [company, sessionId, workspaceId, conversationId]
   );
 
   return (
@@ -246,7 +364,7 @@ export default function ChatWindow({ conversationId, workspaceId, workspaceName,
             </div>
           )}
           {messages.map((msg) => (
-            <MessageBubble key={msg.id} message={msg} onVoucherAction={handleVoucherAction} pendingVoucherAction={pendingVoucherAction} />
+            <MessageBubble key={msg.id} message={msg} onVoucherAction={handleVoucherAction} onVoucherEdit={handleVoucherEdit} pendingVoucherAction={pendingVoucherAction} />
           ))}
           <div ref={bottomRef} />
         </div>

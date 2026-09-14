@@ -106,6 +106,60 @@ def test_build_create_stock_item_12pct_rate_splits_correctly():
     assert gd.findtext("CGSTRATE") == "6"
     assert gd.findtext("SGSTRATE") == "6"
 
+
+def test_build_create_stock_item_empty_hsn_is_gst_not_applicable_no_gstdetails():
+    """Vision often extracts no HSN. GST-applicable-without-HSN triggers Tally's
+    blocking "HSN/SAC required" modal, locking the API. So when hsn_code is empty
+    the item must be plain name+unit+group: GSTAPPLICABLE=Not Applicable, and NO
+    GSTDETAILS.LIST / HSN elements at all (GST is posted via voucher tax lines)."""
+    from backend.tally_bridge.import_builder import build_create_stock_item
+    xml = build_create_stock_item(
+        name="Generic Widget",
+        group="Electronics",
+        uom="Nos",
+        opening_qty=0,
+        opening_rate=0,
+        hsn_code="",
+        gst_rate=18,
+        company="X",
+    )
+    root = _root(xml)
+    si = root.find(".//STOCKITEM")
+    # Required fields still present
+    assert si.get("NAME") == "Generic Widget"
+    assert si.find("NAME.LIST/NAME").text == "Generic Widget"
+    assert si.findtext("PARENT") == "Electronics"
+    assert si.findtext("BASEUNITS") == "Nos"
+    # GST disabled at master level — avoids the HSN-mandatory modal
+    assert si.findtext("GSTAPPLICABLE") == "Not Applicable"
+    # No HSN of any form
+    assert not (si.findtext("HSNCODE") or "")
+    assert not (si.findtext("HSN") or "")
+    assert si.find("HSNDETAILS.LIST") is None
+    # No GST rate block at all
+    assert si.find("GSTDETAILS.LIST") is None
+
+
+def test_build_create_stock_item_with_hsn_still_emits_hsn():
+    """Regression: a non-empty HSN still emits HSNCODE/HSN and HSNDETAILS."""
+    from backend.tally_bridge.import_builder import build_create_stock_item
+    xml = build_create_stock_item(
+        name="Bond Paper",
+        group="Office Supplies",
+        uom="Pcs",
+        opening_qty=0,
+        opening_rate=0,
+        hsn_code="4802",
+        gst_rate=12,
+        company="X",
+    )
+    root = _root(xml)
+    si = root.find(".//STOCKITEM")
+    assert si.findtext("HSNCODE") == "4802"
+    assert si.findtext("HSN") == "4802"
+    assert si.find("HSNDETAILS.LIST") is not None
+
+
 def test_build_create_ledger_with_opening_state_gstin():
     from backend.tally_bridge.import_builder import build_create_ledger
     xml = build_create_ledger(
@@ -492,9 +546,10 @@ def test_receipt_does_not_accept_reference_kwargs():
     assert "reference_date" not in params
 
 
-def test_payment_does_not_accept_reference_kwargs():
+def test_payment_accepts_reference_kwargs():
+    # Phase 1 Part A: payment vouchers now carry the supplier invoice no.
     import inspect
     from backend.tally_bridge.import_builder import build_create_payment_voucher
     params = inspect.signature(build_create_payment_voucher).parameters
-    assert "reference" not in params
-    assert "reference_date" not in params
+    assert "reference" in params
+    assert "reference_date" in params

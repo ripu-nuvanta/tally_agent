@@ -1,0 +1,35 @@
+name: "Write Flow — Sales Invoice / Company Anchoring (Mock)"
+description: >
+  Mock-mode variant validating the company-anchored Vision classifier. Upload a
+  TAX INVOICE issued BY our own company ("Bharat Traders Private Limited", the
+  eval books) TO a customer ("Sunrise Construction Ltd"). Because the document is
+  issued by us, the classifier — anchored to our company — must read it as a
+  SALES voucher with the CUSTOMER as the party (never our own company), then
+  approve ("Write to Tally") against the mock Tally handler. Vision is real; the
+  write hits the mock handler so live Tally is not polluted.
+tags: [write_flow, upload, voucher, sales, company_anchoring, mock]
+
+turns:
+  - type: upload
+    file_path: tests/eval/fixtures/sales_invoice.png
+    message: "Please record this sales invoice"
+    expect:
+      voucher:
+        voucher_type: Sales
+        party: "Sunrise Construction Ltd"
+        amount: 23600
+        cgst: 1800
+        sgst: 1800
+        date: "15-Jun-2025"
+      checks:
+        - "classified as Sales (issued by our company Bharat Traders Private Limited)"
+        - "party is the customer counterparty Sunrise Construction Ltd, NOT Bharat Traders Private Limited"
+        - "amount 23600"
+        - "CGST 1800 + SGST 1800 split out"
+
+  - type: action
+    button: "Write to Tally"
+    expect:
+      checks:
+        - "voucher written confirmation shown"
+        - "no error"

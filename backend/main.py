@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from backend.agents.context import SessionStore
-from backend.api import chat, companies, health, reports, tally_mode
+from backend.api import chat, companies, health, reports, tally, tally_mode
 from backend.api.models import ErrorResponse
 from backend.config import settings
 from backend.tally_bridge.client import TallyClient
@@ -91,6 +91,7 @@ app.include_router(health.router, prefix="/api")
 app.include_router(companies.router, prefix="/api")
 app.include_router(reports.router, prefix="/api")
 app.include_router(tally_mode.router, prefix="/api")
+app.include_router(tally.router)  # router already carries the /api/tally prefix
 
 # DB-mode routers (auth, workspaces, conversations, usage)
 if settings.db_mode:

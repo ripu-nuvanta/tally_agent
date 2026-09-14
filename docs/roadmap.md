@@ -28,11 +28,11 @@ The product evolves along three feature sets. Set A is foundational; B and C can
 | Sub | Scope | Status |
 |---|---|---|
 | **B1a** | Expense receipt entry (file upload → Vision extract → Tally write — Payment voucher only) | ✅ Complete — merged. Spec: `specs/2026-04-04-set-b1a-expense-entry-plan.md`. |
-| **B1b** | Sales / Purchase voucher builders (extends B1a pipeline) | Specced. Blocked on **Group B Task 0** feasibility probe. |
-| **B1c** | Debit Note / Credit Note voucher builders | Specced. Part of Group B. |
+| **B1b** | Sales / Purchase voucher builders (extends B1a pipeline) | ✅ Complete — merged 2026-06-09 (Group B). |
+| **B1c** | Debit Note / Credit Note voucher builders | ✅ Complete — merged 2026-06-09 (Group B). |
 | **B1d** | Bank statement import + reconciliation | Deferred. Needs its own feasibility probe (BANKALLOCATIONS / BANKDATE / INSTRUMENTNO primitives unvalidated). See [`open-items-parked.md`](open-items-parked.md). |
 | **Group A** | UI polish (F4 deferred conversation creation + workspace landing, F5 voucher button disable, F6 responsive drawer) | ✅ Complete 2026-04-12. Spec: `specs/2026-04-12-group-a-ui-enhancements-design.md`. |
-| **Group B** | F1 (workspace pulls company name) + F2 (multi-currency extraction) + F3 (Payment vs Purchase classification) + B1b combined | **Next up.** Spec: `specs/2026-04-12-group-b-voucher-types-design.md`. Plan: `plans/2026-04-12-group-b-voucher-types-plan.md`. Gating step is Task 0 (E1–E8 probes). |
+| **Group B** | F1 (company dropdown) + F2 (multi-currency) + F3 (5-type classification) + B1b (Purchase/Sales) + B1c (DN/CN) + DB audit | ✅ **Complete — merged 2026-06-09.** Tasks 0–16. Spec: `specs/2026-04-12-group-b-voucher-types-design.md`; review: `code-review-group-b-2026-06-09.md`. (GST-on-invoices + DN/CN-direction now done — see Active Work.) |
 
 ### Set C — Sync & Store
 
@@ -47,13 +47,117 @@ Architecture intent: hybrid real-time tunnel + scheduled sync, reusing existing 
 
 ## Active Work — Next Up
 
-**Group B (F1 + F2 + F3 + B1b)** is the immediate next batch.
+The documented **Group B** (`specs/2026-04-12-group-b-voucher-types-design.md`) is now built and merged. We implemented exactly the doc (upload-driven, 5-type classification) — not the earlier A–F slice reframing.
 
-**Gating step:** Group B Task 0 — feasibility probes E1–E8 against live Tally. Must complete before any Group B implementation. See [`plans/2026-04-12-group-b-voucher-types-plan.md`](plans/2026-04-12-group-b-voucher-types-plan.md).
+| Item | Scope | Status |
+|---|---|---|
+| **F2 (Slice A)** | Foreign-currency → INR: original currency+amount, code-computed rate, chat-only override, INR-only into Tally, no-rate writes blocked | ✅ **Merged 2026-06-08.** Spec `specs/2026-06-08-fx-inr-conversion-design.md`; review `code-review-fx-inr-2026-06-08.md`. |
+| **Group B (F1+F3+B1b/B1c)** | Upload → Vision classifies `payment/purchase/sales/debit_note/credit_note` → route to builder → party + GST + bill allocation → write; company-name dropdown (test-connection); DB audit (UploadedFile + VoucherEntry) | ✅ **Merged 2026-06-09.** Plan `plans/2026-04-12-group-b-voucher-types-plan.md` Tasks 0–16; review `code-review-group-b-2026-06-09.md`. |
+| **GST on invoices** | Map extracted GST line items → Input (Purchase/DN) / Output (Sales/CN) GST ledgers, resolved from the workspace's Duties & Taxes ledgers | ✅ **Merged 2026-06-09.** Live-verified (CGST/SGST Input/Output post correctly). |
+| **DN/CN posting direction** | Verify a Debit Note reduces the payable and a Credit Note reduces the receivable | ✅ **Fixed + live-verified 2026-06-09** (was inverted; caught by live manual test). `code-review-group-b-2026-06-09.md`. |
+| **Write-flow eval** | Eval framework extended for upload→review→write (upload/action turns, `voucher_correctness` rubric, DB-mode login) | ✅ **Merged 2026-06-09.** `docs/eval-write-flow-2026-06-09.md`. |
+| **End-to-end live verification** | Real document/PDF → real Claude Vision → classify → live Tally write → read-back → cleanup, all 5 types | ✅ **Verified 2026-06-09** (`logs/manual_test_*_live.log`). |
 
-E7 and E8 (added 2026-05-07) are currently unvalidated:
-- E7: `get_company_list` envelope
-- E8: `get_party_vouchers` TDL filter
+### UI / persistence (2026-06-12)
+
+- **Upload/voucher review cards survive reload** ✅ **Merged 2026-06-12 into `dev`.**
+  `/chat/upload` now persists user+assistant Messages (was audit-row only) and `/chat/voucher-action`
+  persists written/discarded status (threading `conversation_id` via the request). Review
+  `code-review-upload-voucher-persistence-2026-06-12.md`; lesson `LESSONS.md` §17.
+- **Sidebar conversation actions — rename + delete** ✅ **Merged 2026-06-12 into `dev`.**
+  ChatGPT-style per-conversation kebab (⋯) menu: inline Rename (PATCH) + Delete with confirm (soft-delete);
+  deleting the active chat returns to the workspace landing; menu flips up near the list bottom; a11y roles added.
+  Frontend-only (backend `DELETE`/`PATCH` pre-existed). Spec `specs/2026-06-12-sidebar-conversation-actions-design.md`;
+  review `code-review-sidebar-conversation-actions-2026-06-12.md`. Tests: 351 FE unit, +3 backend E2E, 12 Playwright (×3 viewports).
+- **Connect-modal improvements** ✅ **Built — `feat/connect-modal-improvements`, pending merge.**
+  "Test Connection" → "Check Connection" (neutral restyle); setup-steps panel on a failed live check;
+  restored the optional workspace **Name (nickname)** field; sidebar shows `Company (nickname)` only when the
+  nickname differs (no more `Company (Company)` duplication). Frontend-only. Spec
+  `specs/2026-06-12-connect-modal-improvements-design.md`; review `code-review-connect-modal-improvements-2026-06-12.md`.
+  Tests: 363 FE unit; rewrote 2 stale connect-company Playwright specs + added connect-company-steps (9 × 3 viewports).
+
+### Write-flow edit fixes + edit-history + file_id linkage (2026-06-29)
+
+- **Classifier company-anchoring** ✅ **Committed locally (`1735e8c` on `feat/connect-modal-improvements`).**
+  Vision prompt anchors purchase-vs-sales to the workspace's own company; hierarchy-aware ledger matching
+  (parties under custom sub-groups like National/Local Creditors now match instead of being flagged new);
+  existence-safe `create_ledger` (name+parent match, company-scoped, fail-safe); party ledgers `is_billwise`.
+  Spec `specs/2026-06-19-classifier-company-anchoring-design.md`; review `code-review-write-flow-fixes-2026-06-19.md`.
+- **Edit-flow correctness (manual-testing-driven)** ✅ **Committed locally (`1735e8c`).**
+  Edit **Save** = local merge (no premature Tally write); draft edits + voucher-action result messages now
+  **persist across page refresh** (new `save_draft` action + `_update_persisted_voucher_entry` + `_persist_action_response`);
+  inventory edit **recomputes total + GST** proportionally; upload intro text no longer restates a mutable amount/date.
+- **Edit-history version trail** ✅ **Committed locally (`1735e8c`).** New `voucher_entry_revisions` table (migration **004**)
+  snapshots every version (`upload → edit → write`); original stays immutable in `uploaded_files.extracted_data`,
+  current card in `messages.data`, full trail queryable in `voucher_entry_revisions`.
+- **`file_id` linkage** ✅ **Committed locally (`1735e8c`).** Migration **005** + entry now carries `file_id`, so
+  original (`uploaded_files`) ↔ card ↔ revisions ↔ audit (`voucher_entries`) all join on `file_id`. Backfill
+  `scripts/backfill_entry_file_id.py` for legacy rows.
+- **Tests** ✅ refresh round-trip (act→reload→re-assert whole state), mock-Claude + live-Tally e2e
+  (`tests/e2e_live/test_db_write_live.py`, 5 voucher types, with cleanup), eval sales/DN/CN anchoring scenarios.
+  2,006 automated passing (1,625 backend + 381 frontend, 0 failures). Doc rules added: CLAUDE.md "Test reality" +
+  "refresh round-trip"; LESSONS.md §15 (ISINVOICE GST recompute, bill-wise reporting).
+
+**Group B Task 0 feasibility probes — DONE (2026-06-08).** Results: [`group-b-task0-probe-results-2026-06-08.md`](group-b-task0-probe-results-2026-06-08.md). E1–E8 verified (DN/CN creation, company list, party-voucher filter). Two extra probes: **TDS journals persist** (T1a/T1b) and **bank instrument details persist** via `BANKALLOCATIONS.LIST` (B1) — but the **bank-reconciliation date does NOT persist** via voucher import, so reconciliation needs Tally's dedicated mechanism.
+
+### Next up — from the write-flow code analysis (`docs/code-analysis-write-flow-2026-06-09.md`)
+
+Correctness is proven live; these are hardening/quality items:
+- **SSRF (security, HIGH):** `tally_host`/`tally_port` are user-set with no validation — add an allowlist / block private+link-local ranges.
+- **Entry-dict typing + sign-convention single-source** — wire up the `VoucherReviewEntry` Pydantic model in `voucher_action`; extract the per-type debit/credit polarity to one config.
+- **Cheap correctness warnings:** DN/CN with no reference (silent On-Account), Vision currency missing → defaults INR, GST ledger missing → warn-not-block.
+- **Eval mock GST ledgers** — add CGST/SGST/IGST Input+Output to the mock Tally handler so mock-mode eval scores GST.
+
+### Future work (beyond the current doc — need their own spec)
+
+- **Invoice entry Phase 1 — Supplier Invoice No. + duplicate blocking** ✅ **Merged 2026-06-10.** Supplier
+  invoice no. written to Tally's `REFERENCE` (live-verified) + shown on the card; duplicate **hard block**
+  (file-hash + party/invoice-no vs DB & Tally, **server-side re-derived** so it's not client-bypassable,
+  per-workspace). Spec `specs/2026-06-10-invoice-entry-phase1-design.md`; review `code-review-invoice-dedup-2026-06-10.md`.
+- **Invoice entry Phase 2 — Inventory line items** ✅ **Merged 2026-06-11.** Goods invoices now post line
+  items into the Tally **stock grid** (qty/rate) via the stock-based builder, with Vision unit extraction,
+  a stock-item fuzzy resolver, goods-vs-services routing, and match/create-in-card UI. Create-new items:
+  GST-Not-Applicable when no HSN, non-reserved group, only-create-missing masters (fixed a duplicate-master
+  modal that froze Tally). **Live-verified 5/5** (items in grid, balanced voucher, books restored).
+  Spec `specs/2026-06-10-invoice-entry-phase2-inventory-design.md`; review `code-review-invoice-inventory-2026-06-10.md`.
+  Follow-up: on-the-fly stock-item creation needs HSN to set master GST (currently GST-NA + voucher-level GST);
+  add an HSN field to the create-new card if master-level GST is wanted.
+  - **Post-merge live-testing fixes (2026-06-11/12)** — found by manual upload, each TDD'd + live-verified:
+    - **Invoice-number extraction.** A purchase/sales invoice's OWN number was never captured (the prompt only had
+      `original_invoice_ref`, scoped to DN/CN). Added a distinct `invoice_number` field → drives the card "Invoice #",
+      the Tally `REFERENCE`, and the party+invoice-no dedup key (DN/CN keep `original_invoice_ref` for the against-bill).
+      Real Vision verified extracting `invoice_number`. (`fix/invoice-number-extraction`, merged.)
+    - **Master-create idempotency + no false success.** A duplicate-master CREATE froze Tally with a modal; an existing
+      group returning `altered=1` aborted the write. Now: list items+groups (incl. empty groups via new
+      `list_stock_groups`) and only create missing masters; treat `altered=1, errors=0` as already-exists success;
+      frontend reverts the optimistic "Written" badge on a `voucher_error`. See [`LESSONS.md` §15 rules 10–14](../LESSONS.md).
+      (`fix/inventory-master-altered-idempotent`, merged.)
+    - **Tally gotchas captured** in `LESSONS.md` §15 (duplicate-master modal freeze, GST-needs-HSN, reserved "Primary"
+      group, future-dated silent drop, Sales hides REFERENCE).
+  - **Open follow-up (declined this session):** also append the invoice number to the **Narration** so it's visible
+    on the Sales voucher screen (Tally hides REFERENCE there by default). Not implemented.
+  - **Upload/voucher review cards vanished on reload (2026-06-12)** ✅ **Fixed on `fix/upload-voucher-persistence`,
+    pending merge.** `/chat/upload` persisted only an `UploadedFile` audit row (no `Message` rows), so review cards
+    disappeared on refresh/relogin; `/chat/voucher-action` never persisted the written/discarded status (and its
+    `conversation_id` gate read a key the production entry dict never has — also a silent no-op for the `VoucherEntry`
+    audit row). Now persists user+assistant Messages + titles the conversation, and threads `conversation_id` via the
+    request to persist status. New lesson [`LESSONS.md` §17](../LESSONS.md); review
+    [`code-review-upload-voucher-persistence-2026-06-12.md`](code-review-upload-voucher-persistence-2026-06-12.md).
+
+<!-- superseded — was: -->
+- **(superseded) Inventory line items** — original gap note. The agent invoice write-path used the
+  **accounting-only** ledger builder (`_build_ledger_invoice_voucher`): it lumps the base on a single
+  purchase/sales ledger and puts the extracted item names in the **narration** — no stock items, qty, or
+  rate in the inventory grid. Vision already extracts `line_items` (description/qty/rate/amount); they're
+  just not mapped to Tally stock items. The **inventory-capable builder exists** (`build_create_purchase_voucher`
+  / `..._sales_voucher`, used by the seeder) but isn't wired to the upload flow. Needs a spec covering:
+  stock-item resolution/creation (+ units), qty×rate per line, per-item GST, and writing the
+  **Supplier Invoice No.** field. Also fix **ledger auto-mapping category** (e.g. paper → "Purchase - Electronics").
+  Discovered 2026-06-10 via live upload (voucher posted accounting-only).
+- **Supplier payment against an outstanding bill** (Agst Ref settlement of an existing payable), **TDS journals** (sale/purchase each need invoice + settlement + TDS journal), and **bank-statement reconciliation** (the reconciliation *date* needs Tally's dedicated mechanism — probe-confirmed it doesn't persist via voucher import).
+
+> **Ops note:** restart the backend after merging write-path features — a stale server (pre-GST-merge)
+> served accounting-only/no-GST vouchers on 2026-06-10 even though the merged code was correct.
 
 ---
 

@@ -47,6 +47,60 @@ class TestVisionPrompt:
         assert "json" in prompt.lower()
         assert "GST" in prompt or "gst" in prompt
 
+    def test_prompt_drops_inr_mandate(self):
+        """Prompt must no longer force amounts into INR."""
+        prompt = build_vision_prompt()
+        assert "All amounts in INR" not in prompt
+
+    def test_prompt_asks_for_currency_and_fx_rate(self):
+        prompt = build_vision_prompt()
+        assert "currency" in prompt.lower()
+        assert "fx_rate" in prompt.lower()
+
+    def test_prompt_says_do_not_convert(self):
+        prompt = build_vision_prompt()
+        lower = prompt.lower()
+        assert "original currency" in lower
+        assert "not convert" in lower or "do not convert" in lower
+
+    def test_prompt_asks_for_line_item_unit(self):
+        """Per-line schema must include a unit field (inventory Phase 2)."""
+        prompt = build_vision_prompt()
+        assert '"unit"' in prompt
+
+    def test_no_company_matches_none_and_empty(self):
+        """Back-compat: no company / None / "" all yield the same prompt string."""
+        assert build_vision_prompt() == build_vision_prompt(None)
+        assert build_vision_prompt() == build_vision_prompt("")
+
+    def test_no_company_prompt_has_no_perspective_block(self):
+        """Falsy company must not inject the company-anchoring perspective block."""
+        prompt = build_vision_prompt()
+        assert "Perspective" not in prompt
+        assert "books belong to" not in prompt.lower()
+
+    def test_company_prompt_includes_company_name(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited")
+        assert "Bharat Traders Private Limited" in prompt
+
+    def test_company_prompt_states_issued_by_is_sales(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited").lower()
+        # issued BY our company → sales
+        assert "issued by" in prompt
+        assert "sales" in prompt
+
+    def test_company_prompt_states_billed_to_is_purchase(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited").lower()
+        # billed TO our company ("Bill To") → purchase
+        assert "billed to" in prompt or "bill to" in prompt
+        assert "purchase" in prompt
+
+    def test_company_prompt_party_is_counterparty(self):
+        prompt = build_vision_prompt("Bharat Traders Private Limited").lower()
+        assert "counterparty" in prompt
+        # party_name must never be our own company
+        assert "never" in prompt
+
 
 class TestParseVisionResponse:
     def test_basic_expense(self):
@@ -82,6 +136,36 @@ class TestParseVisionResponse:
         assert doc.gst is not None
         assert doc.gst.cgst_amount == Decimal("90.00")
 
+    def test_line_item_unit_captured(self):
+        """A line item's printed unit is captured onto LineItem.unit."""
+        response_json = json.dumps({
+            "doc_type": "purchase", "party_name": "Acme", "date": "2026-04-04",
+            "total_amount": 1000.00,
+            "line_items": [
+                {"description": "Pens", "amount": 1000.00,
+                 "quantity": 10, "rate": 100, "unit": "Pcs"},
+            ],
+            "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.line_items[0].unit == "Pcs"
+
+    def test_line_item_unit_null_becomes_none(self):
+        """A null/absent unit parses to None (default applied later at build time)."""
+        response_json = json.dumps({
+            "doc_type": "purchase", "party_name": "Acme", "date": "2026-04-04",
+            "total_amount": 1000.00,
+            "line_items": [
+                {"description": "Widget", "amount": 1000.00,
+                 "quantity": 5, "rate": 200, "unit": None},
+                {"description": "Gadget", "amount": 50.00, "quantity": 1, "rate": 50},
+            ],
+            "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.line_items[0].unit is None
+        assert doc.line_items[1].unit is None
+
     def test_strips_markdown_code_fences(self):
         """Claude sometimes wraps JSON in ```json ... ``` even when told not to."""
         response = """```json
@@ -93,6 +177,58 @@ class TestParseVisionResponse:
     def test_invalid_json_raises(self):
         with pytest.raises(json.JSONDecodeError):
             parse_vision_response("not json at all")
+
+    def test_currency_present_captured_as_original_currency(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "AWS", "date": "2026-04-04",
+            "total_amount": 100.00, "currency": "USD", "fx_rate": 83.5,
+            "line_items": [{"description": "Cloud", "amount": 100.00}],
+            "gst": None, "payment_mode": "card",
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "USD"
+        assert doc.fx_rate == Decimal("83.5")
+
+    def test_currency_absent_defaults_to_inr(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "Local", "date": "2026-04-04",
+            "total_amount": 500.00,
+            "line_items": [{"description": "x", "amount": 500.00}],
+            "gst": None, "payment_mode": "cash",
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "INR"
+        assert doc.fx_rate is None
+
+    def test_lowercase_currency_uppercased(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "X", "date": "2026-04-04",
+            "total_amount": 50.0, "currency": "eur", "fx_rate": None,
+            "line_items": [], "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "EUR"
+        assert doc.fx_rate is None
+
+    def test_fx_rate_null_yields_none(self):
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "X", "date": "2026-04-04",
+            "total_amount": 100.0, "currency": "USD", "fx_rate": None,
+            "line_items": [], "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.original_currency == "USD"
+        assert doc.fx_rate is None
+
+    def test_currency_back_compat_alias_set(self):
+        """Legacy `currency` field stays populated for back-compat."""
+        response_json = json.dumps({
+            "doc_type": "expense", "vendor_name": "X", "date": "2026-04-04",
+            "total_amount": 100.0, "currency": "usd", "fx_rate": None,
+            "line_items": [], "gst": None, "payment_mode": None,
+        })
+        doc = parse_vision_response(response_json)
+        assert doc.currency == "USD"
 
 
 class TestAmountValidation:

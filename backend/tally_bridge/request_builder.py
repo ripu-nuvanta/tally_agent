@@ -26,8 +26,9 @@ def _wrap_envelope(header_id: str, body_desc: str) -> str:
 </ENVELOPE>"""
 
 
-def _wrap_collection_envelope(collection_name: str, object_type: str, native_methods: list[str]) -> str:
+def _wrap_collection_envelope(collection_name: str, object_type: str, native_methods: list[str], company: str | None = None) -> str:
     methods_xml = "\n".join(f"<NATIVEMETHOD>{m}</NATIVEMETHOD>" for m in native_methods)
+    company_var = f"<SVCurrentCompany>{xml_escape(company)}</SVCurrentCompany>" if company else ""
     return f"""<ENVELOPE>
 <HEADER>
 <VERSION>1</VERSION>
@@ -39,6 +40,7 @@ def _wrap_collection_envelope(collection_name: str, object_type: str, native_met
 <DESC>
 <STATICVARIABLES>
 <SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+{company_var}
 </STATICVARIABLES>
 <TDL>
 <TDLMESSAGE>
@@ -148,14 +150,85 @@ def build_list_companies() -> str:
 </BODY>
 </ENVELOPE>"""
 
-def build_list_ledgers() -> str:
-    return _wrap_collection_envelope("CustomLedgerList", "Ledger", ["Name", "Parent", "ClosingBalance", "OpeningBalance"])
+def build_company_list() -> str:
+    """List loaded companies (verified probe E7 — Collection TYPE=Company).
+
+    Returns the same `List of Companies` collection envelope verified live in
+    probe_group_b.py::probe_e7. Used to populate the connect-company dropdown.
+    """
+    return _wrap_collection_envelope("List of Companies", "Company", ["Name"])
+
+
+def build_party_vouchers(
+    party: str,
+    voucher_types: list[str],
+    from_date: str,
+    to_date: str,
+    company: str | None = None,
+) -> str:
+    """Vouchers for a party filtered by type (verified probe E8).
+
+    Mirrors probe_group_b.py::build_party_vouchers_query: a TDL Collection of
+    Voucher objects constrained to the requested voucher types via
+    `CHILDOF $$VchType<Type>` and filtered to the party via a `$PartyLedgerName`
+    FILTER formula. Used by the DN/CN flow to find a party's original invoices.
+
+    When multiple voucher_types are given, the CHILDOF lines are emitted once
+    per type (Tally treats repeated CHILDOF as a union).
+    """
+    company_var = f"<SVCurrentCompany>{xml_escape(company)}</SVCurrentCompany>" if company else ""
+    safe_party = xml_escape(party, {'"': "&quot;"})
+    childof_xml = "\n".join(
+        f"<CHILDOF>$$VchType{xml_escape(vt.title())}</CHILDOF>" for vt in voucher_types
+    )
+    return f"""<ENVELOPE>
+<HEADER>
+<VERSION>1</VERSION>
+<TALLYREQUEST>Export</TALLYREQUEST>
+<TYPE>Collection</TYPE>
+<ID>PartyVouchers</ID>
+</HEADER>
+<BODY>
+<DESC>
+<STATICVARIABLES>
+<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>
+<SVFROMDATE>{from_date}</SVFROMDATE>
+<SVTODATE>{to_date}</SVTODATE>
+{company_var}
+</STATICVARIABLES>
+<TDL>
+<TDLMESSAGE>
+<COLLECTION NAME="PartyVouchers" ISMODIFY="No">
+<TYPE>Voucher</TYPE>
+{childof_xml}
+<NATIVEMETHOD>Date</NATIVEMETHOD>
+<NATIVEMETHOD>VoucherNumber</NATIVEMETHOD>
+<NATIVEMETHOD>VoucherTypeName</NATIVEMETHOD>
+<NATIVEMETHOD>PartyLedgerName</NATIVEMETHOD>
+<NATIVEMETHOD>Reference</NATIVEMETHOD>
+<NATIVEMETHOD>Amount</NATIVEMETHOD>
+<FILTER>PartyVchFilter</FILTER>
+</COLLECTION>
+<SYSTEM TYPE="Formulae" NAME="PartyVchFilter">$PartyLedgerName = "{safe_party}"</SYSTEM>
+</TDLMESSAGE>
+</TDL>
+</DESC>
+</BODY>
+</ENVELOPE>"""
+
+
+def build_list_ledgers(company: str | None = None) -> str:
+    return _wrap_collection_envelope("CustomLedgerList", "Ledger", ["Name", "Parent", "ClosingBalance", "OpeningBalance"], company=company)
 
 def build_list_groups() -> str:
     return _wrap_collection_envelope("CustomGroupList", "Group", ["Name", "Parent"])
 
 def build_list_stock_items() -> str:
     return _wrap_collection_envelope("CustomStockItemList", "StockItem", ["Name", "Parent", "BaseUnits", "ClosingBalance", "ClosingRate", "ClosingValue"])
+
+
+def build_list_stock_groups() -> str:
+    return _wrap_collection_envelope("CustomStockGroupList", "StockGroup", ["Name"])
 
 
 # --- Report Queries ---

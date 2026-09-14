@@ -27,6 +27,26 @@ def _validate_reference_date(reference_date: str | None) -> None:
         )
 
 
+def compute_invoice_gross(items: list[tuple], gst_mode: str) -> float:
+    """Compute the party gross (base + GST) for a stock-based invoice.
+
+    Single source of truth for the inventory party leg: the New Ref bill
+    allocation amount AND the posted party AMOUNT must both equal this value so
+    the voucher balances exactly. Mirrors the builder calc in
+    ``build_create_purchase_voucher`` / ``build_create_sales_voucher``: groups
+    the taxable base by gst_rate, applies tax, sums.
+
+    items shape: (name, qty, rate, ledger, uom, gst_rate). intra (CGST+SGST) and
+    inter (IGST) yield the same gross, so gst_mode is informational only.
+    """
+    rate_buckets: dict[int, float] = {}
+    for _name, qty, rate, _ledger, _uom, gst_rate in items:
+        rate_buckets[gst_rate] = rate_buckets.get(gst_rate, 0.0) + (qty * rate)
+    base = sum(rate_buckets.values())
+    tax = sum(b * r / 100 for r, b in rate_buckets.items() if r > 0)
+    return round(base + tax, 2)
+
+
 def _render_reference_block(reference: str | None, reference_date: str | None) -> str:
     """Render <REFERENCE> + <REFERENCEDATE> elements (each emitted only when
     its arg is provided). Returns leading-newline string ready to inline."""
@@ -130,6 +150,8 @@ def build_create_payment_voucher(
     company: str,
     gst_entries: list[dict] | None = None,
     bill_allocations: list[dict] | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
 ) -> str:
     """Build XML to create a Payment voucher in Tally.
 
@@ -153,6 +175,7 @@ def build_create_payment_voucher(
     _require(credit_ledger, "credit_ledger")
     _require(narration, "narration")
     _require(company, "company")
+    _validate_reference_date(reference_date)
 
     base_amount = amount - gst_total
 
@@ -182,14 +205,242 @@ def build_create_payment_voucher(
     )
 
     entries_xml = "\n".join(entries)
+    ref_xml = _render_reference_block(reference, reference_date)
     voucher_xml = f"""<VOUCHER VCHTYPE="Payment" ACTION="Create">
-<DATE>{_esc(date)}</DATE>
+<DATE>{_esc(date)}</DATE>{ref_xml}
 <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
 <NARRATION>{_esc(narration)}</NARRATION>
 <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>
 {entries_xml}
 </VOUCHER>"""
     return _wrap_import("Vouchers", company, voucher_xml)
+
+
+def _build_ledger_invoice_voucher(
+    vch_type: str,
+    date: str,
+    party_ledger: str,
+    contra_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+    bill_type: str = "New Ref",
+    party_on_debit: bool = False,
+    reference: str | None = None,
+    reference_date: str | None = None,
+) -> str:
+    """Build XML for ledger-only invoice-style vouchers (Purchase / Sales /
+    Debit Note / Credit Note).
+
+    Uses ``LEDGERENTRIES.LIST`` + ``Invoice Voucher View`` + ``ISPARTYLEDGER`` —
+    the verified shape from Task 0 probes E5/E6 (no inventory entries).
+
+    Sign convention is driven by ``party_on_debit`` — the party leg and the
+    contra (GST + returns/purchase/sales ledger) leg always sit on OPPOSITE
+    sides. The party leg with ISDEEMEDPOSITIVE=Yes carries a NEGATIVE amount
+    (Tally debit); with ISDEEMEDPOSITIVE=No a POSITIVE amount (Tally credit):
+
+      - ``party_on_debit=False`` → party on CREDIT (No / +amount); contra on
+        DEBIT (Yes / -amount). Used by Purchase (party = creditor) and Credit
+        Note (a sales return that REDUCES the receivable — party = customer on
+        credit).
+      - ``party_on_debit=True``  → party on DEBIT (Yes / -amount); contra on
+        CREDIT (No / +amount). Used by Sales (party = debtor) and Debit Note (a
+        purchase return that REDUCES the payable — party = supplier on debit).
+
+    A return (DN/CN) posts in the INVERSE direction of the original invoice so
+    that the Agst Ref bill allocation REDUCES the outstanding bill. (Before the
+    2026-06-09 fix, DN mirrored Purchase / CN mirrored Sales — that was the bug
+    that made returns INCREASE the bill; see logs/manual_test_group_b_live.log.)
+
+    The bill allocation (when ``bill_ref`` is set) mirrors the party-line sign
+    via ``_render_bill_allocations``.
+    """
+    if amount <= 0:
+        raise ValueError(f"amount must be positive, got {amount}")
+    _require(date, "date")
+    _require(party_ledger, "party_ledger")
+    _require(contra_ledger, "contra_ledger")
+    _require(narration, "narration")
+    _require(company, "company")
+    _validate_reference_date(reference_date)
+
+    gst_total = sum(e["amount"] for e in (gst_entries or []))
+    if gst_total < 0 or gst_total > amount:
+        raise ValueError(f"invalid gst total {gst_total} for amount {amount}")
+    base_amount = amount - gst_total
+
+    if party_on_debit:
+        party_sign = -1  # party debit side → -amount
+        party_deemed = "Yes"
+        contra_sign = 1  # GST + contra ledger on credit side → +amount
+        contra_deemed = "No"
+    else:
+        party_sign = 1  # party credit side → +amount
+        party_deemed = "No"
+        contra_sign = -1  # GST + contra ledger on debit side → -amount
+        contra_deemed = "Yes"
+
+    bill_allocs = (
+        [{"name": bill_ref, "type": bill_type, "amount": amount}] if bill_ref else None
+    )
+    bill_xml = _render_bill_allocations(bill_allocs, party_line_sign=party_sign)
+
+    entries: list[str] = []
+    entries.append(
+        f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(party_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>{party_deemed}</ISDEEMEDPOSITIVE>
+<ISPARTYLEDGER>Yes</ISPARTYLEDGER>
+<AMOUNT>{party_sign * amount:.2f}</AMOUNT>{bill_xml}
+</LEDGERENTRIES.LIST>"""
+    )
+
+    for gst in gst_entries or []:
+        entries.append(
+            f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(gst["ledger"])}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>{contra_deemed}</ISDEEMEDPOSITIVE>
+<AMOUNT>{contra_sign * gst["amount"]:.2f}</AMOUNT>
+</LEDGERENTRIES.LIST>"""
+        )
+
+    entries.append(
+        f"""<LEDGERENTRIES.LIST>
+<LEDGERNAME>{_esc(contra_ledger)}</LEDGERNAME>
+<ISDEEMEDPOSITIVE>{contra_deemed}</ISDEEMEDPOSITIVE>
+<AMOUNT>{contra_sign * base_amount:.2f}</AMOUNT>
+</LEDGERENTRIES.LIST>"""
+    )
+
+    entries_xml = "\n".join(entries)
+    ref_xml = _render_reference_block(reference, reference_date)
+    voucher_xml = f"""<VOUCHER VCHTYPE="{_esc(vch_type)}" ACTION="Create">
+<DATE>{_esc(date)}</DATE>{ref_xml}
+<VOUCHERTYPENAME>{_esc(vch_type)}</VOUCHERTYPENAME>
+<NARRATION>{_esc(narration)}</NARRATION>
+<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>
+<ISINVOICE>Yes</ISINVOICE>
+{entries_xml}
+</VOUCHER>"""
+    return _wrap_import("Vouchers", company, voucher_xml)
+
+
+def build_create_debit_note(
+    date: str,
+    party_ledger: str,
+    purchase_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
+) -> str:
+    """Build XML to create a Debit Note in Tally (purchase return).
+
+    A Debit Note reduces a payable — it DEBITS the supplier (party) and CREDITS
+    the purchase-returns/contra ledger (plus reversed Input GST on credit),
+    referencing the original bill via ``Agst Ref`` so the allocation reduces the
+    outstanding payable. This is the INVERSE of a Purchase (party_on_debit=True).
+    Corrected 2026-06-09 (logs/manual_test_group_b_live.log) — the prior
+    "mirrors Purchase" polarity wrongly INCREASED the payable.
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Debit Note", date=date, party_ledger=party_ledger,
+        contra_ledger=purchase_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="Agst Ref", party_on_debit=True,
+        reference=reference, reference_date=reference_date,
+    )
+
+
+def build_create_credit_note(
+    date: str,
+    party_ledger: str,
+    sales_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
+) -> str:
+    """Build XML to create a Credit Note in Tally (sales return).
+
+    A Credit Note reduces a receivable — it CREDITS the customer (party) and
+    DEBITS the sales-returns/contra ledger (plus reversed Output GST on debit),
+    referencing the original bill via ``Agst Ref`` so the allocation reduces the
+    outstanding receivable. This is the INVERSE of a Sales (party_on_debit=False).
+    Corrected 2026-06-09 (logs/manual_test_group_b_live.log) — the prior
+    "mirrors Sales" polarity wrongly INCREASED the receivable.
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Credit Note", date=date, party_ledger=party_ledger,
+        contra_ledger=sales_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="Agst Ref", party_on_debit=False,
+        reference=reference, reference_date=reference_date,
+    )
+
+
+def build_create_purchase_voucher_ledger(
+    date: str,
+    party_ledger: str,
+    purchase_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
+) -> str:
+    """Build XML for a ledger-only Purchase voucher (party + contra + GST).
+
+    Group B document-driven path: unlike the stock-based
+    ``build_create_purchase_voucher`` (seeder), this posts the party (Sundry
+    Creditors) credit and the purchase/expense ledger + Input GST debits using
+    the verified DN/CN ledger-invoice shape with a fresh ``New Ref`` bill.
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Purchase", date=date, party_ledger=party_ledger,
+        contra_ledger=purchase_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="New Ref", party_on_debit=False,
+        reference=reference, reference_date=reference_date,
+    )
+
+
+def build_create_sales_voucher_ledger(
+    date: str,
+    party_ledger: str,
+    sales_ledger: str,
+    amount: float,
+    narration: str,
+    company: str,
+    gst_entries: list[dict] | None = None,
+    bill_ref: str | None = None,
+    reference: str | None = None,
+    reference_date: str | None = None,
+) -> str:
+    """Build XML for a ledger-only Sales voucher (party + contra + GST).
+
+    Group B document-driven path: posts the party (Sundry Debtors) debit and the
+    sales ledger + Output GST credits using the ledger-invoice shape with a fresh
+    ``New Ref`` bill (mirrors Credit Note polarity).
+    """
+    return _build_ledger_invoice_voucher(
+        vch_type="Sales", date=date, party_ledger=party_ledger,
+        contra_ledger=sales_ledger, amount=amount, narration=narration,
+        company=company, gst_entries=gst_entries, bill_ref=bill_ref,
+        bill_type="New Ref", party_on_debit=True,
+        reference=reference, reference_date=reference_date,
+    )
 
 
 def build_create_group(name: str, parent: str, company: str) -> str:
@@ -319,16 +570,28 @@ def build_create_stock_item(
     company: str,
     applicable_from: str = "20250401",
 ) -> str:
-    """Build XML to create a stock item with HSN + per-item GST rate.
+    """Build XML to create a stock item, GST-applicable only when an HSN is given.
 
     Splits gst_rate evenly across CGST/SGST (intra-state) and uses full rate for IGST
     (inter-state). E.g. 18% → 9 CGST + 9 SGST + 18 IGST.
+
+    HSN-driven GST gating (live-caught bug, feat/invoice-inventory-items):
+    Vision frequently extracts no HSN code. TallyPrime treats a stock item that is
+    GST-applicable WITHOUT an HSN/SAC as invalid and pops a blocking
+    "HSN/SAC required" modal, which fails the create and locks Tally's API.
+    GST on the voucher is posted via explicit tax ledger lines regardless of the
+    item's master GST setup, so the item does NOT need master-level GST/HSN.
+
+    - hsn_code non-empty: GSTAPPLICABLE=Applicable + HSN elements + GSTDETAILS rates
+      (matches the seeder's proven items).
+    - hsn_code empty: GSTAPPLICABLE=Not Applicable, and the entire HSN + GSTDETAILS
+      blocks are omitted — a plain name+unit+group+opening stock item.
+
     See docs/tally-write-exploration-v4.md Op 3.
     """
     _require(name, "name")
     _require(group, "group")
     _require(uom, "uom")
-    _require(hsn_code, "hsn_code")
     _require(company, "company")
     if opening_qty < 0 or opening_rate < 0:
         raise ValueError("opening_qty and opening_rate must be non-negative")
@@ -340,18 +603,16 @@ def build_create_stock_item(
     igst_str = f"{gst_rate:g}"
     opening_value = opening_qty * opening_rate
 
-    si_xml = f"""<STOCKITEM NAME="{_esc(name)}" ACTION="Create">
-<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
-<PARENT>{_esc(group)}</PARENT>
-<BASEUNITS>{_esc(uom)}</BASEUNITS>
-<GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
+    hsn_str = (hsn_code or "").strip()
+    if hsn_str:
+        gst_block = f"""<GSTAPPLICABLE>Applicable</GSTAPPLICABLE>
 <GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY>
-<HSNCODE>{_esc(hsn_code)}</HSNCODE>
-<HSN>{_esc(hsn_code)}</HSN>
+<HSNCODE>{_esc(hsn_str)}</HSNCODE>
+<HSN>{_esc(hsn_str)}</HSN>
 <HSNDETAILS.LIST>
 <APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
-<HSNCODE>{_esc(hsn_code)}</HSNCODE>
-<HSN>{_esc(hsn_code)}</HSN>
+<HSNCODE>{_esc(hsn_str)}</HSNCODE>
+<HSN>{_esc(hsn_str)}</HSN>
 </HSNDETAILS.LIST>
 <GSTDETAILS.LIST>
 <APPLICABLEFROM>{applicable_from}</APPLICABLEFROM>
@@ -367,7 +628,16 @@ def build_create_stock_item(
 <RATEDETAILS.LIST><GSTRATEDUTYHEAD>Cess</GSTRATEDUTYHEAD><GSTRATEVALUATIONTYPE>Based on Value</GSTRATEVALUATIONTYPE><GSTRATE>0</GSTRATE></RATEDETAILS.LIST>
 </STATEWISEDETAILS.LIST>
 </GSTDETAILS.LIST>
-<OPENINGBALANCE>{opening_qty:g} {_esc(uom)}</OPENINGBALANCE>
+"""
+    else:
+        # No HSN → master-level GST off; voucher tax lines carry the GST.
+        gst_block = "<GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>\n"
+
+    si_xml = f"""<STOCKITEM NAME="{_esc(name)}" ACTION="Create">
+<NAME.LIST><NAME>{_esc(name)}</NAME></NAME.LIST>
+<PARENT>{_esc(group)}</PARENT>
+<BASEUNITS>{_esc(uom)}</BASEUNITS>
+{gst_block}<OPENINGBALANCE>{opening_qty:g} {_esc(uom)}</OPENINGBALANCE>
 <OPENINGRATE>{opening_rate:.2f}/{_esc(uom)}</OPENINGRATE>
 <OPENINGVALUE>{opening_value:.2f}</OPENINGVALUE>
 </STOCKITEM>"""
