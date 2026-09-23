@@ -1,0 +1,238 @@
+# BI Part 1 (Syncing) — Implementation Tracker
+
+Living status for **Part 1 only**: [`specs/2026-09-21-bi-part1-sync-design.md`](../specs/2026-09-21-bi-part1-sync-design.md).
+Parts 2 and 3 are not started and are not tracked here.
+
+**Built as v2 — current code is never changed** (spec §5 "Code isolation (v2)"). All code lives under `v2/`;
+v2 copies from current code instead of importing it; the cloud side is a separate app with its own Alembic chain.
+A change outside `v2/` and `docs/` is a bug in the work, not progress.
+
+**Legend:** ⬜ not started · 🟡 in progress · ✅ done · ⛔ blocked · ⏭ deferred
+
+**Rules for updating this file**
+- Mark an item 🟡 when work on it starts, not after.
+- ✅ needs **proof** in the Proof column: a test name, a log in `logs/`, a fixture path, a doc section, or a
+  commit. No proof → not ✅.
+- ⛔ needs the reason in the Proof column.
+- A result that changes the design → update the spec too (dated "Changed" line in its header) and say so here.
+- Stage-level changes (a stage starts or closes) also go to [`roadmap.md`](../roadmap.md) Set C.
+
+---
+
+## ▶ Resume here (end of day 2026-09-22)
+
+**Where we are (2026-09-23):** S0 plan part 2 — Tasks 1–12 built and reviewed; the final review said "ready with
+fixes"; the fix wave (I1–I3 + M1–M12) was applied, then **scoped re-reviewed 2026-09-23** ("ready with fixes": 2
+Important + 4 Minor), and **those 6 fixes are applied: 326 tests pass (also `-W error`)**. Nothing has been run live
+for part 2 yet. `v2/` is **not committed** (a `git clean` would delete it).
+
+**Next steps, in order:**
+1. ~~Scoped re-review of the fix wave~~ ✅ 2026-09-23 — done, findings fixed (see change log).
+2. **Live run (plan Task 13)** — someone must be at the Mac to click Tally's licence box (~5 times):
+   ```
+   cd "/Users/nuvanta-mac-3/work/Tally prime"
+   export PATH="/Applications/Wine Stable.app/Contents/Resources/wine/bin:$PATH"
+   uv run --project v2 python -m v2.probes reset-a             # fresh seed copy in s0probe → company A (1 click)
+   uv run --project v2 python -m v2.probes run 1 --auto        # probe 1 is stored DIFFERENT → must re-run explicitly
+   uv run --project v2 python -m v2.probes run --all --auto    # company-A order; B/C entries skip as not built
+   uv run --project v2 python -m v2.probes report
+   ```
+   Rules during the run: no Tally restart between these commands; click only "T: Continue In Educational Mode";
+   leave probe 10's deliberate modal alone; don't pass `--stop-any-tally`; don't run commands containing "tally.exe";
+   if interrupted → `reset-a` before continuing. Log: `v2/probes/results/logs/`.
+3. Record results: tracker rows (probes 3, 4, 6, 7, 8, 10, 12, 13, 16–19, 23, 25), spec findings (esp. 16–18 → Part 1 §6
+   rung 2 and the TB note), auto-mode limits (UI-edit parity 1/7/8, probe 16 UI read, probe 19 UI view, probe 13
+   file-level only — **R8 stays open**), code-review doc `docs/code-review-bi-s0-part2-<date>.md`.
+4. Then S0 plan part 3 (company B loader + probes 5, 11, 14, 15, 21, 22, 24 + B parts; company C).
+
+**Machine state left running today:** TallyPrime under Wine on "Bharat Traders Probe Copy" (`s0probe` folder; original
+`tally.ini` saved as `tally.ini.before-s0`); dev app — Postgres :5434 (started with `pg_ctl`, stops at reboot), backend
+:7000, frontend :5173. Wine 11.0 is at `/Applications/Wine Stable.app` (Homebrew's Wine casks are disabled). Company A's
+ledger "Electricity" still has a test EMAIL — `reset-a` clears it.
+
+**Progress ledger (every ruling, fix round, deferred minor):** `.superpowers/sdd/2026-09-22-bi-s0-probes-plan-part2/progress.md`
+(part 1: `.superpowers/sdd/2026-09-22-bi-s0-probes-plan/progress.md`).
+
+---
+
+## 0. Stages
+
+| Stage | Scope | Depends on | Spec | Plan | Status |
+|---|---|---|---|---|---|
+| Design | Part 1 brainstorm design | — | `specs/2026-09-21-bi-part1-sync-design.md` | — | ✅ 2026-09-21 |
+| **S0** | `v2/` scaffold + live-Tally probes 0–25 + real fixtures in `v2/tests/fixtures/sync/` | — | `specs/2026-09-22-bi-s0-probes-design.md` | `plans/2026-09-22-bi-s0-probes-plan.md` (part 1 ✅), `plans/2026-09-22-bi-s0-probes-plan-part2.md` (part 2, 13 tasks) | 🟡 Plan part 1 built + reviewed (146 tests); **probes 0, 1, 2 ✅ live 2026-09-22**; **plan part 2: Tasks 1–12 built + reviewed, final-review fixes applied (316 tests); re-review + live run next**; then part 3 |
+| **S1** | Cloud: tables, device auth, ingest API, parity engine | S0 (probes 6, 16, 17, 18, 21, 25; Q22/Q23) | — | — | ⬜ |
+| **S2** | Windows agent | S0 (probe 21 for backfill); parallel with S1 | — | — | ⬜ |
+
+---
+
+## 1. Decisions (spec §2)
+
+| # | Decision (short) | Built in | Status | Proof |
+|---|---|---|---|---|
+| 2 | Python agent reusing `tally_bridge`; PyInstaller `--onedir`, signed installer, service + tray, auto-update; Windows 10+ | S2 | ⬜ | |
+| 3 | Single company picked once at setup; GUID saved on workspace | S1 + S2 | ⬜ | |
+| 4 | Fetch only when active company GUID = saved GUID | S0 (probe 2) → S2 | ⬜ | S0 part done: probe 2 ✅ — cheap GUID read confirmed (filtered Company collection); build is S2 |
+| 5 | Fetch only while connected; otherwise skip quietly | S2 | ⬜ | |
+| 6 | Sync masters, vouchers + lines, report snapshots (current + month-end set) | S0 → S1 + S2 | ⬜ | |
+| 7 | First sync = current FY + previous FY; new FY auto-added on 1 April | S2 | ⬜ | |
+| 7b | Background backfill to `books_from`, lowest priority, never blocks chat | S0 (probe 21) → S1 + S2 | ⬜ | |
+| 9 | Change detection via AltVchId / AltMstId + AlterID, plus deletion check | S0 (probes 1, 3, 4, 7) → S2 | ⬜ | S0: probe 1 ✅ (counters move on every real change); probes 3, 4, 7 pending (plan part 2); build is S2 |
+| 11 | Parity rungs 0+1+2; rung 1 needs a per-ledger opening anchor | S0 (probes 16, 17, 18, 19) → S1 + S2 | ⬜ | |
+| 12 | No full resync is ever automatic | S1 + S2 | ⬜ | |
+| 14 | Ops signal for integrity alerts carries counts and causes only | S1 | ⬜ | |
+
+---
+
+## 2. Open questions (spec §15)
+
+Product decisions to settle first: Q1, Q4, Q5, Q11 (Part 3, decides setup), Q25, Q28, Q30–Q32.
+Q29 before S0's timing probes. Q22/Q23 need probe 21 before S1 commits to a schema.
+
+| Q | Question (short) | Needed before | Answer | Decided on |
+|---|---|---|---|---|
+| Q1 | Heartbeat on skipped cycles too? | S1 spec | | |
+| Q4 | Changing company or PC — how to re-bind? | S1 spec | | |
+| Q5 | Synced data on disconnect / uninstall / account deletion | S1 spec | | |
+| Q6 | Privacy: encryption at rest, access, keep `raw`? (DPDP Act) | S1 spec | | |
+| Q10 | Is §10 out-of-scope list complete? | S1 spec | | |
+| Q11 | Where the company is picked (agent or web) — Part 3 | S1/S2 specs | | |
+| Q19 | Parity tolerance: flat ₹1 or percentage | S1 spec (after probe 20) | | |
+| Q20 | Rung 3 in or out for v1 | S1 spec | | |
+| Q21 | Parity retention 90 / 7 / 90 days | S1 spec (after probe 20) | | |
+| Q22 | Keep `raw` JSONB for backfilled years? | S1 schema (after probe 21) | | |
+| Q23 | Backfill floor / ceiling? | S1 schema (after probe 21) | | |
+| Q25 | Re-link trigger on new GUID + same name; password or click? | S2 spec | | |
+| Q28 | Who can see a synced workspace? | S3 spec (Part 3) | | |
+| Q29 | Tier C machine: cloud VM or physical PC | S0 timing probes 9, 20, 21 | **None yet.** Timing probes deferred; they run before the first installer build (S2). | 2026-09-22 |
+| Q30 | Several PCs, one company | S1 spec | | |
+| Q31 | Admin rights at install acceptable? | S2 spec | | |
+| Q32 | Split companies — link older company later? | v2 | | |
+
+---
+
+## 3. S0 — live-Tally probes (spec §12)
+
+Probe scripts live in `v2/probes/`; every probe saves raw Tally responses under `v2/tests/fixtures/sync/`.
+Tier B = Mac + TallyPrime under Wine; tier C = real Windows x64 (timing only).
+**Run first:** 16, 17, 18, 21 (they can change the S1 schema).
+
+| Probe | What it settles | Tier | Feeds | Status | Proof |
+|---|---|---|---|---|---|
+| — | `v2/` scaffold: README (isolation rules), `pyproject.toml`, copied Tally read client, import-isolation test | A | all v2 work | ✅ | Plan part 1 Tasks 1–3: `uv run --project v2 pytest v2/tests` 50 passed; task review approved (2026-09-22) |
+| 0 | Environment check: Wine, edition, licence mode, seed restores | B | all | ✅ | **CONFIRMED live 2026-09-22**: Wine 11.0, TallyPrime 7.0 Edit Log, **Educational**; seed anchors ₹9,70,537 / ₹18,34,142 matched; GUID unchanged by rename. `v2/probes/results/results.json`, `v2/tests/fixtures/sync/p00_*`. Note: every Tally start stops on a licence box (gateway unreachable) until someone clicks T |
+| 1 | GUID, AltVchId, AltMstId, BooksFrom, LastVoucherDate — which change on what | B | decision 9, R6 | ✅ | **Counters confirmed live 2026-09-22** (recorded DIFFERENT only because the operator's revert — an empty-value XML alter — was a silent no-op in Tally). Company collection exposes GUID, AltVchId, AltMstId, BooksFrom, LastVoucherDate, AlterID; AltVchId moved on voucher create/alter/delete (+3 on delete); AltMstId on ledger alter/create/delete; a voucher entry does **not** move the ledger's AlterID; LastVoucherDate is **not** rolled back after a delete. `p01_*` fixtures. Open: edits were XML imports, not UI (S0-D3 UI parity), Educational mode |
+| 2 | Cheap read of open company GUID; response when no company open | B | decision 4, R2 | ✅ | **CONFIRMED live 2026-09-22**: filtered Company collection (`$Name = ##SVCurrentCompany`) returns the GUID in 1,674 bytes (confirmed request stored); with no company open it returns no GUID. `p02_*` fixtures |
+| 3 | Voucher GUID / MasterID / AlterID / IsCancelled / IsOptional / IsPostDated / Reference fetchable | B | R6, R16 | ⬜ | |
+| 4 | `$AlterID > N` filter on Voucher / Ledger / Group / StockItem works and is safe | B | decision 9, R6 | ⬜ | |
+| 5 | SVFROMDATE / SVTODATE bound a Voucher collection; safe `$Date` filter | B | extractor chunks | ⬜ | |
+| 6 | Bill allocations, ISDEEMEDPOSITIVE, inventory lines; can a line export ledger GUID? | B | S1 ingest rules | ⬜ | |
+| 7 | Deleted voucher vanishes; GUID never reused | B (+ C standard edition) | R7 | ⬜ | |
+| 8 | Ledger rename: old voucher names, AlterID, GUID stability | B | R9 | ⬜ | |
+| 9 | Latency and size per chunk; can the accountant keep typing | **C only** | R3, R27 | ⏭ | No tier C machine yet (Q29); sizes measured under Wine in 21 |
+| 10 | Error shapes: Tally closed, company closed, Educational, popup | B | R26, gate | ⬜ | |
+| 11 | Opening balances / bills; stock opening qty / rate / value | B | R5 | ⬜ | |
+| 12 | Report snapshots via SVCurrentCompany at today's date | B | R5 | ⬜ | |
+| 13 | Backup restore: do GUID / MasterIDs change? | B (+ C standard edition) | R8 | ⬜ | |
+| 14 | Company names with `&` / quotes / apostrophes | B | R13 | ⬜ | |
+| 15 | Hindi / Unicode text; compound-unit stock item | B | R14, R15 | ⬜ | |
+| 16 | `LEDGER.ClosingBalance` = TB? Nominal = 0? OpeningBalance scope + as-on? ClosingBalance as-of date + post-dated | B | decision 11, R30, Part 2 | ⬜ | |
+| 17 | Exploded (ledger-level) TB via `TYPE=Data` — safe and fast? | B | decision 11, R3 | ⬜ | |
+| 18 | TB / Bills / Stock Summary as-on a past date return correct history | B | decision 11, R30, Parts 2+3 | ⬜ | |
+| 19 | AltVchId / AltMstId hold still across a multi-call capture | B | quiescence guard | ⬜ | |
+| 20 | Parity cost: full ledger list + TB on a large company | **C only** | R27, Q19, Q21 | ⏭ | No tier C machine yet (Q29) |
+| 21 | Full-history reach: `books_from`, old-FY fetch, storage extrapolation | B (reach + size) + **C** (timing) | decision 7b, Q22, Q23 | ⬜ | Timing part ⏭ (Q29) |
+| 22 | Forex vouchers expose INR base amount | B | decision 15 | ⬜ | |
+| 23 | GST classification on ledgers; due date / credit period on bills | B | Part 3 tiles | ⬜ | |
+| 24 | Secured companies (security / TallyVault) — export works? | B | R2, R26 | ⬜ | |
+| 25 | Group nature / IsRevenue / AffectsGrossProfit; VoucherType parent + base type | B | S1 schema, R5, R16 | ⬜ | |
+
+**S0 exit gate:** every tier-B probe ✅ or ⛔-with-fallback recorded (tier-C timing ⏭ until Q29 has a machine); probes 16/17/18 outcomes written into the
+Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
+
+---
+
+## 4. S1 — Cloud (spec §5 "Cloud", §6) — separate app in `v2/cloud/`
+
+| # | Item | Status | Proof |
+|---|---|---|---|
+| S1.0 | `v2/cloud/` app skeleton (own port, same Postgres), own Alembic chain (`alembic_version_v2`), copied auth / JWT helpers | ⬜ | |
+| S1.1 | v2 migration — bookkeeping: `sync_workspaces` (replaces `workspace.config.*`), `agent_devices`, `sync_runs` (+ `kind`), `sync_batches` | ⬜ | |
+| S1.2 | v2 migration — masters: groups (+ `nature`), voucher types (+ `base_type`), ledgers (+ GST fields), stock items, stock groups, units | ⬜ | |
+| S1.3 | v2 migration — vouchers, ledger lines, inventory lines, bill allocations; `Numeric(18,2)` everywhere | ⬜ | |
+| S1.4 | v2 migration — `tally_report_snapshots`, `sync_fy_coverage`, `parity_runs`, `parity_lines` | ⬜ | |
+| S1.5 | Device auth: `/api/agent/auth/login`, `/refresh`, rotating revocable token, `GET/DELETE /api/devices`, `get_current_device` | ⬜ | |
+| S1.6 | One active device per workspace + take-over | ⬜ | |
+| S1.7 | `POST /api/sync/company` (bind workspace, config) | ⬜ | |
+| S1.8 | `POST/PATCH /api/sync/{ws}/runs` with `kind` | ⬜ | |
+| S1.9 | `POST /batches`: upsert `alter_id >=`, lines replaced, company-GUID check, `last_synced_at` rules by `kind` | ⬜ | |
+| S1.10 | Ingest rules: masters before vouchers, name → GUID resolution, `missing_master`, `balance_captured_at` | ⬜ | |
+| S1.11 | Rung 0: double-entry invariant rejects the batch | ⬜ | |
+| S1.12 | Ingest limits: 413 oversize, per-device 429 | ⬜ | |
+| S1.13 | `PATCH /coverage`: idempotent, two watermark edges, `config.backfill` copy | ⬜ | |
+| S1.14 | `POST /reconcile`: soft-delete, return ledgers to re-read | ⬜ | |
+| S1.15 | `POST /snapshots`: upsert on `(workspace_id, report_type, as_on_date)` | ⬜ | |
+| S1.16 | `POST /heartbeat`: `last_seen_at` only | ⬜ | |
+| S1.17 | Cursors on the server (`config.cursors`) | ⬜ | |
+| S1.18 | Stored `sync_state` values incl. `restore_detected`; re-link prompt flag | ⬜ | |
+| S1.19 | `GET /api/workspaces/{id}/sync-status` | ⬜ | |
+| S1.20 | Parity rung 1 + opening anchor (watermark-bounded) | ⬜ | |
+| S1.21 | Parity rung 2 + "TB itself balances" check | ⬜ | |
+| S1.22 | Cause classifier + escalation ladder + tolerance setting | ⬜ | |
+| S1.23 | `POST /parity` (sync, quiescence abort), `last_parity`, retention | ⬜ | |
+| S1.24 | Internal ops signal — counts and causes only (decision 14) | ⬜ | |
+| S1.25 | DB integration tests (spec §8, §14 "DB integration") | ⬜ | |
+| S1.26 | Code review → `docs/code-review-bi-s1-*.md` | ⬜ | |
+
+---
+
+## 5. S2 — Windows agent (spec §5 "Windows agent", §4) — in `v2/agent/`
+
+| # | Item | Status | Proof |
+|---|---|---|---|
+| S2.1 | v2 copies of the Tally read code in `v2/agent/tally/`, **without** the §13 gaps (escaping R13, company params, float money, `parse_amount` zero) — current builders untouched. S0 makes the first copies (S0 spec §3.1); S2 completes them | 🟡 | First copies done in S0: client, envelopes, xml_utils, exceptions, amounts, reports (`v2/tests/agent/`) |
+| S2.2 | `v2/agent/tally/` sync builders (explicit fields, escaping) + parsers (Decimal, missing ≠ zero) | ⬜ | |
+| S2.3 | Platform adapters + foreground CLI for Mac dev | ⬜ | |
+| S2.4 | `gate.py`: one request at a time, timeouts, backoff, circuit breaker, health + GUID check | ⬜ | |
+| S2.5 | `extractor.py`: month chunks ≤ ~5k vouchers, auto-split | ⬜ | |
+| S2.6 | `change_detector.py` | ⬜ | |
+| S2.7 | `state.py` (SQLite): cursor cache, chunk status, outbox, log | ⬜ | |
+| S2.8 | `uploader.py` + outbox (500 objects / 5 MB, `batch_id`, delete on ack) | ⬜ | |
+| S2.9 | `auth.py` (keyring / DPAPI; 401 → "Signed out") | ⬜ | |
+| S2.10 | `scheduler.py`: tiers 1–7 + cycle budget | ⬜ | |
+| S2.11 | First sync: 24 units, resume, snapshots, anchor TB | ⬜ | |
+| S2.12 | Incremental cycle + mirrored balance re-read | ⬜ | |
+| S2.13 | Deletion compare: daily 2-FY, round-robin older, masters | ⬜ | |
+| S2.14 | Month-end snapshots + FY-close capture | ⬜ | |
+| S2.15 | New FY rollover | ⬜ | |
+| S2.16 | Backfill walker + pre-emption | ⬜ | |
+| S2.17 | Company identity changes: skip, re-link prompt, `restore_detected` | ⬜ | |
+| S2.18 | Parity capture + quiescence counters + remediation execution | ⬜ | |
+| S2.19 | `diagnostics.py` + "Send diagnostics" (no business data) | ⬜ | |
+| S2.20 | v2 copy of mock Tally (`v2/tests/mocks/`) + stateful sync mode + latency / hang / error injection | ⬜ | |
+| S2.21 | Round-trip E2E (agent in-process vs v2 mock Tally + v2 cloud app) | ⬜ | |
+| S2.22 | `service.py` + `tray.py` ("Sync now", sign-out) — tier C | ⬜ | |
+| S2.23 | Installer, uninstall revokes device, proxy support — tier C | ⬜ | |
+| S2.24 | `updater.py`: signed download, sha256, `--selftest`, rollback — tier C | ⬜ | |
+| S2.25 | Windows CI (`windows-latest`): tests, build, selftest, service install | ⬜ | |
+| S2.26 | Manual checks (spec §14 "Manual") | ⬜ | |
+| S2.27 | Code review → `docs/code-review-bi-s2-*.md` | ⬜ | |
+
+---
+
+## 6. Change log
+
+| Date | Change |
+|---|---|
+| 2026-09-22 | Tracker created. Design ✅; S0 spec started. |
+| 2026-09-22 | Code isolation decided: Part 1 is built as v2 under `v2/` (copy don't import; separate cloud app, same DB, own Alembic chain). Spec §5 "Code isolation (v2)" added; tracker items re-pathed. |
+| 2026-09-22 | S0 spec written (`specs/2026-09-22-bi-s0-probes-design.md`): 3 probe companies (A seed copy, B multi-year + edge cases, C secured), hybrid data (setup script + UI steps), one runner + probe modules. Q29 answered: timing probes ⏭. |
+| 2026-09-22 | S0 plan part 1 written (`plans/2026-09-22-bi-s0-probes-plan.md`: foundation + probes 0, 2, 1); implementation started. Found: `*_live.xml` fixtures are the NUVANTA company, not the seed — specs corrected; current `parse_company_list` counts CMPINFO's `<COMPANY>0</COMPANY>` as a company (v2 copy fixed; current code untouched). |
+| 2026-09-22 | S0 plan part 1 **built and reviewed**: 146 tests (also `-W error`); task reviews + final review (7 Important fixed) → `docs/code-review-bi-s0-part1-2026-09-22.md`. Probes 0, 1, 2 ready for the live run; nothing run against Tally yet. No commits. |
+| 2026-09-22 | **Probes 0, 2, 1 run live** (automated operator: company copy + Tally restarts + XML edits; you clicked the licence box). 0 ✅, 2 ✅, 1 ✅ (see row). Results: `docs/bi-s0-probe-results-2026-09-22.md`. Left in company A: ledger Electricity has EMAIL `s0probe@example.com` (empty-value XML alter can't clear it; no effect on figures). Tally config points at `s0probe` (original saved as `tally.ini.before-s0`). |
+| 2026-09-22 | Decided: S0 runs **automated** (operator becomes part of `v2/probes/`; Tally edits via XML, open/close/restore via Tally restarts; the person only clicks Tally's licence box). Plan part 2 started. |
+| 2026-09-22 | Plan part 2 written (13 tasks; every code block verified on a scratch copy: 284 tests). Rulings: probe 10 order, probe 13 auto-limit note, probe 16 extra throwaway voucher, probe 4 "all changed after N", probe 7 MasterID reuse = DIFFERENT. Provisional finding: company A's TB rows net to ₹33,05,800 (not 0) — Part 1 §6 flagged. Build started. |
+| 2026-09-22 | Plan part 2 Tasks 1–12 built and reviewed in 5 batches (297 tests, also `-W error`): harness actions, write helpers, automated operator + `run --auto`/`reset-a` (2 safety fix rounds), probe 1 revision, probes 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25 (company-A parts). Final whole-part review running; then the automated live run. |
+| 2026-09-22 | Final review of part 2: "ready with fixes" (3 Important: FAILED parts blocked ordered runs, Ctrl-C swallowed, p16 post-dated read-back). One fix wave applied (I1–I3, M1–M12): **316 tests**. Spec §5.3: ordered runs also skip FAILED unless `--rerun`. Stopped for the day — see "Resume here". |
+| 2026-09-23 | **Scoped re-review of the fix wave** (`final-fixes.md` vs the code; each item verified by reverting it and re-running its test). Verdict "ready with fixes": all 15 applied, 13 pinned by tests; 2 Important — (a) probe 16's M6 guard would record `inconclusive` on **every** run because probe 1's throwaway pushes `LastVoucherDate` to 20260331 and it never rolls back, (b) the M11 test didn't pin its fix (deleting the `raise` left all 21 green); 4 Minor — M5 unpinned, p06 discarded evidence on transport errors, p19's DIFFERENT path still claimed a UI report view in auto mode, p10 misattributed a non-popup timeout. |
+| 2026-09-23 | **Those 6 fixes applied: 326 tests** (also `-W error`), each proven by revert. Probe 16 now takes its books-reach baseline from a new probe-1 observation recorded *before* probe 1's throwaway (`p01` `LAST_VOUCHER_DATE_BASELINE`), so **it settles the F2-vs-FY-end question in the planned order — no `reset-a` + `--rerun 16` needed**, provided probe 1 is re-run in the same live session (the documented `run 1 --auto` step does this). The "not included" branch is now decided with no guard at all; a genuinely inconclusive result carries a rerun recipe. An absent `LastVoucherDate` records "not available" instead of reading as a safe date. Known, not fixed: on p10's "popup not raised" path a stock group is created on company A with no `ctx.on_abort` cleanup note (an abort there leaves it behind; `reset-a` clears it). |

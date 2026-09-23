@@ -36,12 +36,18 @@ The product evolves along three feature sets. Set A is foundational; B and C can
 
 ### Set C — Sync & Store
 
+Redesigned 2026-09-15 → 2026-09-21 as the **BI layer**: a Windows sync agent copies Tally into our Postgres,
+and chat / dashboards answer from our DB. Sync-only replaces the old real-time tunnel idea (old C1/C2 rows retired).
+Three parts: Part 1 syncing (`specs/2026-09-21-bi-part1-sync-design.md`), Part 2 AI DB queries, Part 3 UI + dashboard API.
+**Built as v2 under `v2/` — no current code is changed** (Part 1 spec §5 "Code isolation (v2)"); merging into current code is a later, separate step.
+**Item-level status lives in [`plans/2026-09-22-bi-part1-tracker.md`](plans/2026-09-22-bi-part1-tracker.md)** — this table is stage-level only.
+
 | Sub | Scope | Status |
 |---|---|---|
-| **C1** | Package existing XML bridge as a local connector (tunnel + scheduler) | Not started |
-| **C2** | Cloud DB (Postgres + pgvector) with synced Tally data — offline queries | Not started |
-
-Architecture intent: hybrid real-time tunnel + scheduled sync, reusing existing `backend/tally_bridge/`.
+| **S0** | Live-Tally probes 0–25 + real fixtures (Part 1 §12) | 🟡 Plan part 1 built + reviewed; **probes 0, 1, 2 ✅ run live 2026-09-22** (`bi-s0-probe-results-2026-09-22.md`). Next: plan part 2 (company-A probes 3, 4, 6, 7, 8, 10, 12, 13, 16–19, 23, 25), then part 3. Timing probes 9 / 20 / 21-timing deferred (Q29) |
+| **S1** | Cloud: sync tables, device auth, ingest API, parity engine (Part 1) | Not started — gated on S0 probes 6, 16, 17, 18, 21, 25 |
+| **S2** | Windows agent (Part 1) | Not started — gated on S0; parallel with S1 |
+| **S3–S5** | Part 2 (AI DB queries) and Part 3 (UI + dashboard API) | Not started — after S1 |
 
 ---
 

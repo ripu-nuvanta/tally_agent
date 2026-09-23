@@ -1,0 +1,457 @@
+{
+  "environment": {
+    "run_mode": "automated by Claude (operator script): company restore = file copy of seed_data/100003; open/close = tally.ini Load + restart; edits via XML import (not the Tally UI — S0-D3 UI parity not exercised); probe 1 voucher alter changes the narration (not the amount) and the ledger alter sets/clears EMAIL (not Mailing Name)",
+    "wine": "wine-11.0",
+    "tally_version": "TallyPrime 7.0 (release 7.0 from the XML response header)",
+    "edition": "Edit Log",
+    "licence": "educational",
+    "recorded_by_probe": 0,
+    "company_a_tb_baseline": {
+      "Capital Account": "750000.00",
+      "Current Liabilities": "1757357.00",
+      "Current Assets": "2605093.00",
+      "Sales Accounts": "2057650.00",
+      "Purchase Accounts": "-2521300.00",
+      "Indirect Expenses": "-1343000.00"
+    }
+  },
+  "confirmed_requests": {
+    "active_company": {
+      "probe": 2,
+      "xml_template": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Collection</TYPE>\n<ID>S0ActiveCompany</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n</STATICVARIABLES>\n<TDL>\n<TDLMESSAGE>\n<COLLECTION NAME=\"S0ActiveCompany\" ISMODIFY=\"No\">\n<TYPE>Company</TYPE>\n<FILTER>S0IsActive</FILTER>\n<NATIVEMETHOD>Name</NATIVEMETHOD>\n<NATIVEMETHOD>GUID</NATIVEMETHOD>\n\n</COLLECTION>\n<SYSTEM TYPE=\"Formulae\" NAME=\"S0IsActive\">$Name = ##SVCurrentCompany</SYSTEM>\n\n</TDLMESSAGE>\n</TDL>\n</DESC>\n</BODY>\n</ENVELOPE>",
+      "candidate": "a"
+    },
+    "company_counters": {
+      "probe": 1,
+      "xml_template": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Collection</TYPE>\n<ID>S0CompanyCounters</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n</STATICVARIABLES>\n<TDL>\n<TDLMESSAGE>\n<COLLECTION NAME=\"S0CompanyCounters\" ISMODIFY=\"No\">\n<TYPE>Company</TYPE>\n\n<NATIVEMETHOD>Name</NATIVEMETHOD>\n<NATIVEMETHOD>GUID</NATIVEMETHOD>\n<NATIVEMETHOD>AltVchId</NATIVEMETHOD>\n<NATIVEMETHOD>AltMstId</NATIVEMETHOD>\n<NATIVEMETHOD>BooksFrom</NATIVEMETHOD>\n<NATIVEMETHOD>LastVoucherDate</NATIVEMETHOD>\n<NATIVEMETHOD>AlterID</NATIVEMETHOD>\n\n</COLLECTION>\n\n\n</TDLMESSAGE>\n</TDL>\n</DESC>\n</BODY>\n</ENVELOPE>",
+      "fields": [
+        "GUID",
+        "AltVchId",
+        "AltMstId",
+        "BooksFrom",
+        "LastVoucherDate",
+        "AlterID"
+      ]
+    }
+  },
+  "probes": {
+    "0": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "Tally answers under Wine (wine-11.0); company A made; seed anchors match",
+          "observations": {
+            "wine": "wine-11.0",
+            "anchors": {
+              "receivable": "970537.00",
+              "payable": "1834142.00",
+              "tb_rows": {
+                "Capital Account": "750000.00",
+                "Current Liabilities": "1757357.00",
+                "Current Assets": "2605093.00",
+                "Sales Accounts": "2057650.00",
+                "Purchase Accounts": "-2521300.00",
+                "Indirect Expenses": "-1343000.00"
+              }
+            },
+            "data_folder": "C:\\users\\Public\\TallyPrimeEditLog\\s0probe (pristine copy of seed_data/100003 placed by the operator; Tally Load=100003)",
+            "guid_before_rename": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+            "guid_after_rename": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+            "guid_changed_on_rename": false
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p00_A_company_list.xml",
+            "p00_A_guid_before_rename.xml",
+            "p00_A_anchors_bills_receivable.xml",
+            "p00_A_anchors_bills_payable.xml",
+            "p00_A_anchors_tb.xml",
+            "p00_A_guid_after_rename.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Start TallyPrime under Wine (README.md 'Installing TallyPrime on macOS') with the XML server on port 9000.",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            },
+            {
+              "n": 2,
+              "instruction": "Restore seed_data/TDBK1800_100003.001 into a NEW, separate Tally data folder (not Bharat Traders' usual folder). Open only that company and close every other company.",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            },
+            {
+              "n": 3,
+              "instruction": "Type the Tally data folder path shown for 'Bharat Traders Private Limited' (Company Info → this company's Data Path) — it must NOT be Bharat Traders' usual data folder:",
+              "input": "C:\\users\\Public\\TallyPrimeEditLog\\s0probe (pristine copy of seed_data/100003 placed by the operator; Tally Load=100003)",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            },
+            {
+              "n": 4,
+              "instruction": "In Tally, alter this company (Company menu, Alt+K → Alter) and rename it to 'Bharat Traders Probe Copy'. Keep it open.",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            },
+            {
+              "n": 5,
+              "instruction": "Tally version (Help → About, e.g. 'TallyPrime 7.0'):",
+              "input": "TallyPrime 7.0 (release 7.0 from the XML response header)",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            },
+            {
+              "n": 6,
+              "instruction": "Edition — type 'Edit Log' or 'standard':",
+              "input": "Edit Log",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            },
+            {
+              "n": 7,
+              "instruction": "Licence mode — type 'licensed' or 'educational':",
+              "input": "educational",
+              "done_at": "2026-09-22T15:57:52+05:30"
+            }
+          ],
+          "ran_at": "2026-09-22T15:57:52+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "2": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "Candidate (a) returns the GUID in 1674 bytes; the no-company response is distinguishable",
+          "observations": {
+            "candidates": {
+              "a": {
+                "correct": true,
+                "bytes": 1674,
+                "error": null,
+                "rows": 1,
+                "name": "Bharat Traders Probe Copy",
+                "guid": "710de34a-3661-4a7b-8148-c2206c3b3e17"
+              },
+              "b": {
+                "correct": true,
+                "bytes": 2027,
+                "error": null,
+                "rows": 1,
+                "name": "Bharat Traders Probe Copy",
+                "guid": "710de34a-3661-4a7b-8148-c2206c3b3e17"
+              },
+              "c": {
+                "correct": true,
+                "bytes": 1674,
+                "error": null,
+                "rows": 1,
+                "name": "Bharat Traders Probe Copy",
+                "guid": "710de34a-3661-4a7b-8148-c2206c3b3e17"
+              }
+            },
+            "company_guid": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+            "no_company": {
+              "a": {
+                "error": null,
+                "rows": 0,
+                "name": "",
+                "guid": "",
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>0</STOCKITEM>\r\n    <VOUCHERTYPE>0</VO"
+              },
+              "b": {
+                "error": null,
+                "rows": 0,
+                "name": "",
+                "guid": "",
+                "snippet": "<ERRORMSG>Could not find Company:Bharat Traders Probe Copy!</ERRORMSG>\r\n"
+              },
+              "c": {
+                "error": null,
+                "rows": 0,
+                "name": "",
+                "guid": "",
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>0</STOCKITEM>\r\n    <VOUCHERTYPE>0</VO"
+              }
+            },
+            "no_company_distinguishable": true
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p02_A_active_a.xml",
+            "p02_A_active_b.xml",
+            "p02_A_active_c.xml",
+            "p02_A_active_a_no_company.xml",
+            "p02_A_active_b_no_company.xml",
+            "p02_A_active_c_no_company.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Close every company in Tally (keep Tally running): Company menu (Alt+K) → Shut Company, until none is open.",
+              "done_at": "2026-09-22T16:06:52+05:30"
+            },
+            {
+              "n": 2,
+              "instruction": "Open company 'Bharat Traders Probe Copy' again (only that one).",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            }
+          ],
+          "ran_at": "2026-09-22T16:12:15+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "A",
+          "outcome": "BLOCKED",
+          "summary": "Harness error: ReadTimeout: timed out",
+          "observations": {
+            "candidates": {
+              "a": {
+                "correct": true,
+                "bytes": 1674,
+                "error": null,
+                "rows": 1,
+                "name": "Bharat Traders Probe Copy",
+                "guid": "710de34a-3661-4a7b-8148-c2206c3b3e17"
+              },
+              "b": {
+                "correct": true,
+                "bytes": 2027,
+                "error": null,
+                "rows": 1,
+                "name": "Bharat Traders Probe Copy",
+                "guid": "710de34a-3661-4a7b-8148-c2206c3b3e17"
+              },
+              "c": {
+                "correct": true,
+                "bytes": 1674,
+                "error": null,
+                "rows": 1,
+                "name": "Bharat Traders Probe Copy",
+                "guid": "710de34a-3661-4a7b-8148-c2206c3b3e17"
+              }
+            },
+            "company_guid": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+            "no_company": {
+              "a": {
+                "error": null,
+                "rows": 0,
+                "name": "",
+                "guid": "",
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>0</STOCKITEM>\r\n    <VOUCHERTYPE>0</VO"
+              },
+              "b": {
+                "error": null,
+                "rows": 0,
+                "name": "",
+                "guid": "",
+                "snippet": "<ERRORMSG>Could not find Company:Bharat Traders Probe Copy!</ERRORMSG>\r\n"
+              },
+              "c": {
+                "error": null,
+                "rows": 0,
+                "name": "",
+                "guid": "",
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>0</STOCKGROUP>\r\n    <STOCKCATEGORY>0</STOCKCATEGORY>\r\n    <STOCKITEM>0</STOCKITEM>\r\n    <VOUCHERTYPE>0</VO"
+              }
+            },
+            "no_company_distinguishable": true,
+            "cleanup_needed": [
+              "Open company 'Bharat Traders Probe Copy' again (only that one)"
+            ]
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p02_A_active_a.xml",
+            "p02_A_active_b.xml",
+            "p02_A_active_c.xml",
+            "p02_A_active_a_no_company.xml",
+            "p02_A_active_b_no_company.xml",
+            "p02_A_active_c_no_company.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Close every company in Tally (keep Tally running): Company menu (Alt+K) → Shut Company, until none is open.",
+              "done_at": "2026-09-22T15:59:58+05:30"
+            }
+          ],
+          "ran_at": "2026-09-22T16:02:35+05:30"
+        }
+      ],
+      "remaining": []
+    },
+    "1": {
+      "outcome": "DIFFERENT",
+      "parts": {
+        "A": {
+          "outcome": "DIFFERENT",
+          "summary": "AltMstId did not move on revert_ledger [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "fields_present": [
+              "GUID",
+              "AltVchId",
+              "AltMstId",
+              "BooksFrom",
+              "LastVoucherDate",
+              "AlterID"
+            ],
+            "ledger": "Electricity",
+            "matrix": {
+              "create_voucher": {
+                "kind": "voucher",
+                "moved": {
+                  "AltVchId": true,
+                  "AltMstId": false,
+                  "LastVoucherDate": true
+                },
+                "values": {
+                  "AltVchId": "51",
+                  "AltMstId": "266",
+                  "LastVoucherDate": "20260331"
+                }
+              },
+              "alter_voucher": {
+                "kind": "voucher",
+                "moved": {
+                  "AltVchId": true,
+                  "AltMstId": false,
+                  "LastVoucherDate": false
+                },
+                "values": {
+                  "AltVchId": "52",
+                  "AltMstId": "266",
+                  "LastVoucherDate": "20260331"
+                }
+              },
+              "delete_voucher": {
+                "kind": "voucher",
+                "moved": {
+                  "AltVchId": true,
+                  "AltMstId": false,
+                  "LastVoucherDate": false
+                },
+                "values": {
+                  "AltVchId": "55",
+                  "AltMstId": "266",
+                  "LastVoucherDate": "20260331"
+                }
+              },
+              "alter_ledger": {
+                "kind": "master",
+                "moved": {
+                  "AltVchId": false,
+                  "AltMstId": true,
+                  "LastVoucherDate": false
+                },
+                "values": {
+                  "AltVchId": "55",
+                  "AltMstId": "267",
+                  "LastVoucherDate": "20260331"
+                }
+              },
+              "revert_ledger": {
+                "kind": "master",
+                "moved": {
+                  "AltVchId": false,
+                  "AltMstId": false,
+                  "LastVoucherDate": false
+                },
+                "values": {
+                  "AltVchId": "55",
+                  "AltMstId": "267",
+                  "LastVoucherDate": "20260331"
+                }
+              },
+              "create_ledger": {
+                "kind": "master",
+                "moved": {
+                  "AltVchId": false,
+                  "AltMstId": true,
+                  "LastVoucherDate": false
+                },
+                "values": {
+                  "AltVchId": "55",
+                  "AltMstId": "268",
+                  "LastVoucherDate": "20260331"
+                }
+              },
+              "delete_ledger": {
+                "kind": "master",
+                "moved": {
+                  "AltVchId": false,
+                  "AltMstId": true,
+                  "LastVoucherDate": false
+                },
+                "values": {
+                  "AltVchId": "55",
+                  "AltMstId": "269",
+                  "LastVoucherDate": "20260331"
+                }
+              }
+            },
+            "ledger_alterid_moved_on_voucher_entry": false,
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "Part 1 §4 change detection gets this matrix; decision 9 adds a rolling re-pull fallback for the changes that move no counter (R6), and 'Why the re-read' is revisited if a voucher entry moves the ledger's AlterID.",
+          "fixtures": [
+            "p01_A_counters_candidates.xml",
+            "p01_A_ledger_list.xml",
+            "p01_A_counters_baseline.xml",
+            "p01_A_ledger_before.xml",
+            "p01_A_counters_after_create_voucher.xml",
+            "p01_A_ledger_after_voucher.xml",
+            "p01_A_counters_after_alter_voucher.xml",
+            "p01_A_counters_after_delete_voucher.xml",
+            "p01_A_counters_after_alter_ledger.xml",
+            "p01_A_counters_after_revert_ledger.xml",
+            "p01_A_counters_after_create_ledger.xml",
+            "p01_A_counters_after_delete_ledger.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Create a Payment voucher: Cash → Electricity, ₹1, narration 'S0-throwaway 1'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            },
+            {
+              "n": 2,
+              "instruction": "Alter that voucher's amount to ₹2 and save. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            },
+            {
+              "n": 3,
+              "instruction": "Delete that voucher (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            },
+            {
+              "n": 4,
+              "instruction": "Alter ledger 'Electricity': set its Mailing Name to 'S0 probe' and save. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            },
+            {
+              "n": 5,
+              "instruction": "Clear the Mailing Name of ledger 'Electricity' again and save. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            },
+            {
+              "n": 6,
+              "instruction": "Create a ledger 'S0 Probe Ledger' under Indirect Expenses. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            },
+            {
+              "n": 7,
+              "instruction": "Delete ledger 'S0 Probe Ledger'. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-22T16:12:15+05:30"
+            }
+          ],
+          "ran_at": "2026-09-22T16:12:15+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    }
+  }
+}
