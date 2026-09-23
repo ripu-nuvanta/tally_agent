@@ -1963,6 +1963,1052 @@
       "remaining": [
         "B"
       ]
+    },
+    "19": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "Quiet captures are stable, the report view wasn't exercised (auto mode used an XML export instead), and a mid-capture voucher is detected",
+          "observations": {
+            "quiet_captures": [
+              {
+                "start": {
+                  "AltVchId": "66",
+                  "AltMstId": "265"
+                },
+                "end": {
+                  "AltVchId": "66",
+                  "AltMstId": "265"
+                },
+                "stable": true
+              },
+              {
+                "start": {
+                  "AltVchId": "66",
+                  "AltMstId": "265"
+                },
+                "end": {
+                  "AltVchId": "66",
+                  "AltMstId": "265"
+                },
+                "stable": true
+              },
+              {
+                "start": {
+                  "AltVchId": "66",
+                  "AltMstId": "265"
+                },
+                "end": {
+                  "AltVchId": "66",
+                  "AltMstId": "265"
+                },
+                "stable": true
+              }
+            ],
+            "quiet_stable": true,
+            "after_ui_view": {
+              "AltVchId": "66",
+              "AltMstId": "265"
+            },
+            "view_moved_counters": false,
+            "ui_view": "not exercised (auto mode: XML export)",
+            "moving_capture": {
+              "start": {
+                "AltVchId": "66",
+                "AltMstId": "265"
+              },
+              "end": {
+                "AltVchId": "67",
+                "AltMstId": "265"
+              },
+              "stable": false
+            },
+            "mid_capture_entry_detected": true,
+            "run_mode": "auto"
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p19_A_capture_quiet_1_counters_start.xml",
+            "p19_A_capture_quiet_1_ledgers.xml",
+            "p19_A_capture_quiet_1_tb.xml",
+            "p19_A_capture_quiet_1_counters_end.xml",
+            "p19_A_capture_quiet_2_counters_start.xml",
+            "p19_A_capture_quiet_2_ledgers.xml",
+            "p19_A_capture_quiet_2_tb.xml",
+            "p19_A_capture_quiet_2_counters_end.xml",
+            "p19_A_capture_quiet_3_counters_start.xml",
+            "p19_A_capture_quiet_3_ledgers.xml",
+            "p19_A_capture_quiet_3_tb.xml",
+            "p19_A_capture_quiet_3_counters_end.xml",
+            "p19_A_after_ui_view.xml",
+            "p19_A_capture_moving_counters_start.xml",
+            "p19_A_capture_moving_ledgers.xml",
+            "p19_A_capture_moving_tb.xml",
+            "p19_A_capture_moving_counters_end.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "In Tally, open the Balance Sheet (Gateway of Tally → Balance Sheet), look at it, then close it. Change nothing.",
+              "done_at": "2026-09-23T12:25:35+05:30",
+              "action": "view_report"
+            },
+            {
+              "n": 2,
+              "instruction": "Now, in the middle of a capture: create a Payment voucher dated 31-Mar-2026: Cash → Electricity, ₹1, narration 'S0-throwaway 19'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:35+05:30",
+              "action": "create_voucher"
+            },
+            {
+              "n": 3,
+              "instruction": "Delete the voucher with narration 'S0-throwaway 19' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:35+05:30",
+              "action": "delete_voucher"
+            }
+          ],
+          "ran_at": "2026-09-23T12:25:35+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "3": {
+      "outcome": "PARTIAL",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "50 vouchers: GUID / MasterID unique, AlterID present, the three flags export everywhere, Reference = invoice number",
+          "observations": {
+            "count": 50,
+            "ids": {
+              "GUID": {
+                "empty": 0,
+                "duplicates": 0
+              },
+              "MasterID": {
+                "empty": 0,
+                "duplicates": 0
+              },
+              "AlterID": {
+                "empty": 0,
+                "duplicates": 0
+              }
+            },
+            "flags": {
+              "IsCancelled": {
+                "empty": 0,
+                "yes": 0
+              },
+              "IsOptional": {
+                "empty": 0,
+                "yes": 0
+              },
+              "IsPostDated": {
+                "empty": 0,
+                "yes": 0
+              }
+            },
+            "wrong_references": [],
+            "run_mode": "auto"
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p03_A_vouchers_ids_flags.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T12:25:35+05:30"
+        }
+      },
+      "history": [],
+      "remaining": [
+        "B"
+      ]
+    },
+    "4": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "$AlterID > N returns exactly the expected objects for Voucher, Ledger, Group and StockItem, and Tally answers a cheap read afterwards",
+          "observations": {
+            "checks": {
+              "voucher": {
+                "rows": 50,
+                "max_alterid": 50,
+                "filters": {
+                  "gt_m_minus_5": {
+                    "threshold": 45,
+                    "expected": 5,
+                    "got": 5,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_m": {
+                    "threshold": 50,
+                    "expected": 0,
+                    "got": 0,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_0": {
+                    "threshold": 0,
+                    "expected": 50,
+                    "got": 50,
+                    "ok": true,
+                    "error": null
+                  }
+                }
+              },
+              "ledger": {
+                "rows": 35,
+                "max_alterid": 249,
+                "filters": {
+                  "gt_m_minus_5": {
+                    "threshold": 244,
+                    "expected": 5,
+                    "got": 5,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_m": {
+                    "threshold": 249,
+                    "expected": 0,
+                    "got": 0,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_0": {
+                    "threshold": 0,
+                    "expected": 35,
+                    "got": 35,
+                    "ok": true,
+                    "error": null
+                  }
+                }
+              },
+              "group": {
+                "rows": 32,
+                "max_alterid": 211,
+                "filters": {
+                  "gt_m_minus_5": {
+                    "threshold": 206,
+                    "expected": 4,
+                    "got": 4,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_m": {
+                    "threshold": 211,
+                    "expected": 0,
+                    "got": 0,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_0": {
+                    "threshold": 0,
+                    "expected": 32,
+                    "got": 32,
+                    "ok": true,
+                    "error": null
+                  }
+                }
+              },
+              "stockitem": {
+                "rows": 15,
+                "max_alterid": 264,
+                "filters": {
+                  "gt_m_minus_5": {
+                    "threshold": 259,
+                    "expected": 5,
+                    "got": 5,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_m": {
+                    "threshold": 264,
+                    "expected": 0,
+                    "got": 0,
+                    "ok": true,
+                    "error": null
+                  },
+                  "gt_0": {
+                    "threshold": 0,
+                    "expected": 15,
+                    "got": 15,
+                    "ok": true,
+                    "error": null
+                  }
+                }
+              }
+            },
+            "run_mode": "auto"
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p04_A_voucher_full.xml",
+            "p04_A_voucher_gt_m_minus_5.xml",
+            "p04_A_voucher_gt_m.xml",
+            "p04_A_voucher_gt_0.xml",
+            "p04_A_ledger_full.xml",
+            "p04_A_ledger_gt_m_minus_5.xml",
+            "p04_A_ledger_gt_m.xml",
+            "p04_A_ledger_gt_0.xml",
+            "p04_A_group_full.xml",
+            "p04_A_group_gt_m_minus_5.xml",
+            "p04_A_group_gt_m.xml",
+            "p04_A_group_gt_0.xml",
+            "p04_A_stockitem_full.xml",
+            "p04_A_stockitem_gt_m_minus_5.xml",
+            "p04_A_stockitem_gt_m.xml",
+            "p04_A_stockitem_gt_0.xml",
+            "p04_A_cheap_read_after.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T12:25:35+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "6": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "Nested lines, bills and inventory export; every voucher balances under the 'all_only' rule with debit negative; ledger GUID on lines via a plain fetch field",
+          "observations": {
+            "voucher_count": 50,
+            "presence": {
+              "line": {
+                "LEDGERNAME": 233,
+                "AMOUNT": 233,
+                "ISDEEMEDPOSITIVE": 233,
+                "total": 233
+              },
+              "bill": {
+                "NAME": 62,
+                "BILLTYPE": 62,
+                "AMOUNT": 62,
+                "BILLCREDITPERIOD": 62,
+                "total": 62
+              },
+              "inventory": {
+                "STOCKITEMNAME": 49,
+                "ACTUALQTY": 49,
+                "BILLEDQTY": 49,
+                "RATE": 49,
+                "AMOUNT": 49,
+                "total": 49
+              },
+              "batch": {
+                "GODOWNNAME": 49,
+                "BATCHNAME": 49,
+                "AMOUNT": 49,
+                "total": 49
+              }
+            },
+            "structure": {
+              "counts": {
+                "Payment": 16,
+                "Purchase": 8,
+                "Receipt": 10,
+                "Sales": 16
+              },
+              "sales_new_ref": true,
+              "purchase_new_ref": true,
+              "receipts_agst_ref": true,
+              "party_payments_agst_ref": true,
+              "expense_payments_no_bills": true,
+              "sales_have_inventory": true
+            },
+            "balance": {
+              "balanced_per_rule": {
+                "default": 26,
+                "all_only": 50,
+                "ledger_plus_alloc": 24,
+                "all_plus_alloc": 26
+              },
+              "rule": "all_only",
+              "sign_violations": []
+            },
+            "balancing_rule": "all_only",
+            "line_guid": {
+              "route": "fetch",
+              "fetch_tags": {
+                "LEDGERGUID": 0,
+                "GUID": 32,
+                "LEDGERMASTERID": 0,
+                "MASTERID": 0
+              },
+              "fetch_error": null,
+              "tdl_pairs": 50,
+              "tdl_matches_ledgers": true,
+              "tdl_error": null
+            },
+            "run_mode": "auto"
+          },
+          "spec_impact": "S1 ingest: posting rule 'all_only'; ledger GUID on lines comes from a plain fetch field.",
+          "fixtures": [
+            "p06_A_vouchers_nested.xml",
+            "p06_A_ledger_guids.xml",
+            "p06_A_line_guid_fetch.xml",
+            "p06_A_line_guid_tdl.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T12:25:36+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "12": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "All six reports parse (6 TB rows with Decimal amounts, 3 stock rows); bills totals match the anchors",
+          "observations": {
+            "reports": {
+              "tb_today": {
+                "report": "Trial Balance",
+                "bytes": 1503,
+                "data_elements": 14,
+                "tally_error": null
+              },
+              "bs_today": {
+                "report": "Balance Sheet",
+                "bytes": 935,
+                "data_elements": 9,
+                "tally_error": null
+              },
+              "pl_fy2025": {
+                "report": "Profit and Loss",
+                "bytes": 1132,
+                "data_elements": 13,
+                "tally_error": null
+              },
+              "stock_summary_today": {
+                "report": "Stock Summary",
+                "bytes": 691,
+                "data_elements": 6,
+                "tally_error": null
+              },
+              "bills_receivable_today": {
+                "report": "Bills Receivable",
+                "bytes": 1404,
+                "data_elements": 36,
+                "tally_error": null
+              },
+              "bills_payable_today": {
+                "report": "Bills Payable",
+                "bytes": 1870,
+                "data_elements": 48,
+                "tally_error": null
+              }
+            },
+            "tb_rows": 6,
+            "tb_equals_baseline": true,
+            "stock_rows": 3,
+            "bills_totals": {
+              "receivable": "970537.00",
+              "payable": "1834142.00"
+            },
+            "run_mode": "auto"
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p12_A_tb_today.xml",
+            "p12_A_bs_today.xml",
+            "p12_A_pl_fy2025.xml",
+            "p12_A_stock_summary_today.xml",
+            "p12_A_bills_receivable_today.xml",
+            "p12_A_bills_payable_today.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T12:25:36+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "23": {
+      "outcome": "PARTIAL",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "TaxType identifies the 6 GST ledgers (['GST']); GSTDutyHead doesn't give the duty head",
+          "observations": {
+            "tax_ledgers": 6,
+            "fields": {
+              "TaxType": {
+                "tax_filled": 6,
+                "other_filled": 29,
+                "tax_values": [
+                  "GST"
+                ],
+                "other_values": [
+                  "Others"
+                ]
+              },
+              "GSTDutyHead": {
+                "tax_filled": 2,
+                "other_filled": 0,
+                "tax_values": [
+                  "State Tax"
+                ],
+                "other_values": []
+              },
+              "TypeOfDutyTax": {
+                "tax_filled": 0,
+                "other_filled": 0,
+                "tax_values": [],
+                "other_values": []
+              }
+            },
+            "rule_field": "TaxType",
+            "duty_heads": [
+              "",
+              "State Tax"
+            ],
+            "duty_head_ok": false,
+            "run_mode": "auto"
+          },
+          "spec_impact": "S1 classifies GST ledgers by TaxType; no duty head field (tile shows GST in total only).",
+          "fixtures": [
+            "p23_A_gst_ledgers.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T12:25:36+05:30"
+        }
+      },
+      "history": [],
+      "remaining": [
+        "B"
+      ]
+    },
+    "25": {
+      "outcome": "PARTIAL",
+      "parts": {
+        "A": {
+          "outcome": "DIFFERENT",
+          "summary": "Nature / revenue / base-type fields don't all export; walking Parent gives 'National Creditors' → Current Liabilities (liabilities)",
+          "observations": {
+            "present": {
+              "Parent": 32,
+              "PrimaryGroup": 0,
+              "_PrimaryGroup": 32,
+              "Nature": 0,
+              "IsRevenue": 32,
+              "AffectsGrossProfit": 32,
+              "IsDeemedPositive": 32,
+              "ReservedName": 28
+            },
+            "walk": [
+              "National Creditors",
+              "Sundry Creditors",
+              "Current Liabilities"
+            ],
+            "walk_nature": "liabilities",
+            "field_nature": null,
+            "nature_field": null,
+            "is_revenue_consistent": true,
+            "voucher_type_fields": {
+              "Parent": 24,
+              "ReservedName": 24
+            },
+            "base_types": {
+              "Attendance": "Attendance",
+              "Contra": "Contra",
+              "Credit Note": "Credit Note",
+              "Debit Note": "Debit Note",
+              "Delivery Note": "Delivery Note",
+              "Job Work In Order": "Job Work In Order",
+              "Job Work Out Order": "Job Work Out Order",
+              "Journal": "Journal",
+              "Material In": "Material In",
+              "Material Out": "Material Out",
+              "Memorandum": "Memorandum",
+              "Payment": "Payment",
+              "Payroll": "Payroll",
+              "Physical Stock": "Physical Stock",
+              "Purchase": "Purchase",
+              "Purchase Order": "Purchase Order",
+              "Receipt": "Receipt",
+              "Receipt Note": "Receipt Note",
+              "Rejections In": "Rejections In",
+              "Rejections Out": "Rejections Out",
+              "Reversing Journal": "Reversing Journal",
+              "Sales": "Sales",
+              "Sales Order": "Sales Order",
+              "Stock Journal": "Stock Journal"
+            },
+            "run_mode": "auto"
+          },
+          "spec_impact": "Nature is derived by walking Parent to a reserved primary group (PRIMARY_NATURE map) and base type by the voucher-type Parent chain; the mapping goes into the S1 spec.",
+          "fixtures": [
+            "p25_A_groups.xml",
+            "p25_A_voucher_types.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T12:25:36+05:30"
+        }
+      },
+      "history": [],
+      "remaining": [
+        "B"
+      ]
+    },
+    "7": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "A deleted voucher vanishes from the collection; the next voucher gets a new GUID and MasterID; AltVchId moves on the delete [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "voucher_2": {
+              "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17-0000003d",
+              "MasterId": "61",
+              "AlterID": "71",
+              "Narration": "S0-throwaway 2",
+              "Date": "20260331",
+              "IsDeleted": "No"
+            },
+            "voucher_3": {
+              "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17-0000003f",
+              "MasterId": "63",
+              "AlterID": "75",
+              "Narration": "S0-throwaway 3",
+              "Date": "20260331",
+              "IsDeleted": "No"
+            },
+            "counters": {
+              "before": "70",
+              "after_create": "71",
+              "after_delete": "74"
+            },
+            "counters_moved_on_delete": true,
+            "lingering_after_delete": [],
+            "tombstone_field_present": true,
+            "guid_reused": false,
+            "master_id_reused": false,
+            "run_mode": "auto",
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p07_A_throwaway_created.xml",
+            "p07_A_after_delete.xml",
+            "p07_A_second_throwaway.xml",
+            "p07_A_after_second_delete.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Create a Payment voucher dated 31-Mar-2026: Cash → Electricity, ₹1, narration 'S0-throwaway 2'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "create_voucher"
+            },
+            {
+              "n": 2,
+              "instruction": "Delete the voucher with narration 'S0-throwaway 2' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "delete_voucher"
+            },
+            {
+              "n": 3,
+              "instruction": "Create a Payment voucher dated 31-Mar-2026: Cash → Electricity, ₹1, narration 'S0-throwaway 3'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "create_voucher"
+            },
+            {
+              "n": 4,
+              "instruction": "Delete the voucher with narration 'S0-throwaway 3' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "delete_voucher"
+            }
+          ],
+          "ran_at": "2026-09-23T12:25:36+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "8": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "Same ledger GUID; old vouchers export the new name; their AlterIDs don't move",
+          "observations": {
+            "ledger": {
+              "before": {
+                "Name": "Rajesh Computers",
+                "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17-000000e2",
+                "AlterID": "228",
+                "Parent": "South Zone Debtors"
+              },
+              "after": {
+                "Name": "Rajesh Computers S0",
+                "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17-000000e2",
+                "AlterID": "266",
+                "Parent": "South Zone Debtors"
+              },
+              "restored": {
+                "Name": "Rajesh Computers",
+                "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17-000000e2",
+                "AlterID": "267",
+                "Parent": "South Zone Debtors"
+              }
+            },
+            "same_guid": true,
+            "ledger_alterid_bumped": true,
+            "vouchers": {
+              "before": {
+                "10": {
+                  "alter_id": "10",
+                  "party": "Rajesh Computers",
+                  "line_names": [
+                    "CGST Output",
+                    "Rajesh Computers",
+                    "SGST Output",
+                    "Sales - Electronics"
+                  ]
+                },
+                "32": {
+                  "alter_id": "32",
+                  "party": "HDFC Bank - Current A/c",
+                  "line_names": [
+                    "HDFC Bank - Current A/c",
+                    "Rajesh Computers"
+                  ]
+                },
+                "34": {
+                  "alter_id": "34",
+                  "party": "Rajesh Computers",
+                  "line_names": [
+                    "CGST Output",
+                    "Rajesh Computers",
+                    "SGST Output",
+                    "Sales - Electronics"
+                  ]
+                }
+              },
+              "after": {
+                "10": {
+                  "alter_id": "10",
+                  "party": "Rajesh Computers S0",
+                  "line_names": [
+                    "CGST Output",
+                    "Rajesh Computers S0",
+                    "SGST Output",
+                    "Sales - Electronics"
+                  ]
+                },
+                "32": {
+                  "alter_id": "32",
+                  "party": "HDFC Bank - Current A/c",
+                  "line_names": [
+                    "HDFC Bank - Current A/c",
+                    "Rajesh Computers S0"
+                  ]
+                },
+                "34": {
+                  "alter_id": "34",
+                  "party": "Rajesh Computers S0",
+                  "line_names": [
+                    "CGST Output",
+                    "Rajesh Computers S0",
+                    "SGST Output",
+                    "Sales - Electronics"
+                  ]
+                }
+              },
+              "restored": {
+                "10": {
+                  "alter_id": "10",
+                  "party": "Rajesh Computers",
+                  "line_names": [
+                    "CGST Output",
+                    "Rajesh Computers",
+                    "SGST Output",
+                    "Sales - Electronics"
+                  ]
+                },
+                "32": {
+                  "alter_id": "32",
+                  "party": "HDFC Bank - Current A/c",
+                  "line_names": [
+                    "HDFC Bank - Current A/c",
+                    "Rajesh Computers"
+                  ]
+                },
+                "34": {
+                  "alter_id": "34",
+                  "party": "Rajesh Computers",
+                  "line_names": [
+                    "CGST Output",
+                    "Rajesh Computers",
+                    "SGST Output",
+                    "Sales - Electronics"
+                  ]
+                }
+              }
+            },
+            "vouchers_export": "new name",
+            "voucher_alterids_changed": false,
+            "counters_moved": {
+              "AltMstId": true,
+              "AltVchId": false
+            },
+            "restored_names": "old name",
+            "run_mode": "auto"
+          },
+          "spec_impact": "R9 holds: the server renames by ledger GUID (vouchers aren't re-sent on a rename).",
+          "fixtures": [
+            "p08_A_rename_before.xml",
+            "p08_A_rename_target_absent.xml",
+            "p08_A_rename_before_vouchers.xml",
+            "p08_A_rename_after.xml",
+            "p08_A_rename_after_vouchers.xml",
+            "p08_A_rename_restored.xml",
+            "p08_A_rename_restored_vouchers.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Rename ledger 'Rajesh Computers' to 'Rajesh Computers S0' (Alter → Ledger → Name) and save. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "rename_ledger"
+            },
+            {
+              "n": 2,
+              "instruction": "Rename ledger 'Rajesh Computers S0' back to 'Rajesh Computers' and save. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "rename_ledger"
+            }
+          ],
+          "ran_at": "2026-09-23T12:25:36+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "10": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "No company, no report and Tally-not-running each have their own shape (popup read: ok); gate table recorded",
+          "observations": {
+            "gate_table": [
+              {
+                "condition": "popup / modal open",
+                "transport": "ok",
+                "body": "data",
+                "tally_error": null,
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>1</STO",
+                "gate_action": "popup not raised"
+              },
+              {
+                "condition": "after the popup is dismissed",
+                "transport": "ok",
+                "body": "data",
+                "tally_error": null,
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>0</STO",
+                "gate_action": "carry on"
+              },
+              {
+                "condition": "no company open (collection)",
+                "transport": "ok",
+                "body": "empty",
+                "tally_error": null,
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>\r\n    <GROUP>0</GROUP>\r\n    <LEDGER>0</LEDGER>\r\n    <COSTCATEGORY>0</COSTCATEGORY>\r\n    <COSTCENTRE>0</COSTCENTRE>\r\n    <GODOWN>0</GODOWN>\r\n    <STOCKGROUP>0</STO",
+                "gate_action": "treat as 'company closed': skip the cycle, no alert"
+              },
+              {
+                "condition": "no company open (report)",
+                "transport": "ok",
+                "body": "error message",
+                "tally_error": "Could not set 'SVCurrentCompany' to 'Bharat Traders Probe Copy'",
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>0</STATUS>\r\n </HEADER>\r\n <BODY>\r\n  <DATA>\r\n   <LINEERROR>Could not set &apos;SVCurrentCompany&apos; to &apos;Bharat Traders Probe Copy&apos;</LINEERROR>\r\n  </DATA>\r\n </BODY>\r\n</ENVELOPE>\r\n",
+                "gate_action": "same as the collection row"
+              },
+              {
+                "condition": "Tally not running",
+                "transport": "refused",
+                "body": "",
+                "tally_error": null,
+                "snippet": "",
+                "gate_action": "treat as 'Tally closed': skip the cycle, no alert"
+              },
+              {
+                "condition": "Educational mode",
+                "transport": "ok",
+                "body": "educational=True, release 7.0",
+                "tally_error": null,
+                "snippet": "<ENVELOPE>\r\n <HEADER>\r\n  <VERSION>1</VERSION>\r\n  <STATUS>1</STATUS>\r\n  <PRODMAJORVER>1</PRODMAJORVER>\r\n  <PRODMINORVER>1</PRODMINORVER>\r\n  <PRODMAJORREL>7</PRODMAJORREL>\r\n  <PRODMINORREL>0</PRODMINORREL>\r\n  <PRODTYPE>8</PRODTYPE>\r\n </HEADER>\r\n <BODY>\r\n  <DESC>\r\n   <CMPINFO>\r\n    <COMPANY>0</COMPANY>",
+                "gate_action": "flag the company 'Educational' (dates restricted); never treat as an error"
+              }
+            ],
+            "popup_raised": false,
+            "run_mode": "auto"
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p10_A_popup_read.xml",
+            "p10_A_after_popup.xml",
+            "p10_A_no_company_collection.xml",
+            "p10_A_no_company_report.xml",
+            "p10_A_tally_quit.xml.json",
+            "p10_A_educational_licence_info.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Make Tally busy with a modal: open a voucher entry screen (e.g. Vouchers → F5 Payment) and leave it open, unsaved.",
+              "done_at": "2026-09-23T12:47:14+05:30",
+              "action": "raise_popup"
+            },
+            {
+              "n": 2,
+              "instruction": "Dismiss it (Esc, don't save) and make sure only 'Bharat Traders Probe Copy' is open.",
+              "done_at": "2026-09-23T12:55:44+05:30",
+              "action": "dismiss_popup"
+            },
+            {
+              "n": 3,
+              "instruction": "Close every company in Tally (Alt+K → Shut Company); keep Tally running.",
+              "done_at": "2026-09-23T12:56:38+05:30",
+              "action": "close_all_companies"
+            },
+            {
+              "n": 4,
+              "instruction": "Quit TallyPrime completely (Ctrl+Q).",
+              "done_at": "2026-09-23T12:56:38+05:30",
+              "action": "quit_tally"
+            },
+            {
+              "n": 5,
+              "instruction": "Start TallyPrime again and open company 'Bharat Traders Probe Copy' only.",
+              "done_at": "2026-09-23T13:08:06+05:30",
+              "action": "open_company"
+            }
+          ],
+          "ran_at": "2026-09-23T13:08:06+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "A",
+          "outcome": "BLOCKED",
+          "summary": "Timed out waiting for ['Bharat Traders Probe Copy']; Tally shows []",
+          "observations": {
+            "run_mode": "auto",
+            "cleanup_needed": [
+              "Dismiss the popup in Tally (or restart Tally) and open company 'Bharat Traders Probe Copy' only"
+            ]
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p10_A_popup_read.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Make Tally busy with a modal: open a voucher entry screen (e.g. Vouchers → F5 Payment) and leave it open, unsaved.",
+              "done_at": "2026-09-23T12:25:36+05:30",
+              "action": "raise_popup"
+            }
+          ],
+          "ran_at": "2026-09-23T12:41:33+05:30"
+        }
+      ],
+      "remaining": []
+    },
+    "13": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "A": {
+          "outcome": "CONFIRMED",
+          "summary": "The restore keeps the company GUID and the MasterIDs; the counters fall back below the post-change values; the throwaway voucher is gone [auto: file-level backup/restore — Tally's Backup/Restore screens not exercised]",
+          "observations": {
+            "restore_method": "file copy of the company folder with Tally stopped (auto)",
+            "counters": {
+              "before": {
+                "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+                "AltVchId": "78",
+                "AltMstId": "269",
+                "BooksFrom": "20250401",
+                "LastVoucherDate": "20260331",
+                "AlterID": "265"
+              },
+              "after_throwaway": {
+                "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+                "AltVchId": "79",
+                "AltMstId": "269",
+                "BooksFrom": "20250401",
+                "LastVoucherDate": "20260331",
+                "AlterID": "265"
+              },
+              "after_restore": {
+                "GUID": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+                "AltVchId": "78",
+                "AltMstId": "269",
+                "BooksFrom": "20250401",
+                "LastVoucherDate": "20260331",
+                "AlterID": "265"
+              }
+            },
+            "sample_master_ids": [
+              "1",
+              "2",
+              "3",
+              "4",
+              "5"
+            ],
+            "same_guid": true,
+            "counters_rose_on_throwaway": true,
+            "counters_back_below": true,
+            "throwaway_gone": true,
+            "master_ids_and_guids_kept": true,
+            "run_mode": "auto"
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p13_A_before_backup.xml",
+            "p13_A_before_backup_counters.xml",
+            "p13_A_after_throwaway.xml",
+            "p13_A_after_restore.xml",
+            "p13_A_after_restore_counters.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Back up company A: Gateway of Tally → Alt+Y (Data) → Backup, to a folder of your choice.",
+              "done_at": "2026-09-23T13:11:59+05:30",
+              "action": "backup_company"
+            },
+            {
+              "n": 2,
+              "instruction": "Create a Payment voucher dated 31-Mar-2026: Cash → Electricity, ₹1, narration 'S0-throwaway 4'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T13:11:59+05:30",
+              "action": "create_voucher"
+            },
+            {
+              "n": 3,
+              "instruction": "Close company A, restore the backup you just took over A's data folder (Alt+Y → Restore), then open 'Bharat Traders Probe Copy' again (only it).",
+              "done_at": "2026-09-23T13:15:44+05:30",
+              "action": "restore_company"
+            }
+          ],
+          "ran_at": "2026-09-23T13:15:44+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
     }
   },
   "anchor_checks": [
@@ -1983,6 +3029,33 @@
       "receivable": "970537.00",
       "payable": "1834142.00",
       "ran_at": "2026-09-23T11:12:34+05:30"
+    },
+    {
+      "when": "before_parity",
+      "label": "A",
+      "ok": true,
+      "problems": [],
+      "receivable": "970537.00",
+      "payable": "1834142.00",
+      "ran_at": "2026-09-23T12:25:35+05:30"
+    },
+    {
+      "when": "before_parity",
+      "label": "A",
+      "ok": true,
+      "problems": [],
+      "receivable": "970537.00",
+      "payable": "1834142.00",
+      "ran_at": "2026-09-23T12:47:14+05:30"
+    },
+    {
+      "when": "after_a_batch",
+      "label": "A",
+      "ok": true,
+      "problems": [],
+      "receivable": "970537.00",
+      "payable": "1834142.00",
+      "ran_at": "2026-09-23T13:15:44+05:30"
     }
   ]
 }

@@ -1,0 +1,22 @@
+{
+  "probe": 10,
+  "part": "A",
+  "step": "tally_quit",
+  "company_name": "Bharat Traders Probe Copy",
+  "company_guid": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+  "sent_at": "2026-09-23T12:56:38+05:30",
+  "elapsed_ms": null,
+  "response_bytes": null,
+  "timing_note": "Wine — not representative",
+  "request_xml": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Collection</TYPE>\n<ID>S0ActiveCompany</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n</STATICVARIABLES>\n<TDL>\n<TDLMESSAGE>\n<COLLECTION NAME=\"S0ActiveCompany\" ISMODIFY=\"No\">\n<TYPE>Company</TYPE>\n<FILTER>S0IsActive</FILTER>\n<NATIVEMETHOD>Name</NATIVEMETHOD>\n<NATIVEMETHOD>GUID</NATIVEMETHOD>\n\n</COLLECTION>\n<SYSTEM TYPE=\"Formulae\" NAME=\"S0IsActive\">$Name = ##SVCurrentCompany</SYSTEM>\n\n</TDLMESSAGE>\n</TDL>\n</DESC>\n</BODY>\n</ENVELOPE>",
+  "environment": {
+    "wine": "wine-11.0",
+    "tally_version": "TallyPrime 7.0 (release 7.0 from the XML response header)",
+    "edition": "Edit Log",
+    "licence": "educational"
+  },
+  "error": {
+    "kind": "refused",
+    "message": "Cannot connect to TallyPrime at http://localhost:9000"
+  }
+}

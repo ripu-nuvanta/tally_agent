@@ -1,0 +1,11 @@
+<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <STATUS>0</STATUS>
+ </HEADER>
+ <BODY>
+  <DATA>
+   <LINEERROR>Could not set &apos;SVCurrentCompany&apos; to &apos;Bharat Traders Probe Copy&apos;</LINEERROR>
+  </DATA>
+ </BODY>
+</ENVELOPE>

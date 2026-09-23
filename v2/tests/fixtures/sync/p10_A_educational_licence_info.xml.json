@@ -1,0 +1,18 @@
+{
+  "probe": 10,
+  "part": "A",
+  "step": "educational_licence_info",
+  "company_name": "Bharat Traders Probe Copy",
+  "company_guid": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+  "sent_at": "2026-09-23T13:08:06+05:30",
+  "elapsed_ms": 8,
+  "response_bytes": 1632,
+  "timing_note": "Wine — not representative",
+  "request_xml": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Function</TYPE>\n<ID>$$LicenseInfo</ID>\n</HEADER>\n<BODY>\n<DESC>\n<FUNCPARAMLIST>\n<PARAM>IsEducationalMode</PARAM>\n</FUNCPARAMLIST>\n</DESC>\n</BODY>\n</ENVELOPE>",
+  "environment": {
+    "wine": "wine-11.0",
+    "tally_version": "TallyPrime 7.0 (release 7.0 from the XML response header)",
+    "edition": "Edit Log",
+    "licence": "educational"
+  }
+}

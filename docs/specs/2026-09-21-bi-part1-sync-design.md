@@ -32,7 +32,8 @@
 > does not move the ledger's AlterID — so the mirrored-balance re-read in §4 is needed). `LastVoucherDate` is not
 > rolled back after a delete — don't use it as "latest voucher". The S2 gate can read the company GUID with a filtered
 > Company collection (~1.7 KB). An XML alter with an empty value is silently ignored (ALTERED=1, nothing changes).
-> Details: `docs/bi-s0-probe-results-2026-09-22.md`.
+> Details: `docs/bi-s0-probe-results-2026-09-23.md` (the current full snapshot of every probe run so far;
+> the `2026-09-22` file is the earlier, superseded snapshot).
 > **Settled 2026-09-23 (was provisional):** company A's live group-level TB export has rows with both debit and credit
 > columns filled (Current Assets, Current Liabilities) — that is normal, and `debit + credit` is Tally's own signed net
 > (negative = Debit, positive = Credit). Its rows net to **₹33,05,800 instead of 0 for two separate reasons, neither of
@@ -124,7 +125,7 @@ restating it.
 
 | Contract | Consumed by | What it covers | Defined in |
 |---|---|---|---|
-| **Data** | Parts 2, 3 | Tables and minimum columns, incl. group `nature` (balance-sheet vs P&L) and voucher `base_type`; lines resolved to master GUIDs; voucher flags `is_deleted` / `is_cancelled` / `is_optional` / `is_post_dated`; `Numeric(18,2)` INR base amounts; coverage states and the two watermark edges; snapshots in `tally_report_snapshots`; mirrored-balance freshness; what `last_synced_at` means | §4 "Every cycle", §4 "Background history backfill", §4 "What a full resync does…", §4 "Month-end snapshots", §5 "Cloud" |
+| **Data** | Parts 2, 3 | Tables and minimum columns, incl. group `nature` (balance-sheet vs P&L) and voucher `base_type` — both **derived by S1, not read from Tally** (probe 25); lines resolved to master GUIDs; voucher flags `is_deleted` / `is_cancelled` / `is_optional` / `is_post_dated`; `Numeric(18,2)` INR base amounts; coverage states and the two watermark edges; snapshots in `tally_report_snapshots`; mirrored-balance freshness; what `last_synced_at` means | §4 "Every cycle", §4 "Background history backfill", §4 "What a full resync does…", §4 "Month-end snapshots", §5 "Cloud" |
 | **Status** | Part 3 | `GET /api/workspaces/{id}/sync-status`: the stored `sync_state` values (incl. `restore_detected`), backfill `{oldest_available_fy, oldest_complete_fy, books_from, percent, state}`, `last_parity`, `last_seen_at` and the Tally status from the heartbeat, a pending re-link prompt; `GET/DELETE /api/devices` | §5 "Cloud", §4 "Company identity changes" |
 | **Integrity** | Parts 2, 3 | Parity states and their visibility rules; per-ledger / per-group verdicts in `parity_lines`; `workspace.config.last_parity` | §6 "Storage", §6 "Surfacing rules" |
 
@@ -471,9 +472,21 @@ timeout. Every piece of agent work has a tier, and each cycle works top-down:
     - `agent_devices`: `id`, `workspace_id`, `device_name`, `token_hash`, `refresh_hash`, `is_active` (one active device per workspace), `agent_version`, `last_seen_at`, `revoked_at`.
     - `tally_groups`: `guid`, `name`, `parent_guid`, `nature` (`assets | liabilities | income | expenses`, from the primary group), `is_revenue`, `affects_gross_profit`.
       - `nature` is what tells a balance-sheet ledger from a P&L one (§6 "Rung 1"; Part 2, "Rule 1").
-      - Today `build_list_groups` fetches only `Name` and `Parent` (`request_builder.py:223`), so this needs probe 25.
+      - **Derived, not read (probe 25 A, live 2026-09-23).** Neither `Nature` nor `PrimaryGroup` exports from the Group
+        collection (0 of 32 groups); `Parent` exports for all 32. S1 walks the `Parent` chain up to a reserved primary
+        group and maps that through `PRIMARY_NATURE` (e.g. `National Creditors → Sundry Creditors → Current Liabilities
+        → liabilities`), so the walk must handle custom sub-groups of any depth. `IsRevenue` and `AffectsGrossProfit`
+        DO export (32/32) and agree with the walk, so they are read and used as a cross-check on it.
+      - Today `build_list_groups` fetches only `Name` and `Parent` (`request_builder.py:223`), so S1 extends it with
+        `IsRevenue` / `AffectsGrossProfit` and computes `nature` itself.
     - `tally_voucher_types`: `guid`, `name`, `parent`, `base_type` (Sales, Purchase, Receipt, Payment, Journal, Contra, Credit Note, Debit Note, Memorandum, …).
       - Custom types such as "Sales – GST" roll up to their base type. That is how Parts 2 and 3 sum sales and purchases and leave Memorandum vouchers out (probe 25).
+      - **Derived, not read (probe 25 A, live 2026-09-23).** The VoucherType collection exports only `Parent` and
+        `ReservedName` (24/24 each) — there is no base-type field. S1 walks the voucher-type `Parent` chain until it
+        reaches one of Tally's 24 reserved types and stores that as `base_type`; the reserved set captured live is in
+        probe 25's `base_types` observation (`v2/probes/results/results.json`) and is the seed for the S1 map.
+      - `tally_vouchers.base_type` is the denormalised copy of this derived value — the voucher itself carries the
+        voucher-type NAME, not a base type.
     - `tally_ledgers`: `guid`, `name`, `group_guid`, `opening_balance`, `closing_balance`, `balance_captured_at`, `is_bill_wise`, `tax_type`, `gst_duty_head`.
     - `tally_stock_items`: `guid`, `name`, `parent_guid`, `base_unit`, `closing_qty`, `closing_value`, `balance_captured_at`.
     - `tally_vouchers`: `guid`, `master_id`, `alter_id`, `date`, `voucher_type_guid`, `base_type`, `voucher_number`, `reference`, `party_ledger_guid`, `narration`, `is_cancelled`, `is_optional`, `is_post_dated`, `is_deleted`.

@@ -1,0 +1,377 @@
+<ENVELOPE>
+ <HEADER>
+  <VERSION>1</VERSION>
+  <STATUS>1</STATUS>
+ </HEADER>
+ <BODY>
+  <DESC>
+   <CMPINFO>
+    <COMPANY>1</COMPANY>
+    <GROUP>0</GROUP>
+    <LEDGER>30</LEDGER>
+    <COSTCATEGORY>0</COSTCATEGORY>
+    <COSTCENTRE>0</COSTCENTRE>
+    <GODOWN>0</GODOWN>
+    <STOCKGROUP>0</STOCKGROUP>
+    <STOCKCATEGORY>0</STOCKCATEGORY>
+    <STOCKITEM>0</STOCKITEM>
+    <VOUCHERTYPE>5</VOUCHERTYPE>
+    <CURRENCY>11</CURRENCY>
+    <UNIT>0</UNIT>
+    <BUDGET>0</BUDGET>
+    <CLIENTRULE>0</CLIENTRULE>
+    <SERVERRULE>0</SERVERRULE>
+    <STATE>0</STATE>
+    <TDSRATE>0</TDSRATE>
+    <TAXCLASSIFICATION>0</TAXCLASSIFICATION>
+    <STCATEGORY>0</STCATEGORY>
+    <DEDUCTEETYPE>0</DEDUCTEETYPE>
+    <ATTENDANCETYPE>0</ATTENDANCETYPE>
+    <FBTCATEGORY>0</FBTCATEGORY>
+    <FBTASSESSEETYPE>0</FBTASSESSEETYPE>
+    <TARIFFCLASSIFICATION>0</TARIFFCLASSIFICATION>
+    <EXCISEDUTYCLASSIFICATION>0</EXCISEDUTYCLASSIFICATION>
+    <SERIALNUMBER>0</SERIALNUMBER>
+    <ADJUSTMENTCLASSIFICATION>0</ADJUSTMENTCLASSIFICATION>
+    <INCOMETAXSLAB>0</INCOMETAXSLAB>
+    <INCOMETAXCLASSIFICATION>0</INCOMETAXCLASSIFICATION>
+    <LBTCLASSIFICATION>0</LBTCLASSIFICATION>
+    <TAXUNIT>10</TAXUNIT>
+    <RETURNMASTER>0</RETURNMASTER>
+    <GSTCLASSIFICATION>0</GSTCLASSIFICATION>
+    <VOUCHERNUMBERSERIES>10</VOUCHERNUMBERSERIES>
+    <VOUCHER>15</VOUCHER>
+   </CMPINFO>
+  </DESC>
+  <DATA>
+   <COLLECTION ISMSTDEPTYPE="Yes" MSTDEPTYPE="4">
+    <GROUP NAME="Bank Accounts" RESERVEDNAME="Bank Accounts">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000016</GUID>
+     <ALTERID TYPE="Number"> 23</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bank Accounts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Bank OD A/c" RESERVEDNAME="Bank OD A/c">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000000b</GUID>
+     <ALTERID TYPE="Number"> 12</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Bank OD A/c</NAME>
+       <NAME>Bank OCC A/c</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Branch / Divisions" RESERVEDNAME="Branch / Divisions">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000007</GUID>
+     <ALTERID TYPE="Number"> 8</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Branch / Divisions</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Capital Account" RESERVEDNAME="Capital Account">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000001</GUID>
+     <ALTERID TYPE="Number"> 2</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Capital Account</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Cash-in-Hand" RESERVEDNAME="Cash-in-Hand">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000015</GUID>
+     <ALTERID TYPE="Number"> 22</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Cash-in-Hand</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Current Assets" RESERVEDNAME="Current Assets">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000006</GUID>
+     <ALTERID TYPE="Number"> 7</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Current Assets</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Current Liabilities" RESERVEDNAME="Current Liabilities">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000003</GUID>
+     <ALTERID TYPE="Number"> 4</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Current Liabilities</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Deposits (Asset)" RESERVEDNAME="Deposits (Asset)">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000012</GUID>
+     <ALTERID TYPE="Number"> 19</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Deposits (Asset)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Direct Expenses" RESERVEDNAME="Direct Expenses">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000001a</GUID>
+     <ALTERID TYPE="Number"> 27</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Direct Expenses</NAME>
+       <NAME>Expenses (Direct)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Direct Incomes" RESERVEDNAME="Direct Incomes">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000019</GUID>
+     <ALTERID TYPE="Number"> 26</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Direct Incomes</NAME>
+       <NAME>Income (Direct)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Duties &amp; Taxes" RESERVEDNAME="Duties &amp; Taxes">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000000e</GUID>
+     <ALTERID TYPE="Number"> 15</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Duties &amp; Taxes</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Fixed Assets" RESERVEDNAME="Fixed Assets">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000004</GUID>
+     <ALTERID TYPE="Number"> 5</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Fixed Assets</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Indirect Expenses" RESERVEDNAME="Indirect Expenses">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000001c</GUID>
+     <ALTERID TYPE="Number"> 29</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Indirect Expenses</NAME>
+       <NAME>Expenses (Indirect)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Indirect Incomes" RESERVEDNAME="Indirect Incomes">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000001b</GUID>
+     <ALTERID TYPE="Number"> 28</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Indirect Incomes</NAME>
+       <NAME>Income (Indirect)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Investments" RESERVEDNAME="Investments">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000005</GUID>
+     <ALTERID TYPE="Number"> 6</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Investments</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Loans &amp; Advances (Asset)" RESERVEDNAME="Loans &amp; Advances (Asset)">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000013</GUID>
+     <ALTERID TYPE="Number"> 20</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Loans &amp; Advances (Asset)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Loans (Liability)" RESERVEDNAME="Loans (Liability)">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000002</GUID>
+     <ALTERID TYPE="Number"> 3</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Loans (Liability)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Local Creditors" RESERVEDNAME="">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-000000d1</GUID>
+     <ALTERID TYPE="Number"> 211</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Local Creditors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Misc. Expenses (ASSET)" RESERVEDNAME="Misc. Expenses (ASSET)">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000008</GUID>
+     <ALTERID TYPE="Number"> 9</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Misc. Expenses (ASSET)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="National Creditors" RESERVEDNAME="">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-000000d0</GUID>
+     <ALTERID TYPE="Number"> 210</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>National Creditors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="North Zone Debtors" RESERVEDNAME="">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-000000ce</GUID>
+     <ALTERID TYPE="Number"> 208</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>North Zone Debtors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Provisions" RESERVEDNAME="Provisions">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000000f</GUID>
+     <ALTERID TYPE="Number"> 16</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Provisions</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Purchase Accounts" RESERVEDNAME="Purchase Accounts">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000018</GUID>
+     <ALTERID TYPE="Number"> 25</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Purchase Accounts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Reserves &amp; Surplus" RESERVEDNAME="Reserves &amp; Surplus">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000000a</GUID>
+     <ALTERID TYPE="Number"> 11</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Reserves &amp; Surplus</NAME>
+       <NAME>Retained Earnings</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sales Accounts" RESERVEDNAME="Sales Accounts">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000017</GUID>
+     <ALTERID TYPE="Number"> 24</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sales Accounts</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Secured Loans" RESERVEDNAME="Secured Loans">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000000c</GUID>
+     <ALTERID TYPE="Number"> 13</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Secured Loans</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="South Zone Debtors" RESERVEDNAME="">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-000000cf</GUID>
+     <ALTERID TYPE="Number"> 209</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>South Zone Debtors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Stock-in-Hand" RESERVEDNAME="Stock-in-Hand">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000011</GUID>
+     <ALTERID TYPE="Number"> 18</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Stock-in-Hand</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sundry Creditors" RESERVEDNAME="Sundry Creditors">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000010</GUID>
+     <ALTERID TYPE="Number"> 17</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sundry Creditors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Sundry Debtors" RESERVEDNAME="Sundry Debtors">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000014</GUID>
+     <ALTERID TYPE="Number"> 21</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Sundry Debtors</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Suspense A/c" RESERVEDNAME="Suspense A/c">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-00000009</GUID>
+     <ALTERID TYPE="Number"> 10</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Suspense A/c</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+    <GROUP NAME="Unsecured Loans" RESERVEDNAME="Unsecured Loans">
+     <GUID TYPE="String">710de34a-3661-4a7b-8148-c2206c3b3e17-0000000d</GUID>
+     <ALTERID TYPE="Number"> 14</ALTERID>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Unsecured Loans</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </GROUP>
+   </COLLECTION>
+  </DATA>
+ </BODY>
+</ENVELOPE>
