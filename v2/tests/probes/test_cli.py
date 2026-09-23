@@ -4,7 +4,7 @@ import signal
 import pytest
 
 from v2.probes import p00_environment
-from v2.probes.__main__ import main
+from v2.probes.__main__ import build_parser, main
 from v2.probes.actions import Action
 from v2.probes.companies import COMPANIES, SEED_COMPANY
 from v2.probes.core import Outcome, PartResult
@@ -185,3 +185,12 @@ def test_ctrl_c_during_a_blocking_wait_is_recorded_and_propagates(tmp_path, monk
     part_entry = store.probe_entry(5)["parts"]["A"]
     assert part_entry["outcome"] == "BLOCKED"
     assert "Interrupted by operator" in part_entry["summary"]
+
+
+def test_allow_risky_is_opt_in_on_the_run_command():
+    """A default `run` / `run --all` must never carry the risky steps (probe 16's SVFROMDATE ledger read, which
+    froze Tally live on 2026-09-23)."""
+    parser = build_parser()
+    assert parser.parse_args(["run", "16"]).allow_risky is False
+    assert parser.parse_args(["run", "--all"]).allow_risky is False
+    assert parser.parse_args(["run", "16", "--allow-risky"]).allow_risky is True

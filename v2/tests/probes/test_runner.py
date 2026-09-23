@@ -428,3 +428,22 @@ async def test_mutation_guard_blocks_before_any_request(tmp_path, monkeypatch):
     assert outcome is Outcome.BLOCKED
     assert "only companies with 'Probe'" in store.probe_entry(99)["parts"]["A"]["summary"]
     assert fake.requests == []
+
+
+# --- --allow-risky: off unless the operator asked for it (probe 16's SVFROMDATE ledger read) -------------------------
+
+
+@pytest.mark.parametrize("allow_risky, expected", [(None, False), (False, False), (True, True)])
+async def test_allow_risky_reaches_the_probe_context_and_defaults_off(tmp_path, allow_risky, expected):
+    fake = FakeTally([A])
+    seen = {}
+
+    async def part(ctx):
+        seen["allow_risky"] = ctx.allow_risky
+        return PartResult(Outcome.CONFIRMED, "ok")
+
+    client, store, capture = make_harness(tmp_path, fake)
+    kwargs = {} if allow_risky is None else {"allow_risky": allow_risky}
+    await run_probe(_probe({"A": part}), labels=None, client=client, store=store, capture=capture,
+                    io=ScriptedIO(), **kwargs)
+    assert seen["allow_risky"] is expected

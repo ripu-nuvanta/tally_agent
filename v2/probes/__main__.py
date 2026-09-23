@@ -49,6 +49,9 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--company", choices=["A", "B", "C"])
     run.add_argument("--rerun", action="store_true")
     run.add_argument("--auto", action="store_true", help="the automated operator performs every pause (S0-D9)")
+    run.add_argument("--allow-risky", action="store_true",
+                     help="also send the probe steps known to be able to freeze Tally (probe 16's SVFROMDATE ledger "
+                          "read); Tally may need a restart afterwards")
     run.add_argument("--stop-any-tally", action="store_true",
                      help="with --auto: the operator may stop a TallyPrime it didn't start")
     report = sub.add_parser("report")
@@ -89,7 +92,7 @@ async def _run(args, store: ResultsStore, transport: httpx.AsyncBaseTransport | 
         try:
             if args.first or args.all:
                 await run_order(FIRST_ORDER if args.first else ALL_ORDER, client=client, store=store, capture=capture,
-                                io=io, rerun=args.rerun)
+                                io=io, rerun=args.rerun, allow_risky=args.allow_risky)
                 return 0
             if not 0 <= args.probe_id <= MAX_PROBE_ID:
                 print(f"No probe {args.probe_id} (probes are 0–{MAX_PROBE_ID}).")
@@ -109,7 +112,8 @@ async def _run(args, store: ResultsStore, transport: httpx.AsyncBaseTransport | 
                 except ProbeBlocked as exc:
                     print(f"Couldn't open company {first}: {exc}")
                     return 1
-            await run_probe(probe, labels=labels, client=client, store=store, capture=capture, io=io)
+            await run_probe(probe, labels=labels, client=client, store=store, capture=capture, io=io,
+                            allow_risky=args.allow_risky)
             return 0
         finally:
             await client.close()

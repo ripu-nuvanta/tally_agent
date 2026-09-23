@@ -63,6 +63,15 @@ def _structure(vouchers: list[dict]) -> dict:
 
 
 def _balance(vouchers: list[dict]) -> dict:
+    """Which posting rule makes every voucher balance. This probe is the one that formally settles the rule, so it
+    still measures all four candidates and nothing here is pre-judged.
+
+    Live evidence recorded elsewhere on 2026-09-23 already points at 'all_only': on company A the 24 inventory
+    vouchers (16 Sales + 8 Purchase) carry the nominal ledger in BOTH ALLLEDGERENTRIES.LIST and each inventory
+    entry's ACCOUNTINGALLOCATIONS.LIST, so 'default' counts Sales/Purchase at exactly 2x and leaves 24 of 50
+    vouchers unbalanced, while 'all_only' leaves 0 and reproduces Tally's own as-on TB rows to the paisa
+    (reads.PROBE_POSTING_RULE). This probe's own run on a licensed Tally is what confirms it across voucher types.
+    """
     per_rule = {}
     for rule in POSTING_RULES:
         balanced = 0

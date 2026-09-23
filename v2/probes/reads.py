@@ -17,6 +17,24 @@ INVENTORY_LISTS = ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST")
 POSTING_RULES = ("default", "all_only", "ledger_plus_alloc", "all_plus_alloc")
 ZERO = Decimal("0")
 
+# The rule these probes count a voucher's postings with (live 2026-09-23, company A, TallyPrime 7.0 Edit Log,
+# Educational, under Wine 11.0). Company A's 24 inventory vouchers (16 Sales + 8 Purchase) carry the nominal ledger
+# TWICE: once in ALLLEDGERENTRIES.LIST and again in each inventory entry's ACCOUNTINGALLOCATIONS.LIST. The "default"
+# rule (primary lines + allocations) therefore counts Sales and Purchase at exactly 2x, and every one of those 24
+# vouchers fails a double-entry sum; "all_only" leaves 0 of 50 unbalanced. Measured against the TB as-on 31-10-2025
+# (p18_A fixtures, 9 countable vouchers to that date): all_only gives Purchase -1,157,000 and Sales +544,000, which
+# are Tally's own as-on TB rows to the paisa, while "default" gives -2,314,000 and +1,088,000 — the 2x. All 50
+# vouchers export ALLLEDGERENTRIES.LIST, so it alone is complete (party + nominal + GST). Probe 6 is the probe that
+# formally settles the rule across voucher types; it still measures all four and is not affected by this default.
+PROBE_POSTING_RULE = "all_only"
+
+OPENING_STOCK_ROW = "Opening Stock"
+# EXPLODEFLAG=Yes turns the TYPE=Data Trial Balance into a detailed one: the primary-group rows stay, byte-for-byte
+# the same values as the plain TB, and their children are added -- including the synthetic "Opening Stock" row that
+# no ledger carries (probe 17, live 2026-09-23). It stops at the second group level, so it is used here only to read
+# the group rows plus that Opening Stock row, never to enumerate ledgers.
+TB_EXPLODE_VARS = {"EXPLODEFLAG": "Yes"}
+
 # Tally's reserved primary groups and the nature S1 gives each (Part 1 §6 rung 1 needs balance-sheet vs P&L).
 PRIMARY_NATURE: dict[str, str] = {
     "Capital Account": "liabilities", "Loans (Liability)": "liabilities", "Current Liabilities": "liabilities",
@@ -28,6 +46,23 @@ PRIMARY_NATURE: dict[str, str] = {
 PL_PRIMARY_GROUPS = frozenset(group for group, nature in PRIMARY_NATURE.items() if nature in ("income", "expenses"))
 
 
+# Period variables must never reach a master collection (live 2026-09-23, twice, on a freshly reset company A;
+# TallyPrime 7.0 Edit Log, Educational, under Wine 11.0 — proven on the Ledger collection only). SVFROMDATE froze
+# Tally's XML server behind a modal: the read timed out at 45 s and an unrelated counters read then timed out too, so
+# the whole server was blocked until Tally was restarted. SVTODATE answered instantly, byte-identical to the control,
+# with 0 of 35 closing balances changed — a healthy 200 carrying TODAY's balances, which is the more dangerous of the
+# two. Reports (wrap_report, TYPE=Data) honour both and are the route to as-on figures. The guard is deliberately
+# conservative — it covers every master collection, though only Ledger was tested — and the same rule will be needed
+# in the S2 agent's own builders (v2/agent/tally/). voucher_request and wrap_report are proven fine and untouched.
+MASTER_PERIOD_VARS = ("SVFROMDATE", "SVTODATE")
+MASTER_PERIOD_VARS_ERROR = (
+    "period variables on a master collection freeze Tally (SVFROMDATE: the XML server stays blocked behind a modal "
+    "until Tally is restarted) or are silently ignored (SVTODATE: a healthy 200 carrying today's balances). As-on "
+    "figures come from wrap_report (TYPE=Data) instead. Pass allow_period_vars=True only from probe 16, the probe "
+    "that measures this behaviour."
+)
+
+
 # --- requests -------------------------------------------------------------------------------------------------------
 def voucher_request(name: str, fields: list[str], company: str, *, from_date: str = A_FY_FROM, to_date: str = A_FY_TO,
                     filters: list[tuple[str, str]] | None = None, extra_collection_xml: str = "") -> str:
@@ -36,7 +71,17 @@ def voucher_request(name: str, fields: list[str], company: str, *, from_date: st
 
 
 def master_request(name: str, object_type: str, fields: list[str], company: str, *,
-                   static_vars: dict[str, str] | None = None, filters: list[tuple[str, str]] | None = None) -> str:
+                   static_vars: dict[str, str] | None = None, filters: list[tuple[str, str]] | None = None,
+                   allow_period_vars: bool = False) -> str:
+    """A master (Ledger, Group, StockItem, …) collection. Period variables are refused — see MASTER_PERIOD_VARS_ERROR.
+
+    `allow_period_vars=True` is the single deliberate exception: probe 16 is the probe that MEASURES this behaviour
+    (its SVTODATE read is the evidence; its SVFROMDATE read is opt-in and off by default). Nothing else may set it.
+    """
+    if not allow_period_vars:
+        used = [name_ for name_ in MASTER_PERIOD_VARS if name_ in (static_vars or {})]
+        if used:
+            raise ValueError(f"{', '.join(used)} on a {object_type} collection ({name}): {MASTER_PERIOD_VARS_ERROR}")
     return wrap_collection(name, object_type, fields, company, static_vars=static_vars, filters=filters)
 
 
@@ -124,8 +169,12 @@ def primary_lines(voucher: dict) -> list[dict]:
     return all_lines or [item for item in voucher["ledger_lines"] if item["list"] == "LEDGERENTRIES.LIST"]
 
 
-def postings(voucher: dict, rule: str = "default") -> list[tuple[str, Decimal | None]]:
-    """(ledger, amount) per posting. 'default' = primary lines + inventory accounting allocations (probe 6 checks it)."""
+def postings(voucher: dict, rule: str = PROBE_POSTING_RULE) -> list[tuple[str, Decimal | None]]:
+    """(ledger, amount) per posting, under `rule` (default PROBE_POSTING_RULE = 'all_only' -- see its comment above).
+
+    The rule names are probe 6's candidates and all four stay available: 'default' = primary lines + inventory
+    accounting allocations, which on company A double-counts the nominal ledger of every inventory voucher.
+    """
     all_lines = [item for item in voucher["ledger_lines"] if item["list"] == "ALLLEDGERENTRIES.LIST"]
     ledger_lines = [item for item in voucher["ledger_lines"] if item["list"] == "LEDGERENTRIES.LIST"]
     allocations = [a for inv in voucher["inventory"] for a in inv["accounting"]]
@@ -141,7 +190,7 @@ def is_countable(voucher: dict) -> bool:
 
 
 def ledger_movements(vouchers: list[dict], *, up_to: date | None = None, before: date | None = None,
-                     include_post_dated: bool = False) -> dict[str, Decimal]:
+                     include_post_dated: bool = False, rule: str = PROBE_POSTING_RULE) -> dict[str, Decimal]:
     totals: dict[str, Decimal] = {}
     for voucher in vouchers:
         if not is_countable(voucher):
@@ -151,7 +200,7 @@ def ledger_movements(vouchers: list[dict], *, up_to: date | None = None, before:
         when = tally_date(voucher["header"].get("DATE", ""))
         if when is None or (up_to is not None and when > up_to) or (before is not None and when >= before):
             continue
-        for ledger, value in postings(voucher):
+        for ledger, value in postings(voucher, rule):
             if value is not None:
                 totals[ledger] = totals.get(ledger, ZERO) + value
     return totals
@@ -181,7 +230,11 @@ def top_group(group: str, parents: dict[str, str]) -> str:
 
 
 def stock_bearing_groups(parents: dict[str, str]) -> set[str]:
-    """The primary group holding Stock-in-Hand, whose TB row may include closing stock (no ledger carries it)."""
+    """The primary group holding Stock-in-Hand, whose TB row carries a stock figure no ledger holds.
+
+    On company A that figure is the TB's own synthetic `Opening Stock` row (OPENING_STOCK_ROW), NOT the Stock
+    Summary's closing value -- the two are different quantities (live 2026-09-23: 18,55,800 vs -9,89,462.31).
+    """
     return {top_group("Stock-in-Hand", parents)} if "Stock-in-Hand" in parents else {"Current Assets"}
 
 
@@ -220,3 +273,29 @@ def stock_rows_any_depth(raw_xml: str) -> list[dict]:
         elif current is not None and element.tag == "DSPCLAMTA":
             current["value"] = amount(element.text)
     return rows
+
+
+def exploded_tb_rows(raw_xml: str) -> list[dict]:
+    """Every TB row at any depth, in parse_trial_balance's shape (account_name / debit_amount / credit_amount /
+    closing_balance). Works on a plain TB too, where the rows are just the primary groups."""
+    return [{"account_name": row["name"], "debit_amount": row["debit"], "credit_amount": row["credit"],
+             "closing_balance": row["closing"]} for row in tb_rows_any_depth(raw_xml)]
+
+
+def primary_group_rows(rows: list[dict]) -> dict[str, dict]:
+    """The reserved primary groups' own rows, first occurrence wins.
+
+    First occurrence matters: company A has a LEDGER called "Capital Account" as well as the group, and an exploded
+    TB emits the group row before its children.
+    """
+    found: dict[str, dict] = {}
+    for row in rows:
+        name = row["account_name"]
+        if name in PRIMARY_NATURE and name not in found:
+            found[name] = row
+    return found
+
+
+def opening_stock_row(rows: list[dict]) -> dict | None:
+    """The TB's synthetic `Opening Stock` row, if this response carries one (an exploded TB does; a plain one doesn't)."""
+    return next((row for row in rows if row["account_name"] == OPENING_STOCK_ROW), None)

@@ -1,5 +1,9 @@
+from decimal import Decimal
+from pathlib import Path
+
 import httpx
 
+from v2.agent.tally.reports import parse_trial_balance
 from v2.probes import p17_ledger_level_tb as p17
 from v2.probes.core import Outcome
 from v2.probes.runner import run_probe
@@ -84,3 +88,76 @@ async def test_a_candidate_that_hangs_tally_fails_and_stops(tmp_path):
     assert outcome is Outcome.FAILED
     assert "unresponsive" in part["summary"] and "hang Tally" in part["spec_impact"]
     assert list(part["observations"]["candidates"]) == ["explodeflag"]
+
+
+# --- 2026-09-23 live finding: ISLEDGERWISE=Yes IS a working ledger-level TB -------------------------------------------
+
+SYNC = Path(__file__).resolve().parents[1] / "fixtures" / "sync"
+
+
+def _live(name):
+    return (SYNC / name).read_text(encoding="utf-8")
+
+
+LIVE_BASELINE = {row["account_name"]: str(row["closing_balance"])
+                 for row in parse_trial_balance(_live("p00_A_anchors_tb.xml"))}
+LIVE_LEDGERS = p17.parse_parents(_live("p17_A_ledger_list.xml"), "LEDGER")
+LIVE_GROUPS = p17.parse_parents(_live("p17_A_group_list.xml"))
+
+
+def _live_evaluate(candidate):
+    return p17.evaluate(_live(f"p17_A_tb_exploded_{candidate}.xml"), LIVE_LEDGERS, LIVE_GROUPS, LIVE_BASELINE)
+
+
+def test_isledgerwise_is_a_working_ledger_level_tb_on_the_live_response():
+    """The live response carries NO group rows, and company A has a ledger named "Capital Account". Discriminating
+    rows by name consumed that ledger as the group total and produced the only mismatch the probe ever recorded."""
+    entry = _live_evaluate("isledgerwise")
+    assert entry["emits_group_rows"] is False
+    assert entry["ledger_rows"] == 29 and entry["rows"] == 30
+    assert "Capital Account" in LIVE_LEDGERS                 # the ledger that used to be swallowed
+    assert entry["mismatches"] == {}
+    assert entry["sums_match"] is True
+    assert entry["non_ledger_rows"] == ["Opening Stock"]      # caveat 1: one synthetic, non-ledger row
+    assert entry["stock_bearing_skipped"] == ["Current Assets"]
+
+
+def test_explodeflag_really_does_stop_at_the_second_group_level():
+    """F3 stays a genuine finding: a failing candidate must not be massaged into a pass."""
+    assert _live_evaluate("explodeflag")["mismatches"]["Current Liabilities"] == {
+        "group_row": Decimal("1757357.00"), "ledger_sum": Decimal("0")}
+    all_levels = _live_evaluate("explodealllevels")
+    assert all_levels["emits_group_rows"] is True
+    # Duties & Taxes (one level down) IS exploded; the 5 creditors under the custom sub-groups never appear.
+    assert all_levels["mismatches"]["Current Liabilities"] == {"group_row": Decimal("1757357.00"),
+                                                              "ledger_sum": Decimal("-76785.00")}
+    assert all_levels["sums_match"] is False
+    for unrecognised in ("svexplodeflag", "ledgerwise"):
+        assert _live_evaluate(unrecognised)["ledger_rows"] == 0      # not recognised: the plain TB comes back
+
+
+async def test_the_live_candidates_make_probe17_confirmed_on_isledgerwise(tmp_path):
+    def tb(body):
+        for key, variables in p17.EXPLODE_CANDIDATES.items():
+            if all(f"<{name}>{value}</{name}>" in body for name, value in variables.items()):
+                match = key
+        return _live(f"p17_A_tb_exploded_{match}.xml")
+
+    fake, _ = a_tally()
+    fake.route("S0P17Ledgers", lambda body: _live("p17_A_ledger_list.xml"))
+    fake.route("S0P17Groups", lambda body: _live("p17_A_group_list.xml"))
+    fake.route("<ID>Trial Balance</ID>", tb)
+    client, store, capture = make_harness(tmp_path, fake)
+    ready_store(store, baseline=LIVE_BASELINE)
+    outcome = await run_probe(p17.PROBE, labels=None, client=client, store=store, capture=capture, io=ScriptedIO())
+    part = store.probe_entry(17)["parts"]["A"]
+    assert outcome is Outcome.CONFIRMED, part["summary"]
+    assert part["observations"]["working_variable"] == "isledgerwise"
+    assert "29 ledger rows" in part["summary"]
+    assert store.confirmed("ledger_level_tb")["candidate"] == "isledgerwise"
+    assert "<ISLEDGERWISE>Yes</ISLEDGERWISE>" in store.confirmed("ledger_level_tb")["xml_template"]
+    impact = part["spec_impact"]
+    assert "Rung 2 CAN compare at ledger level" in impact and "stay at group level" in impact
+    assert "Caveat 1" in impact and "Opening Stock" in impact
+    assert "Caveat 2" in impact and "EXPLODEFLAG" in impact and "second group level" in impact
+    assert "custom sub-group" in impact

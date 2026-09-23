@@ -40,7 +40,7 @@ def _switch(io: ProbeIO, label: str) -> str | None:
 
 
 async def run_probe(probe: Probe, *, labels: list[str] | None, client: TallyClient, store: ResultsStore,
-                    capture: Capture, io: ProbeIO) -> Outcome:
+                    capture: Capture, io: ProbeIO, allow_risky: bool = False) -> Outcome:
     all_parts = list(probe.part_labels)
     labels = labels or list(probe.parts)
     outcome = store.outcome(probe.id) or Outcome.PARTIAL
@@ -49,7 +49,7 @@ async def run_probe(probe: Probe, *, labels: list[str] | None, client: TallyClie
             raise ValueError(f"Probe {probe.id} has no part {label!r} (has {', '.join(probe.parts)})")
         switch_error = _switch(io, label) if index > 0 else None
         ctx = ProbeContext(probe=probe, part=label, company_name=COMPANIES[label], client=client,
-                           store=store, capture=capture, io=io)
+                           store=store, capture=capture, io=io, allow_risky=allow_risky)
         io.say(f"--- probe {probe.id} ({probe.name}) part {label}: {COMPANIES[label]}")
         interrupted = False
         try:
@@ -113,7 +113,7 @@ async def run_anchor_check(step: str, label: str, *, client: TallyClient, store:
 
 
 async def run_order(order: list[OrderStep], *, client: TallyClient, store: ResultsStore,
-                    capture: Capture, io: ProbeIO, rerun: bool = False) -> None:
+                    capture: Capture, io: ProbeIO, rerun: bool = False, allow_risky: bool = False) -> None:
     current: str | None = None
     for step, label in order:
         if is_anchor_step(step):
@@ -144,7 +144,8 @@ async def run_order(order: list[OrderStep], *, client: TallyClient, store: Resul
                 io.say(f"Stopped: {error}")
                 return
         current = label
-        await run_probe(probe, labels=[label], client=client, store=store, capture=capture, io=io)
+        await run_probe(probe, labels=[label], client=client, store=store, capture=capture, io=io,
+                        allow_risky=allow_risky)
         outcome = store.part_outcome(step, label)
         if outcome not in (Outcome.CONFIRMED, Outcome.DIFFERENT):
             io.say(f"Stopped: probe {step} part {label} is {outcome.value}. Fix that, then re-run.")

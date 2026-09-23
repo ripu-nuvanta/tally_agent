@@ -24,21 +24,38 @@ EXPLODE_CANDIDATES: dict[str, dict[str, str]] = {
 CANDIDATE_TIMEOUT_S = 60.0
 
 
+def _has_group_rows(rows: list[dict], ledger_parents: dict[str, str], group_parents: dict[str, str]) -> bool:
+    """Does this response emit group rows at all? True iff some row names a group that is NOT also a ledger.
+
+    This is the discriminator, NOT the row's name on its own. ISLEDGERWISE=Yes returns ledger rows only, and
+    company A has a LEDGER named "Capital Account" as well as the group: judging by name alone consumed that ledger
+    row as the group total, dropped it from the ledger rows, and manufactured the only mismatch the probe recorded
+    (live 2026-09-23). An unambiguous group name — "Current Liabilities", "Sundry Creditors", … — can only come from
+    a group row, so its presence is what says the response is group-and-ledger rather than ledger-only.
+    """
+    return any(row["name"] in group_parents and row["name"] not in ledger_parents for row in rows)
+
+
 def evaluate(text: str, ledger_parents: dict[str, str], group_parents: dict[str, str],
              baseline: dict[str, str]) -> dict:
     """Ledger rows in an exploded TB, and whether their per-primary-group sums equal the group rows."""
     rows = tb_rows_any_depth(text)
     tops = set(baseline)
     stock_groups = stock_bearing_groups(group_parents)
+    has_group_rows = _has_group_rows(rows, ledger_parents, group_parents)
     group_rows: dict[str, Decimal | None] = {}
     ledger_rows: list[dict] = []
+    non_ledger_rows: list[str] = []
     for row in rows:
-        # The first row named after a primary group is that group's total (company A has a group AND a ledger called
-        # "Capital Account"); later rows carrying a ledger's name are ledger rows.
-        if row["name"] in tops and row["name"] not in group_rows:
-            group_rows[row["name"]] = row["closing"]
-        elif row["name"] in ledger_parents:
+        name = row["name"]
+        # Only a response that emits group rows may consume a name as one, and then only its first occurrence
+        # (Tally prints the group before its children).
+        if has_group_rows and name in tops and name not in group_rows:
+            group_rows[name] = row["closing"]
+        elif name in ledger_parents:
             ledger_rows.append(row)
+        elif name not in group_parents:
+            non_ledger_rows.append(name)      # e.g. the synthetic "Opening Stock" row: neither ledger nor group
     sums: dict[str, Decimal] = {}
     for row in ledger_rows:
         parent = ledger_parents[row["name"]]
@@ -53,7 +70,28 @@ def evaluate(text: str, ledger_parents: dict[str, str], group_parents: dict[str,
         if sums.get(group, ZERO) != reference:
             mismatches[group] = {"group_row": reference, "ledger_sum": sums.get(group, ZERO)}
     return {"rows": len(rows), "ledger_rows": len(ledger_rows), "sums_match": bool(ledger_rows) and not mismatches,
-            "mismatches": mismatches, "stock_bearing_skipped": sorted(tops & stock_groups)}
+            "mismatches": mismatches, "stock_bearing_skipped": sorted(tops & stock_groups),
+            "emits_group_rows": has_group_rows, "non_ledger_rows": sorted(set(non_ledger_rows))}
+
+
+def _caveats(results: dict[str, dict], working: str) -> str:
+    """The two things a ledger-level TB consumer must know, built from what this run actually recorded."""
+    chosen = results[working]
+    parts = []
+    extra = chosen.get("non_ledger_rows") or []
+    if extra:
+        parts.append(f"Caveat 1 — the response is not purely ledgers: {len(extra)} non-ledger row(s) come with it "
+                     f"({', '.join(extra)}), a synthetic TB row no ledger carries, so the consumer matches rows "
+                     f"against the ledger list and skips the rest.")
+    blind = sorted(key for key, entry in results.items()
+                   if key != working and entry.get("ledger_rows", 0) > 0 and entry.get("mismatches"))
+    if blind:
+        parts.append(f"Caveat 2 — {', '.join(sorted(v for key in blind for v in EXPLODE_CANDIDATES[key]))} is NOT a "
+                     f"ledger-level route ({', '.join(blind)}): it stops at the second group level, so ledgers under a "
+                     f"custom sub-group never appear and its per-group sums are short by exactly those ledgers "
+                     f"({'; '.join(f'{key}: ' + ', '.join(sorted(results[key]['mismatches'])) for key in blind)}). "
+                     f"That hits any company with custom sub-groups.")
+    return " ".join(parts)
 
 
 async def run_a(ctx: ProbeContext) -> PartResult:
@@ -98,9 +136,10 @@ async def run_a(ctx: ProbeContext) -> PartResult:
                             candidate=working, note="S2 substitutes SVFROMDATE / SVTODATE")
         return PartResult(Outcome.CONFIRMED,
                           f"{working!r} returns {chosen['ledger_rows']} ledger rows whose per-group sums equal the TB "
-                          f"group rows ({chosen['elapsed_ms']} ms, {chosen['bytes']} bytes under Wine)",
-                          spec_impact=f"Rung 2 can compare at ledger level with {EXPLODE_CANDIDATES[working]} and "
-                                      "month-bisect gets cheaper (decision 11); timing is re-measured on tier C.")
+                          f"group totals ({chosen['elapsed_ms']} ms, {chosen['bytes']} bytes under Wine)",
+                          spec_impact=f"Rung 2 CAN compare at ledger level via {EXPLODE_CANDIDATES[working]} — no need "
+                                      f"to stay at group level — and month-bisect gets cheaper (decision 11, R3); "
+                                      f"timing is re-measured on tier C. {_caveats(results, working)}")
     with_rows = [key for key, entry in results.items() if entry.get("ledger_rows", 0) > 0]
     if with_rows:
         return PartResult(Outcome.DIFFERENT, f"Ledger rows come back ({', '.join(with_rows)}) but their per-group sums "

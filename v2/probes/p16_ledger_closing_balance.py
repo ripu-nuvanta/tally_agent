@@ -8,15 +8,16 @@ from __future__ import annotations
 from decimal import Decimal
 
 from v2.agent.tally.envelopes import wrap_report
-from v2.agent.tally.reports import parse_ledger_list, parse_stock_summary, parse_trial_balance
+from v2.agent.tally.reports import parse_ledger_list
 from v2.probes.actions import Action
 from v2.probes.anchors import SEED_PAYABLE, SEED_RECEIVABLE
 from v2.probes.companies import THROWAWAY_DATE, THROWAWAY_DATE_TEXT, THROWAWAY_EXPENSE_LEDGER
 from v2.probes.context import ProbeContext
-from v2.probes.core import Outcome, PartResult, Probe
+from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
 from v2.probes.p01_company_counters import LAST_VOUCHER_DATE_BASELINE
-from v2.probes.reads import (A_FY_FROM, A_FY_TO, PL_PRIMARY_GROUPS, ZERO, ancestors, dmy, ledger_movements,
-                             master_request, parse_parents, parse_vouchers, postings, signed_ui_amount,
+from v2.probes.reads import (A_FY_FROM, A_FY_TO, OPENING_STOCK_ROW, PL_PRIMARY_GROUPS, TB_EXPLODE_VARS, ZERO,
+                             ancestors, dmy, exploded_tb_rows, ledger_movements, master_request, opening_stock_row,
+                             parse_parents, parse_vouchers, postings, primary_group_rows, signed_ui_amount,
                              stock_bearing_groups, top_group, voucher_request)
 
 LEDGER_FIELDS = ["Name", "Parent", "GUID", "OpeningBalance", "ClosingBalance"]
@@ -25,6 +26,21 @@ VOUCHER_FIELDS = ["Date", "VoucherTypeName", "MasterId", "Narration", "IsCancell
 THROWAWAY_FIELDS = ["Date", "MasterId", "Narration", "IsPostDated"]
 UI_LEDGERS = ("Apex Technologies Pvt Ltd", "HP India Sales Pvt Ltd", "HDFC Bank - Current A/c")
 AS_ON_FROM, AS_ON_TO = "01-10-2025", "31-10-2025"
+SVTODATE_STEP = "ledgers_asof_2025-10-31"
+SVFROMDATE_STEP = "ledgers_svfromdate_2025-10-01"
+SVFROMDATE_TIMEOUT_S = 20.0
+RISKY_HINT = "`run 16 --company A --rerun --allow-risky`"
+SVFROMDATE_SKIPPED = ("not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live "
+                      f"2026-09-23, twice) and needed a Tally restart. Opt in with {RISKY_HINT}.")
+WEDGE_SUMMARY = ("the opt-in SVFROMDATE ledger read left Tally unresponsive — restart Tally before anything else "
+                 "(this reproduces the 2026-09-23 wedge; it is the finding, not a harness fault)")
+WEDGE_IMPACT = ("SVFROMDATE on a Ledger collection freezes Tally's XML server: the agent never sends a period "
+                "variable on a master collection, and per-ledger opening anchors during the backfill depend on "
+                "probe 17's exploded ledger-level TB (decision 11, Part 1 §16).")
+AS_ON_IMPACT = ("Per-ledger as-on balances are unobtainable from the Ledger collection (SVFROMDATE hangs Tally, "
+                "SVTODATE is silently ignored), so rung 1's per-ledger opening anchor during the backfill depends "
+                "on probe 17's exploded ledger-level TB (decision 11) — that route is impossible, not merely "
+                "unattractive. Reports (TYPE=Data) are unaffected.")
 CASH = "Cash"
 FUTURE_REF, POST_DATED_REF = "p16-future", "p16-post-dated"
 FUTURE_NARRATION = "S0-throwaway 16 future"
@@ -41,7 +57,10 @@ FAILED_IMPACT = ("LEDGER.ClosingBalance isn't Tally's ledger balance: rung 1 col
 
 
 def _ledgers_request(company: str, static_vars: dict[str, str] | None = None) -> str:
-    return master_request("S0P16Ledgers", "Ledger", LEDGER_FIELDS, company, static_vars=static_vars)
+    """The Ledger collection. Probe 16 is the one deliberate exception to the master-collection period-variable guard
+    in reads.master_request: it is the probe that measures what those variables do (reads.MASTER_PERIOD_VARS_ERROR)."""
+    return master_request("S0P16Ledgers", "Ledger", LEDGER_FIELDS, company, static_vars=static_vars,
+                          allow_period_vars=static_vars is not None)
 
 
 def _balances(text: str) -> dict[str, dict]:
@@ -97,7 +116,15 @@ def _lines_check(ledgers: dict[str, dict], kinds: dict[str, str],
 
 
 def _group_compare(ledgers: dict[str, dict], kinds: dict[str, str], groups: dict[str, str],
-                   tb_rows: dict[str, dict], stock_total: Decimal | None) -> dict[str, dict]:
+                   tb_rows: dict[str, dict], opening_stock: Decimal | None) -> dict[str, dict]:
+    """TB group row vs the rollup of its balance-sheet ledgers, with the stock-bearing group's known gap allowed for.
+
+    That gap is the TB's OWN synthetic `Opening Stock` row, read from the very same exploded TB response (live
+    2026-09-23, company A: Current Assets row 26,05,093 = ledger rollup 7,49,293 + Opening Stock 18,55,800, exactly).
+    It is deliberately NOT the Stock Summary's closing total: that is a different quantity (-9,89,462.31 the same
+    day), it comes from a second response that can drift from this one, and comparing against it left a genuine
+    reconciliation looking like a mismatch.
+    """
     rollups: dict[str, Decimal] = {}
     for name, kind in kinds.items():
         if kind == "bs":
@@ -109,13 +136,13 @@ def _group_compare(ledgers: dict[str, dict], kinds: dict[str, str], groups: dict
         row = tb_rows.get(group)
         tb, rollup = row["closing_balance"] if row else None, rollups.get(group, ZERO)
         entry: dict = {"tb": tb, "rollup": rollup, "match": _value(tb) == rollup}
-        if not entry["match"] and group in stock_groups and tb is not None and stock_total is not None:
-            gap = abs(tb - rollup)
-            entry["stock_total"] = stock_total
-            entry["stock_gap"] = gap
+        if not entry["match"] and group in stock_groups and tb is not None:
+            entry["opening_stock"] = opening_stock
+            entry["stock_gap"] = tb - rollup
             entry["stock_row_debit"] = row.get("debit_amount") if row else None
             entry["stock_row_credit"] = row.get("credit_amount") if row else None
-            entry["explained_by_stock"] = gap == abs(stock_total)
+            entry["explained_by_stock"] = opening_stock is not None and tb - rollup == opening_stock
+        entry["reconciled"] = entry["match"] or bool(entry.get("explained_by_stock"))
         result[group] = entry
     return result
 
@@ -147,36 +174,64 @@ def _ui_compare(ctx: ProbeContext, ledgers: dict[str, dict]) -> dict[str, dict]:
 
 
 async def _as_on(ctx: ProbeContext, ledgers: dict[str, dict], kinds: dict[str, str], vouchers: list[dict]) -> dict:
-    company = ctx.company_name
+    """The safe half of the as-on question: the control read (already taken) vs an SVTODATE-only read.
+
+    Compared per ledger BY VALUE, never by byte count: live 2026-09-23 the SVTODATE response was byte-identical to
+    the control and 0 of 35 closing balances had moved — a byte-count (or "it answered 200") check would have
+    produced a confident WRONG verdict. SVFROMDATE is the dangerous half and lives in _svfromdate_attempt.
+    """
     up_to = ledger_movements(vouchers, up_to=dmy(AS_ON_TO))
-    before = ledger_movements(vouchers, before=dmy(AS_ON_FROM))
-    as_of = _balances(await ctx.send("ledgers_asof_2025-10-31",
-                                     _ledgers_request(company, {"SVFROMDATE": A_FY_FROM, "SVTODATE": AS_ON_TO})))
-    ranged = _balances(await ctx.send("ledgers_from_2025-10-01",
-                                      _ledgers_request(company, {"SVFROMDATE": AS_ON_FROM, "SVTODATE": AS_ON_TO})))
-    bs = [name for name, kind in kinds.items() if kind == "bs"]
+    as_of = _balances(await ctx.send(SVTODATE_STEP, _ledgers_request(ctx.company_name, {"SVTODATE": AS_ON_TO})))
+    bs = sorted(name for name, kind in kinds.items() if kind == "bs")
 
     def opening(name: str) -> Decimal:
         return _value(ledgers[name]["opening_balance"])
 
+    changed = [n for n in bs if as_of.get(n, {}).get("closing_balance") != ledgers[n]["closing_balance"]]
     closing_ok = all(_value(as_of.get(n, {}).get("closing_balance")) == opening(n) + up_to.get(n, ZERO) for n in bs)
-    closing_changed = any(as_of.get(n, {}).get("closing_balance") != ledgers[n]["closing_balance"] for n in bs)
-    opening_ok = all(_value(ranged.get(n, {}).get("opening_balance")) == opening(n) + before.get(n, ZERO) for n in bs)
-    opening_changed = any(_value(ranged.get(n, {}).get("opening_balance")) != opening(n) for n in bs)
-    return {"closing_follows_svtodate": closing_ok and closing_changed, "closing_matches_lines": closing_ok,
-            "closing_changed": closing_changed, "opening_follows_svfromdate": opening_ok and opening_changed,
-            "opening_matches_lines": opening_ok, "opening_changed": opening_changed}
+    return {"closing_follows_svtodate": closing_ok and bool(changed), "closing_matches_lines": closing_ok,
+            "closing_changed": bool(changed), "ledgers_compared": len(bs), "closing_changed_count": len(changed),
+            "closing_changed_ledgers": changed[:10]}
 
 
-def _as_on_note(as_on: dict) -> str:
-    if as_on["opening_follows_svfromdate"]:
-        return ("As-on works: OpeningBalance follows SVFROMDATE, so per-ledger opening anchors exist during the "
-                "backfill without probe 17 (decision 11).")
+async def _svfromdate_attempt(ctx: ProbeContext) -> dict:
+    """The dangerous half: SVFROMDATE on a Ledger collection. OFF unless the operator passed --allow-risky.
+
+    Live 2026-09-23 (twice) this wedged Tally: the read timed out and an unrelated counters read then timed out too,
+    i.e. the whole XML server was blocked behind a modal until Tally was restarted. So it runs last (everything else
+    is already recorded), with a short timeout, and checks afterwards whether Tally survived — the pattern probe 17
+    uses for its exploded-TB candidates.
+    """
+    if not ctx.allow_risky:
+        return {"attempted": False, "note": SVFROMDATE_SKIPPED}
+    text, error = await ctx.try_send(
+        SVFROMDATE_STEP, _ledgers_request(ctx.company_name, {"SVFROMDATE": AS_ON_FROM, "SVTODATE": AS_ON_TO}),
+        timeout=SVFROMDATE_TIMEOUT_S)
+    if error is None:
+        return {"attempted": True, "error": None, "wedged": False, "ledgers": len(_balances(text)),
+                "elapsed_ms": ctx.last_response.elapsed_ms, "tally_after": "answered (the read didn't hang)"}
+    try:
+        names = await ctx.company_names()
+    except ProbeBlocked as exc:
+        return {"attempted": True, "error": error, "wedged": True, "tally_after": f"no answer: {exc}"}
+    return {"attempted": True, "error": error, "wedged": False, "tally_after": f"answered: {names}"}
+
+
+def _as_on_note(as_on: dict, svfromdate: dict) -> str:
+    """What the run PROVED about as-on reading — never a sentence about a variable it didn't send."""
+    counts = (f"SVTODATE moved {as_on['closing_changed_count']} of {as_on['ledgers_compared']} balance-sheet closing "
+              f"balances")
+    if svfromdate.get("attempted"):
+        tail = (" SVFROMDATE was sent (opt-in) and "
+                + ("WEDGED Tally — restart it." if svfromdate.get("wedged") else f"{svfromdate['tally_after']}."))
+    else:
+        tail = f" SVFROMDATE {SVFROMDATE_SKIPPED}"
     if as_on["closing_follows_svtodate"]:
-        return ("As-on closing works (ClosingBalance follows SVTODATE) but OpeningBalance ignores SVFROMDATE: per-ledger "
-                "anchors use the as-on closing of the day before the window (decision 11).")
-    return ("As-on reading doesn't work (the period variables are ignored): per-ledger anchors during the backfill "
-            "depend on probe 17 (decision 11).")
+        return (f"As-on closing works (ClosingBalance follows SVTODATE; {counts}): per-ledger anchors can use the "
+                f"as-on closing of the day before the window (decision 11).{tail}")
+    return (f"As-on reading doesn't work on the Ledger collection — SVTODATE is silently ignored ({counts}), so "
+            f"ClosingBalance can only ever mean now: per-ledger opening anchors during the backfill depend on probe "
+            f"17's exploded ledger-level TB (decision 11).{tail}")
 
 
 async def _throwaway(ctx: ProbeContext, *, ref: str, narration: str, post_dated: bool, step: str, ledger_step: str,
@@ -263,17 +318,21 @@ async def run_a(ctx: ProbeContext) -> PartResult:
         return PartResult(Outcome.BLOCKED, "The Ledger collection came back empty — is company A open?")
     groups = parse_parents(await ctx.send("groups", master_request("S0P16Groups", "Group", ["Name", "Parent"], company)))
     vouchers = parse_vouchers(await ctx.send("vouchers_fy", voucher_request("S0P16Vouchers", VOUCHER_FIELDS, company)))
-    tb_rows = {row["account_name"]: row for row in parse_trial_balance(
-        await ctx.send("tb_fy_end", wrap_report("Trial Balance", A_FY_FROM, A_FY_TO, company)))}
-    stock_values = [row["closing_value"] for row in parse_stock_summary(
-        await ctx.send("stock_summary_fy_end", wrap_report("Stock Summary", A_FY_FROM, A_FY_TO, company)))]
-    stock_total = sum((v for v in stock_values if v is not None), ZERO) if stock_values else None
+    # One exploded TB, not a TB plus a separate Stock Summary: the group rows AND the `Opening Stock` row that
+    # explains the stock-bearing group's gap then come from the same response and cannot drift apart.
+    tb_all_rows = exploded_tb_rows(await ctx.send(
+        "tb_fy_end", wrap_report("Trial Balance", A_FY_FROM, A_FY_TO, company, extra_vars=TB_EXPLODE_VARS)))
+    tb_rows = primary_group_rows(tb_all_rows)
+    stock_row = opening_stock_row(tb_all_rows)
+    opening_stock = stock_row["closing_balance"] if stock_row else None
 
     kinds = _kinds(ledgers, groups)
     nominal = _nominal(ledgers, kinds)
     bad_lines, empty_for_zero = _lines_check(ledgers, kinds, ledger_movements(vouchers))
+    # postings() defaults to reads.PROBE_POSTING_RULE ('all_only'). Under the old 'default' rule this listed all 24
+    # inventory vouchers, an artifact of the nominal ledger being exported twice -- not genuinely unbalanced books.
     unbalanced_vouchers = [v for v in vouchers if sum((amt for _, amt in postings(v) if amt is not None), ZERO) != ZERO]
-    group_cmp = _group_compare(ledgers, kinds, groups, tb_rows, stock_total)
+    group_cmp = _group_compare(ledgers, kinds, groups, tb_rows, opening_stock)
     debtors, creditors = _party_totals(ledgers, groups)
     ctx.observe("ledger_kinds", {k: sum(1 for v in kinds.values() if v == k) for k in ("bs", "pl", "special")})
     ctx.observe("nominal", nominal)
@@ -281,6 +340,8 @@ async def run_a(ctx: ProbeContext) -> PartResult:
                                      "vouchers": len(vouchers)})
     ctx.observe("unbalanced_vouchers", [v["header"].get("MASTERID", "") for v in unbalanced_vouchers])
     ctx.observe("tb_vs_rollup", group_cmp)
+    ctx.observe("tb_opening_stock_row", {"present": stock_row is not None, "closing_balance": opening_stock,
+                                         "tb_rows": len(tb_all_rows), "primary_group_rows": len(tb_rows)})
     ctx.observe("party_totals", {"debtors": debtors, "creditors": creditors})
     ctx.observe("special_ledgers", {n: ledgers[n]["closing_balance"] for n, k in kinds.items() if k == "special"})
 
@@ -300,7 +361,11 @@ async def run_a(ctx: ProbeContext) -> PartResult:
     verdict, as_of = as_of_verdict(future, reach)
     ctx.observe("as_of_basis", {"verdict": verdict, "books_reach_before_run": reach["value"],
                                 "available": reach["available"], "source": reach["source"]})
-    rule, as_on_note = _rule(future, post_dated, as_of), _as_on_note(as_on)
+    svfromdate = await _svfromdate_attempt(ctx)          # last: a wedge can't cost the checks already recorded
+    ctx.observe("as_on_svfromdate", svfromdate)
+    rule, as_on_note = _rule(future, post_dated, as_of), _as_on_note(as_on, svfromdate)
+    if svfromdate.get("wedged"):
+        return PartResult(Outcome.FAILED, WEDGE_SUMMARY, spec_impact=f"{WEDGE_IMPACT} {rule} {as_on_note}")
 
     failures: list[str] = []
     if bad_lines and not unbalanced_vouchers:
@@ -318,31 +383,38 @@ async def run_a(ctx: ProbeContext) -> PartResult:
 
     differences: list[str] = []
     impacts: list[str] = []
+    notes: list[str] = []
     if bad_lines and unbalanced_vouchers:
         differences.append(f"{len(unbalanced_vouchers)} voucher(s) don't balance under postings(), so the lines check "
                            f"for {len(bad_lines)} balance-sheet ledger(s) is inconclusive")
         impacts.append("posting rule unverified (probe 6 decides); lines check inconclusive")
+    if not as_on["closing_follows_svtodate"]:
+        differences.append(f"per-ledger as-on balances can't be read from the Ledger collection: SVTODATE changed "
+                           f"{as_on['closing_changed_count']} of {as_on['ledgers_compared']} closing balances")
+        impacts.append(AS_ON_IMPACT)
     if nominal["nonzero"]:
         differences.append(f"{len(nominal['nonzero'])} nominal ledger(s) have a non-zero ClosingBalance")
         impacts.append("Rung 1 picks balance-sheet ledgers by group nature, never by 'ClosingBalance = 0' (Part 1 §6).")
-    mismatched = sorted(group for group, entry in group_cmp.items() if not entry["match"])
-    by_stock = [group for group in mismatched if group_cmp[group].get("explained_by_stock")]
-    other = [group for group in mismatched if group not in by_stock]
+    by_stock = sorted(group for group, entry in group_cmp.items() if entry.get("explained_by_stock"))
+    unreconciled = sorted(group for group, entry in group_cmp.items() if not entry["reconciled"])
     if by_stock:
-        differences.append(f"TB row(s) {', '.join(by_stock)} = ledger rollup ± closing stock")
-        impacts.append("Rung 2 adds the Stock Summary closing value to the stock-bearing group before comparing with "
-                       "the TB row (Part 1 §6).")
-    if other:
-        differences.append(f"TB row(s) {', '.join(other)} ≠ ledger rollup")
+        # Reconciled, not a mismatch: the gap IS a TB row, so rung 2 gets a rule rather than an open question.
+        notes.append(f"Rung 2 compares the stock-bearing group as ledger rollup + the TB's own {OPENING_STOCK_ROW!r} "
+                     f"row, which no ledger carries and which is NOT the Stock Summary closing total "
+                     f"({', '.join(by_stock)}; Part 1 §6).")
+    if unreconciled:
+        differences.append(f"TB row(s) {', '.join(unreconciled)} ≠ ledger rollup")
         impacts.append("Rung 2's group rollup doesn't reproduce these TB rows; the recorded per-group figures decide the "
                        "comparison rule before S1 (Part 1 §6).")
     if differences:
-        return PartResult(Outcome.DIFFERENT, "; ".join(differences), spec_impact=" ".join([*impacts, rule, as_on_note]))
+        return PartResult(Outcome.DIFFERENT, "; ".join(differences),
+                          spec_impact=" ".join([*impacts, *notes, rule, as_on_note]))
     ui_note = "" if any(entry["match"] is not None for entry in ui.values()) else \
         " (UI balances not read — automated or skipped; a later manual check)"
+    stock_note = f" (+ the TB's own {OPENING_STOCK_ROW} row on {', '.join(by_stock)})" if by_stock else ""
     return PartResult(Outcome.CONFIRMED, "ClosingBalance = opening + Σ lines for every balance-sheet ledger; debtors and "
-                                         "creditors match the anchors; TB rows = ledger rollup" + ui_note,
-                      spec_impact=f"{rule} {as_on_note}")
+                                         f"creditors match the anchors; TB rows = ledger rollup{stock_note}" + ui_note,
+                      spec_impact=" ".join([*notes, rule, as_on_note]))
 
 
 PROBE = Probe(

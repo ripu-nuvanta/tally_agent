@@ -9,13 +9,14 @@ from datetime import date
 from decimal import Decimal
 
 from v2.agent.tally.envelopes import wrap_report
-from v2.agent.tally.reports import parse_bills, parse_ledger_list, parse_trial_balance
+from v2.agent.tally.reports import parse_bills, parse_ledger_list
 from v2.agent.tally.xml_utils import read_objects
 from v2.probes.context import ProbeContext
 from v2.probes.core import Outcome, PartResult, Probe
-from v2.probes.reads import (A_FY_FROM, ZERO, amount, ancestors, dmy, is_countable, ledger_movements, master_request,
-                             parse_parents, parse_vouchers, primary_lines, qty_number, stock_bearing_groups,
-                             stock_rows_any_depth, tally_date, top_group, voucher_request)
+from v2.probes.reads import (A_FY_FROM, A_FY_TO, TB_EXPLODE_VARS, ZERO, amount, ancestors,
+                             dmy, exploded_tb_rows, is_countable, ledger_movements, master_request, opening_stock_row,
+                             parse_parents, parse_vouchers, primary_group_rows, primary_lines, qty_number,
+                             stock_bearing_groups, stock_rows_any_depth, tally_date, top_group, voucher_request)
 
 TB_AS_ON = "31-10-2025"
 BILLS_AS_ON = "30-09-2025"
@@ -25,12 +26,27 @@ STOCK_FIELDS = ["Name", "Parent", "BaseUnits", "OpeningBalance"]
 STOCK_EXPLODE_CANDIDATE = {"EXPLODEFLAG": "Yes"}      # probe 17's first candidate: items under their stock groups
 TB_IMPACT = ("A TB as-on a past date isn't history: there is no valid parity anchor while the backfill is incomplete, "
              "so parity is suspended during the backfill (R30, decision 11).")
-BILLS_STOCK_IMPACT = ("Bills Receivable / Payable or Stock Summary as-on a past date aren't history: those tiles lose "
-                      "their month-end comparison (Part 1 probe 18, Part 3).")
+TB_OK_IMPACT = (
+    "A Trial Balance as-on a past date IS history: Tally honours SVFROMDATE/SVTODATE on TYPE=Data reports, and every "
+    "primary group reconciles to the vouchers once (a) the nominal ledger is taken from ALLLEDGERENTRIES.LIST only — "
+    "adding the inventory ACCOUNTINGALLOCATIONS.LIST double-counts Sales/Purchase exactly 2x "
+    "(reads.PROBE_POSTING_RULE) — and (b) the stock-bearing group's static `Opening Stock` row (₹18,55,800 for "
+    "company A) is added to the ledger rollup. The as-on TB IS a valid parity anchor during the backfill; R30 needs "
+    "no suspension on this ground (decision 11).")
+BILLS_STOCK_IMPACT = (
+    "Bills Receivable, Bills Payable and Stock Summary IGNORE the as-on date and return the books' current position: "
+    "bills dated after the as-on date still appear and the totals equal the period-end anchors, and stock quantities "
+    "equal opening plus the FULL period's movements. Those tiles have no month-end comparison and must be computed "
+    "from vouchers, not from a dated report (Part 1 probe 18, Part 3).")
 
 
 def tb_verdict(tb_rows: dict[str, Decimal | None], ledgers: dict[str, dict], groups: dict[str, str],
-               vouchers: list[dict], as_on: date) -> dict:
+               vouchers: list[dict], as_on: date, opening_stock: Decimal | None = None) -> dict:
+    """Every primary group's as-on TB row vs opening + the vouchers up to that date.
+
+    The stock-bearing group is reported separately (no ledger carries stock), and reconciled against the TB's own
+    `Opening Stock` row when this response carries one — the same rule probe 16 uses at the period end.
+    """
     moves = ledger_movements(vouchers, up_to=as_on)
     computed: dict[str, Decimal] = {}
     for name, row in ledgers.items():
@@ -45,7 +61,13 @@ def tb_verdict(tb_rows: dict[str, Decimal | None], ledgers: dict[str, dict], gro
     for group in sorted(set(tb_rows) | {g for g, v in computed.items() if v != ZERO}):
         tb_value, mine = tb_rows.get(group), computed.get(group, ZERO)
         entry = {"tb": tb_value, "computed": mine, "match": (tb_value if tb_value is not None else ZERO) == mine}
-        (stock_side if group in stock_groups else compared)[group] = entry
+        if group in stock_groups:
+            entry["opening_stock"] = opening_stock
+            entry["gap"] = (tb_value if tb_value is not None else ZERO) - mine
+            entry["reconciled"] = entry["match"] or (opening_stock is not None and entry["gap"] == opening_stock)
+            stock_side[group] = entry
+        else:
+            compared[group] = entry
     mismatched = sorted(group for group, entry in compared.items() if not entry["match"])
     return {"verdict": "FAILED" if mismatched or not compared else "CONFIRMED", "groups": compared,
             "stock_bearing": stock_side, "mismatched": mismatched}
@@ -74,9 +96,15 @@ def pending_bills(vouchers: list[dict], ledgers: dict[str, dict], groups: dict[s
     return {key: sign * value for key, value in totals.items() if value != ZERO}
 
 
-def _bills_side(report_text: str, expected: dict[str, Decimal]) -> dict:
+def _bills_side(report_text: str, expected: dict[str, Decimal], full_period: dict[str, Decimal]) -> dict:
+    """What the dated report returned, vs the as-on position, vs the FULL-period position.
+
+    The third comparison is the evidence for the finding: live 2026-09-23 both sides matched the full period and
+    neither matched the as-on date, i.e. the report ignored the date it was given.
+    """
     reported = {f"{b['party_name']}|{b['bill_number']}": b["amount"] for b in parse_bills(report_text)}
     return {"reported": reported, "expected": expected, "match": reported == expected,
+            "matches_full_period": reported == full_period, "full_period_bills": len(full_period),
             "weak": not reported and not expected}
 
 
@@ -109,58 +137,78 @@ def stock_verdict(rows: list[dict], items: list[dict[str, str]], vouchers: list[
         compared[row["name"]] = {"reported": row["qty"], "expected": want, "value": row["value"],
                                  "match": row["qty"] == want}
     mismatches = sorted(name for name, entry in compared.items() if not entry["match"])
-    return {"verdict": "CONFIRMED" if compared and not mismatches else "FAILED", "compared": compared,
+    return {"verdict": "CONFIRMED" if compared and not mismatches else "DIFFERENT", "compared": compared,
             "mismatches": mismatches, "item_rows": sum(1 for row in rows if row["name"] in expected),
             "direction_rule": "ISDEEMEDPOSITIVE=Yes is inward"}
 
 
 async def run_a(ctx: ProbeContext) -> PartResult:
     company = ctx.company_name
-    tb_date, bills_date = dmy(TB_AS_ON), dmy(BILLS_AS_ON)
-    tb_rows = {row["account_name"]: row["closing_balance"] for row in parse_trial_balance(
-        await ctx.send("tb_asof_2025-10-31", wrap_report("Trial Balance", A_FY_FROM, TB_AS_ON, company)))}
+    tb_date, bills_date, period_end = dmy(TB_AS_ON), dmy(BILLS_AS_ON), dmy(A_FY_TO)
+    # Exploded, like probe 16: the primary-group rows are unchanged by EXPLODEFLAG and the synthetic `Opening Stock`
+    # row that explains the stock-bearing group then comes from this very response.
+    tb_all_rows = exploded_tb_rows(await ctx.send(
+        "tb_asof_2025-10-31", wrap_report("Trial Balance", A_FY_FROM, TB_AS_ON, company, extra_vars=TB_EXPLODE_VARS)))
+    tb_rows = {name: row["closing_balance"] for name, row in primary_group_rows(tb_all_rows).items()}
+    stock_row = opening_stock_row(tb_all_rows)
+    opening_stock = stock_row["closing_balance"] if stock_row else None
     vouchers = parse_vouchers(await ctx.send("vouchers_to_2025-10-31",
                                              voucher_request("S0P18Vouchers", VOUCHER_FIELDS, company, to_date=TB_AS_ON)))
     ledgers = {row["name"]: row for row in parse_ledger_list(await ctx.send(
         "ledger_list", master_request("S0P18Ledgers", "Ledger", ["Name", "Parent", "OpeningBalance"], company)))}
     groups = parse_parents(await ctx.send("group_list", master_request("S0P18Groups", "Group", ["Name", "Parent"], company)))
-    tb = tb_verdict(tb_rows, ledgers, groups, vouchers, tb_date)
+    tb = tb_verdict(tb_rows, ledgers, groups, vouchers, tb_date, opening_stock)
+    ctx.observe("tb_opening_stock_row", {"present": stock_row is not None, "closing_balance": opening_stock,
+                                         "tb_rows": len(tb_all_rows)})
 
     receivable = await ctx.send("bills_receivable_asof_2025-09-30",
                                 wrap_report("Bills Receivable", BILLS_AS_ON, BILLS_AS_ON, company))
     payable = await ctx.send("bills_payable_asof_2025-09-30", wrap_report("Bills Payable", BILLS_AS_ON, BILLS_AS_ON, company))
-    bills = {"receivable": _bills_side(receivable, pending_bills(vouchers, ledgers, groups, bills_date, "receivable")),
-             "payable": _bills_side(payable, pending_bills(vouchers, ledgers, groups, bills_date, "payable"))}
+    bills = {side: _bills_side(text, pending_bills(vouchers, ledgers, groups, bills_date, side),
+                               pending_bills(vouchers, ledgers, groups, period_end, side))
+             for side, text in (("receivable", receivable), ("payable", payable))}
     stock_text = await ctx.send("stock_summary_asof_2025-09-30",
                                 wrap_report("Stock Summary", A_FY_FROM, BILLS_AS_ON, company,
                                             extra_vars=STOCK_EXPLODE_CANDIDATE))
     items = read_objects(await ctx.send("stock_item_openings",
                                         master_request("S0P18Stock", "StockItem", STOCK_FIELDS, company)),
                          "STOCKITEM", STOCK_FIELDS)
-    stock = stock_verdict(stock_rows_any_depth(stock_text), items, vouchers, bills_date)
+    stock_rows = stock_rows_any_depth(stock_text)
+    stock = stock_verdict(stock_rows, items, vouchers, bills_date)
+    stock["matches_full_period"] = stock_verdict(stock_rows, items, vouchers, period_end)["verdict"] == "CONFIRMED"
     bills_ok = bills["receivable"]["match"] and bills["payable"]["match"]
-    sub = {"tb": tb["verdict"], "bills_stock": "CONFIRMED" if bills_ok and stock["verdict"] == "CONFIRMED" else "FAILED"}
+    # Two INDEPENDENT sub-verdicts (spec §5.1). The TB is a pass/fail question — history or not. Bills and Stock
+    # Summary ignoring their as-on date is a real, reproducible Tally behaviour, so it is a DIFFERENT with evidence,
+    # never a FAILED and never a silent pass.
+    sub = {"tb": tb["verdict"],
+           "bills_stock": "CONFIRMED" if bills_ok and stock["verdict"] == "CONFIRMED" else "DIFFERENT"}
     ctx.observe("tb", tb)
     ctx.observe("bills", bills)
     ctx.observe("stock", stock)
     ctx.observe("sub_verdicts", sub)
 
-    problems, impacts = [], []
     if sub["tb"] == "FAILED":
-        problems.append(f"TB as-on {TB_AS_ON} ≠ opening + lines for {', '.join(tb['mismatched']) or 'every group'}")
-        impacts.append(TB_IMPACT)
-    if sub["bills_stock"] == "FAILED":
+        problem = f"TB as-on {TB_AS_ON} ≠ opening + lines for {', '.join(tb['mismatched']) or 'every group'}"
+        impacts = [TB_IMPACT] + ([BILLS_STOCK_IMPACT] if sub["bills_stock"] == "DIFFERENT" else [])
+        return PartResult(Outcome.FAILED, problem, spec_impact=" ".join(impacts))
+
+    if sub["bills_stock"] == "DIFFERENT":
         wrong = [side for side in ("receivable", "payable") if not bills[side]["match"]]
         what = [f"bills {side}" for side in wrong] + ([f"stock ({', '.join(stock['mismatches']) or 'nothing comparable'})"]
-                                                      if stock["verdict"] == "FAILED" else [])
-        problems.append(f"as-on {BILLS_AS_ON}: {'; '.join(what)}")
-        impacts.append(BILLS_STOCK_IMPACT)
-    if problems:
-        return PartResult(Outcome.FAILED, "; ".join(problems), spec_impact=" ".join(impacts))
+                                                      if stock["verdict"] != "CONFIRMED" else [])
+        full = [name for name, ok in [*((f"bills {side}", bills[side]["matches_full_period"]) for side in wrong),
+                                      ("stock", stock["matches_full_period"])] if ok]
+        evidence = (f" — {', '.join(full)} match the FULL period ({A_FY_TO}) instead, i.e. the report ignored the date "
+                    f"it was given") if full else ""
+        return PartResult(Outcome.DIFFERENT,
+                          f"TB as-on {TB_AS_ON} is correct history; as-on {BILLS_AS_ON}: {'; '.join(what)}{evidence}",
+                          spec_impact=f"{TB_OK_IMPACT} {BILLS_STOCK_IMPACT}")
+
     vacuous_note = " (Bills Receivable check is vacuous: nothing pending on either side)" \
         if bills["receivable"]["weak"] else ""
     return PartResult(Outcome.CONFIRMED, f"TB as-on {TB_AS_ON}, Bills and Stock Summary as-on {BILLS_AS_ON} equal what the "
-                                         f"vouchers give (stock values recorded, not compared){vacuous_note}")
+                                         f"vouchers give (stock values recorded, not compared){vacuous_note}",
+                      spec_impact=TB_OK_IMPACT)
 
 
 PROBE = Probe(

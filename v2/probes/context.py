@@ -34,7 +34,7 @@ def select_company(text: str, company: str, fields: list[str]) -> dict[str, str]
 
 class ProbeContext:
     def __init__(self, *, probe: Probe, part: str, company_name: str, client: TallyClient,
-                 store: ResultsStore, capture: Capture, io: ProbeIO):
+                 store: ResultsStore, capture: Capture, io: ProbeIO, allow_risky: bool = False):
         self.probe = probe
         self.part = part
         self.company_name = company_name
@@ -42,6 +42,9 @@ class ProbeContext:
         self.store = store
         self.capture = capture
         self.io = io
+        # `run … --allow-risky`: the operator has opted into the steps known to be able to freeze Tally (probe 16's
+        # SVFROMDATE ledger read). Off by default — a default run must never send them.
+        self.allow_risky = allow_risky
         self.company_guid: str | None = None
         self.observations: dict[str, Any] = {}
         self.fixtures: list[str] = []

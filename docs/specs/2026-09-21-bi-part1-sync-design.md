@@ -33,11 +33,57 @@
 > rolled back after a delete — don't use it as "latest voucher". The S2 gate can read the company GUID with a filtered
 > Company collection (~1.7 KB). An XML alter with an empty value is silently ignored (ALTERED=1, nothing changes).
 > Details: `docs/bi-s0-probe-results-2026-09-22.md`.
-> **Provisional (to be settled by probes 16–18):** company A's live group-level TB export has rows with both debit
-> and credit columns filled (Current Assets, Current Liabilities) and its rows net to ₹33,05,800, not 0 — so §6's
-> "the TB snapshot itself balances (Σ debit + Σ credit ≈ 0)" assertion and a debit+credit row sum can't be used as-is;
-> the stock-bearing group is the likely cause.
+> **Settled 2026-09-23 (was provisional):** company A's live group-level TB export has rows with both debit and credit
+> columns filled (Current Assets, Current Liabilities) — that is normal, and `debit + credit` is Tally's own signed net
+> (negative = Debit, positive = Credit). Its rows net to **₹33,05,800 instead of 0 for two separate reasons, neither of
+> them a Tally defect**: (a) ₹18,55,800 of it is the TB's synthetic **`Opening Stock`** row, a real opening position no
+> ledger carries; (b) the remaining ₹7,00,000 is a **seed-data defect in our own current write path** —
+> `backend/tally_bridge/import_builder.py:680` calls `abs(float(opening_balance))` and so discards the debit sign the
+> seeder sets (`HDFC -500000`, `SBI -200000`; the seed file documents "negative = debit"), landing both bank openings
+> as **credits**. Hence Σ rows = 750,000 (Capital) + 500,000 (HDFC) + 200,000 (SBI) + 1,855,800 (Opening Stock).
+> **That defect is NOT fixed on this branch** (deliberately out of scope): fixing it means re-seeding company A and
+> replacing the committed backup `seed_data/TDBK1800_100003.001`, so **company A is not a clean fixture for anything
+> that assumes a balanced opening position**. §6's "the TB snapshot itself balances (Σ debit + Σ credit ≈ 0)" assertion
+> therefore still can't be used as-is against company A; it needs the `Opening Stock` row allowed for, and a company
+> whose openings were entered correctly.
 >
+> **Changed 2026-09-23 (S0 live, probe 16's as-on question — settled):** per-ledger as-on balances **cannot** be read
+> from the Ledger collection. `SVFROMDATE` on a master collection **freezes Tally's XML server** behind a modal until
+> Tally is restarted (45 s timeout, and an unrelated read then times out too); `SVTODATE` is **silently ignored** —
+> a healthy 200, byte-identical to the control, with **0 of 35** closing balances changed, i.e. today's balances.
+> The report route is unaffected (a full-FY and an as-on Trial Balance both answered instantly and genuinely
+> differed), and a *Voucher* collection with both variables is fine, so this is neither a date-format nor a general
+> period-variable problem. Consequences: (a) **decision 11** — rung 1's per-ledger opening anchor during the backfill
+> depends on **probe 17**'s exploded ledger-level TB; the probe-16 route is *impossible*, not merely unattractive, so
+> probes 17 and 18 carry it (they are not endangered); (b) **Part 2's "as of last sync"** — `LEDGER.ClosingBalance`
+> can only ever mean **now**, which confirms the mirrored-balance re-read in §4. *Scope caveat:* proven on the
+> **Ledger** collection only, in TallyPrime 7.0 **Educational** under **Wine**; the code guard
+> (`v2/probes/reads.py` `master_request`) is deliberately conservative and refuses both variables on any master
+> collection, but the finding claims only what was tested — a licensed Tally on real Windows is an open tier-C check.
+> Rule in [`LESSONS.md`](../../LESSONS.md) §15 rule 17; logs in `v2/probes/results/logs/s0-ason-discriminator*-2026-09-23.log`.
+
+> **Changed 2026-09-23 (S0 live, probes 16–18 re-read — three expectations were wrong, and all three reverse in our
+> favour):**
+> 1. **Posting rule = `ALLLEDGERENTRIES.LIST` only.** Company A's 24 inventory vouchers (16 Sales + 8 Purchase) export
+>    the nominal ledger **twice** — once in `ALLLEDGERENTRIES.LIST` and again in each inventory entry's
+>    `ACCOUNTINGALLOCATIONS.LIST`. Summing both double-counts Sales/Purchase by exactly **2×** and makes all 24 look
+>    unbalanced. `ALLLEDGERENTRIES.LIST` alone is complete (party + nominal + GST): 0 of 50 unbalanced, and it
+>    reproduces Tally's own as-on TB rows to the paisa. Ingest and parity must count lines this way
+>    (`v2/probes/reads.py` `PROBE_POSTING_RULE`).
+> 2. **The TB's stock-bearing group carries a synthetic `Opening Stock` row.** ₹18,55,800 for company A — exactly
+>    Σ(stock item opening values), static across as-on dates, and it appears in **no** Ledger collection. Current
+>    Assets then reconciles exactly: ledger rollup ₹7,49,293 + ₹18,55,800 = the TB row ₹26,05,093. It is **not** the
+>    Stock Summary *closing* total (−₹9,89,462.31 the same day), which is a different quantity and must not be used
+>    for this comparison. Rung 2 adds this row to the stock-bearing group before comparing.
+> 3. **`ISLEDGERWISE=Yes` IS a working ledger-level Trial Balance** (decision 11, R3 — see below), and **a TB as-on a
+>    past date IS correct history** (R30 — see below), while **Bills Receivable/Payable and Stock Summary IGNORE the
+>    as-on date** (§4 month-end snapshots, Part 3 tiles — see below).
+>
+> The earlier probe-16 SVTODATE finding is unchanged and still true: per-ledger as-on balances remain unobtainable
+> from the **Ledger collection**. *Scope caveat (all three):* TallyPrime 7.0 Edit Log, **Educational**, under
+> **Wine 11.0**, one company; a licensed Windows Tally is an open tier-C check. Rules in
+> [`LESSONS.md`](../../LESSONS.md) §15 rules 18–20.
+
 > **Changed 2026-09-22 (code isolation):** Part 1 is built as **v2**, under `v2/` at the repo root, and
 > **changes no current code** (§5 "Code isolation (v2)"). v2 copies what it needs from current code instead
 > of importing it. The cloud side is a separate FastAPI app with its own Alembic chain on the same Postgres.
@@ -66,7 +112,7 @@ Decisions 1, 10 (Part 3) and 8, 13, 15 (Part 2) live in the other parts. The INR
 | 7 | First sync copies the **current FY + previous FY** — that is what unlocks chat. A **new FY is added automatically** when the date crosses 1 April. |
 | 7b | **After the first sync, a background backfill walks history backwards to the company's books-start date** (§4 "Background history backfill"). It is the lowest-priority loading work (§4 "Work priority"), always pre-empted by incremental sync, and never blocks chat. Dates it hasn't reached yet report "still loading", never a partial total. |
 | 9 | Change detection uses Tally's change counters (AltVchId/AltMstId + AlterID), plus a deletion check (daily for the 2-FY window, round-robin for older years — §4 "After a gap"). Must be proven on live Tally first (S0). |
-| 11 | **Parity scope v1 = rungs 0+1+2** (§6): double-entry invariant on ingest, ledger-level vs mirrored `LEDGER.ClosingBalance`, group-level vs TB snapshot. Rung 3 (P&L / BS / stock / bills totals) is deferred. **Rung 1 needs a per-ledger opening anchor**: it always runs once history is complete, but *during the backfill* only if probe 16 or probe 17 provides per-ledger openings (§6 "The opening anchor"); otherwise rung 2 carries the check at group level. Since the backfill can take weeks or never finish (R29), **probes 16 and 17 must be settled before S1** — without either, rung 1 may never run for some customers. |
+| 11 | **Parity scope v1 = rungs 0+1+2** (§6): double-entry invariant on ingest, ledger-level vs mirrored `LEDGER.ClosingBalance`, group-level vs TB snapshot. Rung 3 (P&L / BS / stock / bills totals) is deferred. **Rung 1 needs a per-ledger opening anchor**: it always runs once history is complete, but *during the backfill* only if probe 17 provides per-ledger openings (§6 "The opening anchor") — probe 16's as-on route is **settled impossible** (live 2026-09-23: `SVFROMDATE` freezes Tally on a master collection, `SVTODATE` is silently ignored; see the header). **Probe 17 provides them: `ISLEDGERWISE=Yes` on the `TYPE=Data` Trial Balance returns a ledger-level TB** (live 2026-09-23, company A: 29 ledger rows, ~7.3 KB, ~18 ms, every primary group reconciling exactly), so **rung 1 runs at ledger level mid-backfill** and rung 2 gains ledger resolution. Two caveats carried by that route: the response contains one **non-ledger** row (the synthetic `Opening Stock`), and `EXPLODEFLAG`/`EXPLODEALLLEVELS` are **not** a substitute — they stop at the second group level, so ledgers under a custom sub-group (company A's `National Creditors` / `Local Creditors`) never appear. Since the backfill can take weeks or never finish (R29), **probes 16 and 17 must be settled before S1**. |
 | 12 | **No full resync is ever automatic — whatever triggers it.** When targeted remediation fails twice (§6), or counters go backwards after a backup restore (R8), or the user confirms a re-link (§4 "Company identity changes"), we *offer* it and wait for the user. A full resync is hours of Tally load (R3, R22); running it unannounced while the accountant works is how we get uninstalled. |
 | 14 | **The internal ops signal for integrity alerts carries counts and causes only** — no ledger names, party names, or amounts tied to identifiable accounts (respects Q6 / R20). |
 
@@ -277,8 +323,13 @@ captured routinely rather than only when month-bisect happens to run.
 - **Missed month:** if Tally was never open in the month after a month-end, that month-end is captured
   late (the as-on date makes that safe). A tile whose baseline has no snapshot says "no month-end
   figure yet", never a wrong or zero baseline.
-- Depends on probe 18 (does an as-on-past-date report return correct historical values), which now
-  covers Bills Receivable/Payable and Stock Summary as well as TB.
+- **Settled 2026-09-23 (probe 18, live):** the **TB** honours its as-on date and returns correct history, but
+  **Bills Receivable, Bills Payable and Stock Summary IGNORE it** and return the books' *current* position — bills
+  dated after the as-on date still appear and the totals equal the period-end anchors, and every stock quantity
+  equals opening + the FULL period's movements (the as-on group values were byte-identical to the FY-end capture).
+  **Consequence:** those three cannot be snapshotted "as-on a past month-end" from a dated report. Their month-end
+  figures must be **computed from vouchers**, or captured *at* the month-end and never re-derived later; a tile with
+  no such snapshot says "no month-end figure yet" rather than showing today's position as history.
 
 ### Dates and clocks
 - Tally dates are calendar dates with no time zone. Every FY, month and "as-on" boundary is worked
@@ -528,6 +579,9 @@ be comparing a knowingly-incomplete DB against a current Tally.
   compare against  current mirrored LEDGER.ClosingBalance (rung 1)  /  current TB (rung 2)
   ```
 
+  The anchor can only come from a **`TYPE=Data` report** (probe 17's exploded ledger-level TB): as-on per-ledger
+  balances are unobtainable from the Ledger collection (live 2026-09-23 — see the header).
+
   - **Capture:** the anchor TB is taken as-on the day before the window starts at the end of the
     first sync (and again at the end of a whole-company resync's 2-FY pass), and with **each backfill
     or re-walk chunk** as-on the day before that chunk's month, so the anchor moves with the verified
@@ -538,16 +592,20 @@ be comparing a knowingly-incomplete DB against a current Tally.
     computes forward from.
   - Once history is complete, `tally_balance_as_on(...)` is replaced by the ledger's books-start
     `OpeningBalance` (probe 16) and the comparison is the plain all-time one.
-- **Per-ledger anchors during backfill depend on probe 16 or 17.** The TB is group-level only today
-  (above), so the anchor exists only per **group**. Per-ledger anchors become available if **either**
-  probe 16 shows `LEDGER.OpeningBalance` can be read as-on an arbitrary date, **or** probe 17 proves
-  an exploded (ledger-level) TB is safe. Until one of them does:
-  - Rung 1 is **suspended** while the backfill runs (ledgers marked `not_applicable`, never `match`).
-  - Rung 2 carries the check at group level, and month-bisect does the localising.
-  - Chat is unaffected: it computes ledger balances backwards from mirrored balances, which needs
-    no anchor (Part 2, "Rule 1").
-  - Once either probe succeeds, rung 1 runs mid-backfill at ledger level using those openings.
-- Rung 2 compares group rollups with the same opening-anchored formula.
+- **Per-ledger anchors during backfill: available (settled 2026-09-23).** Probe 16's route is impossible, but
+  **probe 17's is not**: `ISLEDGERWISE=Yes` on the `TYPE=Data` Trial Balance returns a **ledger-level** TB, safely
+  and fast (company A: 29 ledger rows, ~7.3 KB, ~18 ms under Wine). So the anchor exists **per ledger** and rung 1
+  runs mid-backfill; the fallback below is what happens only if this route fails on a customer's Tally.
+  - The consumer must **match rows against the ledger list**: the response also carries the synthetic
+    `Opening Stock` row, which is not a ledger.
+  - `EXPLODEFLAG` / `EXPLODEALLLEVELS` are **not** an alternative: they stop at the second group level and silently
+    omit every ledger under a custom sub-group. `SVEXPLODEFLAG` / `LEDGERWISE` are not recognised at all (the plain
+    TB comes back).
+  - *Fallback if the route fails:* rung 1 is **suspended** while the backfill runs (ledgers `not_applicable`, never
+    `match`), rung 2 carries the check at group level, and month-bisect localises. Chat is unaffected either way:
+    it computes ledger balances backwards from mirrored balances, which needs no anchor (Part 2, "Rule 1").
+- Rung 2 compares group rollups with the same opening-anchored formula, and **adds the TB's own `Opening Stock` row
+  to the stock-bearing group** before comparing (no ledger carries it; it is *not* the Stock Summary closing total).
 - An FY becomes parity-eligible when its backfill completes, and gets one run at that point.
 - **`resyncing` FYs are skipped.** Parity reads the *verified* edge (oldest contiguous `complete`
   FY, §4 "What a full resync does…"). A year being refreshed in place is half old copy, half new, so
@@ -736,8 +794,9 @@ environment check records which mode each environment runs.
   `backfill.state = running`, a mock company whose all-time `LEDGER.ClosingBalance` is deliberately
   far from the watermark-bounded computed balance must produce **`ok`**, not an alert. Assert the
   comparison used the watermark-dated TB snapshot as the opening and not the all-time figure, and
-  that rung-1 lines are `not_applicable` (not `match`) while neither probe 16's as-on reading nor
-  probe 17 is proven. Then complete the
+  that rung-1 lines are `not_applicable` (not `match`) *in the fallback configuration* — probe 17's
+  `ISLEDGERWISE` route is proven (2026-09-23), so the default is now that rung 1 DOES run mid-backfill
+  at ledger level; the `not_applicable` path is what a customer's Tally falls back to. Then complete the
   backfill and assert the all-time anchor switches on.
 - **Identity changes (§4):** GUID mismatch with a different name → skip, nothing uploaded; same name
   with a new GUID → skip + Re-link prompt, no resync until confirmed; counters below the cursor with
@@ -814,7 +873,7 @@ R5, R16 and R25 are in Part 2; R24 and R28 are in Part 3.
 | R26 | Tally popups / Educational mode / version differences | Medium | Medium | Error shapes in S0 |
 | R27 | Data volume and DB cost for big companies | Medium | **High** (raised by decision 7b) | Measure full books span in S0 (probe 21) |
 | R29 | Background backfill never completes | Medium | Medium | **Accepted** — honest progress, degrades gracefully |
-| R30 | All-time ledger balances invalid as a parity anchor mid-backfill | **Certain** | High | Watermark-bounded parity; gated on probes 16–18 |
+| R30 | All-time ledger balances invalid as a parity anchor mid-backfill | **Certain** | High | Watermark-bounded parity; **probe 18 settled 2026-09-23: the as-on TB IS valid history, so no suspension on that ground** |
 
 ### 11.2 Detail
 
@@ -943,7 +1002,7 @@ R5, R16 and R25 are in Part 2; R24 and R28 are in Part 3.
 - *What:* Tally's `LEDGER.ClosingBalance` is an **all-time** figure. Our computed balance only covers the synced window. While the backfill is incomplete these legitimately differ, and a naive rung-1 comparison would raise an integrity alert on every ledger of every customer, every day.
 - *Impact:* High — it would make the integrity system worse than useless during the period it is most needed.
 - *Handling:* §6 — while `backfill.state != complete`, the opening balance at the watermark comes from a TB snapshot as-on the day before the watermark. Our lines from the watermark onward are added to it, and the result is compared with Tally's current balance. The TB is group-level, so this runs at group level (rung 2) and rung 1 is suspended, unless per-ledger openings come from probe 16 (ledger `OpeningBalance` readable as-on a date) or probe 17 (a ledger-level TB). Once history is complete, the books-start opening balance replaces the watermark anchor. The Settings card states the verified span.
-- *Prove in S0:* probe 18 (does a TB as-on a past date return correct historical values?). **If probe 18 fails, there is no valid parity anchor during backfill** and parity must be suspended until the backfill completes — a real possibility that must be settled before S1.
+- *Prove in S0:* probe 18 (does a TB as-on a past date return correct historical values?). **Settled live 2026-09-23: yes.** Tally honours `SVFROMDATE`/`SVTODATE` on `TYPE=Data` reports, and every primary group reconciles to the vouchers once (a) the nominal ledger is taken from `ALLLEDGERENTRIES.LIST` only and (b) the stock-bearing group's static `Opening Stock` row is added to the ledger rollup. **The as-on TB is a valid parity anchor during the backfill; R30 needs no suspension on this ground.**
 
 ## 12. S0 probe list (on restored seed backup `seed_data/TDBK1800_100003.001`)
 Every probe **saves the raw Tally responses as fixtures** under `v2/tests/fixtures/sync/` for the unit tests. Probe scripts live in `v2/probes/` and use v2 code only (§5 "Code isolation (v2)"). Probes marked **tier C only** must not be timed under Wine (§7).
@@ -964,9 +1023,9 @@ Every probe **saves the raw Tally responses as fixtures** under `v2/tests/fixtur
 13. Backup restore: do the company GUID and MasterIDs change? (R8)
 14. **Company names with `&` / quotes / apostrophes:** escaped requests work, and unescaped ones fail as expected. (R13)
 15. **Hindi/Unicode names and narrations + a stock item with compound units:** export intact, no crash. (R14, R15)
-16. **Ledger closing balances (parity rung 1, and the base of every computed balance in chat — Part 2 "Rule 1"):** does `LEDGER.ClosingBalance` from `TYPE=Collection` equal Tally's TB screen? Is it `0` for *all* nominal ledgers? Is `OpeningBalance` FY-scoped or books-scoped — and **can it be read as-on an arbitrary date** (e.g. via `SVFROMDATE`)? If yes, that gives per-ledger opening anchors during the backfill without probe 17 (decision 11, §6 "The opening anchor"). **Which date is `ClosingBalance` as-of (today, or the end of the current period), and does it include post-dated vouchers?** (§6 "Rung 1") (§6, R5, R30) **Also needed by Part 2.**
-17. **Ledger-level TB:** can an exploded (ledger-level) TB be exported via `TYPE=Data` safely and fast? If yes, rung 2 gains ledger resolution and month-bisect gets cheaper. (§6, R3)
-18. **Historical reports (now load-bearing):** does a TB as-on a *past* month-end return correct historical values — and do **Bills Receivable/Payable and Stock Summary** as-on a past date too? Required for month-bisect, for the routine month-end snapshots (§4) and the dashboard's "vs last month-end" baselines, for answering historical dates from snapshots, **and — since decision 7b — as the only valid parity anchor while the backfill is incomplete** (and the base of the probe-16 fallback for chat). If the TB part fails, parity must be suspended until history completes; if the bills/stock part fails, those tiles lose their month-end comparison. (§4, §6, **R30**) **Also needed by Parts 2 and 3.**
+16. **Ledger closing balances (parity rung 1, and the base of every computed balance in chat — Part 2 "Rule 1"):** does `LEDGER.ClosingBalance` from `TYPE=Collection` equal Tally's TB screen? Is it `0` for *all* nominal ledgers? Is `OpeningBalance` FY-scoped or books-scoped — and **can it be read as-on an arbitrary date** (e.g. via `SVFROMDATE`)? **Settled live 2026-09-23: no** — `SVFROMDATE` freezes Tally's XML server on a master collection and `SVTODATE` is silently ignored, so per-ledger opening anchors during the backfill come from probe 17 (decision 11, §6 "The opening anchor"); probe 16 no longer sends `SVFROMDATE` unless the operator passes `--allow-risky`. **Which date is `ClosingBalance` as-of (today, or the end of the current period), and does it include post-dated vouchers?** (§6 "Rung 1") (§6, R5, R30) **Also needed by Part 2.**
+17. **Ledger-level TB:** can an exploded (ledger-level) TB be exported via `TYPE=Data` safely and fast? **Settled live 2026-09-23: yes — `ISLEDGERWISE=Yes`** (29 ledger rows, ~7.3 KB, ~18 ms; every primary group reconciles). Two caveats: one non-ledger row (`Opening Stock`) comes with it, and `EXPLODEFLAG`/`EXPLODEALLLEVELS` stop at the second group level so they miss ledgers under custom sub-groups. Rung 2 gains ledger resolution and month-bisect gets cheaper. (§6, R3)
+18. **Historical reports (now load-bearing):** does a TB as-on a *past* month-end return correct historical values — and do **Bills Receivable/Payable and Stock Summary** as-on a past date too? Required for month-bisect, for the routine month-end snapshots (§4) and the dashboard's "vs last month-end" baselines, for answering historical dates from snapshots, **and — since decision 7b — as the only valid parity anchor while the backfill is incomplete** (and the base of the probe-16 fallback for chat). **Settled live 2026-09-23, split:** the **TB part passes** — an as-on TB is correct history and a valid parity anchor (no R30 suspension) — while **Bills Receivable/Payable and Stock Summary ignore the as-on date** and return the current position, so those tiles have no month-end comparison from a dated report and must be computed from vouchers. (§4, §6, **R30**) **Also needed by Parts 2 and 3.**
 19. **Counter stability:** do `AltVchId` / `AltMstId` hold still across a multi-call capture window? This is the quiescence guard that prevents false parity alerts. (§6, R6)
 20. **Parity cost:** latency and payload size of a full ledger list + TB on a large company. (R27) **Tier C only.**
 21. **Full-history reach (decision 7b):** read `books_from` / the oldest available FY; can vouchers be fetched for an FY several years back, at what latency and payload size, and do closed/audited years behave differently? Extrapolate total storage across the whole books span. (R27, R29) **Tier C only** for the latency and size figures.
@@ -1071,11 +1130,11 @@ to run first:
   to group-level forward computation from stored month-end TBs (Part 2, "Rule 1").
 - **Probe 18** — if a TB as-on a past date is unreliable, there is **no valid parity anchor while
   the backfill is incomplete** (R30), and parity would have to be suspended until full history
-  lands. Since decision 7b means most customers are mid-backfill for weeks, that would gut the
-  integrity system exactly when it matters most.
+  lands. **Settled 2026-09-23: it is reliable**, so this cost does not land; what did land is the
+  bills/stock half (those figures must be computed from vouchers, not read from a dated report).
 - **Probe 17, or probe 16's as-on reading** — decides whether rung 1 runs at all during the
-  backfill (decision 11). If neither gives per-ledger openings, ledger-level parity waits for full
-  history, and some customers (R29) may never get it.
+  backfill (decision 11). **Settled 2026-09-23: probe 17's `ISLEDGERWISE=Yes` gives per-ledger
+  openings**, so rung 1 runs mid-backfill; this cost does not land either.
 
 **Probe 21** should also run early: decision 7b makes storage unbounded, and Q22/Q23 (drop `raw` for
 backfilled years? cap the depth?) must be settled before S1 commits to a schema.

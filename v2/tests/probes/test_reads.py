@@ -2,9 +2,15 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from v2.probes.reads import (amount, ancestors, dmy, ledger_movements, parse_parents, parse_vouchers, postings,
-                             primary_lines, qty_number, signed_ui_amount, stock_bearing_groups, stock_rows_any_depth,
-                             tally_date, tb_rows_any_depth, top_group)
+import pytest
+
+from v2.agent.tally.envelopes import wrap_report
+from v2.agent.tally.reports import parse_trial_balance
+from v2.probes.reads import (PROBE_POSTING_RULE, amount, ancestors, dmy, exploded_tb_rows, is_countable,
+                             ledger_movements, master_request, opening_stock_row, parse_parents, parse_vouchers,
+                             postings, primary_group_rows, primary_lines, qty_number, signed_ui_amount,
+                             stock_bearing_groups, stock_rows_any_depth, tally_date, tb_rows_any_depth, top_group,
+                             voucher_request)
 from v2.tests.probes.fakes import line, stock_summary_xml, vch, vouchers_xml
 
 SYNC = Path(__file__).resolve().parents[1] / "fixtures" / "sync"
@@ -32,14 +38,83 @@ def test_parse_vouchers_reads_header_lines_bills_inventory_and_skips_placeholder
 
 def test_posting_rules():
     [voucher] = parse_vouchers(SALES)
-    assert postings(voucher) == [("Apex", Decimal("-118.00")), ("CGST Output", Decimal("18.00")),
-                                 ("Sales - Electronics", Decimal("100.00"))]
+    assert postings(voucher, "default") == [("Apex", Decimal("-118.00")), ("CGST Output", Decimal("18.00")),
+                                            ("Sales - Electronics", Decimal("100.00"))]
     assert postings(voucher, "all_only") == []
     assert sum(value for _, value in postings(voucher, "ledger_plus_alloc")) == 0
     [both] = parse_vouchers(vouchers_xml([vch({"DATE": "20251002"}, lines=[
         line("Cash", "-5.00"), line("Rent", "5.00"), line("Cash", "-5.00", _list="LEDGERENTRIES.LIST")])]))
-    assert [name for name, _ in postings(both)] == ["Cash", "Rent"]      # ALLLEDGERENTRIES wins, never both lists
+    assert [name for name, _ in postings(both, "default")] == ["Cash", "Rent"]   # ALLLEDGERENTRIES wins, never both
     assert [item["fields"]["LEDGERNAME"] for item in primary_lines(both)] == ["Cash", "Rent"]
+
+
+# --- 2026-09-23 live finding: inventory vouchers export the nominal ledger TWICE, so 'default' double-counts ---------
+
+
+def test_the_default_posting_rule_is_all_only():
+    assert PROBE_POSTING_RULE == "all_only"
+    [voucher] = parse_vouchers(SALES)
+    assert postings(voucher) == postings(voucher, "all_only")
+
+
+def test_live_inventory_vouchers_balance_only_under_all_only():
+    """Company A's 50 live vouchers: 'all_only' leaves 0 unbalanced, 'default' leaves exactly the 24 inventory ones."""
+    vouchers = parse_vouchers((SYNC / "p16_A_vouchers_fy.xml").read_text(encoding="utf-8"))
+    assert len(vouchers) == 50 and all(is_countable(v) for v in vouchers)
+
+    def unbalanced(rule):
+        return [v for v in vouchers
+                if sum((a for _, a in postings(v, rule) if a is not None), Decimal("0")) != Decimal("0")]
+
+    inventory_vouchers = [v for v in vouchers if v["inventory"]]
+    assert len(inventory_vouchers) == 24                      # 16 Sales + 8 Purchase
+    assert unbalanced("default") == inventory_vouchers        # the artifact, not unbalanced books
+    assert unbalanced(PROBE_POSTING_RULE) == []
+    assert all(postings(v, PROBE_POSTING_RULE) for v in vouchers)   # no voucher loses its lines under all_only
+
+
+def test_live_movements_reproduce_tallys_own_as_on_tb_only_under_all_only():
+    """The 2x is measurable against Tally: as-on 31-10-2025 the TB says Purchase -11,57,000 / Sales +5,44,000."""
+    vouchers = parse_vouchers((SYNC / "p18_A_vouchers_to_2025-10-31.xml").read_text(encoding="utf-8"))
+    tb = {row["account_name"]: row["closing_balance"]
+          for row in parse_trial_balance((SYNC / "p18_A_tb_asof_2025-10-31.xml").read_text(encoding="utf-8"))}
+    as_on = dmy("31-10-2025")
+
+    def total(prefix, rule):
+        moves = ledger_movements(vouchers, up_to=as_on, rule=rule)
+        return sum((v for k, v in moves.items() if k.startswith(prefix)), Decimal("0"))
+
+    assert total("Purchase", PROBE_POSTING_RULE) == tb["Purchase Accounts"] == Decimal("-1157000.00")
+    assert total("Sales", PROBE_POSTING_RULE) == tb["Sales Accounts"] == Decimal("544000.00")
+    assert total("Purchase", "default") == 2 * tb["Purchase Accounts"]          # exactly double
+    assert total("Sales", "default") == 2 * tb["Sales Accounts"]
+    assert ledger_movements(vouchers, up_to=as_on) == ledger_movements(vouchers, up_to=as_on, rule="all_only")
+
+
+# --- 2026-09-23 live finding: the TB's stock-bearing group carries a synthetic non-ledger 'Opening Stock' row -------
+
+
+def test_the_exploded_tb_carries_a_synthetic_opening_stock_row_no_ledger_holds():
+    rows = exploded_tb_rows((SYNC / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
+    stock = opening_stock_row(rows)
+    assert stock is not None and stock["closing_balance"] == Decimal("1855800.00")
+    ledgers = parse_parents((SYNC / "p16_A_ledgers.xml").read_text(encoding="utf-8"), "LEDGER")
+    assert "Opening Stock" not in ledgers                     # it is a report row, not a ledger
+    assert opening_stock_row(exploded_tb_rows((SYNC / "p00_A_anchors_tb.xml").read_text(encoding="utf-8"))) is None
+
+
+def test_primary_group_rows_take_the_group_row_not_the_like_named_ledger():
+    """Company A has a LEDGER called "Capital Account" too; the group row is the FIRST of the two."""
+    rows = exploded_tb_rows((SYNC / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
+    assert [row["account_name"] for row in rows[:2]] == ["Capital Account", "Capital Account"]
+    groups = primary_group_rows(rows)
+    assert groups["Capital Account"] is rows[0]
+    assert set(groups) == {"Capital Account", "Current Liabilities", "Current Assets", "Sales Accounts",
+                           "Purchase Accounts", "Indirect Expenses"}
+    assert groups["Current Assets"]["closing_balance"] == Decimal("2605093.00")
+    plain = primary_group_rows(exploded_tb_rows((SYNC / "p00_A_anchors_tb.xml").read_text(encoding="utf-8")))
+    assert {k: v["closing_balance"] for k, v in plain.items()} == {
+        k: v["closing_balance"] for k, v in groups.items()}    # EXPLODEFLAG leaves the group rows untouched
 
 
 def test_ledger_movements_skip_cancelled_optional_and_post_dated_and_respect_dates():
@@ -110,3 +185,37 @@ def test_tb_and_stock_rows_any_depth_read_nested_rows():
 def test_stock_bearing_groups():
     assert stock_bearing_groups({"Stock-in-Hand": "Current Assets", "Current Assets": "Primary"}) == {"Current Assets"}
     assert stock_bearing_groups({}) == {"Current Assets"}
+
+
+# --- 2026-09-23 live finding: period variables must never reach a master collection ----------------------------------
+
+
+@pytest.mark.parametrize("static_vars", [{"SVFROMDATE": "01-10-2025"}, {"SVTODATE": "31-10-2025"},
+                                         {"SVFROMDATE": "01-10-2025", "SVTODATE": "31-10-2025"}])
+def test_master_request_refuses_period_variables(static_vars):
+    """SVFROMDATE freezes Tally's XML server behind a modal; SVTODATE is silently ignored and returns today's
+    balances with a healthy 200 (live 2026-09-23, Ledger collection). The builder refuses both."""
+    with pytest.raises(ValueError) as exc:
+        master_request("S0Test", "Ledger", ["Name"], "Co", static_vars=static_vars)
+    message = str(exc.value)
+    assert "Ledger collection" in message and "wrap_report" in message
+    for name in static_vars:
+        assert name in message
+
+
+def test_master_request_allows_period_variables_only_when_explicitly_allowed():
+    xml = master_request("S0Test", "Ledger", ["Name"], "Co", static_vars={"SVFROMDATE": "01-10-2025"},
+                         allow_period_vars=True)
+    assert "<SVFROMDATE>01-10-2025</SVFROMDATE>" in xml
+
+
+def test_master_request_without_period_variables_is_unchanged():
+    assert "SVFROMDATE" not in master_request("S0Test", "Ledger", ["Name"], "Co")
+
+
+def test_voucher_request_and_wrap_report_still_send_both_period_variables():
+    """Both are proven fine live and both legitimately need the variables — the guard must not touch them."""
+    voucher = voucher_request("S0Test", ["Date"], "Co")
+    assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in voucher and "<SVTODATE>31-03-2026</SVTODATE>" in voucher
+    report = wrap_report("Trial Balance", "01-04-2025", "31-10-2025", "Co")
+    assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in report and "<SVTODATE>31-10-2025</SVTODATE>" in report
