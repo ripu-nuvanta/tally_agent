@@ -19,7 +19,7 @@ from v2.agent.tally.envelopes import build_company_list, formula_string, wrap_co
 from v2.agent.tally.xml_utils import parse_company_list, read_objects, sanitize_xml
 from v2.probes.companies import COMPANIES, SEED_COMPANY, THROWAWAY_DATE, THROWAWAY_DATE_TEXT
 from v2.probes.licence import LICENCE_REQUEST, LicenceInfo, parse_licence_info
-from v2.probes.reads import voucher_request
+from v2.probes.reads import TB_EXPLODE_VARS, voucher_request
 from v2.probes.safety import check_request
 from v2.probes.setup.import_xml import ImportResult, esc, wrap_import
 
@@ -343,6 +343,16 @@ class TallyWriter:
     def list_voucher_types(self, company: str) -> list[str]:
         xml = wrap_collection("S0BVoucherTypes", "VoucherType", VOUCHER_TYPE_FIELDS, company)
         return [row["Name"] for row in read_objects(self.post(xml), "VOUCHERTYPE", VOUCHER_TYPE_FIELDS)]
+
+    def b_trial_balance(self, company: str, from_date: str, to_date: str) -> str:
+        """An exploded (EXPLODEFLAG=Yes, probe 17) Trial Balance — company_b.py's `_verify` compares
+        primary/second-level group totals only from this; ledger-level TB shape is deferred to probes 16/17
+        (S0-D7: a probe never guesses a request another probe must confirm)."""
+        return self.post(wrap_report("Trial Balance", from_date, to_date, company, extra_vars=TB_EXPLODE_VARS),
+                         timeout=60.0)
+
+    def b_bills_receivable(self, company: str, as_on: str) -> str:
+        return self.post(wrap_report("Bills Receivable", as_on, as_on, company), timeout=60.0)
 
     def create_group(self, company: str, name: str, parent: str) -> None:
         check_writable(company)

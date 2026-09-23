@@ -5,10 +5,12 @@ the way they do on the real s0probe folder. Nothing here touches Wine or the rea
 """
 from __future__ import annotations
 
+import copy
 import html
 import json
 import re
 import xml.etree.ElementTree as ET
+from decimal import Decimal
 from pathlib import Path
 from typing import Callable
 
@@ -17,7 +19,21 @@ import httpx
 from v2.probes.companies import SEED_COMPANY
 from v2.probes.operator.config import OperatorConfig
 from v2.probes.operator.tally_control import TallyProcess
-from v2.tests.probes.fakes import company_list_xml, objects_xml
+from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, tb_xml
+
+# Tally's own fixed reserved-group hierarchy (not dataset-specific — just enough of it to build a believable
+# Trial Balance fixture for whatever masters a test created). A bucket not listed here is already a primary
+# group (e.g. "Capital Account", "Sales Accounts") and gets no separate child row.
+RESERVED_GROUP_PARENTS = {
+    "Sundry Debtors": "Current Assets", "Bank Accounts": "Current Assets", "Cash-in-Hand": "Current Assets",
+    "Sundry Creditors": "Current Liabilities", "Duties & Taxes": "Current Liabilities",
+}
+
+
+def _dr_cr(value: Decimal) -> tuple[str, str]:
+    """Real Tally XML: a debit-natured closing balance is negative under DSPCLDRAMTA, credit-natured is
+    positive under DSPCLCRAMTA (tests/fixtures/tally_samples/trial_balance_live.xml)."""
+    return (f"{value:.2f}", "") if value < 0 else ("", f"{value:.2f}")
 
 GUID = "710de34a-3661-4a7b-8148-c2206c3b3e17"
 STATE_FILE = "fake_company.json"
@@ -85,12 +101,20 @@ class FakeBooks:
     # --- company data ---------------------------------------------------------------------------------------------
     @property
     def state(self) -> dict:
-        """In-memory mode returns the LIVE dict, not a copy: `books.state["ledgers"][...] = ...` from test setup
-        code (e.g. `_empty_b()` in test_company_b.py) needs the mutation to actually persist, and nothing in this
-        module or its tests relies on the old copy-on-read isolation (every other caller only reads)."""
+        """A read-only snapshot (a copy, in both modes): callers that want to read must not accidentally mutate
+        the live state by holding onto what `.state` returns. Use `edit_state` to mutate."""
         if self.folder is None:
-            return self._memory
+            return copy.deepcopy(self._memory)
         return json.loads((self.folder / STATE_FILE).read_text(encoding="utf-8"))
+
+    def edit_state(self, mutate: Callable[[dict], None]) -> None:
+        """Mutate the live state and persist it — in both memory and folder-backed modes. `.state` returns a
+        copy on purpose (Ruling C11/M5: a snapshot that silently discards `books.state[...] = ...` is a trap —
+        it bit test setup code once already), so test setup and 'something vanished behind our back' scenarios
+        go through this instead: `books.edit_state(lambda s: s["groups"].__setitem__(name, {...}))`."""
+        state = self.state
+        mutate(state)
+        self._save(state)
 
     def _save(self, state: dict) -> None:
         if self.folder is None:
@@ -179,7 +203,37 @@ class FakeBooks:
                                             "IsOptional": v["optional"]} for mid, v in state["vouchers"].items()])
         if "S0BVoucherTypes" in body:
             return objects_xml("VOUCHERTYPE", [{"Name": n} for n in state["voucherTypes"]])
+        if "<ID>Trial Balance</ID>" in body:
+            return tb_xml(self._trial_balance_rows(state))
+        if "<ID>Bills Receivable</ID>" in body:
+            return bills_xml(state.get("bills_receivable", []))
         return "<ENVELOPE></ENVELOPE>"
+
+    def _trial_balance_rows(self, state: dict) -> list[tuple[str, str, str]]:
+        """An exploded-to-two-levels Trial Balance (EXPLODEFLAG=Yes shape, probe 17), computed from whatever
+        ledgers/groups/vouchers this fake actually has on record — not from any dataset's idea of what should
+        be there. Real Tally XML signs a debit-natured closing balance negative and a credit-natured one
+        positive (verified against tests/fixtures/tally_samples/trial_balance_live.xml); `_dr_cr` mirrors that.
+        """
+        balances = {name: Decimal(led.get("opening", "0.00")) for name, led in state["ledgers"].items()}
+        for voucher in state["vouchers"].values():
+            for line in voucher.get("lines", []):
+                name = line["ledger"]
+                balances[name] = balances.get(name, Decimal("0.00")) + Decimal(line["amount"] or "0.00")
+        buckets: dict[str, Decimal] = {}
+        for name, led in state["ledgers"].items():
+            parent = led["parent"]
+            group = state["groups"].get(parent)
+            bucket = group["parent"] if group else parent
+            buckets[bucket] = buckets.get(bucket, Decimal("0.00")) + balances.get(name, Decimal("0.00"))
+        primaries: dict[str, Decimal] = {}
+        for bucket, value in buckets.items():
+            primary = RESERVED_GROUP_PARENTS.get(bucket, bucket)
+            primaries[primary] = primaries.get(primary, Decimal("0.00")) + value
+        rows = list(primaries.items())
+        rows += [(bucket, value) for bucket, value in buckets.items()
+                if RESERVED_GROUP_PARENTS.get(bucket, bucket) != bucket]
+        return [(name, *_dr_cr(value)) for name, value in rows]
 
     def _import(self, body: str, request: httpx.Request) -> str:
         if self.fail_imports:
@@ -245,7 +299,8 @@ class FakeBooks:
                 raise httpx.ReadTimeout("duplicate master modal", request=request)
             state["alt_mst"] += 1
             ledgers[name] = {"parent": element.findtext("PARENT", ""), "email": "", "alter_id": state["alt_mst"],
-                             "guid": f"{state['guid']}-{state['alt_mst']:08x}"}
+                             "guid": f"{state['guid']}-{state['alt_mst']:08x}",
+                             "opening": element.findtext("OPENINGBALANCE", "0.00")}
             self._save(state)
             return import_result(created=1)
         if name not in ledgers:
@@ -278,9 +333,11 @@ class FakeBooks:
             date = element.findtext("DATE", "")
             cancelled = "No" if self.drop_flags else (element.findtext("ISCANCELLED") or "No")
             optional = "No" if self.drop_flags else (element.findtext("ISOPTIONAL") or "No")
+            lines = [{"ledger": entry.findtext("LEDGERNAME", ""), "amount": entry.findtext("AMOUNT", "0.00")}
+                     for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST") for entry in element.findall(tag)]
             vouchers[mid] = {"narration": element.findtext("NARRATION", ""), "date": date,
                              "post_dated": element.findtext("ISPOSTDATED") or "No",
-                             "cancelled": cancelled, "optional": optional}
+                             "cancelled": cancelled, "optional": optional, "lines": lines}
             state["alt_vch"] += 1
             state["last_voucher_date"] = max(state["last_voucher_date"], date)
             self._save(state)
