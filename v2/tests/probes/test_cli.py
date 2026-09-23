@@ -232,9 +232,16 @@ def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
     assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 0
     out = capsys.readouterr().out
     assert "Company B loaded" in out and "960" in out
+    # F19: a note (the observed Trial Balance Dr/Cr total) is informational — it appears, separated under its
+    # own "Notes:" heading, and does NOT flip the exit code (asserted together with `== 0` above, same run).
+    assert "Notes:" in out and "Trial Balance Dr/Cr total observed" in out
 
 
-def test_setup_b_returns_one_and_explains_when_the_loader_stops(tmp_path, capsys):
+def test_setup_b_returns_one_when_a_prerequisite_blocks_the_loader_before_it_can_verify(tmp_path, capsys):
+    """The CompanyBLoadError -> OperatorError -> `except` path (stage 1 preflight never reaches `_verify`, so
+    `report` isn't even constructed) — worth covering in its own right, but it must not be mistaken for
+    coverage of the `report.problems` exit-code branch: see
+    `test_setup_b_returns_one_when_verification_finds_a_problem` for that."""
     books = FakeBooks(name=COMPANIES["B"])
     books.edit_state(lambda s: s.__setitem__("voucherTypes", ["Sales"]))   # no "Sales - GST" — see note above
     op = build_auto_operator(config=tmp_config(tmp_path), transport=books.transport(),
@@ -242,6 +249,33 @@ def test_setup_b_returns_one_and_explains_when_the_loader_stops(tmp_path, capsys
                              console_input=lambda prompt: "")
     assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 1
     assert "setup-b failed" in capsys.readouterr().out
+
+
+def test_setup_b_returns_one_when_verification_finds_a_problem(tmp_path, capsys):
+    """F18: drives the run all the way to `_verify` — voucher type present, every pause honoured — so `report`
+    is genuinely constructed, and plants exactly one real defect an honest load can produce: an already-existing
+    group under the wrong parent (Task 6's I4, `company_b.py`'s `_load_masters`, ~line 136). That appends to
+    `report.problems` without raising, so the run completes and only the `if report.problems:` branch in
+    `_setup_b` is what makes this exit 1 — unlike the sibling test above, whose 1 comes from `except
+    OperatorError` before `report.problems` is ever consulted. Mutation-tested: deleting `return 1` from that
+    `if report.problems:` block (leaving the function to fall through to `return 0`) makes this test FAIL —
+    confirmed locally per the fix-round instructions, then reverted; the CompanyBLoadError test above does NOT
+    fail under that same mutation, which is exactly the blind spot this test closes."""
+    config = tmp_config(tmp_path)
+    write_company_folder(config.company_folder("B"), COMPANIES["B"])
+    books = FakeBooks(config.company_folder("B"), name=COMPANIES["B"])
+    books.edit_state(lambda s: s.__setitem__(
+        "voucherTypes", ["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
+    # National Creditors already exists in Tally, but under the wrong parent — I4 flags this as a `problems`
+    # line and skips (does not raise), so the loader proceeds all the way through to `_verify`.
+    books.edit_state(lambda s: s.setdefault("groups", {}).__setitem__(
+        "National Creditors", {"parent": "Local Creditors"}))
+    op = build_auto_operator(config=config, transport=books.transport(), runner=FakeRunner(books, []),
+                             echo=lambda line: None, console_input=_console_input_honouring_flag_pauses(books))
+    assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 1
+    out = capsys.readouterr().out
+    assert "Problems:" in out
+    assert "group 'National Creditors': parent is 'Local Creditors' in Tally, expected 'Sundry Creditors'" in out
 
 
 def test_allow_risky_is_opt_in_on_the_run_command():
