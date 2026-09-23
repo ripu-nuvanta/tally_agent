@@ -241,7 +241,8 @@ Standard flow for every feature, in order:
 4. **Test cases** — including Playwright specs + screenshots (per § Playwright discipline).
 5. **Code review** → fix review findings → feature-complete merge (into `dev`, per § Git branch discipline).
 6. **Manual testing finds bugs** → that means the test cases were insufficient: first improve/extend the test cases to catch the bug, then debug and fix.
-7. **Docs update** (roadmap, CLAUDE.md, LESSONS.md as applicable) before session end.
+7. **Tracker update — as each part completes, not at the end** (see § Always update the tracker).
+8. **Docs update** (roadmap, CLAUDE.md, LESSONS.md as applicable) before session end.
 
 Additional rules:
 - **Backend logs → `logs/`**: keep backend server logs in the `logs/` folder for each test run (e.g. `uvicorn ... 2>&1 | tee logs/be_<run>.log`).
@@ -263,6 +264,29 @@ Additional rules:
 - **Closed phases** → § Implementation Phases in this file. Promote completed roadmap items here with a one-line summary.
 - **Tally API gotchas** → [`LESSONS.md`](LESSONS.md). Especially § 15 (write safety rules). Cross-reference, don't re-state.
 - **Parked items** → [`docs/open-items-parked.md`](docs/open-items-parked.md).
+- **Item-level status** → the feature's **tracker** in `docs/plans/*-tracker.md` (e.g.
+  [`docs/plans/2026-09-22-bi-part1-tracker.md`](docs/plans/2026-09-22-bi-part1-tracker.md) for the BI sync work).
+
+### Always update the tracker
+
+**Whenever any part is completed, update the tracker in the same turn — never as a later cleanup pass.** A tracker
+that lags behind the work is worse than no tracker: the next session reads it, believes it, and redoes or skips work.
+This has already gone wrong once (2026-09-23: probes had run live, but the tracker still said "nothing has been run
+live yet" and "`v2/` is not committed").
+
+What "update the tracker" means every time:
+1. **Flip the status** of the item you finished (⬜ → 🟡 when you start it, ✅ when it's done), and of any parent
+   stage/section row whose state changed as a result.
+2. **Add the proof** the tracker's own rules demand — a test name, a log path, a fixture path, a doc section, or a
+   commit SHA. No proof → not ✅.
+3. **Add a dated change-log row** at the bottom of the tracker describing what happened, including findings that
+   contradicted expectations.
+4. **Rewrite the "Resume here" block** so it describes the state you are actually leaving behind and the next
+   concrete step — not the state you found.
+5. **Fan out the consequences:** a result that changes the design → update the spec too (with a dated "Changed" line
+   in its header) and say so in the tracker; a stage opening or closing → also update `docs/roadmap.md`.
+
+The same rule applies to a tracker's own local "Rules for updating this file" block — follow it, don't just read it.
 
 ### Default to DB mode
 
