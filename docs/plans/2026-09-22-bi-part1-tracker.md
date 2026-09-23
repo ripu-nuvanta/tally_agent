@@ -19,36 +19,55 @@ A change outside `v2/` and `docs/` is a bug in the work, not progress.
 
 ---
 
-## ▶ Resume here (end of day 2026-09-22)
+## ▶ Resume here (updated 2026-09-23)
 
-**Where we are (2026-09-23):** S0 plan part 2 — Tasks 1–12 built and reviewed; the final review said "ready with
-fixes"; the fix wave (I1–I3 + M1–M12) was applied, then **scoped re-reviewed 2026-09-23** ("ready with fixes": 2
-Important + 4 Minor), and **those 6 fixes are applied: 326 tests pass (also `-W error`)**. Nothing has been run live
-for part 2 yet. `v2/` is **not committed** (a `git clean` would delete it).
+**Where we are:** S0 plan part 2 is **built, reviewed, fix-waved and run live**. Every company-A probe is ✅
+(0, 1, 2, 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25); 3, 16, 18, 23 and 25 are A-done with their **B parts
+pending**. `v2/` **is committed** (343 files tracked; harness `a0d33e4`, live findings `ef69e30`, results + fixtures
++ doc sync `50d679c`). 351 tests pass (`uv run --project v2 pytest v2/tests`). Results doc:
+`docs/bi-s0-probe-results-2026-09-23.md`.
+
+**Everything still pending needs company B or company C, neither of which exists yet.**
 
 **Next steps, in order:**
-1. ~~Scoped re-review of the fix wave~~ ✅ 2026-09-23 — done, findings fixed (see change log).
-2. **Live run (plan Task 13)** — someone must be at the Mac to click Tally's licence box (~5 times):
-   ```
-   cd "/Users/nuvanta-mac-3/work/Tally prime"
-   export PATH="/Applications/Wine Stable.app/Contents/Resources/wine/bin:$PATH"
-   uv run --project v2 python -m v2.probes reset-a             # fresh seed copy in s0probe → company A (1 click)
-   uv run --project v2 python -m v2.probes run 1 --auto        # probe 1 is stored DIFFERENT → must re-run explicitly
-   uv run --project v2 python -m v2.probes run --all --auto    # company-A order; B/C entries skip as not built
-   uv run --project v2 python -m v2.probes report
-   ```
-   Rules during the run: no Tally restart between these commands; click only "T: Continue In Educational Mode";
-   leave probe 10's deliberate modal alone; don't pass `--stop-any-tally`; don't run commands containing "tally.exe";
-   if interrupted → `reset-a` before continuing. Log: `v2/probes/results/logs/`.
-3. Record results: tracker rows (probes 3, 4, 6, 7, 8, 10, 12, 13, 16–19, 23, 25), spec findings (esp. 16–18 → Part 1 §6
-   rung 2 and the TB note), auto-mode limits (UI-edit parity 1/7/8, probe 16 UI read, probe 19 UI view, probe 13
-   file-level only — **R8 stays open**), code-review doc `docs/code-review-bi-s0-part2-<date>.md`.
-4. Then S0 plan part 3 (company B loader + probes 5, 11, 14, 15, 21, 22, 24 + B parts; company C).
+1. **Create company B in the Tally UI** (spec §4.3, can't be scripted): name exactly
+   `Sharma & Sons' Probe Traders` (the `&` and `'` are what probe 14 tests), books from **01-04-2022**, Maharashtra,
+   GST enabled like the seed company, **F2 ≥ 31-03-2026**, and one custom voucher type **`Sales - GST`** under Sales
+   created in the UI (voucher-type config via XML is unreliable — LESSONS §11 / §15 rule 4).
+2. **Build `setup-b` + `company_b_data.py`** (S0 plan part 3) — the one substantive piece of work left, and it needs
+   no new design. Deterministic dataset from a fixed seed that ALSO exports the expected figures (per-ledger
+   month-end + FY-opening balances, per-month voucher counts) so probes 16 and 18 have an expectation that didn't
+   come from Tally. Loader rules and the 9-case test matrix: spec §4.3 and §11.4.
+3. **Batch 5 (company B) — probe 21 FIRST**: its storage numbers gate Q22/Q23, which gate S1's schema. Then
+   16, 18 (B parts), 5, 3 (B), 11, 14, 15, 22, 23 (B), 25 (B).
+4. **Batch 6:** create company C (`Probe Vault Co`, one ledger + one voucher) → probe 24 (security, then TallyVault).
+5. **Write `docs/code-review-bi-s0-part2-<date>.md`** — still missing; plan part 2 shipped without it.
+6. Then S1: the S1 spec itself is unwritten and can't be finalised until Q22/Q23 are answered.
 
-**Machine state left running today:** TallyPrime under Wine on "Bharat Traders Probe Copy" (`s0probe` folder; original
-`tally.ini` saved as `tally.ini.before-s0`); dev app — Postgres :5434 (started with `pg_ctl`, stops at reboot), backend
-:7000, frontend :5173. Wine 11.0 is at `/Applications/Wine Stable.app` (Homebrew's Wine casks are disabled). Company A's
-ledger "Electricity" still has a test EMAIL — `reset-a` clears it.
+**Live-run rules** (unchanged, someone must be at the Mac to click Tally's licence box):
+```
+cd "/Users/nuvanta-mac-3/work/Tally prime"
+export PATH="/Applications/Wine Stable.app/Contents/Resources/wine/bin:$PATH"
+uv run --project v2 python -m v2.probes reset-a      # fresh seed copy in s0probe → company A (1 click)
+uv run --project v2 python -m v2.probes setup-b      # once company B exists in the UI
+uv run --project v2 python -m v2.probes run --all --auto
+uv run --project v2 python -m v2.probes report
+```
+No Tally restart between commands; click only "T: Continue In Educational Mode"; leave probe 10's deliberate modal
+alone; don't pass `--stop-any-tally`; don't run commands containing "tally.exe"; if interrupted → `reset-a` before
+continuing. Logs: `v2/probes/results/logs/` (gitignored by the `*.log` rule — they live on this machine only).
+
+**Still open after the company-A run** (need a human at the keyboard, not the auto operator): UI-edit parity for
+probes 1, 7, 8; probe 16's UI balance read; probe 19's UI report view; probe 13 was **file-level restore only**
+(Tally's Backup/Restore screens unused) → **R8 stays open**. All of it ran Educational-mode under Wine, so probes
+1, 7, 16, 18 carry "confirm on a licensed Tally", and `master_request`'s refusal of period variables on every
+master collection is deliberately conservative pending that check.
+
+**Machine state:** TallyPrime under Wine on "Bharat Traders Probe Copy" (`s0probe` folder; original `tally.ini` saved
+as `tally.ini.before-s0`); dev app — Postgres :5434 (started with `pg_ctl`, stops at reboot), backend :7000,
+frontend :5173. Wine 11.0 at `/Applications/Wine Stable.app` (Homebrew's Wine casks are disabled). Company A was
+reset at 2026-09-23T11:06 and its anchors checked OK after the last batch; probe 10's "popup not raised" path can
+leave a stock group behind — `reset-a` clears it.
 
 **Progress ledger (every ruling, fix round, deferred minor):** `.superpowers/sdd/2026-09-22-bi-s0-probes-plan-part2/progress.md`
 (part 1: `.superpowers/sdd/2026-09-22-bi-s0-probes-plan/progress.md`).
@@ -60,7 +79,7 @@ ledger "Electricity" still has a test EMAIL — `reset-a` clears it.
 | Stage | Scope | Depends on | Spec | Plan | Status |
 |---|---|---|---|---|---|
 | Design | Part 1 brainstorm design | — | `specs/2026-09-21-bi-part1-sync-design.md` | — | ✅ 2026-09-21 |
-| **S0** | `v2/` scaffold + live-Tally probes 0–25 + real fixtures in `v2/tests/fixtures/sync/` | — | `specs/2026-09-22-bi-s0-probes-design.md` | `plans/2026-09-22-bi-s0-probes-plan.md` (part 1 ✅), `plans/2026-09-22-bi-s0-probes-plan-part2.md` (part 2, 13 tasks) | 🟡 Plan part 1 built + reviewed (146 tests); **probes 0, 1, 2 ✅ live 2026-09-22**; **plan part 2: Tasks 1–12 built + reviewed, final-review fixes applied (316 tests); re-review + live run next**; then part 3 |
+| **S0** | `v2/` scaffold + live-Tally probes 0–25 + real fixtures in `v2/tests/fixtures/sync/` | — | `specs/2026-09-22-bi-s0-probes-design.md` | `plans/2026-09-22-bi-s0-probes-plan.md` (part 1 ✅), `plans/2026-09-22-bi-s0-probes-plan-part2.md` (part 2, 13 tasks) | 🟡 Plan parts 1+2 built, reviewed and **run live**: **every company-A probe is ✅ as of 2026-09-23** (0, 1, 2, 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25 — 351 tests; results committed in `50d679c`). **Remaining: everything that needs company B or C** — S0 plan part 3 (company-B loader + probes 21, 5, 11, 14, 15, 22 and the B parts of 3, 16, 18, 23, 25; then company C + probe 24). Timing probes 9 / 20 / 21-timing ⏭ (Q29). Open: part-2 code-review doc not written; auto-mode UI-parity gaps (1/7/8, 16, 19) and file-level-only 13 → **R8 stays open** |
 | **S1** | Cloud: tables, device auth, ingest API, parity engine | S0 (probes 6, 16, 17, 18, 21, 25; Q22/Q23) | — | — | ⬜ |
 | **S2** | Windows agent | S0 (probe 21 for backfill); parallel with S1 | — | — | ⬜ |
 
@@ -74,11 +93,11 @@ ledger "Electricity" still has a test EMAIL — `reset-a` clears it.
 | 3 | Single company picked once at setup; GUID saved on workspace | S1 + S2 | ⬜ | |
 | 4 | Fetch only when active company GUID = saved GUID | S0 (probe 2) → S2 | ⬜ | S0 part done: probe 2 ✅ — cheap GUID read confirmed (filtered Company collection); build is S2 |
 | 5 | Fetch only while connected; otherwise skip quietly | S2 | ⬜ | |
-| 6 | Sync masters, vouchers + lines, report snapshots (current + month-end set) | S0 → S1 + S2 | ⬜ | |
+| 6 | Sync masters, vouchers + lines, report snapshots (current + month-end set) | S0 → S1 + S2 | ⬜ | S0 part done (company A): probe 6 ✅ (nested lines, bills, inventory; posting rule `all_only`) and probe 12 ✅ (all six report snapshots parse, bills match anchors). Build is S1+S2 |
 | 7 | First sync = current FY + previous FY; new FY auto-added on 1 April | S2 | ⬜ | |
-| 7b | Background backfill to `books_from`, lowest priority, never blocks chat | S0 (probe 21) → S1 + S2 | ⬜ | |
-| 9 | Change detection via AltVchId / AltMstId + AlterID, plus deletion check | S0 (probes 1, 3, 4, 7) → S2 | ⬜ | S0: probe 1 ✅ (counters move on every real change); probes 3, 4, 7 pending (plan part 2); build is S2 |
-| 11 | Parity rungs 0+1+2; rung 1 needs a per-ledger opening anchor | S0 (probes 16, 17, 18, 19) → S1 + S2 | ⬜ | |
+| 7b | Background backfill to `books_from`, lowest priority, never blocks chat | S0 (probe 21) → S1 + S2 | ⬜ | Gated on **probe 21** (company B, not built) — it also gates Q22/Q23 and therefore S1's schema |
+| 9 | Change detection via AltVchId / AltMstId + AlterID, plus deletion check | S0 (probes 1, 3, 4, 7) → S2 | ⬜ | S0: probe 1 ✅ (counters move on every real change); probe 3 ✅ (GUID/MasterID unique, AlterID + the three flags export), 4 ✅ (`$AlterID > N` exact on Voucher/Ledger/Group/StockItem, Tally healthy after), 7 ✅ (deleted voucher vanishes, GUID never reused) — all company A, live 2026-09-23. Build is S2 |
+| 11 | Parity rungs 0+1+2; rung 1 needs a per-ledger opening anchor | S0 (probes 16, 17, 18, 19) → S1 + S2 | ⬜ | S0 part done (company A): probe 16 — as-on is **impossible** on a Ledger collection (SVTODATE silently ignored, SVFROMDATE wedges Tally); 17 ✅ — `ISLEDGERWISE=Yes` gives 29 ledger rows reconciling to group totals, so rung 2 CAN run at ledger level; 18 — an as-on **TB is valid history** (R30 needs no suspension), while Bills/Stock ignore the date and must be computed from vouchers; 19 ✅ quiescence guard. Rung 1's per-ledger opening anchor therefore depends on probe 17, not 16. B parts of 16/18 pending. Build is S1+S2 |
 | 12 | No full resync is ever automatic | S1 + S2 | ⬜ | |
 | 14 | Ops signal for integrity alerts carries counts and causes only | S1 | ⬜ | |
 
