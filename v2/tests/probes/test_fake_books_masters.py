@@ -9,7 +9,9 @@ import pytest
 from v2.agent.tally.envelopes import wrap_collection
 from v2.agent.tally.xml_utils import read_objects
 from v2.probes.setup.import_xml import ImportResult, esc, wrap_import
-from v2.tests.probes.fake_books import FakeBooks, sync_client
+from decimal import Decimal
+
+from v2.tests.probes.fake_books import FakeBooks, deemed_positive_matches, sync_client
 
 B = "Sharma & Sons' Probe Traders"
 
@@ -155,3 +157,58 @@ def test_fail_imports_fails_every_import():
 
     # nothing was actually stored
     assert _list(books, "S0BGroups", "Group", ["Name"]) == []
+
+
+# --- I5: the fake sees ISDEEMEDPOSITIVE, and rejects a flag that disagrees with its amount sign ----------------------
+def _voucher_xml(entries: str, inventory: str = "") -> str:
+    return ('<VOUCHER VCHTYPE="Receipt" ACTION="Create"><DATE>1-Apr-25</DATE>'
+            "<NARRATION>[S0-B:1] x</NARRATION><VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>"
+            f"{entries}{inventory}</VOUCHER>")
+
+
+def _entry(ledger: str, flag: str, amount: str) -> str:
+    return (f"<ALLLEDGERENTRIES.LIST><LEDGERNAME>{esc(ledger)}</LEDGERNAME>"
+            f"<ISDEEMEDPOSITIVE>{flag}</ISDEEMEDPOSITIVE><AMOUNT>{amount}</AMOUNT></ALLLEDGERENTRIES.LIST>")
+
+
+def test_the_fake_stores_isdeemedpositive_on_every_line():
+    """I5: the fake used to compute balances from `line["amount"]` alone and never stored the flag, so the one
+    field whose wrong value is the documented cause of EXCEPTIONS=1 was invisible to every assertion."""
+    books = FakeBooks(name=B)
+    _post(books, wrap_import("Vouchers", B, _voucher_xml(
+        _entry("Cash", "Yes", "-1000.00") + _entry("Pune Traders", "No", "1000.00"))))
+    lines = books.state["vouchers"]["51"]["lines"]
+    assert [(l["ledger"], l["deemed_positive"], l["amount"]) for l in lines] == [
+        ("Cash", "Yes", "-1000.00"), ("Pune Traders", "No", "1000.00")]
+
+
+def test_the_fake_rejects_a_line_whose_flag_disagrees_with_its_amount_sign():
+    """Op 6/7/8: Yes always carries a NEGATIVE amount, No a POSITIVE one. Every other permutation the live
+    exploration tried answered EXCEPTIONS=1 with no LINEERROR (v4 doc, cross-cutting finding 2) — the fake now
+    approximates that acceptance rule instead of echoing whatever it is handed."""
+    books = FakeBooks(name=B)
+    result = ImportResult.parse(_post(books, wrap_import("Vouchers", B, _voucher_xml(
+        _entry("Cash", "No", "-1000.00") + _entry("Pune Traders", "Yes", "1000.00")))))
+    assert result.exceptions == 1 and result.created == 0 and not result.clean
+    assert books.state["vouchers"] == {}          # and nothing was stored
+
+
+def test_the_fake_checks_the_inventory_row_and_its_accounting_allocation_too():
+    """Where Task 6's I1 defect actually lived: the ledger lines were right and the ALLINVENTORYENTRIES block
+    carried No against a negative amount."""
+    books = FakeBooks(name=B)
+    inventory = ('<ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>A4 Paper</STOCKITEMNAME>'
+                 "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>-1000.00</AMOUNT>"
+                 "<ACCOUNTINGALLOCATIONS.LIST><LEDGERNAME>Purchase</LEDGERNAME>"
+                 "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE><AMOUNT>-1000.00</AMOUNT>"
+                 "</ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>")
+    result = ImportResult.parse(_post(books, wrap_import("Vouchers", B, _voucher_xml(
+        _entry("Mumbai Supplies", "No", "1180.00") + _entry("Input CGST", "Yes", "-180.00"), inventory))))
+    assert result.exceptions == 1 and books.state["vouchers"] == {}
+
+
+def test_a_zero_amount_pins_no_side_and_is_accepted_either_way():
+    assert deemed_positive_matches("Yes", Decimal("0.00"))
+    assert deemed_positive_matches("No", Decimal("0.00"))
+    assert deemed_positive_matches("Yes", Decimal("-1.00")) and not deemed_positive_matches("Yes", Decimal("1.00"))
+    assert deemed_positive_matches("No", Decimal("1.00")) and not deemed_positive_matches("No", Decimal("-1.00"))

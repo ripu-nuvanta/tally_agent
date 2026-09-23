@@ -68,14 +68,23 @@ def write_company_folder(folder: Path, name: str = SEED_COMPANY) -> None:
     (folder / STATE_FILE).write_text(json.dumps(seed_state(name)), encoding="utf-8")
 
 
+def deemed_positive_matches(flag: str, amount: Decimal) -> bool:
+    """Op 6/7/8 (docs/tally-write-exploration-v4.md): ISDEEMEDPOSITIVE=Yes always carries a NEGATIVE AMOUNT and
+    No a POSITIVE one — "AMOUNT is positive on the side that grows". Every other permutation the live
+    exploration tried came back EXCEPTIONS=1. A zero amount pins nothing, so it is accepted either way."""
+    if amount == 0:
+        return True
+    return (flag == "Yes") == (amount < 0)
+
+
 def import_result(created: int = 0, altered: int = 0, deleted: int = 0, errors: int = 0, last_vch_id: str = "0",
-                  line_error: str = "") -> str:
+                  line_error: str = "", exceptions: int = 0) -> str:
     """The IMPORTRESULT shape TallyPrime 7 answers an import with (live 2026-09-22)."""
     err = f"<LINEERROR>{line_error}</LINEERROR>" if line_error else ""
     return ("<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>1</STATUS></HEADER><BODY><DATA><IMPORTRESULT>"
             f"<CREATED>{created}</CREATED><ALTERED>{altered}</ALTERED><DELETED>{deleted}</DELETED>"
             f"<LASTVCHID>{last_vch_id}</LASTVCHID><LASTMID>0</LASTMID><COMBINED>0</COMBINED><IGNORED>0</IGNORED>"
-            f"<ERRORS>{errors}</ERRORS><CANCELLED>0</CANCELLED><EXCEPTIONS>0</EXCEPTIONS>{err}"
+            f"<ERRORS>{errors}</ERRORS><CANCELLED>0</CANCELLED><EXCEPTIONS>{exceptions}</EXCEPTIONS>{err}"
             "</IMPORTRESULT></DATA></BODY></ENVELOPE>")
 
 
@@ -354,15 +363,45 @@ class FakeBooks:
         self._save(state)
         return import_result(altered=1)
 
+    @staticmethod
+    def _signed_entries(element: ET.Element):
+        """Every element carrying an ISDEEMEDPOSITIVE/AMOUNT pair: the ledger lines, each inventory row, and
+        each inventory row's ACCOUNTINGALLOCATIONS child (where the Task-6 I1 defect actually lived)."""
+        for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
+            for entry in element.findall(tag):
+                yield entry.findtext("LEDGERNAME", ""), entry
+        for inv in element.findall("ALLINVENTORYENTRIES.LIST"):
+            name = inv.findtext("STOCKITEMNAME", "")
+            yield name, inv
+            for allocation in inv.findall("ACCOUNTINGALLOCATIONS.LIST"):
+                yield f"{name} (accounting allocation)", allocation
+
+    def _signs_agree(self, element: ET.Element) -> bool:
+        for _name, entry in self._signed_entries(element):
+            amount = entry.findtext("AMOUNT")
+            if amount is None:
+                continue
+            if not deemed_positive_matches(entry.findtext("ISDEEMEDPOSITIVE", "No"), Decimal(amount or "0.00")):
+                return False
+        return True
+
     def _voucher(self, state: dict, element: ET.Element, action: str) -> str:
         vouchers = state["vouchers"]
         if action == "Create":
+            if not self._signs_agree(element):
+                # I5: the flag whose wrong value is the documented cause of EXCEPTIONS=1 used not to be stored
+                # here at all, so no balance assertion could ever see it. The fake now approximates Tally's
+                # ACCEPTANCE rule instead of echoing whatever it was given: EXCEPTIONS=1 and no LINEERROR, which
+                # is exactly what the live exploration got for every wrong permutation (v4 doc, cross-cutting
+                # finding 2 — "there's no helpful error message").
+                return import_result(exceptions=1)
             mid = str(state["next_master_id"])
             state["next_master_id"] += 1
             date = element.findtext("DATE", "")
             cancelled = "No" if self.drop_flags else (element.findtext("ISCANCELLED") or "No")
             optional = "No" if self.drop_flags else (element.findtext("ISOPTIONAL") or "No")
-            lines = [{"ledger": entry.findtext("LEDGERNAME", ""), "amount": entry.findtext("AMOUNT", "0.00")}
+            lines = [{"ledger": entry.findtext("LEDGERNAME", ""), "amount": entry.findtext("AMOUNT", "0.00"),
+                      "deemed_positive": entry.findtext("ISDEEMEDPOSITIVE", "No")}
                      for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST") for entry in element.findall(tag)]
             vouchers[mid] = {"narration": element.findtext("NARRATION", ""), "date": date,
                              "post_dated": element.findtext("ISPOSTDATED") or "No",
