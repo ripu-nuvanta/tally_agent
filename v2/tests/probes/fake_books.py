@@ -11,6 +11,7 @@ import json
 import re
 import xml.etree.ElementTree as ET
 from pathlib import Path
+from typing import Callable
 
 import httpx
 
@@ -35,6 +36,10 @@ def seed_state(name: str = SEED_COMPANY) -> dict:
         },
         "stock_groups": ["Electronics"],
         "vouchers": {},
+        "groups": {},
+        "units": {},
+        "items": {},
+        "voucherTypes": ["Sales", "Purchase", "Receipt", "Payment", "Contra", "Journal"],
     }
 
 
@@ -63,7 +68,7 @@ class FakeBooks:
 
     def __init__(self, folder: Path | None = None, *, name: str = SEED_COMPANY, running: bool = True,
                  loaded: bool = True, educational: bool = True, click_polls_on_load: int = 0,
-                 busy_polls_on_load: int = 0):
+                 busy_polls_on_load: int = 0, drop_flags: bool = False, fail_imports: bool = False):
         self.folder = folder
         self._memory = seed_state(name)
         self.running = running
@@ -75,6 +80,8 @@ class FakeBooks:
         self.busy_polls = 0
         self.popup = False
         self.requests: list[str] = []
+        self.drop_flags = drop_flags          # a voucher import "succeeds" but ISCANCELLED/ISOPTIONAL don't stick
+        self.fail_imports = fail_imports      # every import fails, modelling a report/company-level write refusal
 
     # --- company data ---------------------------------------------------------------------------------------------
     @property
@@ -154,9 +161,27 @@ class FakeBooks:
             rows = [] if led is None else [{"Name": wanted, "Parent": led["parent"], "Email": led["email"],
                                             "GUID": led["guid"], "AlterID": str(led["alter_id"])}]
             return objects_xml("LEDGER", rows)
+        if "S0BGroups" in body:
+            return objects_xml("GROUP", [{"Name": n, "Parent": g["parent"]} for n, g in state["groups"].items()])
+        if "S0BUnits" in body:
+            return objects_xml("UNIT", [{"Name": n, "Base": u["base"] or "", "Conversion": u["conversion"] or ""}
+                                        for n, u in state["units"].items()])
+        if "S0BItems" in body:
+            return objects_xml("STOCKITEM", [{"Name": n, "Parent": i["parent"], "BaseUnits": i["base_units"]}
+                                             for n, i in state["items"].items()])
+        if "S0BLedgers" in body:
+            return objects_xml("LEDGER", [{"Name": n, "Parent": led["parent"]} for n, led in state["ledgers"].items()])
+        if "S0BVouchers" in body:
+            return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
+                                            "IsPostDated": v["post_dated"], "IsCancelled": v["cancelled"],
+                                            "IsOptional": v["optional"]} for mid, v in state["vouchers"].items()])
+        if "S0BVoucherTypes" in body:
+            return objects_xml("VOUCHERTYPE", [{"Name": n} for n in state["voucherTypes"]])
         return "<ENVELOPE></ENVELOPE>"
 
     def _import(self, body: str, request: httpx.Request) -> str:
+        if self.fail_imports:
+            return import_result(errors=1, line_error="fake import failure")
         state = self.state
         element = next(iter(ET.fromstring(body).find(".//TALLYMESSAGE")))
         action = element.get("ACTION", "")
@@ -178,7 +203,31 @@ class FakeBooks:
             return self._ledger(state, element, action, request)
         if element.tag == "VOUCHER":
             return self._voucher(state, element, action)
+        if element.tag == "GROUP" and action == "Create":
+            return self._create_master(state, "groups", element, request,
+                                        lambda el: {"parent": el.findtext("PARENT", "")})
+        if element.tag == "UNIT" and action == "Create":
+            return self._create_master(state, "units", element, request,
+                                        lambda el: {"base": el.findtext("BASEUNITS"),
+                                                    "conversion": el.findtext("CONVERSION")})
+        if element.tag == "STOCKITEM" and action == "Create":
+            return self._create_master(state, "items", element, request,
+                                        lambda el: {"parent": el.findtext("PARENT", ""),
+                                                    "base_units": el.findtext("BASEUNITS", "")})
         return import_result(errors=1, line_error=f"fake: unsupported {element.tag}")
+
+    def _create_master(self, state: dict, collection: str, element: ET.Element, request: httpx.Request,
+                       fields: Callable[[ET.Element], dict]) -> str:
+        """Shared CREATE handling for GROUP / UNIT / STOCKITEM: duplicate names raise the modal (LESSONS §15 rule 10)."""
+        name = element.get("NAME", "")
+        store = state[collection]
+        if name in store:
+            self.popup = True
+            raise httpx.ReadTimeout("duplicate master modal", request=request)
+        store[name] = fields(element)
+        state["alt_mst"] += 1
+        self._save(state)
+        return import_result(created=1)
 
     def _ledger(self, state: dict, element: ET.Element, action: str, request: httpx.Request) -> str:
         name = element.get("NAME", "")
@@ -220,8 +269,11 @@ class FakeBooks:
             mid = str(state["next_master_id"])
             state["next_master_id"] += 1
             date = element.findtext("DATE", "")
+            cancelled = "No" if self.drop_flags else (element.findtext("ISCANCELLED") or "No")
+            optional = "No" if self.drop_flags else (element.findtext("ISOPTIONAL") or "No")
             vouchers[mid] = {"narration": element.findtext("NARRATION", ""), "date": date,
-                             "post_dated": element.findtext("ISPOSTDATED") or "No"}
+                             "post_dated": element.findtext("ISPOSTDATED") or "No",
+                             "cancelled": cancelled, "optional": optional}
             state["alt_vch"] += 1
             state["last_voucher_date"] = max(state["last_voucher_date"], date)
             self._save(state)
