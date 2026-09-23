@@ -1,4 +1,5 @@
 import os
+import re
 import signal
 
 import pytest
@@ -185,6 +186,62 @@ def test_ctrl_c_during_a_blocking_wait_is_recorded_and_propagates(tmp_path, monk
     part_entry = store.probe_entry(5)["parts"]["A"]
     assert part_entry["outcome"] == "BLOCKED"
     assert "Interrupted by operator" in part_entry["summary"]
+
+
+def _console_input_honouring_flag_pauses(books: FakeBooks):
+    """Mirrors test_company_b.py's `_operator_who_honours_flag_pauses`, but as an `AutoOperator` `console_input`
+    callback rather than a `ScriptedIO` `on_wait` — our pauses carry no `Action` (the loader's F2/flag-pause
+    steps are UI-only, module docstring), so `AutoOperator.wait` falls through to `console_input`. Without this,
+    the fake never simulates the Tally UI, so the two cancelled-tag vouchers' flag re-read fails forever by
+    construction (an artefact of the fake, not the loader) — see company_b.py's module docstring."""
+    flag_pause_re = re.compile(r"\[S0-B:(\d+)\].*?(ISCANCELLED|ISOPTIONAL) did not stick")
+
+    def console_input(prompt: str) -> str:
+        match = flag_pause_re.search(prompt)
+        if match:
+            tag, xml_tag = match.group(1), match.group(2)
+            field = "cancelled" if xml_tag == "ISCANCELLED" else "optional"
+
+            def fix(s, tag=tag, field=field):
+                for v in s["vouchers"].values():
+                    if v["narration"].startswith(f"[S0-B:{tag}]"):
+                        v[field] = "Yes"
+
+            books.edit_state(fix)
+        return ""
+
+    return console_input
+
+
+def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
+    config = tmp_config(tmp_path)
+    write_company_folder(config.company_folder("B"), COMPANIES["B"])
+    books = FakeBooks(config.company_folder("B"), name=COMPANIES["B"])
+    # NOTE (deviation from the task-8 brief's verbatim test): `books.state` is a read-only snapshot (a copy, per
+    # fake_books.py's own docstring — "a snapshot that silently discards books.state[...] = ... is a trap"), so
+    # `books.state["voucherTypes"] = [...]` as the brief wrote it is a no-op against the live fake. Using
+    # `edit_state` instead is what actually mutates it. Also added `console_input` — the loader's F2 and flag
+    # pauses (S0-B spec §4.3) are action-less, and `AutoOperator`'s default `console_input=input` reads real
+    # stdin, which pytest's capture refuses (OSError) unless `-s` is passed; a scripted console answers each
+    # pause instead, and — for the two ISCANCELLED pauses — actually flips the flag in the fake so the loader's
+    # own re-read (I1) sees it, the same way `test_company_b.py` simulates the operator honouring the UI step.
+    books.edit_state(lambda s: s.__setitem__(
+        "voucherTypes", ["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
+    op = build_auto_operator(config=config, transport=books.transport(), runner=FakeRunner(books, []),
+                             echo=lambda line: None, console_input=_console_input_honouring_flag_pauses(books))
+    assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 0
+    out = capsys.readouterr().out
+    assert "Company B loaded" in out and "960" in out
+
+
+def test_setup_b_returns_one_and_explains_when_the_loader_stops(tmp_path, capsys):
+    books = FakeBooks(name=COMPANIES["B"])
+    books.edit_state(lambda s: s.__setitem__("voucherTypes", ["Sales"]))   # no "Sales - GST" — see note above
+    op = build_auto_operator(config=tmp_config(tmp_path), transport=books.transport(),
+                             runner=FakeRunner(books, []), echo=lambda line: None,
+                             console_input=lambda prompt: "")
+    assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 1
+    assert "setup-b failed" in capsys.readouterr().out
 
 
 def test_allow_risky_is_opt_in_on_the_run_command():

@@ -1,4 +1,4 @@
-"""Runner CLI: python -m v2.probes {list,run,report,reset-a} (S0 spec §5.3, §5.8)."""
+"""Runner CLI: python -m v2.probes {list,run,report,reset-a,setup-b} (S0 spec §5.3, §5.8)."""
 from __future__ import annotations
 
 import argparse
@@ -58,6 +58,10 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("--out", type=Path)
     reset = sub.add_parser("reset-a", help="fresh seed copy in s0probe, renamed to company A (S0 spec §5.8)")
     reset.add_argument("--stop-any-tally", action="store_true")
+    setup_b = sub.add_parser("setup-b", help="load company B from the deterministic dataset (S0 spec §4.3)")
+    setup_b.add_argument("--stop-any-tally", action="store_true")
+    setup_b.add_argument("--licence", choices=["licensed", "educational"], default=None,
+                         help="default: whatever probe 0 recorded in results.json")
     return parser
 
 
@@ -137,6 +141,39 @@ def _reset_a(args, store: ResultsStore, operator: AutoOperator | None) -> int:
     return 0
 
 
+def _setup_b(args, store: ResultsStore, operator: AutoOperator | None) -> int:
+    auto = operator or build_auto_operator(host=args.host, port=args.port, log_path=_auto_log(),
+                                           stop_any_tally=args.stop_any_tally)
+    licence = args.licence or store.environment.get("licence", "licensed")
+    try:
+        report = auto.setup_company_b(licence=licence)
+    except OperatorError as exc:
+        print(f"setup-b failed: {exc}")
+        return 1
+    finally:
+        if operator is None:
+            auto.close()
+    for kind in report.created:
+        print(f"  {kind}: created {report.created[kind]}, skipped {report.skipped[kind]}")
+    if report.pauses:
+        print("Pauses:")
+        for pause in report.pauses:
+            print(f"  - {pause}")
+    if report.notes:
+        print("Notes:")
+        for note in report.notes:
+            print(f"  - {note}")
+    if report.problems:
+        print("Problems:")
+        for problem in report.problems:
+            print(f"  - {problem}")
+        print(f"setup-b failed: {len(report.problems)} problem(s) found — see above.")
+        return 1
+    store.update_environment(company_b_loaded_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+    print(f"Company B loaded: {COMPANIES['B']!r} is ready.")
+    return 0
+
+
 def main(argv: list[str] | None = None, *, transport: httpx.AsyncBaseTransport | None = None,
          io: ProbeIO | None = None, operator: AutoOperator | None = None) -> int:
     parser = build_parser()
@@ -155,6 +192,8 @@ def main(argv: list[str] | None = None, *, transport: httpx.AsyncBaseTransport |
         return 0
     if args.command == "reset-a":
         return _reset_a(args, store, operator)
+    if args.command == "setup-b":
+        return _setup_b(args, store, operator)
     if args.auto:
         auto = operator or build_auto_operator(host=args.host, port=args.port, log_path=_auto_log(),
                                                stop_any_tally=args.stop_any_tally)
