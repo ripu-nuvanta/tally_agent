@@ -132,6 +132,12 @@ class AutoOperator:
     def setup_company_b(self, licence: str = "licensed") -> LoadReport:
         self.log.write("setup-b: loading company B from the deterministic dataset")
         try:
+            # WriteFailed and CompanyBLoadError are covered (test_auto_operator.py). WriteRefused and GuardError
+            # are not: WriteRefused's only raise site is check_writable(company), and both load_company_b's
+            # `company` default and this method's own fixed signature (no company override, Ruling C3) always
+            # pass COMPANIES["B"] (contains "Probe"); GuardError's raise sites are never reached from this path
+            # (check_request never matches company_b.py's own requests; check_company/check_mutation_allowed are
+            # never called here). Left uncovered rather than faked into a false positive.
             return load_company_b(self.writer, self, licence=licence)
         except (WriteFailed, WriteRefused, GuardError, CompanyBLoadError) as exc:
             raise OperatorError(f"setup-b: {exc}") from exc

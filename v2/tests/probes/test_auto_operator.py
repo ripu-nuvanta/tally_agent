@@ -106,11 +106,40 @@ def test_open_company_b_loads_it(tmp_path):
     assert books.companies() == [B]
 
 
-def test_setup_company_b_wraps_write_failures_as_operator_errors(tmp_path):
+def test_setup_company_b_wraps_write_failed_as_operator_error(tmp_path):
+    """F16 fix: a genuine WriteFailed reaching `setup_company_b`, driven through the real loader — not the
+    'Sales - GST' preflight pause (that's CompanyBLoadError, covered separately below). Every `writer.create_*`
+    call inside `load_company_b` is guarded by its own pause-and-recover logic (Ruling C11 / `_create_or_pause`,
+    and the explicit try/except around `create_b_voucher`), so `fail_imports` alone never produces a raw
+    WriteFailed — it gets caught and turned into CompanyBLoadError instead (see the test below). What isn't
+    guarded is company_b.py's handful of plain reads (e.g. `_require_voucher_type`'s very first call,
+    `writer.list_voucher_types`) — `books.popup = True` makes every request raise `httpx.ReadTimeout`, which
+    `TallyWriter.post` turns into `WriteTimeout` (a `WriteFailed` subclass), and that request is the first one
+    the loader makes."""
     op, books, _, _ = _operator(tmp_path)
-    books.fail_imports = True
+    books.popup = True
     with pytest.raises(OperatorError, match="setup-b"):
         op.setup_company_b()
+
+
+def test_setup_company_b_wraps_company_b_load_error(tmp_path):
+    """The default FakeBooks has no 'Sales - GST' voucher type; the preflight pause (`_require_voucher_type`)
+    doesn't create one — the fake console prompt just presses Enter — so the loader's own CompanyBLoadError
+    ('still missing after the operator pause') propagates and setup_company_b wraps it."""
+    op, *_ = _operator(tmp_path)
+    with pytest.raises(OperatorError, match="setup-b"):
+        op.setup_company_b()
+
+
+# F16/F17: WriteRefused and GuardError are also named in setup_company_b's except clause, but neither is
+# reachable through it without contorting the fake. WriteRefused's only raise site is check_writable(company) —
+# the very first line of load_company_b — and both load_company_b's `company` default and setup_company_b's own
+# signature (Ruling C3: `setup_company_b(self, licence: str = "licensed")`, no company override) are fixed to
+# COMPANIES["B"], which always contains "Probe"; there is no way to feed it a non-Probe company without changing
+# a signature this task's rulings fixed. GuardError's only raise sites (v2/probes/safety.py) are check_request
+# (a forbidden XML pattern — none of company_b.py's own request-building ever emits one) and
+# check_company/check_mutation_allowed (never called anywhere in the load_company_b path). Left uncovered
+# rather than faked; see the matching comment on the `except` clause in auto.py.
 
 
 def test_asks_are_answered_from_tally_and_config(tmp_path):
