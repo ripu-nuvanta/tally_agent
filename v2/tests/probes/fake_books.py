@@ -5,7 +5,6 @@ the way they do on the real s0probe folder. Nothing here touches Wine or the rea
 """
 from __future__ import annotations
 
-import copy
 import html
 import json
 import re
@@ -86,8 +85,11 @@ class FakeBooks:
     # --- company data ---------------------------------------------------------------------------------------------
     @property
     def state(self) -> dict:
+        """In-memory mode returns the LIVE dict, not a copy: `books.state["ledgers"][...] = ...` from test setup
+        code (e.g. `_empty_b()` in test_company_b.py) needs the mutation to actually persist, and nothing in this
+        module or its tests relies on the old copy-on-read isolation (every other caller only reads)."""
         if self.folder is None:
-            return copy.deepcopy(self._memory)
+            return self._memory
         return json.loads((self.folder / STATE_FILE).read_text(encoding="utf-8"))
 
     def _save(self, state: dict) -> None:
