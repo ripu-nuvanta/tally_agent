@@ -161,7 +161,7 @@ class TallyWriter:
     # --- vouchers (company B) ---------------------------------------------------------------------------------------
     def create_b_voucher(self, company: str, *, vch_type: str, date: str, narration: str, party: str,
                          lines: list[tuple[str, Decimal, bool]],
-                         inventory: list[tuple[str, Decimal, Decimal, Decimal]] = (),
+                         inventory: list[tuple[str, str, Decimal, Decimal, Decimal]] = (),
                          bills: list[tuple[str, str, Decimal, str | None]] = (),
                          optional: bool = False) -> str:
         """Sales/Purchase (with stock + GST), Receipt/Payment/Journal — the caller owns the sign convention (docs
@@ -178,10 +178,14 @@ class TallyWriter:
         if inventory and vch_type not in ("Sales", "Purchase") and not vch_type.startswith("Sales"):
             raise ValueError("Inventory lines belong on Sales/Purchase only")
 
-        # Op 6/7 (docs/tally-write-exploration-v4.md): stock+GST Sales/Purchase are live-verified only under
-        # Invoice Voucher View with ISINVOICE=Yes and ISPARTYLEDGER=Yes on the party line — Accounting Voucher View
-        # (used here for Receipt/Payment/Journal, matching create_payment/Op 8/9) is a documented "gotcha" NOT to use.
-        is_invoice_type = vch_type in ("Sales", "Purchase")
+        # Op 6/7 (docs/tally-write-exploration-v4.md) — confirmed 2026-09-23 by backend/tally_bridge/import_builder.py,
+        # the production writer that has actually landed invoices in live Tally: stock+GST Sales/Purchase are
+        # live-verified only under unprefixed LEDGERENTRIES.LIST + Invoice Voucher View + ISINVOICE=Yes +
+        # ISPARTYLEDGER=Yes on the party line. ALLLEDGERENTRIES.LIST + Accounting Voucher View (used here for
+        # Receipt/Payment/Journal/Contra, matching create_payment/Op 8/9) is reserved for the non-invoice path.
+        is_invoice_type = (vch_type in ("Sales", "Purchase")
+                           or vch_type.startswith("Sales") or vch_type.startswith("Purchase"))
+        ledger_tag = "LEDGERENTRIES.LIST" if is_invoice_type else "ALLLEDGERENTRIES.LIST"
 
         ledger_blocks = []
         for ledger, amount, deemed_positive in lines:
@@ -195,11 +199,11 @@ class TallyWriter:
                     for name, bill_type, bill_amount, credit_period in bills)
             party_flag = ("\n    <ISPARTYLEDGER>Yes</ISPARTYLEDGER>" if is_invoice_type and ledger == party else "")
             ledger_blocks.append(
-                f"""  <ALLLEDGERENTRIES.LIST>
+                f"""  <{ledger_tag}>
     <LEDGERNAME>{esc(ledger)}</LEDGERNAME>
     <ISDEEMEDPOSITIVE>{"Yes" if deemed_positive else "No"}</ISDEEMEDPOSITIVE>
     <AMOUNT>{amount:.2f}</AMOUNT>{party_flag}{bill_xml}
-  </ALLLEDGERENTRIES.LIST>""")
+  </{ledger_tag}>""")
 
         # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
         # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
@@ -207,15 +211,16 @@ class TallyWriter:
         inventory_deemed_positive = "Yes" if vch_type == "Purchase" else "No"
         nominal_ledger = next((ledger for ledger, _, _ in lines if ledger != party), party)
         inventory_blocks = []
-        for item, qty, rate, amount in inventory:
+        for item, unit, qty, rate, amount in inventory:
+            qty_unit = f"{qty} {esc(unit)}"
             inventory_blocks.append(
                 f"""  <ALLINVENTORYENTRIES.LIST>
     <STOCKITEMNAME>{esc(item)}</STOCKITEMNAME>
     <ISDEEMEDPOSITIVE>{inventory_deemed_positive}</ISDEEMEDPOSITIVE>
-    <RATE>{rate:.2f}</RATE>
+    <RATE>{rate:.2f}/{esc(unit)}</RATE>
     <AMOUNT>{amount:.2f}</AMOUNT>
-    <ACTUALQTY>{qty}</ACTUALQTY>
-    <BILLEDQTY>{qty}</BILLEDQTY>
+    <ACTUALQTY>{qty_unit}</ACTUALQTY>
+    <BILLEDQTY>{qty_unit}</BILLEDQTY>
     <ACCOUNTINGALLOCATIONS.LIST>
       <LEDGERNAME>{esc(nominal_ledger)}</LEDGERNAME>
       <ISDEEMEDPOSITIVE>{inventory_deemed_positive}</ISDEEMEDPOSITIVE>
