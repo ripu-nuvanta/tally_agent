@@ -30,7 +30,7 @@ from v2.agent.tally.envelopes import build_company_list, formula_string, wrap_co
 from v2.agent.tally.xml_utils import parse_company_list, read_objects, sanitize_xml
 from v2.probes.companies import COMPANIES, SEED_COMPANY, THROWAWAY_DATE, THROWAWAY_DATE_TEXT
 from v2.probes.licence import LICENCE_REQUEST, LicenceInfo, parse_licence_info
-from v2.probes.reads import TB_EXPLODE_VARS, voucher_request
+from v2.probes.reads import TB_EXPLODE_VARS
 from v2.probes.safety import check_request
 from v2.probes.setup.import_xml import ImportResult, esc, wrap_import
 
@@ -284,12 +284,6 @@ class TallyWriter:
         if result.created != 1 or not result.clean or result.last_vch_id in ("", "0"):
             raise WriteFailed(f"Voucher {narration!r} not created: {result}")
         return result.last_vch_id
-
-    def voucher_by_tag(self, company: str, tag: int) -> dict[str, str] | None:
-        """The B voucher whose narration starts `[S0-B:{tag}]`, over B's own date window (S0-B spec §4)."""
-        xml = voucher_request("S0BVouchers", VOUCHER_FIELDS, company, from_date=B_READBACK_FROM, to_date=B_READBACK_TO)
-        return next((v for v in read_objects(self.post(xml), "VOUCHER", VOUCHER_FIELDS)
-                    if v.get("Narration", "").startswith(f"[S0-B:{tag}]")), None)
 
     # --- ledgers ----------------------------------------------------------------------------------------------------
     def create_ledger(self, company: str, name: str, parent: str) -> None:

@@ -10,7 +10,9 @@ from v2.probes.reads import exploded_tb_rows, primary_group_rows
 from v2.probes.setup.company_b import (
     CompanyBLoadError, LoadReport, _load_masters, _load_vouchers, _verify, load_company_b,
 )
-from v2.probes.setup.company_b_data import Dataset, GroupSpec, LineSpec, UnitSpec, VoucherSpec, generate
+from v2.probes.setup.company_b_data import (
+    Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, generate,
+)
 from v2.probes.setup.writes import B_READBACK_FROM, B_READBACK_TO, TallyWriter, WriteRefused
 from v2.tests.probes.fake_books import FakeBooks, sync_client
 from v2.tests.probes.fakes import ScriptedIO
@@ -449,3 +451,27 @@ def test_the_opening_bill_pause_is_skipped_when_the_bill_is_already_there():
     writer, io, _ = _loader(books)
     report = load_company_b(writer, io)
     assert not any("Op/2022-001" in p for p in report.pauses)
+
+
+# --- M2: the line-ordering contract is a real stop, not a bare `assert` --------------------------------------------
+def test_an_inventory_voucher_whose_party_is_not_the_first_line_stops_the_load():
+    """M2: `create_b_voucher` can only check `len(lines) >= 2` (ledger names carry no semantic tag), so the
+    party-first contract lives here. It used to be a bare `assert`: gone under `python -O`, and an
+    AssertionError is not caught by `_load_vouchers`' `except WriteFailed`, so it crashed the load mid-run
+    rather than stopping it readably."""
+    books = _empty_b()
+    writer, io, _ = _loader(books)
+    misordered = VoucherSpec(
+        tag=998, kind="sales", vch_type="Sales", date=date(2025, 6, 1), party="Pune Digital Solutions",
+        narration="[S0-B:998] Sale to Pune Digital Solutions",
+        lines=(LineSpec(ledger="Domestic Sales", amount=Decimal("1000.00"), deemed_positive=False),
+               LineSpec(ledger="Pune Digital Solutions", amount=Decimal("-1000.00"), deemed_positive=True)),
+        inventory=(InventorySpec(item="USB Cable Type-C", qty=Decimal("1"), rate=Decimal("1000.00"),
+                                 amount=Decimal("1000.00")),),
+        bills=())
+    tiny = Dataset(groups=(), units=(), items=generate().items, ledgers=(), vouchers=(misordered,),
+                   licence="licensed")
+    report = LoadReport()
+    with pytest.raises(CompanyBLoadError, match="must list the party"):
+        _load_vouchers(writer, io, B, tiny, report)
+    assert [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r] == []

@@ -347,9 +347,14 @@ def test_a_receipt_still_uses_all_ledger_entries():
     writer, _ = _writer(books)
     writer.create_b_voucher(
         B, vch_type="Receipt", date="20230601", narration="[S0-B:50] receipt", party="Pune Traders",
-        lines=[("Cash", Decimal("1000.00"), False), ("Pune Traders", Decimal("-1000.00"), True)])
+        lines=[("Cash", Decimal("-1000.00"), True), ("Pune Traders", Decimal("1000.00"), False)])
     sent = _imports(books)[-1]
     assert "<ALLLEDGERENTRIES.LIST>" in sent
+    # M3: this fixture used to be the MIRROR of Op 8 (cash No/+, party Yes/-). Nothing here asserted signs, so
+    # it passed — while encoding the wrong convention as a fixture. Op 8's own line: "Cash debit (Yes/-),
+    # party credit (No/+)" (docs/tally-write-exploration-v4.md).
+    cash_block = sent.split("<ALLLEDGERENTRIES.LIST>")[1]
+    assert "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>" in cash_block and "<AMOUNT>-1000.00</AMOUNT>" in cash_block
     assert "<PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>" in sent
     assert "<ISINVOICE>" not in sent
 
@@ -404,12 +409,3 @@ def test_an_unbalanced_voucher_is_refused_before_anything_is_sent():
                                 lines=[("P", Decimal("-100.00"), True), ("Sales", Decimal("90.00"), False)])
     assert _imports(books) == []
 
-
-def test_a_voucher_is_read_back_by_its_tag():
-    books = FakeBooks(name=B)
-    writer, _ = _writer(books)
-    writer.create_b_voucher(B, vch_type="Receipt", date="20230601", narration="[S0-B:42] got paid",
-                            party="Pune Traders",
-                            lines=[("Cash", Decimal("1000.00"), False), ("Pune Traders", Decimal("-1000.00"), True)])
-    assert writer.voucher_by_tag(B, 42) is not None
-    assert writer.voucher_by_tag(B, 43) is None

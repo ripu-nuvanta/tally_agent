@@ -348,10 +348,16 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
         if v.inventory:
             # M2: create_b_voucher's ordering contract (party first, then the nominal ledger) is enforced only
             # by "len(lines) >= 2" at that layer — a violation here silently misallocates stock to whatever
-            # ledger sits second (e.g. a GST line) with no error. Cheap enough to assert at the one place this
-            # dataset's `lines` gets built.
-            assert lines[0][0] == v.party, f"[S0-B:{v.tag}]: party {v.party!r} must be the first line"
-            assert lines[1][0] != v.party, f"[S0-B:{v.tag}]: second line must be the nominal ledger, not the party"
+            # ledger sits second (e.g. a GST line) with no error. This used to be a bare `assert`, which
+            # disappears under `python -O` and, being an AssertionError, is not caught by this function's
+            # `except WriteFailed` either — it crashed the load mid-run instead of becoming a stop the operator
+            # can read. CompanyBLoadError is the loader's own "can't continue" signal and is handled all the way
+            # up through setup_company_b.
+            if lines[0][0] != v.party or lines[1][0] == v.party:
+                raise CompanyBLoadError(
+                    f"[S0-B:{v.tag}] {v.narration}: an inventory voucher must list the party {v.party!r} first "
+                    f"and the nominal ledger second; got {[ledger for ledger, _, _ in lines[:2]]}. Loading it "
+                    "would misallocate the stock to whatever ledger sits second.")
         inventory = [(inv.item, unit_by_item[inv.item], inv.qty, inv.rate, inv.amount) for inv in v.inventory]
         bills = [(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills]
         try:
