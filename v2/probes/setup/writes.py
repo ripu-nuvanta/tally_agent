@@ -170,22 +170,40 @@ class TallyWriter:
         method's own balance check is the only thing that proves the two agree. Nothing is sent to Tally until the
         voucher is proven to balance. `BILLALLOCATIONS.LIST` nests only under the line whose ledger equals `party`.
         `ISCANCELLED` is never written here (cancelling is not reliably settable on import — Task 6 pause step).
+
+        **Ordering contract for `lines` when `inventory` is non-empty:** the party line first, then the nominal
+        Sales/Purchase ledger, then any GST lines — `ACCOUNTINGALLOCATIONS.LIST` on every inventory row points at
+        the first non-party line, so a caller that puts a GST line there instead would silently misallocate goods
+        to a tax ledger. Enforced only to the extent that `lines` must have at least 2 entries when `inventory` is
+        given (`len(lines) >= 2`); the specific ordering itself cannot be checked at this layer (ledger names carry
+        no semantic tag) and is the caller's (Task 6's) responsibility.
+
+        **`is_invoice_type` limitation:** invoice mode is decided from the voucher type NAME (`Sales`, `Purchase`,
+        or a name starting with either, e.g. `"Sales - GST"` / `"Purchase - GST"`) — this layer has no voucher-type
+        collection to look up a type's PARENT. A custom type whose name does not start with Sales/Purchase while
+        its parent does (e.g. `"Export Invoice"` parented to `Sales`) will be misclassified as non-invoice and
+        emit `ALLLEDGERENTRIES.LIST` + `Accounting Voucher View`, which Tally will likely answer with
+        `EXCEPTIONS=1`. Callers naming such a type must alias it to start with `Sales`/`Purchase`.
         """
         check_writable(company)
         total = sum((amount for _, amount, _ in lines), Decimal("0.00"))
         if total != Decimal("0.00"):
             raise ValueError(f"Voucher {narration!r} does not balance: {total}")
-        if inventory and vch_type not in ("Sales", "Purchase") and not vch_type.startswith("Sales"):
-            raise ValueError("Inventory lines belong on Sales/Purchase only")
 
         # Op 6/7 (docs/tally-write-exploration-v4.md) — confirmed 2026-09-23 by backend/tally_bridge/import_builder.py,
         # the production writer that has actually landed invoices in live Tally: stock+GST Sales/Purchase are
         # live-verified only under unprefixed LEDGERENTRIES.LIST + Invoice Voucher View + ISINVOICE=Yes +
         # ISPARTYLEDGER=Yes on the party line. ALLLEDGERENTRIES.LIST + Accounting Voucher View (used here for
         # Receipt/Payment/Journal/Contra, matching create_payment/Op 8/9) is reserved for the non-invoice path.
+        # Defined once and reused by the inventory-placement guard below so the two checks cannot drift apart again.
         is_invoice_type = (vch_type in ("Sales", "Purchase")
                            or vch_type.startswith("Sales") or vch_type.startswith("Purchase"))
         ledger_tag = "LEDGERENTRIES.LIST" if is_invoice_type else "ALLLEDGERENTRIES.LIST"
+
+        if inventory and not is_invoice_type:
+            raise ValueError("Inventory lines belong on Sales/Purchase only")
+        if inventory and len(lines) < 2:
+            raise ValueError("Inventory lines need a party line and a nominal ledger line in `lines`")
 
         ledger_blocks = []
         for ledger, amount, deemed_positive in lines:

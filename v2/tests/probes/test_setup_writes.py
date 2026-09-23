@@ -335,6 +335,37 @@ def test_a_receipt_still_uses_all_ledger_entries():
     assert "<ISINVOICE>" not in sent
 
 
+def test_a_custom_purchase_subtype_carrying_inventory_is_accepted():
+    """F6: 'Purchase - GST' is parented to Purchase, exactly analogous to the dataset's 'Sales - GST' — the
+    inventory-placement guard must accept it (not just is_invoice_type's ledger-tag choice) and emit invoice-mode
+    XML, matching the sibling Sales-prefixed case."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(
+        B, vch_type="Purchase - GST", date="20230601", narration="[S0-B:60] buy", party="Mumbai Supplies",
+        lines=[("Mumbai Supplies", Decimal("1180.00"), False), ("Purchase", Decimal("-1000.00"), True),
+               ("Input CGST", Decimal("-90.00"), True), ("Input SGST", Decimal("-90.00"), True)],
+        inventory=[("A4 Paper", "Nos", Decimal("1"), Decimal("1000.00"), Decimal("-1000.00"))])
+    sent = _imports(books)[-1]
+    assert "<LEDGERENTRIES.LIST>" in sent
+    assert "<ALLLEDGERENTRIES.LIST>" not in sent
+    assert "<ISINVOICE>Yes</ISINVOICE>" in sent
+    assert "<ALLINVENTORYENTRIES.LIST>" in sent
+
+
+def test_inventory_without_a_second_line_is_refused_before_anything_is_sent():
+    """F7: `lines` needs a party line and a nominal ledger line for the ACCOUNTINGALLOCATIONS.LIST convention to
+    be meaningful at all — a single-line `lines` with inventory is refused rather than silently misallocating."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="nominal ledger"):
+        writer.create_b_voucher(
+            B, vch_type="Sales", date="20230601", narration="[S0-B:61] x", party="P",
+            lines=[("P", Decimal("0.00"), True)],
+            inventory=[("A4 Paper", "Nos", Decimal("1"), Decimal("0.00"), Decimal("0.00"))])
+    assert _imports(books) == []
+
+
 def test_an_unbalanced_voucher_is_refused_before_anything_is_sent():
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
