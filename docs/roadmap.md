@@ -44,7 +44,7 @@ Three parts: Part 1 syncing (`specs/2026-09-21-bi-part1-sync-design.md`), Part 2
 
 | Sub | Scope | Status |
 |---|---|---|
-| **S0** | Live-Tally probes 0–25 + real fixtures (Part 1 §12) | 🟡 **All company-A probes run live 2026-09-23** — 0, 1, 2, 4, 6, 7, 8, 10, 12, 13, 17, 19 ✅; 3, 16, 18, 23, 25 ✅ on A with their B parts pending (`bi-s0-probe-results-2026-09-23.md`). Next: **build the company-B loader**, then batch 5 (probe 21 first — its numbers gate Q22/Q23 and therefore the S1 schema), then company C (probe 24). Timing probes 9 / 20 / 21-timing deferred (Q29) |
+| **S0** | Live-Tally probes 0–25 + real fixtures (Part 1 §12) | 🟡 **All company-A probes run live 2026-09-23** — 0, 1, 2, 4, 6, 7, 8, 10, 12, 13, 17, 19 ✅; 3, 16, 18, 23, 25 ✅ on A with their B parts pending (`bi-s0-probe-results-2026-09-23.md`). **Company-B loader built and unit-tested 2026-09-23** (`plans/2026-09-23-bi-s0-company-b-loader.md`; 429 tests, offline against `FakeBooks` — not yet run against live Tally). Next: **create company B in the Tally UI**, then run `setup-b` against live Tally (operator present), then batch 5 (probe 21 first — its numbers gate Q22/Q23 and therefore the S1 schema), then company C (probe 24). Timing probes 9 / 20 / 21-timing deferred (Q29) |
 | **S1** | Cloud: sync tables, device auth, ingest API, parity engine (Part 1) | Not started — gated on S0 probes 6, 16, 17, 18, 21, 25 |
 | **S2** | Windows agent (Part 1) | Not started — gated on S0; parallel with S1 |
 | **S3–S5** | Part 2 (AI DB queries) and Part 3 (UI + dashboard API) | Not started — after S1 |

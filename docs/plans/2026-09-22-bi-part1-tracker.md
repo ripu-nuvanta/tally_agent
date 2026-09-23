@@ -24,25 +24,48 @@ A change outside `v2/` and `docs/` is a bug in the work, not progress.
 **Where we are:** S0 plan part 2 is **built, reviewed, fix-waved and run live**. Every company-A probe is ✅
 (0, 1, 2, 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25); 3, 16, 18, 23 and 25 are A-done with their **B parts
 pending**. `v2/` **is committed** (343 files tracked; harness `a0d33e4`, live findings `ef69e30`, results + fixtures
-+ doc sync `50d679c`). 351 tests pass (`uv run --project v2 pytest v2/tests`). Results doc:
-`docs/bi-s0-probe-results-2026-09-23.md`.
++ doc sync `50d679c`). Results doc: `docs/bi-s0-probe-results-2026-09-23.md`.
 
-**Everything still pending needs company B or company C, neither of which exists yet.**
+**S0 plan part 3 (company-B loader) is now built and unit-tested — offline against `FakeBooks` only, NOT yet run
+against live Tally.** Plan: `docs/plans/2026-09-23-bi-s0-company-b-loader.md` (9 TDD tasks). New: `v2/probes/setup/company_b_data.py`
+(deterministic dataset + `expected_figures`, independent of Tally) and `v2/probes/setup/company_b.py` (idempotent
+loader: list-before-create, read-back, pauses on flags that won't stick). `TallyWriter` (`v2/probes/setup/writes.py`)
+gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probes/__main__.py`) and the auto-operator
+(`company_numbers["B"]` + `setup_company_b()`). Suite went **351 → 429 tests**, all green
+(`uv run --project v2 pytest v2/tests`). Commits `6f1c882..18f98b5` (17 commits).
+
+**Everything still pending needs company B or company C, neither of which exists yet, and none of the loader code
+has touched a real Tally instance.**
 
 **Next steps, in order:**
 1. **Create company B in the Tally UI** (spec §4.3, can't be scripted): name exactly
    `Sharma & Sons' Probe Traders` (the `&` and `'` are what probe 14 tests), books from **01-04-2022**, Maharashtra,
    GST enabled like the seed company, **F2 ≥ 31-03-2026**, and one custom voucher type **`Sales - GST`** under Sales
-   created in the UI (voucher-type config via XML is unreliable — LESSONS §11 / §15 rule 4).
-2. **Build `setup-b` + `company_b_data.py`** (S0 plan part 3) — the one substantive piece of work left, and it needs
-   no new design. Deterministic dataset from a fixed seed that ALSO exports the expected figures (per-ledger
-   month-end + FY-opening balances, per-month voucher counts) so probes 16 and 18 have an expectation that didn't
-   come from Tally. Loader rules and the 9-case test matrix: spec §4.3 and §11.4.
+   created in the UI (voucher-type config via XML is unreliable — LESSONS §11 / §15 rule 4). **Confirm its company
+   number is 100004** — `OperatorConfig.company_numbers["B"]` assumes it, and a mismatch shows up immediately as
+   "wrong company loaded".
+2. **Run `uv run --project v2 python -m v2.probes setup-b` with a person present.** The F2, flag-settle,
+   failed-create and opening-bill pauses are action-less by design and prompt for a human — this is not a
+   fire-and-forget step.
 3. **Batch 5 (company B) — probe 21 FIRST**: its storage numbers gate Q22/Q23, which gate S1's schema. Then
    16, 18 (B parts), 5, 3 (B), 11, 14, 15, 22, 23 (B), 25 (B).
 4. **Batch 6:** create company C (`Probe Vault Co`, one ledger + one voucher) → probe 24 (security, then TallyVault).
 5. **Write `docs/code-review-bi-s0-part2-<date>.md`** — still missing; plan part 2 shipped without it.
 6. Then S1: the S1 spec itself is unwritten and can't be finalised until Q22/Q23 are answered.
+
+**Open questions the live run must settle** (deliberately unresolved — someone must watch for these when `setup-b`
+runs for real):
+1. Whether Tally accepts the compound unit name `Box of 10 Nos` — Op 1 warns unit names cannot contain spaces
+   ("BAD UNIT NAME"). A failed create becomes a pause step, by design, not a guess.
+2. The statement-level Dr=Cr netting rule. `setup-b` prints the observed Trial Balance Dr/Cr total as an
+   informational **note**, not a problem, because probes 16/17/18 are what settle it (S0-D7 forbids guessing a
+   figure another probe must confirm).
+3. Whether a plain Voucher collection returns cancelled/optional vouchers — probe 3's job. Until it is known, the
+   loader never auto-recreates the four flag-tagged vouchers; it reports and pauses instead.
+4. `_verify_balances` compares per-bucket **absolute** magnitudes, so it catches a wrong or missing bucket but
+   proves nothing about which side a bucket nets to.
+5. The balance check's fake (`FakeBooks`) replays the same line amounts the expectation is built from, so the
+   green balance suite is **not** evidence that live Tally will agree.
 
 **Live-run rules** (unchanged, someone must be at the Mac to click Tally's licence box):
 ```
@@ -79,7 +102,7 @@ leave a stock group behind — `reset-a` clears it.
 | Stage | Scope | Depends on | Spec | Plan | Status |
 |---|---|---|---|---|---|
 | Design | Part 1 brainstorm design | — | `specs/2026-09-21-bi-part1-sync-design.md` | — | ✅ 2026-09-21 |
-| **S0** | `v2/` scaffold + live-Tally probes 0–25 + real fixtures in `v2/tests/fixtures/sync/` | — | `specs/2026-09-22-bi-s0-probes-design.md` | `plans/2026-09-22-bi-s0-probes-plan.md` (part 1 ✅), `plans/2026-09-22-bi-s0-probes-plan-part2.md` (part 2, 13 tasks) | 🟡 Plan parts 1+2 built, reviewed and **run live**: **every company-A probe is ✅ as of 2026-09-23** (0, 1, 2, 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25 — 351 tests; results committed in `50d679c`). **Remaining: everything that needs company B or C** — S0 plan part 3 (company-B loader + probes 21, 5, 11, 14, 15, 22 and the B parts of 3, 16, 18, 23, 25; then company C + probe 24). Timing probes 9 / 20 / 21-timing ⏭ (Q29). Open: part-2 code-review doc not written; auto-mode UI-parity gaps (1/7/8, 16, 19) and file-level-only 13 → **R8 stays open** |
+| **S0** | `v2/` scaffold + live-Tally probes 0–25 + real fixtures in `v2/tests/fixtures/sync/` | — | `specs/2026-09-22-bi-s0-probes-design.md` | `plans/2026-09-22-bi-s0-probes-plan.md` (part 1 ✅), `plans/2026-09-22-bi-s0-probes-plan-part2.md` (part 2, 13 tasks), `plans/2026-09-23-bi-s0-company-b-loader.md` (part 3, 9 tasks, ✅ built) | 🟡 Plan parts 1+2 built, reviewed and **run live**: **every company-A probe is ✅ as of 2026-09-23** (0, 1, 2, 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25 — 351 tests; results committed in `50d679c`). **Plan part 3 (company-B loader) built and unit-tested 2026-09-23, NOT yet run against live Tally**: 9 TDD tasks, commits `6f1c882..18f98b5` (17 commits); suite 351 → **429 tests**, all green (`uv run --project v2 pytest v2/tests`). **Remaining: everything that needs company B or C** — create company B in the Tally UI, run `setup-b` live, then probes 21, 5, 11, 14, 15, 22 and the B parts of 3, 16, 18, 23, 25; then company C + probe 24. Timing probes 9 / 20 / 21-timing ⏭ (Q29). Open: part-2 code-review doc not written; auto-mode UI-parity gaps (1/7/8, 16, 19) and file-level-only 13 → **R8 stays open** |
 | **S1** | Cloud: tables, device auth, ingest API, parity engine | S0 (probes 6, 16, 17, 18, 21, 25; Q22/Q23) | — | — | ⬜ |
 | **S2** | Windows agent | S0 (probe 21 for backfill); parallel with S1 | — | — | ⬜ |
 
@@ -259,3 +282,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-23 | **Live run diagnosed: three probe expectations were wrong, not Tally — and all three reverse in our favour.** (1) *Posting rule:* inventory vouchers export the nominal ledger in BOTH `ALLLEDGERENTRIES.LIST` and `ACCOUNTINGALLOCATIONS.LIST`, so the old "default" rule double-counted Sales/Purchase by exactly 2× and made 24 of 50 vouchers look unbalanced; the probes now count `all_only` (`reads.PROBE_POSTING_RULE`), which leaves 0 unbalanced and matches Tally's as-on TB to the paisa. (2) *Opening Stock:* the TB's stock-bearing group carries a synthetic `Opening Stock` row (₹18,55,800) that no ledger holds and that is **not** the Stock Summary closing total (−₹9,89,462.31); probes 16 and 18 now read it from the **same** (`EXPLODEFLAG=Yes`) TB response, and Current Assets reconciles exactly. (3) *Ledger-level TB:* `ISLEDGERWISE=Yes` works — probe 17's only mismatch came from telling group rows from ledger rows **by name**, which swallowed company A's ledger "Capital Account"; so **decision 11's rung-1 per-ledger anchor is available** and **R30 needs no suspension** (probe 18's TB half passes). What is genuinely different: Bills Receivable/Payable and Stock Summary **ignore** the as-on date (probe 18 now reports that as DIFFERENT with evidence, not FAILED), and `EXPLODEFLAG`/`EXPLODEALLLEVELS` stop at the second group level. **351 tests** (also `-W error`), every fix proven by revert; no probe was run against Tally from here (live re-run is the operator's next step). Docs: spec header "Changed 2026-09-23 (probes 16–18 re-read)", `LESSONS.md` §15 rules 18–20. Also recorded and **deliberately NOT fixed** (out of scope, `backend/` untouched): company A's TB netting to ₹33,05,800 is explained by `backend/tally_bridge/import_builder.py:680` `abs(float(opening_balance))` discarding the debit sign on the two bank openings — a seed-data/write-path defect whose fix needs a re-seed and a new committed backup, so company A is not a clean fixture for a balanced opening position. |
 | 2026-09-23 | **Company-A probe batch run live** (auto operator): 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25 — all CONFIRMED on A except the three genuine DIFFERENTs (16 as-on, 18 bills/stock ignore the date, 25 nature/base-type don't export). Company A anchors checked OK before every batch and after. Results: `docs/bi-s0-probe-results-2026-09-23.md`; fixtures `v2/tests/fixtures/sync/p0*`, `p1*`, `p2*`. **Probe 25's consequence is a schema change**: S1 must DERIVE group `nature` (walk `Parent` → reserved primary group) and voucher-type `base_type` (walk the voucher-type `Parent` chain) instead of reading them — written into the Part 1 spec §"Minimum columns" and the Data contract. **Next: the company-B loader** — probes 21, 22, 5, 11, 14, 15 and the B parts of 3, 16, 18, 23, 25 are all blocked on it, and probe 21 gates Q22/Q23 before S1 can commit to a schema. |
 | 2026-09-23 | **S0 plan part 3 (company-B loader) written**: `docs/plans/2026-09-23-bi-s0-company-b-loader.md` — 9 tasks, TDD, offline against `FakeBooks`. Covers `company_b_data.py` (deterministic dataset + independently-computed expected figures), `company_b.py` (idempotent loader), new `TallyWriter` master/voucher writers, `FakeBooks` branches for GROUP/UNIT/STOCKITEM, operator `company_numbers["B"]` + `setup_company_b()`, and the `setup-b` command. Spec §14's open GSTIN question answered in the plan (company-level GST stays UI-only; party ledgers carry a check-digit-correct `PARTYGSTIN`). Not in scope: creating company B in the UI, the B probes, company C, the live run. Not yet implemented. |
+| 2026-09-23 | **S0 plan part 3 (company-B loader) built via 9 TDD tasks, commits `6f1c882..18f98b5` (17 commits)**: `v2/probes/setup/company_b_data.py` (deterministic dataset + `expected_figures`, independent of Tally) and `v2/probes/setup/company_b.py` (idempotent loader: list-before-create, read-back, pauses on flags that won't stick) are new; `TallyWriter` (`v2/probes/setup/writes.py`) gained master and voucher writers; `setup-b` is wired through the CLI and the auto-operator (`company_numbers["B"]` + `setup_company_b()`). Suite went **351 → 429 tests**, all green (`uv run --project v2 pytest v2/tests`). Built and unit-tested only, **entirely offline against `FakeBooks`** — not run against live Tally. Spec §14's GSTIN question formally answered in the spec (dated "Changed 2026-09-23" line). Next: create company B in the Tally UI, confirm company number 100004, run `setup-b` live with a person present, then batch 5 (probe 21 first). |

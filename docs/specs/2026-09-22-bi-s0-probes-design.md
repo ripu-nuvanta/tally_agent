@@ -4,6 +4,8 @@
 > Brainstormed and approved section by section on 2026-09-22. **Changed 2026-09-22 (final review):** probe 0 checks anchors
 > before the rename and records the data folder; probe 1 uses the first Indirect Expenses ledger and reverts its change;
 > ordered runs stop/skip/`--rerun`; context gains `last_response`, `check_company`, cleanup notes; §10 uses `git status`.
+> **Changed 2026-09-23:** §14's open GSTIN question answered — company-level GST registration stays UI-only (the
+> loader never writes it); party ledgers carry a check-digit-correct `PARTYGSTIN`. See §14.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -683,5 +685,11 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 
 ## 14. Left for the implementation plan
 - The exact Wine data-folder paths for companies A, B, C.
-- How company B's GST registration is filled in (Tally may validate the GSTIN format).
+- ~~How company B's GST registration is filled in (Tally may validate the GSTIN format).~~ **Answered
+  2026-09-23** (`docs/plans/2026-09-23-bi-s0-company-b-loader.md`, built): company-level GST registration
+  stays **UI-only** — the loader never writes it (spec §4.3's UI setup step covers "GST enabled", not the
+  GSTIN itself). Party ledgers that need one carry a `PARTYGSTIN` whose check digit is computed with the
+  standard base-36 alternating-weight algorithm (`gstin()` in `v2/probes/setup/company_b_data.py`), verified
+  against the real-world GSTIN `27AAPFU0939F1ZV`. Parties without a GSTIN are written
+  `GSTREGISTRATIONTYPE=Unregistered` (`v2/probes/setup/writes.py`).
 - The full candidate request list for probes 2, 6, 16 (as-on variables), 17 and 25.
