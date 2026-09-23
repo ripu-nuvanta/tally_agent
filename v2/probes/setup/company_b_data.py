@@ -116,6 +116,14 @@ class Dataset:
     licence: str
 
 
+@dataclass(frozen=True)
+class Expected:
+    ledger_month_end: dict[tuple[str, date], Decimal]   # (ledger, last day of month) -> balance
+    ledger_fy_opening: dict[tuple[str, date], Decimal]  # (ledger, 1 April) -> balance
+    voucher_count_by_month: dict[tuple[int, int], int]
+    voucher_count_by_fy: dict[str, int]                 # "2022-23" -> n
+
+
 def gstin(state_code: str, pan: str) -> str:
     """A GSTIN with a correct check digit, so Tally's format validation can't reject it."""
     body = f"{state_code}{pan}1Z"
@@ -380,6 +388,37 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
 
             vouchers.append(v)
     return tuple(vouchers)
+
+
+def fy_label(day: date) -> str:
+    start = day.year if day.month >= 4 else day.year - 1
+    return f"{start}-{str(start + 1)[2:]}"
+
+
+def expected_figures(dataset: Dataset) -> Expected:
+    """Balances and counts computed from the dataset alone — the anchor probes 16/18 check Tally against."""
+    running: dict[str, Decimal] = {l.name: (l.opening or Decimal("0.00")) for l in dataset.ledgers}
+    month_end: dict[tuple[str, date], Decimal] = {}
+    fy_opening: dict[tuple[str, date], Decimal] = {}
+    by_month: dict[tuple[int, int], int] = {}
+    by_fy: dict[str, int] = {}
+    for (year, month) in _months():
+        last = date(year, month, monthrange(year, month)[1])
+        if month == 4:
+            for name, value in running.items():
+                fy_opening[(name, date(year, 4, 1))] = value
+        for v in sorted(dataset.vouchers, key=lambda v: (v.date, v.tag)):
+            if (v.date.year, v.date.month) != (year, month):
+                continue
+            by_month[(year, month)] = by_month.get((year, month), 0) + 1
+            by_fy[fy_label(v.date)] = by_fy.get(fy_label(v.date), 0) + 1
+            if v.cancelled:                      # counted, but moves nothing
+                continue
+            for line in v.lines:
+                running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
+        for name, value in running.items():
+            month_end[(name, last)] = value
+    return Expected(month_end, fy_opening, by_month, by_fy)
 
 
 def generate(licence: str = "licensed") -> Dataset:

@@ -4,7 +4,7 @@ from decimal import Decimal
 
 from v2.probes.setup.company_b_data import (
     COMPOUND_UNIT, HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_DEBTOR,
-    generate, gstin,
+    expected_figures, generate, gstin,
 )
 
 
@@ -74,3 +74,29 @@ def test_gstin_check_digit_matches_the_official_algorithm():
     # output ("...1ZE") — see task-1-report.md for the cross-check.
     assert gstin("27", "AAAPL1234C") == "27AAAPL1234C1ZE"
     assert gstin("27", "AAPFU0939F") == "27AAPFU0939F1ZV"
+
+
+def test_month_end_balances_equal_openings_plus_the_running_sum():
+    ds = generate()
+    exp = expected_figures(ds)
+    for ledger in ("Domestic Sales", "Capital Account", USD_DEBTOR):
+        for (name, day), value in exp.ledger_month_end.items():
+            if name != ledger:
+                continue
+            opening = next((l.opening or Decimal("0.00") for l in ds.ledgers if l.name == name), Decimal("0.00"))
+            moved = sum((line.amount for v in ds.vouchers if v.date <= day and not v.cancelled
+                         for line in v.lines if line.ledger == name), Decimal("0.00"))
+            assert value == opening + moved
+
+
+def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
+    ds = generate()
+    exp = expected_figures(ds)
+    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers)
+    assert exp.voucher_count_by_fy["2022-23"] == 240
+
+
+def test_fy_openings_are_the_previous_month_end():
+    ds = generate()
+    exp = expected_figures(ds)
+    assert exp.ledger_fy_opening[("Domestic Sales", date(2023, 4, 1))] == exp.ledger_month_end[("Domestic Sales", date(2023, 3, 31))]
