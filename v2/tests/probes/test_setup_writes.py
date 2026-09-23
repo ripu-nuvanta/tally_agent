@@ -204,6 +204,17 @@ def test_a_second_create_sends_nothing():
     assert any("already exists" in line for line in said)
 
 
+def test_a_simple_unit_has_no_name_attribute_and_is_marked_simple():
+    """Op 1 (live-verified, docs/tally-write-exploration-v4.md:35-39): no NAME attribute, ISSIMPLEUNIT=Yes."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_unit(B, "Nos")
+    sent = _imports(books)[-1]
+    assert '<UNIT ACTION="Create">' in sent
+    assert 'NAME="Nos"' not in sent
+    assert "<ISSIMPLEUNIT>Yes</ISSIMPLEUNIT>" in sent
+
+
 def test_a_compound_unit_carries_its_base_and_conversion():
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
@@ -211,6 +222,7 @@ def test_a_compound_unit_carries_its_base_and_conversion():
     writer.create_unit(B, "Box of 10 Nos", base="Nos", conversion=10)
     sent = _imports(books)[-1]
     assert "<BASEUNITS>Nos</BASEUNITS>" in sent and "<CONVERSION>10</CONVERSION>" in sent
+    assert "<ISSIMPLEUNIT>No</ISSIMPLEUNIT>" in sent
 
 
 def test_a_stock_item_without_an_hsn_is_created_gst_not_applicable():
@@ -220,6 +232,32 @@ def test_a_stock_item_without_an_hsn_is_created_gst_not_applicable():
     sent = _imports(books)[-1]
     assert "<GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>" in sent    # LESSONS §15 r12
     assert "HSNCODE" not in sent
+
+
+def test_a_stock_item_with_an_hsn_carries_both_the_top_level_and_the_nested_copy():
+    """Op 3 gotcha (docs/tally-write-exploration-v4.md:98): HSNCODE/HSN are duplicated at top level and inside
+    HSNDETAILS.LIST — both are needed."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_stock_item(B, "Monitor 24in", unit="Nos", hsn="8528")
+    sent = _imports(books)[-1]
+    assert "<GSTAPPLICABLE>Applicable</GSTAPPLICABLE>" in sent
+    assert "<GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY>" in sent
+    assert "<HSNCODE>8528</HSNCODE>\n  <HSN>8528</HSN>" in sent            # top-level copy
+    assert "<HSNDETAILS.LIST><HSNCODE>8528</HSNCODE></HSNDETAILS.LIST>" in sent    # nested copy
+
+
+def test_a_stock_item_with_an_opening_balance_carries_qty_rate_and_value():
+    """Op 3 shapes (docs/tally-write-exploration-v4.md:90-92): OPENINGBALANCE/OPENINGRATE carry the unit name;
+    the rate and value are money (2dp), the quantity is not."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_stock_item(B, "Monitor 24in", unit="TstN",
+                             opening_qty=Decimal("5"), opening_rate=Decimal("11000"))
+    sent = _imports(books)[-1]
+    assert "<OPENINGBALANCE>5 TstN</OPENINGBALANCE>" in sent
+    assert "<OPENINGRATE>11000.00/TstN</OPENINGRATE>" in sent
+    assert "<OPENINGVALUE>55000.00</OPENINGVALUE>" in sent
 
 
 def test_a_party_ledger_carries_bill_wise_and_a_valid_gstin():

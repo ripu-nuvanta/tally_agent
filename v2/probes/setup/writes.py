@@ -29,7 +29,6 @@ LEDGER_FIELDS = ["Name", "Parent", "Email", "AlterID"]
 GROUP_FIELDS = ["Name", "Parent"]
 UNIT_FIELDS = ["Name", "BaseUnits", "Conversion"]
 ITEM_FIELDS = ["Name", "BaseUnits", "Parent"]
-PARTY_LEDGER_FIELDS = ["Name", "Parent", "IsBillWiseOn", "OpeningBalance", "PartyGSTIN"]
 VOUCHER_TYPE_FIELDS = ["Name", "Parent"]
 
 
@@ -243,10 +242,10 @@ class TallyWriter:
         if name in self.list_units(company):
             self.say(f"{name} already exists — not re-created")
             return
-        compound = ("" if base is None else
+        compound = ("\n  <ISSIMPLEUNIT>Yes</ISSIMPLEUNIT>" if base is None else
                     f"\n  <BASEUNITS>{esc(base)}</BASEUNITS>\n  <ADDITIONALUNITS>{esc(base)}</ADDITIONALUNITS>"
                     f"\n  <CONVERSION>{conversion}</CONVERSION>\n  <ISSIMPLEUNIT>No</ISSIMPLEUNIT>")
-        inner = f'<UNIT NAME="{esc(name)}" ACTION="Create">\n  <NAME>{esc(name)}</NAME>{compound}\n</UNIT>'
+        inner = f'<UNIT ACTION="Create">\n  <NAME>{esc(name)}</NAME>{compound}\n</UNIT>'
         result = self.import_("All Masters", company, inner)
         if not ((result.created == 1 or result.altered == 1) and result.clean):
             raise WriteFailed(f"Unit {name!r} not created: {result}")
@@ -259,12 +258,13 @@ class TallyWriter:
         if name in self.list_stock_items(company):
             self.say(f"{name} already exists — not re-created")
             return
-        gst = (f"\n  <GSTAPPLICABLE>Applicable</GSTAPPLICABLE>\n  "
+        gst = (f"\n  <GSTAPPLICABLE>Applicable</GSTAPPLICABLE>\n  <GSTTYPEOFSUPPLY>Goods</GSTTYPEOFSUPPLY>"
+               f"\n  <HSNCODE>{esc(hsn)}</HSNCODE>\n  <HSN>{esc(hsn)}</HSN>\n  "
                f"<HSNDETAILS.LIST><HSNCODE>{esc(hsn)}</HSNCODE></HSNDETAILS.LIST>"
                if hsn else "\n  <GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>")
         opening = ("" if opening_qty is None else
                    f"\n  <OPENINGBALANCE>{opening_qty} {esc(unit)}</OPENINGBALANCE>"
-                   f"\n  <OPENINGRATE>{opening_rate}/{esc(unit)}</OPENINGRATE>"
+                   f"\n  <OPENINGRATE>{opening_rate:.2f}/{esc(unit)}</OPENINGRATE>"
                    f"\n  <OPENINGVALUE>{(opening_qty * opening_rate):.2f}</OPENINGVALUE>")
         inner = (f'<STOCKITEM NAME="{esc(name)}" ACTION="Create">\n  <NAME.LIST><NAME>{esc(name)}</NAME></NAME.LIST>\n'
                  f'  <BASEUNITS>{esc(unit)}</BASEUNITS>{gst}{opening}\n</STOCKITEM>')

@@ -218,8 +218,13 @@ class FakeBooks:
 
     def _create_master(self, state: dict, collection: str, element: ET.Element, request: httpx.Request,
                        fields: Callable[[ET.Element], dict]) -> str:
-        """Shared CREATE handling for GROUP / UNIT / STOCKITEM: duplicate names raise the modal (LESSONS §15 rule 10)."""
-        name = element.get("NAME", "")
+        """Shared CREATE handling for GROUP / UNIT / STOCKITEM: duplicate names raise the modal (LESSONS §15 rule 10).
+
+        UNIT (Op 1, live-verified) carries no NAME attribute, only a <NAME> child — fall back to it, and to
+        NAME.LIST/NAME for the NAME.LIST-wrapped shapes, so this generic handler keys on whatever the real
+        TallyPrime import actually names the master by.
+        """
+        name = element.get("NAME") or element.findtext("NAME") or element.findtext("NAME.LIST/NAME") or ""
         store = state[collection]
         if name in store:
             self.popup = True
