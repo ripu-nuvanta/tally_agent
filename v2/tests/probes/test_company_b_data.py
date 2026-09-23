@@ -18,12 +18,48 @@ def test_every_voucher_balances_to_zero():
         assert total == Decimal("0.00"), f"{v.tag} {v.kind} does not balance: {total}"
 
 
+def test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention():
+    """F12: a sum-to-zero invariant (the test above) is UNCHANGED under a global sign flip, so it can't tell the
+    real convention from its mirror image — that's exactly how the whole dataset ended up sign-inverted against
+    the only permutation Tally accepts. This test pins the actual convention instead, per
+    docs/tally-write-exploration-v4.md's Op 6 (sales) / Op 7 (purchase, the inverse) table:
+
+        | line                | Sales (Op 6)                          | Purchase (Op 7)                       |
+        |---------------------|----------------------------------------|-----------------------------------------|
+        | party               | ISDEEMEDPOSITIVE=Yes, AMOUNT=NEGATIVE | ISDEEMEDPOSITIVE=No,  AMOUNT=POSITIVE |
+        | nominal/GST         | ISDEEMEDPOSITIVE=No,  AMOUNT=POSITIVE | ISDEEMEDPOSITIVE=Yes, AMOUNT=NEGATIVE |
+
+    Op 7's own note: three other sign permutations were tried on purchase and only this one passed CREATED=1.
+    """
+    ds = generate()
+    sale = next(v for v in ds.vouchers if v.kind == "sales" and v.inventory)
+    party_line = next(line for line in sale.lines if line.ledger == sale.party)
+    other_lines = [line for line in sale.lines if line.ledger != sale.party]
+    assert party_line.deemed_positive is True and party_line.amount < 0
+    assert other_lines and all(line.deemed_positive is False and line.amount > 0 for line in other_lines)
+
+    purchase = next(v for v in ds.vouchers if v.kind == "purchase")
+    party_line = next(line for line in purchase.lines if line.ledger == purchase.party)
+    other_lines = [line for line in purchase.lines if line.ledger != purchase.party]
+    assert party_line.deemed_positive is False and party_line.amount > 0
+    assert other_lines and all(line.deemed_positive is True and line.amount < 0 for line in other_lines)
+
+
 def test_opening_balances_net_to_zero():
-    """F9: the same double-entry invariant as `test_every_voucher_balances_to_zero`, for the OPENING position
-    rather than the movements — a Task 2 anchor that probes 16/18 build on, so it must hold exactly. Ledger
-    openings use the signed convention (debit negative, matching `LineSpec.amount`); opening stock (an asset,
-    from each StockItemSpec's opening_qty * opening_rate) is a debit too and is not carried as a ledger opening
-    at all, so it's added into the same invariant separately, also on the debit (negative) side."""
+    """F9/F13: the same double-entry invariant as `test_every_voucher_balances_to_zero`, for the OPENING
+    position rather than the movements — a Task 2 anchor that probes 16/18 build on, so it must hold exactly.
+
+    CONVENTION THIS TEST ASSUMES (do not "fix" this back to unsigned openings — F13 confirmed it's right):
+    a debit is NEGATIVE, a credit is POSITIVE, matching `LineSpec.amount` after F12's sign fix
+    (docs/tally-write-exploration-v4.md Op 6/7's live-verified convention). Under this convention the three
+    asset ledgers (the two debtors, the bank) and opening stock are debits and carry negative openings; Capital
+    Account is a credit and stays positive. This is a DATASET-INTERNAL convention only, for `expected_figures`'
+    own Python arithmetic — `create_party_ledger` (writes.py) always sends `abs(opening)` on the wire (Op 5:
+    Tally infers the side from the parent group, never from the caller's sign).
+
+    Ledger openings use this signed convention; opening stock (an asset, from each StockItemSpec's
+    opening_qty * opening_rate) is a debit too and is not carried as a ledger opening at all, so it's added into
+    the same invariant separately, also on the debit (negative) side."""
     ds = generate()
     ledger_total = sum((l.opening or Decimal("0.00") for l in ds.ledgers), Decimal("0.00"))
     stock_total = sum((i.opening_qty * i.opening_rate for i in ds.items

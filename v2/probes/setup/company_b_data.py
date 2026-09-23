@@ -255,11 +255,14 @@ def _build_sales(rng: random.Random, tag: int, d: date, party: str, vch_type: st
     goods = (qty * rate).quantize(Decimal("0.01"))
     cgst, sgst = _gst(goods)
     party_amount = goods + cgst + sgst
+    # F12: docs/tally-write-exploration-v4.md Op 6 — sales party ISDEEMEDPOSITIVE=Yes with AMOUNT NEGATIVE;
+    # GST/nominal lines ISDEEMEDPOSITIVE=No with AMOUNT POSITIVE. `deemed_positive` was already right; the
+    # amounts were the mirror image of this (Op 7's note: only this exact sign permutation gets CREATED=1).
     lines = (
-        LineSpec(ledger=party, amount=party_amount, deemed_positive=True),
-        LineSpec(ledger="Domestic Sales", amount=-goods, deemed_positive=False),
-        LineSpec(ledger="Output CGST", amount=-cgst, deemed_positive=False),
-        LineSpec(ledger="Output SGST", amount=-sgst, deemed_positive=False),
+        LineSpec(ledger=party, amount=-party_amount, deemed_positive=True),
+        LineSpec(ledger="Domestic Sales", amount=goods, deemed_positive=False),
+        LineSpec(ledger="Output CGST", amount=cgst, deemed_positive=False),
+        LineSpec(ledger="Output SGST", amount=sgst, deemed_positive=False),
     )
     inventory = (InventorySpec(item=item_name, qty=qty, rate=rate, amount=goods),)
     bills = (BillSpec(name=f"Inv/{tag}", bill_type="New Ref", amount=party_amount,
@@ -276,9 +279,9 @@ def _build_usd_sale(rng: random.Random, tag: int, d: date) -> VoucherSpec:
     fx_amount = (qty * rate_usd).quantize(Decimal("0.01"))
     fx_rate = Decimal(rng.randint(8000, 8500)) / 100
     inr_amount = (fx_amount * fx_rate).quantize(Decimal("0.01"))
-    lines = (
-        LineSpec(ledger=USD_DEBTOR, amount=inr_amount, deemed_positive=True),
-        LineSpec(ledger="Export Sales", amount=-inr_amount, deemed_positive=False),
+    lines = (                                                                                                # F12
+        LineSpec(ledger=USD_DEBTOR, amount=-inr_amount, deemed_positive=True),
+        LineSpec(ledger="Export Sales", amount=inr_amount, deemed_positive=False),
     )
     narration = f"[{TAG_PREFIX}:{tag}] Export sale to {USD_DEBTOR}"
     return VoucherSpec(tag=tag, kind="sales", vch_type="Sales", date=d, party=USD_DEBTOR, narration=narration,
@@ -290,11 +293,13 @@ def _build_purchase(rng: random.Random, tag: int, d: date, party: str,
     goods = Decimal(rng.randint(1000000, 8000000)) / 100
     cgst, sgst = _gst(goods)
     creditor_amount = goods + cgst + sgst
+    # F12: Op 7 inverts Op 6 — nominal/GST lines ISDEEMEDPOSITIVE=Yes with AMOUNT NEGATIVE; purchase party
+    # ISDEEMEDPOSITIVE=No with AMOUNT POSITIVE.
     lines = (
-        LineSpec(ledger="Local Purchases", amount=goods, deemed_positive=True),
-        LineSpec(ledger="Input CGST", amount=cgst, deemed_positive=True),
-        LineSpec(ledger="Input SGST", amount=sgst, deemed_positive=True),
-        LineSpec(ledger=party, amount=-creditor_amount, deemed_positive=False),
+        LineSpec(ledger="Local Purchases", amount=-goods, deemed_positive=True),
+        LineSpec(ledger="Input CGST", amount=-cgst, deemed_positive=True),
+        LineSpec(ledger="Input SGST", amount=-sgst, deemed_positive=True),
+        LineSpec(ledger=party, amount=creditor_amount, deemed_positive=False),
     )
     bills = (BillSpec(name=f"Pur/{tag}", bill_type="New Ref", amount=creditor_amount,
                        credit_period="45 Days"),) if bill_wise.get(party, False) else ()
@@ -307,9 +312,11 @@ def _build_receipt(rng: random.Random, tag: int, d: date, party: str,
                     bill_wise: dict[str, bool]) -> VoucherSpec:
     amount = Decimal(rng.randint(500000, 5000000)) / 100
     bank_or_cash = "HDFC Bank Current A/c" if tag % 3 else "Cash"
+    # F12: Op 8 — cash/bank debit ISDEEMEDPOSITIVE=Yes AMOUNT=NEGATIVE, party credit ISDEEMEDPOSITIVE=No
+    # AMOUNT=POSITIVE ("Cash debit (Yes/−), party credit (No/+)", docs/tally-write-exploration-v4.md Op 8).
     lines = (
-        LineSpec(ledger=bank_or_cash, amount=amount, deemed_positive=True),
-        LineSpec(ledger=party, amount=-amount, deemed_positive=False),
+        LineSpec(ledger=bank_or_cash, amount=-amount, deemed_positive=True),
+        LineSpec(ledger=party, amount=amount, deemed_positive=False),
     )
     bills = (BillSpec(name=f"Inv/{tag}", bill_type="Agst Ref", amount=amount,
                        credit_period=None),) if bill_wise.get(party, False) else ()
@@ -322,9 +329,11 @@ def _build_payment(rng: random.Random, tag: int, d: date, party: str,
                     bill_wise: dict[str, bool]) -> VoucherSpec:
     amount = Decimal(rng.randint(500000, 4000000)) / 100
     bank_or_cash = "HDFC Bank Current A/c" if tag % 2 else "Cash"
+    # F12: Op 8/9 family — the ledger being paid ISDEEMEDPOSITIVE=Yes AMOUNT=NEGATIVE, cash/bank
+    # ISDEEMEDPOSITIVE=No AMOUNT=POSITIVE (matches `create_payment`'s own live-verified convention).
     lines = (
-        LineSpec(ledger=party, amount=amount, deemed_positive=True),
-        LineSpec(ledger=bank_or_cash, amount=-amount, deemed_positive=False),
+        LineSpec(ledger=party, amount=-amount, deemed_positive=True),
+        LineSpec(ledger=bank_or_cash, amount=amount, deemed_positive=False),
     )
     bills = (BillSpec(name=f"Pur/{tag}", bill_type="Agst Ref", amount=amount,
                        credit_period=None),) if bill_wise.get(party, False) else ()
@@ -336,9 +345,9 @@ def _build_payment(rng: random.Random, tag: int, d: date, party: str,
 def _build_expense_payment(rng: random.Random, tag: int, d: date) -> VoucherSpec:
     expense = "Office Rent" if tag % 2 else "Bank Charges"
     amount = Decimal(rng.randint(100000, 800000)) / 100
-    lines = (
-        LineSpec(ledger=expense, amount=amount, deemed_positive=True),
-        LineSpec(ledger="HDFC Bank Current A/c", amount=-amount, deemed_positive=False),
+    lines = (                                                                                                # F12
+        LineSpec(ledger=expense, amount=-amount, deemed_positive=True),
+        LineSpec(ledger="HDFC Bank Current A/c", amount=amount, deemed_positive=False),
     )
     narration = f"[{TAG_PREFIX}:{tag}] Payment for {expense}"
     return VoucherSpec(tag=tag, kind="payment", vch_type="Payment", date=d, party=expense, narration=narration,

@@ -34,18 +34,20 @@ what `io.wait` is for. A caller (test or live run) that never answers the pause 
 line; one that does (see `test_the_run_ends_by_checking_counts_and_balances_against_the_expected_figures`'s
 `on_wait` in the test file) genuinely clears it.
 
-Round 2 fixes (coordinator review round 2/5):
+Round 2 fixes (F9 — company_b_data.py's opening balances were unsigned; F10 — deleted a `problems`-whitelist
+in favour of simulating the operator honouring a flag pause, `test_p08_ledger_rename.py`-style) and round 3
+(F11 — `create_party_ledger` must send `abs(opening)` on the wire; Tally infers the side from the parent group,
+docs/tally-write-exploration-v4.md Op 5) are covered in task-6-report.md's "Fix round 2/3" appendices.
 
-- F9 was a `company_b_data.py` defect, not this module's: the dataset's opening balances were unsigned (all
-  positive, including the three asset ledgers), which silently gave every asset ledger's `expected_figures`
-  balance the wrong sign from month one. Fixed there — see `test_opening_balances_net_to_zero`. That fix left
-  one residual in `_verify_balances`'s Dr=Cr check: opening stock (an asset, ₹24,450) isn't a ledger at all, so
-  a ledger-only Dr=Cr total can never net to zero — it nets to exactly the opening stock value instead. See
-  `_opening_stock_value`.
-- F10: the golden-path tests assert `report.problems == []` again (a whitelist of "known permanent" problems
-  was slow-acting poison — the next real problem that happened to match the shape would have been silently
-  absorbed). What made that whitelist seem necessary was the fake never simulating an operator who honours a
-  flag pause; the tests now do, the same way `test_p08_ledger_rename.py` simulates a rename via `on_action`.
+Round 4 fixes (coordinator review round 4/5) — the sign convention itself was inverted:
+
+- F12: every `LineSpec.amount` in `company_b_data.py` was the mirror image of Op 6 (sales) / Op 7 (purchase)'s
+  live-verified convention — `deemed_positive` was already right, only the amounts were flipped. Fixed there
+  (`test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention` pins the actual convention now, since a
+  sum-to-zero invariant can't tell a convention from its mirror image).
+- F13: round 2's signed openings (debit negative) were and remain CORRECT under this convention — see
+  `test_opening_balances_net_to_zero`'s comment. F11's `abs()` on the wire stays; Tally infers the side.
+- F14/F15: see `_verify_balances`'s own docstring for exactly what the balance check does and does not prove.
 """
 from __future__ import annotations
 
@@ -96,6 +98,7 @@ class LoadReport:
     skipped: dict[str, int] = field(default_factory=lambda: {k: 0 for k in _MASTER_KINDS})
     pauses: list[str] = field(default_factory=list)
     problems: list[str] = field(default_factory=list)
+    notes: list[str] = field(default_factory=list)          # F14: observations, not action items or failures
 
 
 def load_company_b(writer: TallyWriter, io: ProbeIO, *, licence: str = "licensed",
@@ -438,22 +441,23 @@ def _posted_group_balances(dataset: Dataset) -> dict[str, Decimal]:
     return buckets
 
 
-def _opening_stock_value(dataset: Dataset) -> Decimal:
-    """The one component of the opening trial balance that isn't a ledger. F9 (company_b_data.py's own
-    `test_opening_balances_net_to_zero`) proves `sum(ledger openings) == this`, i.e. capital exactly balances
-    debtors + bank + opening stock. This loader's Dr=Cr check is ledger-only (it never touches stock
-    accounting, matching `_posted_group_balances`), so it will always net to exactly this figure, not to zero —
-    a real, computable constant, not noise to be tolerated."""
-    return sum((i.opening_qty * i.opening_rate for i in dataset.items
-               if i.opening_qty is not None and i.opening_rate is not None), Decimal("0.00"))
-
-
 def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report: LoadReport) -> None:
-    """C3: group-level balance verification only (never ledger-level — see `_primary_bucket`), plus a
-    statement-level Dr=Cr sanity check (against the known opening-stock residual, not zero — see
-    `_opening_stock_value`), within a ₹1.00 tolerance."""
+    """C3/F14: group-level balance verification, compared by ABSOLUTE MAGNITUDE, not signed value.
+
+    What this DOES prove: that each group's total (Sundry Debtors, Bank Accounts, Sales Accounts, …) is the
+    right SIZE — catching a wrong or entirely missing bucket, a mispostred voucher, a duplicate, etc.
+
+    What this does NOT prove: which SIDE (debit/credit) a group nets to, or what the whole statement's Dr=Cr
+    total should be. The re-review found company A's own recorded baseline (`v2/probes/results/results.json`)
+    has Current Assets positive and Purchase/Indirect Expenses negative — the opposite polarity from what a
+    naive "assets negative, expenses negative" reading would predict — and probe 18's own finding is that the
+    stock-bearing group needs a synthetic "Opening Stock" row to reconcile at all. The live netting rule is
+    genuinely unsettled; establishing it is probes 16/17/18's job, not this loader's to guess (S0-D7). Magnitude
+    comparison is sign-convention-independent, so it stays useful regardless of how that unsettled question
+    resolves. The statement's observed Dr/Cr total is recorded as `report.notes` — informational, not a
+    `problems` line — precisely because asserting it must equal any particular figure would be that guess.
+    """
     expected_buckets = _posted_group_balances(dataset)
-    expected_total = _opening_stock_value(dataset)
     try:
         raw = writer.b_trial_balance(company, B_READBACK_FROM, B_READBACK_TO)
     except (WriteFailed, WriteTimeout) as exc:                                                              # I7
@@ -464,10 +468,10 @@ def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report
     primaries = primary_group_rows(rows)
     total = sum((row["closing_balance"] for row in primaries.values() if row["closing_balance"] is not None),
                Decimal("0.00"))
-    if abs(total - expected_total) > BALANCE_TOLERANCE:
-        report.problems.append(
-            f"Trial Balance does not balance: Dr/Cr total is {total}, expected {expected_total} (opening stock, "
-            "the one component this ledger-only check doesn't otherwise account for)")
+    report.notes.append(
+        f"Trial Balance Dr/Cr total observed: {total}. The live netting rule for this (including how/whether "
+        "opening stock reconciles it) is unsettled — that's probe 16/17/18's job to confirm, not asserted here "
+        "(S0-D7).")
 
     actual_by_name: dict[str, Decimal] = {}
     for row in rows:
@@ -476,9 +480,9 @@ def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report
             actual_by_name[name] = row["closing_balance"]
     for bucket, expected_amount in sorted(expected_buckets.items()):
         actual_amount = actual_by_name.get(bucket, Decimal("0.00"))
-        if abs(actual_amount - expected_amount) > BALANCE_TOLERANCE:
+        if abs(abs(actual_amount) - abs(expected_amount)) > BALANCE_TOLERANCE:
             report.problems.append(
-                f"{bucket}: balance mismatch — expected {expected_amount}, Tally has {actual_amount}")
+                f"{bucket}: balance magnitude mismatch — expected |{expected_amount}|, Tally has |{actual_amount}|")
 
 
 def _parse_tally_date(text: str) -> date | None:

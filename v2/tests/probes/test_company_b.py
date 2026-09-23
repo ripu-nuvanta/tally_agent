@@ -1,19 +1,22 @@
 import re
 from datetime import date
 from decimal import Decimal
+from pathlib import Path
 
 import pytest
 
 from v2.probes.companies import COMPANIES
+from v2.probes.reads import exploded_tb_rows, primary_group_rows
 from v2.probes.setup.company_b import (
     CompanyBLoadError, LoadReport, _load_masters, _load_vouchers, _verify, load_company_b,
 )
 from v2.probes.setup.company_b_data import Dataset, GroupSpec, LineSpec, UnitSpec, VoucherSpec, generate
-from v2.probes.setup.writes import TallyWriter, WriteRefused
+from v2.probes.setup.writes import B_READBACK_FROM, B_READBACK_TO, TallyWriter, WriteRefused
 from v2.tests.probes.fake_books import FakeBooks, sync_client
 from v2.tests.probes.fakes import ScriptedIO
 
 B = COMPANIES["B"]
+LIVE_TRIAL_BALANCE_FIXTURE = Path(__file__).parent.parent / "fixtures" / "tally_samples" / "trial_balance_live.xml"
 
 _FLAG_PAUSE_RE = re.compile(r"^\[S0-B:(\d+)\].*?(ISCANCELLED|ISOPTIONAL) did not stick")
 
@@ -304,6 +307,37 @@ def test_verify_reports_a_group_balance_mismatch():
     report = LoadReport()
     _verify(writer, B, ds, report)
     assert any("balance" in p.lower() for p in report.problems)
+
+
+def test_the_fakes_trial_balance_matches_the_live_fixtures_sign_pattern():
+    """F15: `_verify_balances` had been an identity check — the fake replays the exact line amounts the
+    expectation is built from, so it could never disagree with itself. That proves nothing about whether either
+    side matches REALITY. This test pins polarity against `trial_balance_live.xml` (a real Tally export,
+    docs/tally-write-exploration-v4.md / anchors.py) instead: Capital Account and Sales Accounts are credits
+    (positive), Current Assets, Purchase Accounts and Indirect Expenses are debits (negative), in the live
+    fixture. If the fake's TB — built from a completely independent code path (FakeBooks' own group-nature
+    inference, not `company_b_data.py`'s dataset) — landed on the OPPOSITE polarity, this is what would catch a
+    "corrected" F12 that over-corrected into the mirror image. It does not prove the live run will show this
+    (only the live run can); it proves the two independent halves of this codebase currently agree with a real
+    Tally export, not with each other."""
+    live_rows = exploded_tb_rows(LIVE_TRIAL_BALANCE_FIXTURE.read_text(encoding="utf-8"))
+    live = primary_group_rows(live_rows)
+    assert live["Capital Account"]["closing_balance"] > 0
+    assert live["Sales Accounts"]["closing_balance"] > 0
+    assert live["Current Assets"]["closing_balance"] < 0
+    assert live["Purchase Accounts"]["closing_balance"] < 0
+    assert live["Indirect Expenses"]["closing_balance"] < 0
+
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    load_company_b(writer, io)
+    fake_rows = exploded_tb_rows(writer.b_trial_balance(B, B_READBACK_FROM, B_READBACK_TO))
+    fake = primary_group_rows(fake_rows)
+    assert fake["Capital Account"]["closing_balance"] > 0
+    assert fake["Sales Accounts"]["closing_balance"] > 0
+    assert fake["Current Assets"]["closing_balance"] < 0
+    assert fake["Purchase Accounts"]["closing_balance"] < 0
+    assert fake["Indirect Expenses"]["closing_balance"] < 0
 
 
 # --- I1: the flag pause re-reads and reports if it still didn't take -----------------------------------------------
