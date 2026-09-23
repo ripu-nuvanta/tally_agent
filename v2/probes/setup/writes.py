@@ -19,10 +19,12 @@ from v2.agent.tally.envelopes import build_company_list, formula_string, wrap_co
 from v2.agent.tally.xml_utils import parse_company_list, read_objects, sanitize_xml
 from v2.probes.companies import COMPANIES, SEED_COMPANY, THROWAWAY_DATE, THROWAWAY_DATE_TEXT
 from v2.probes.licence import LICENCE_REQUEST, LicenceInfo, parse_licence_info
+from v2.probes.reads import voucher_request
 from v2.probes.safety import check_request
 from v2.probes.setup.import_xml import ImportResult, esc, wrap_import
 
 READBACK_FROM, READBACK_TO = "01-04-2025", "31-03-2026"
+B_READBACK_FROM, B_READBACK_TO = "01-04-2022", "31-03-2026"   # company B's date window (S0-B spec §4)
 POPUP_STOCK_GROUP = "Electronics"    # exists in the seed company; a duplicate create raises the blocking modal
 VOUCHER_FIELDS = ["MasterId", "Narration", "Date", "IsPostDated"]
 LEDGER_FIELDS = ["Name", "Parent", "Email", "AlterID"]
@@ -155,6 +157,101 @@ class TallyWriter:
             raise WriteFailed(f"Voucher {master_id} not deleted: {result}")
         if self.voucher(company, master_id) is not None:
             raise WriteFailed(f"Voucher {master_id} still there after the delete")
+
+    # --- vouchers (company B) ---------------------------------------------------------------------------------------
+    def create_b_voucher(self, company: str, *, vch_type: str, date: str, narration: str, party: str,
+                         lines: list[tuple[str, Decimal, bool]],
+                         inventory: list[tuple[str, Decimal, Decimal, Decimal]] = (),
+                         bills: list[tuple[str, str, Decimal, str | None]] = (),
+                         optional: bool = False) -> str:
+        """Sales/Purchase (with stock + GST), Receipt/Payment/Journal — the caller owns the sign convention (docs
+
+        Op 6/7/8; live 2026-09-22): AMOUNT is signed as given per line, ISDEEMEDPOSITIVE is passed as given, and this
+        method's own balance check is the only thing that proves the two agree. Nothing is sent to Tally until the
+        voucher is proven to balance. `BILLALLOCATIONS.LIST` nests only under the line whose ledger equals `party`.
+        `ISCANCELLED` is never written here (cancelling is not reliably settable on import — Task 6 pause step).
+        """
+        check_writable(company)
+        total = sum((amount for _, amount, _ in lines), Decimal("0.00"))
+        if total != Decimal("0.00"):
+            raise ValueError(f"Voucher {narration!r} does not balance: {total}")
+        if inventory and vch_type not in ("Sales", "Purchase") and not vch_type.startswith("Sales"):
+            raise ValueError("Inventory lines belong on Sales/Purchase only")
+
+        # Op 6/7 (docs/tally-write-exploration-v4.md): stock+GST Sales/Purchase are live-verified only under
+        # Invoice Voucher View with ISINVOICE=Yes and ISPARTYLEDGER=Yes on the party line — Accounting Voucher View
+        # (used here for Receipt/Payment/Journal, matching create_payment/Op 8/9) is a documented "gotcha" NOT to use.
+        is_invoice_type = vch_type in ("Sales", "Purchase")
+
+        ledger_blocks = []
+        for ledger, amount, deemed_positive in lines:
+            bill_xml = ""
+            if ledger == party and bills:
+                bill_xml = "".join(
+                    f"\n    <BILLALLOCATIONS.LIST>\n      <NAME>{esc(name)}</NAME>\n      "
+                    f"<BILLTYPE>{esc(bill_type)}</BILLTYPE>\n      <AMOUNT>{bill_amount:.2f}</AMOUNT>"
+                    + (f"\n      <BILLCREDITPERIOD>{esc(credit_period)}</BILLCREDITPERIOD>" if credit_period else "")
+                    + "\n    </BILLALLOCATIONS.LIST>"
+                    for name, bill_type, bill_amount, credit_period in bills)
+            party_flag = ("\n    <ISPARTYLEDGER>Yes</ISPARTYLEDGER>" if is_invoice_type and ledger == party else "")
+            ledger_blocks.append(
+                f"""  <ALLLEDGERENTRIES.LIST>
+    <LEDGERNAME>{esc(ledger)}</LEDGERNAME>
+    <ISDEEMEDPOSITIVE>{"Yes" if deemed_positive else "No"}</ISDEEMEDPOSITIVE>
+    <AMOUNT>{amount:.2f}</AMOUNT>{party_flag}{bill_xml}
+  </ALLLEDGERENTRIES.LIST>""")
+
+        # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
+        # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
+        # GST lines (matches Op 6/7 and both this method's callers' test fixtures) — Task 6 must keep that ordering.
+        inventory_deemed_positive = "Yes" if vch_type == "Purchase" else "No"
+        nominal_ledger = next((ledger for ledger, _, _ in lines if ledger != party), party)
+        inventory_blocks = []
+        for item, qty, rate, amount in inventory:
+            inventory_blocks.append(
+                f"""  <ALLINVENTORYENTRIES.LIST>
+    <STOCKITEMNAME>{esc(item)}</STOCKITEMNAME>
+    <ISDEEMEDPOSITIVE>{inventory_deemed_positive}</ISDEEMEDPOSITIVE>
+    <RATE>{rate:.2f}</RATE>
+    <AMOUNT>{amount:.2f}</AMOUNT>
+    <ACTUALQTY>{qty}</ACTUALQTY>
+    <BILLEDQTY>{qty}</BILLEDQTY>
+    <ACCOUNTINGALLOCATIONS.LIST>
+      <LEDGERNAME>{esc(nominal_ledger)}</LEDGERNAME>
+      <ISDEEMEDPOSITIVE>{inventory_deemed_positive}</ISDEEMEDPOSITIVE>
+      <AMOUNT>{amount:.2f}</AMOUNT>
+    </ACCOUNTINGALLOCATIONS.LIST>
+  </ALLINVENTORYENTRIES.LIST>""")
+
+        optional_xml = "\n  <ISOPTIONAL>Yes</ISOPTIONAL>" if optional else ""
+        if is_invoice_type:
+            header = (f'<VOUCHER VCHTYPE="{esc(vch_type)}" ACTION="Create">\n'
+                      f"  <DATE>{date}</DATE>\n  <NARRATION>{esc(narration)}</NARRATION>\n"
+                      f"  <VOUCHERTYPENAME>{esc(vch_type)}</VOUCHERTYPENAME>\n"
+                      f"  <PARTYLEDGERNAME>{esc(party)}</PARTYLEDGERNAME>\n"
+                      f"  <PARTYNAME>{esc(party)}</PARTYNAME>\n"
+                      f"  <PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW>\n"
+                      f"  <ISINVOICE>Yes</ISINVOICE>\n"
+                      f"  <EFFECTIVEDATE>{date}</EFFECTIVEDATE>{optional_xml}")
+        else:
+            header = (f'<VOUCHER VCHTYPE="{esc(vch_type)}" ACTION="Create">\n'
+                      f"  <DATE>{date}</DATE>\n  <NARRATION>{esc(narration)}</NARRATION>\n"
+                      f"  <VOUCHERTYPENAME>{esc(vch_type)}</VOUCHERTYPENAME>\n"
+                      f"  <PERSISTEDVIEW>Accounting Voucher View</PERSISTEDVIEW>{optional_xml}")
+        inner = f"""{header}
+{chr(10).join(ledger_blocks)}
+{chr(10).join(inventory_blocks)}
+</VOUCHER>"""
+        result = self.import_("Vouchers", company, inner)
+        if result.created != 1 or not result.clean or result.last_vch_id in ("", "0"):
+            raise WriteFailed(f"Voucher {narration!r} not created: {result}")
+        return result.last_vch_id
+
+    def voucher_by_tag(self, company: str, tag: int) -> dict[str, str] | None:
+        """The B voucher whose narration starts `[S0-B:{tag}]`, over B's own date window (S0-B spec §4)."""
+        xml = voucher_request("S0BVouchers", VOUCHER_FIELDS, company, from_date=B_READBACK_FROM, to_date=B_READBACK_TO)
+        return next((v for v in read_objects(self.post(xml), "VOUCHER", VOUCHER_FIELDS)
+                    if v.get("Narration", "").startswith(f"[S0-B:{tag}]")), None)
 
     # --- ledgers ----------------------------------------------------------------------------------------------------
     def create_ledger(self, company: str, name: str, parent: str) -> None:

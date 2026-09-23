@@ -283,3 +283,51 @@ def test_a_write_to_a_company_without_probe_in_the_name_is_refused():
     with pytest.raises(WriteRefused):
         writer.create_group("Sharma & Sons Traders", "Local Creditors", "Sundry Creditors")
     assert _imports(books) == []
+
+
+def test_a_sales_voucher_uses_the_verified_sign_convention():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(
+        B, vch_type="Sales", date="20230601", narration="[S0-B:7] sale", party="Pune Traders",
+        lines=[("Pune Traders", Decimal("-11800.00"), True), ("Sales", Decimal("10000.00"), False),
+               ("Output CGST", Decimal("900.00"), False), ("Output SGST", Decimal("900.00"), False)],
+        inventory=[("A4 Paper", Decimal("10"), Decimal("1000.00"), Decimal("10000.00"))],
+        bills=[("B/7", "New Ref", Decimal("-11800.00"), "30 Days")])
+    sent = _imports(books)[-1]
+    assert "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>" in sent          # party
+    assert "<AMOUNT>-11800.00</AMOUNT>" in sent
+    assert "<ALLINVENTORYENTRIES.LIST>" in sent                         # r15: goods via the stock grid
+    assert "<BILLCREDITPERIOD>30 Days</BILLCREDITPERIOD>" in sent
+
+
+def test_a_purchase_inverts_the_signs():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(
+        B, vch_type="Purchase", date="20230601", narration="[S0-B:9] buy", party="Mumbai Supplies",
+        lines=[("Mumbai Supplies", Decimal("5900.00"), False), ("Purchase", Decimal("-5000.00"), True),
+               ("Input CGST", Decimal("-450.00"), True), ("Input SGST", Decimal("-450.00"), True)])
+    sent = _imports(books)[-1]
+    party_block = sent.split("<ALLLEDGERENTRIES.LIST>")[1]
+    assert "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>" in party_block
+    assert "<AMOUNT>5900.00</AMOUNT>" in party_block
+
+
+def test_an_unbalanced_voucher_is_refused_before_anything_is_sent():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="does not balance"):
+        writer.create_b_voucher(B, vch_type="Sales", date="20230601", narration="[S0-B:1] x", party="P",
+                                lines=[("P", Decimal("-100.00"), True), ("Sales", Decimal("90.00"), False)])
+    assert _imports(books) == []
+
+
+def test_a_voucher_is_read_back_by_its_tag():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(B, vch_type="Receipt", date="20230601", narration="[S0-B:42] got paid",
+                            party="Pune Traders",
+                            lines=[("Cash", Decimal("1000.00"), False), ("Pune Traders", Decimal("-1000.00"), True)])
+    assert writer.voucher_by_tag(B, 42) is not None
+    assert writer.voucher_by_tag(B, 43) is None
