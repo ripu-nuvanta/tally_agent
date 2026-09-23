@@ -7,6 +7,9 @@ from v2.probes.setup.company_b_data import (
     expected_figures, generate, gstin,
 )
 
+CASH_AND_BANK = ("Cash", "HDFC Bank Current A/c")
+EXPENSE_LEDGERS = ("Office Rent", "Bank Charges")
+
 
 def test_the_same_seed_generates_an_identical_dataset():
     assert generate() == generate()          # frozen dataclasses compare by value
@@ -30,6 +33,14 @@ def test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention():
         | nominal/GST         | ISDEEMEDPOSITIVE=No,  AMOUNT=POSITIVE | ISDEEMEDPOSITIVE=Yes, AMOUNT=NEGATIVE |
 
     Op 7's own note: three other sign permutations were tried on purchase and only this one passed CREATED=1.
+
+    ONE ARM PER BUILDER (final review, I2). The original version of this test picked its sale with
+    `kind == "sales" and v.inventory`, which silently excluded `_build_usd_sale` (the probe-22 fixture), and had
+    no Op 8/9 arm at all — so `_build_usd_sale` (2 vouchers), `_build_receipt` (192) and `_build_payment` (96)
+    could each be mirrored into the exact permutation Tally answers with EXCEPTIONS=1 and the whole suite stayed
+    green. Every builder now has its own arm, pinned to its Op, plus the cross-cutting invariant at the end:
+    across Op 6, 7, 8 and 9 alike, ISDEEMEDPOSITIVE=Yes always carries a NEGATIVE amount and No a POSITIVE one
+    (docs/tally-write-exploration-v4.md; "AMOUNT is positive on the side that grows").
     """
     ds = generate()
     sale = next(v for v in ds.vouchers if v.kind == "sales" and v.inventory)
@@ -43,6 +54,41 @@ def test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention():
     other_lines = [line for line in purchase.lines if line.ledger != purchase.party]
     assert party_line.deemed_positive is False and party_line.amount > 0
     assert other_lines and all(line.deemed_positive is True and line.amount < 0 for line in other_lines)
+
+    # `_build_usd_sale` — the zero-rated export (probe 22's fixture): same Op 6 convention, no GST lines.
+    usd_sale = next(v for v in ds.vouchers if v.currency == "USD")
+    usd_party = next(line for line in usd_sale.lines if line.ledger == usd_sale.party)
+    usd_nominal = next(line for line in usd_sale.lines if line.ledger == "Export Sales")
+    assert usd_party.deemed_positive is True and usd_party.amount < 0
+    assert usd_nominal.deemed_positive is False and usd_nominal.amount > 0
+
+    # `_build_receipt` — Op 8, doc line 298 verbatim: "Cash debit (Yes/−), party credit (No/+)".
+    receipt = next(v for v in ds.vouchers if v.kind == "receipt")
+    receipt_party = next(line for line in receipt.lines if line.ledger == receipt.party)
+    receipt_bank = next(line for line in receipt.lines if line.ledger in CASH_AND_BANK)
+    assert receipt_bank.deemed_positive is True and receipt_bank.amount < 0
+    assert receipt_party.deemed_positive is False and receipt_party.amount > 0
+
+    # `_build_payment` — Op 8/9's family, mirrored onto the other side: the ledger being PAID is the debit
+    # (Yes/−) and cash/bank the credit (No/+), matching `create_payment`'s own live-verified envelope.
+    payment = next(v for v in ds.vouchers if v.kind == "payment" and v.party not in EXPENSE_LEDGERS)
+    payment_party = next(line for line in payment.lines if line.ledger == payment.party)
+    payment_bank = next(line for line in payment.lines if line.ledger in CASH_AND_BANK)
+    assert payment_party.deemed_positive is True and payment_party.amount < 0
+    assert payment_bank.deemed_positive is False and payment_bank.amount > 0
+
+    # `_build_expense_payment` — the same shape with an expense ledger in the party slot.
+    expense = next(v for v in ds.vouchers if v.kind == "payment" and v.party in EXPENSE_LEDGERS)
+    expense_line = next(line for line in expense.lines if line.ledger == expense.party)
+    expense_bank = next(line for line in expense.lines if line.ledger in CASH_AND_BANK)
+    assert expense_line.deemed_positive is True and expense_line.amount < 0
+    assert expense_bank.deemed_positive is False and expense_bank.amount > 0
+
+    # And the invariant the four Ops share, over every line of all 960 vouchers — so a builder added later
+    # cannot slip a mirrored permutation past the arms above.
+    for v in ds.vouchers:
+        for line in v.lines:
+            assert line.deemed_positive is (line.amount < 0), f"[S0-B:{v.tag}] {line.ledger}: {line}"
 
 
 def test_opening_balances_net_to_zero():
