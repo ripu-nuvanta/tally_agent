@@ -10,6 +10,7 @@ from v2.tests.probes.fake_books import FakeBooks, import_result, sync_client
 from v2.tests.probes.fakes import FakeTally, objects_xml
 
 A = COMPANIES["A"]
+B = COMPANIES["B"]
 
 
 def _writer(books):
@@ -175,3 +176,72 @@ def test_licence_info_reads_mode_and_release():
     info = writer.licence_info()
     assert info.educational is True and info.release == "7.0"
     assert _writer(FakeBooks(name=A, educational=False))[0].licence_info().educational is False
+
+
+# --- master writers (company B) -------------------------------------------------------------------------------------
+
+def test_creating_a_group_then_listing_it_round_trips():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_group(B, "National Creditors", "Sundry Creditors")
+    assert writer.list_groups(B)["National Creditors"] == "Sundry Creditors"
+
+
+def test_create_group_lists_before_creating_and_reads_back():
+    books = FakeBooks(name=B)
+    writer, said = _writer(books)
+    writer.create_group(B, "Local Creditors", "Sundry Creditors")
+    assert writer.list_groups(B)["Local Creditors"] == "Sundry Creditors"
+    assert len(_imports(books)) == 1
+
+
+def test_a_second_create_sends_nothing():
+    books = FakeBooks(name=B)
+    writer, said = _writer(books)
+    writer.create_group(B, "Local Creditors", "Sundry Creditors")
+    writer.create_group(B, "Local Creditors", "Sundry Creditors")
+    assert len(_imports(books)) == 1                      # the second call never reached Tally
+    assert any("already exists" in line for line in said)
+
+
+def test_a_compound_unit_carries_its_base_and_conversion():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_unit(B, "Nos")
+    writer.create_unit(B, "Box of 10 Nos", base="Nos", conversion=10)
+    sent = _imports(books)[-1]
+    assert "<BASEUNITS>Nos</BASEUNITS>" in sent and "<CONVERSION>10</CONVERSION>" in sent
+
+
+def test_a_stock_item_without_an_hsn_is_created_gst_not_applicable():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_stock_item(B, "Whiteboard Marker", unit="Nos")
+    sent = _imports(books)[-1]
+    assert "<GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>" in sent    # LESSONS §15 r12
+    assert "HSNCODE" not in sent
+
+
+def test_a_party_ledger_carries_bill_wise_and_a_valid_gstin():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_party_ledger(B, "Pune Traders", parent="Local Creditors", bill_wise=True,
+                               gstin="27AAAPL1234C1ZV")
+    sent = _imports(books)[-1]
+    assert "<ISBILLWISEON>Yes</ISBILLWISEON>" in sent
+    assert "<PARTYGSTIN>27AAAPL1234C1ZV</PARTYGSTIN>" in sent
+
+
+def test_the_non_billwise_debtor_is_written_bill_wise_off():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_party_ledger(B, "Kolhapur Retail Mart", parent="Sundry Debtors", bill_wise=False)
+    assert "<ISBILLWISEON>No</ISBILLWISEON>" in _imports(books)[-1]
+
+
+def test_a_write_to_a_company_without_probe_in_the_name_is_refused():
+    books = FakeBooks(name="Sharma & Sons Traders")
+    writer, _ = _writer(books)
+    with pytest.raises(WriteRefused):
+        writer.create_group("Sharma & Sons Traders", "Local Creditors", "Sundry Creditors")
+    assert _imports(books) == []

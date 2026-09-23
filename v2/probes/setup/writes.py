@@ -26,6 +26,11 @@ READBACK_FROM, READBACK_TO = "01-04-2025", "31-03-2026"
 POPUP_STOCK_GROUP = "Electronics"    # exists in the seed company; a duplicate create raises the blocking modal
 VOUCHER_FIELDS = ["MasterId", "Narration", "Date", "IsPostDated"]
 LEDGER_FIELDS = ["Name", "Parent", "Email", "AlterID"]
+GROUP_FIELDS = ["Name", "Parent"]
+UNIT_FIELDS = ["Name", "BaseUnits", "Conversion"]
+ITEM_FIELDS = ["Name", "BaseUnits", "Parent"]
+PARTY_LEDGER_FIELDS = ["Name", "Parent", "IsBillWiseOn", "OpeningBalance", "PartyGSTIN"]
+VOUCHER_TYPE_FIELDS = ["Name", "Parent"]
 
 
 class WriteRefused(Exception):
@@ -197,6 +202,98 @@ class TallyWriter:
             raise WriteFailed(f"Ledger {old!r} not renamed: {result}")
         if self.ledger(company, new) is None or self.ledger(company, old) is not None:
             raise WriteFailed(f"Ledger rename {old!r} → {new!r} not visible on read-back")
+
+    # --- masters (company B) -----------------------------------------------------------------------------------------
+    def list_groups(self, company: str) -> dict[str, str]:
+        xml = wrap_collection("S0BGroups", "Group", GROUP_FIELDS, company)
+        return {row["Name"]: row.get("Parent", "") for row in read_objects(self.post(xml), "GROUP", GROUP_FIELDS)}
+
+    def list_units(self, company: str) -> list[str]:
+        xml = wrap_collection("S0BUnits", "Unit", UNIT_FIELDS, company)
+        return [row["Name"] for row in read_objects(self.post(xml), "UNIT", UNIT_FIELDS)]
+
+    def list_stock_items(self, company: str) -> dict[str, str]:
+        xml = wrap_collection("S0BItems", "StockItem", ITEM_FIELDS, company)
+        return {row["Name"]: row.get("BaseUnits", "")
+                for row in read_objects(self.post(xml), "STOCKITEM", ITEM_FIELDS)}
+
+    def list_ledgers(self, company: str) -> dict[str, str]:
+        xml = wrap_collection("S0BLedgers", "Ledger", LEDGER_FIELDS, company)
+        return {row["Name"]: row.get("Parent", "") for row in read_objects(self.post(xml), "LEDGER", LEDGER_FIELDS)}
+
+    def list_voucher_types(self, company: str) -> list[str]:
+        xml = wrap_collection("S0BVoucherTypes", "VoucherType", VOUCHER_TYPE_FIELDS, company)
+        return [row["Name"] for row in read_objects(self.post(xml), "VOUCHERTYPE", VOUCHER_TYPE_FIELDS)]
+
+    def create_group(self, company: str, name: str, parent: str) -> None:
+        check_writable(company)
+        if name in self.list_groups(company):
+            self.say(f"{name} already exists — not re-created")
+            return
+        inner = (f'<GROUP NAME="{esc(name)}" ACTION="Create">\n  <NAME.LIST><NAME>{esc(name)}</NAME></NAME.LIST>\n'
+                 f'  <PARENT>{esc(parent)}</PARENT>\n</GROUP>')
+        result = self.import_("All Masters", company, inner)
+        if not ((result.created == 1 or result.altered == 1) and result.clean):
+            raise WriteFailed(f"Group {name!r} not created: {result}")
+        if name not in self.list_groups(company):
+            raise WriteFailed(f"Group {name!r} not found on read-back")
+
+    def create_unit(self, company: str, name: str, *, base: str | None = None, conversion: int | None = None) -> None:
+        check_writable(company)
+        if name in self.list_units(company):
+            self.say(f"{name} already exists — not re-created")
+            return
+        compound = ("" if base is None else
+                    f"\n  <BASEUNITS>{esc(base)}</BASEUNITS>\n  <ADDITIONALUNITS>{esc(base)}</ADDITIONALUNITS>"
+                    f"\n  <CONVERSION>{conversion}</CONVERSION>\n  <ISSIMPLEUNIT>No</ISSIMPLEUNIT>")
+        inner = f'<UNIT NAME="{esc(name)}" ACTION="Create">\n  <NAME>{esc(name)}</NAME>{compound}\n</UNIT>'
+        result = self.import_("All Masters", company, inner)
+        if not ((result.created == 1 or result.altered == 1) and result.clean):
+            raise WriteFailed(f"Unit {name!r} not created: {result}")
+        if name not in self.list_units(company):
+            raise WriteFailed(f"Unit {name!r} not found on read-back")
+
+    def create_stock_item(self, company: str, name: str, *, unit: str, hsn: str | None = None,
+                          opening_qty: Decimal | None = None, opening_rate: Decimal | None = None) -> None:
+        check_writable(company)
+        if name in self.list_stock_items(company):
+            self.say(f"{name} already exists — not re-created")
+            return
+        gst = (f"\n  <GSTAPPLICABLE>Applicable</GSTAPPLICABLE>\n  "
+               f"<HSNDETAILS.LIST><HSNCODE>{esc(hsn)}</HSNCODE></HSNDETAILS.LIST>"
+               if hsn else "\n  <GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>")
+        opening = ("" if opening_qty is None else
+                   f"\n  <OPENINGBALANCE>{opening_qty} {esc(unit)}</OPENINGBALANCE>"
+                   f"\n  <OPENINGRATE>{opening_rate}/{esc(unit)}</OPENINGRATE>"
+                   f"\n  <OPENINGVALUE>{(opening_qty * opening_rate):.2f}</OPENINGVALUE>")
+        inner = (f'<STOCKITEM NAME="{esc(name)}" ACTION="Create">\n  <NAME.LIST><NAME>{esc(name)}</NAME></NAME.LIST>\n'
+                 f'  <BASEUNITS>{esc(unit)}</BASEUNITS>{gst}{opening}\n</STOCKITEM>')
+        result = self.import_("All Masters", company, inner)
+        if not ((result.created == 1 or result.altered == 1) and result.clean):
+            raise WriteFailed(f"Stock item {name!r} not created: {result}")
+        if name not in self.list_stock_items(company):
+            raise WriteFailed(f"Stock item {name!r} not found on read-back")
+
+    def create_party_ledger(self, company: str, name: str, *, parent: str, bill_wise: bool,
+                            opening: Decimal | None = None, gstin: str | None = None) -> None:
+        check_writable(company)
+        if self.ledger(company, name) is not None:
+            self.say(f"{name} already exists — not re-created")
+            return
+        extra = "".join(filter(None, [
+            f"\n  <OPENINGBALANCE>{opening:.2f}</OPENINGBALANCE>" if opening is not None else "",
+            f"\n  <PARTYGSTIN>{esc(gstin)}</PARTYGSTIN>\n  <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" if gstin
+            else "\n  <GSTREGISTRATIONTYPE>Unregistered</GSTREGISTRATIONTYPE>",
+        ]))
+        inner = (f'<LEDGER NAME="{esc(name)}" ACTION="Create">\n  <NAME.LIST><NAME>{esc(name)}</NAME></NAME.LIST>\n'
+                 f'  <PARENT>{esc(parent)}</PARENT>\n  <ISBILLWISEON>{"Yes" if bill_wise else "No"}</ISBILLWISEON>'
+                 f'\n  <LEDSTATENAME>Maharashtra</LEDSTATENAME>{extra}\n</LEDGER>')
+        result = self.import_("All Masters", company, inner)
+        if not ((result.created == 1 or result.altered == 1) and result.clean):
+            raise WriteFailed(f"Party ledger {name!r} not created: {result}")
+        row = self.ledger(company, name)
+        if row is None or row["Parent"] != parent:
+            raise WriteFailed(f"Party ledger {name!r} not found under {parent!r} on read-back")
 
     # --- company ----------------------------------------------------------------------------------------------------
     def rename_company(self, old: str, new: str) -> None:
