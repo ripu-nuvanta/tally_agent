@@ -318,6 +318,12 @@ def test_a_sales_voucher_uses_the_verified_sign_convention():
     assert "<ALLLEDGERENTRIES.LIST>" not in sent
     assert "<RATE>1000.00/Nos</RATE>" in sent
     assert "<ACTUALQTY>10 Nos</ACTUALQTY>" in sent
+    # I1's sibling half: Op 6 goods out — ISDEEMEDPOSITIVE=No against a POSITIVE amount, on the inventory row
+    # and its ACCOUNTINGALLOCATIONS child alike.
+    inventory_block = sent.split("<ALLINVENTORYENTRIES.LIST>")[1].split("</ALLINVENTORYENTRIES.LIST>")[0]
+    assert inventory_block.count("<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>") == 2
+    assert "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>" not in inventory_block
+    assert inventory_block.count("<AMOUNT>10000.00</AMOUNT>") == 2
 
 
 def test_a_purchase_inverts_the_signs():
@@ -351,7 +357,12 @@ def test_a_receipt_still_uses_all_ledger_entries():
 def test_a_custom_purchase_subtype_carrying_inventory_is_accepted():
     """F6: 'Purchase - GST' is parented to Purchase, exactly analogous to the dataset's 'Sales - GST' — the
     inventory-placement guard must accept it (not just is_invoice_type's ledger-tag choice) and emit invoice-mode
-    XML, matching the sibling Sales-prefixed case."""
+    XML, matching the sibling Sales-prefixed case.
+
+    I1 (final review): this test used to assert only that `<ALLINVENTORYENTRIES.LIST>` was PRESENT, so it passed
+    while the block inside carried ISDEEMEDPOSITIVE=No against a negative AMOUNT — the mismatched permutation Op
+    7 records as EXCEPTIONS=1 (the deemed flag was decided by `vch_type == "Purchase"`, exact equality, while the
+    ledger tag three lines above used `startswith`). The flag inside the block is now asserted."""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_b_voucher(
@@ -364,6 +375,12 @@ def test_a_custom_purchase_subtype_carrying_inventory_is_accepted():
     assert "<ALLLEDGERENTRIES.LIST>" not in sent
     assert "<ISINVOICE>Yes</ISINVOICE>" in sent
     assert "<ALLINVENTORYENTRIES.LIST>" in sent
+    inventory_block = sent.split("<ALLINVENTORYENTRIES.LIST>")[1].split("</ALLINVENTORYENTRIES.LIST>")[0]
+    # Op 7: goods in — ISDEEMEDPOSITIVE=Yes against a NEGATIVE amount, on the inventory row AND on its
+    # ACCOUNTINGALLOCATIONS child (both flags come from the same expression, so both are pinned here).
+    assert inventory_block.count("<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>") == 2
+    assert "<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>" not in inventory_block
+    assert inventory_block.count("<AMOUNT>-1000.00</AMOUNT>") == 2
 
 
 def test_inventory_without_a_second_line_is_refused_before_anything_is_sent():

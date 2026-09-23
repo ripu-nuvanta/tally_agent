@@ -207,8 +207,12 @@ class TallyWriter:
         # ISPARTYLEDGER=Yes on the party line. ALLLEDGERENTRIES.LIST + Accounting Voucher View (used here for
         # Receipt/Payment/Journal/Contra, matching create_payment/Op 8/9) is reserved for the non-invoice path.
         # Defined once and reused by the inventory-placement guard below so the two checks cannot drift apart again.
-        is_invoice_type = (vch_type in ("Sales", "Purchase")
-                           or vch_type.startswith("Sales") or vch_type.startswith("Purchase"))
+        # I1 (final review): the inventory block's ISDEEMEDPOSITIVE must be derived from the SAME predicate, not
+        # re-decided with `vch_type == "Purchase"` — exact equality there meant "Purchase - GST" + inventory
+        # emitted No/negative, the mismatched permutation Op 7 records as EXCEPTIONS=1. Same drift Ruling C14
+        # fixed one expression over.
+        is_purchase_type = vch_type.startswith("Purchase")
+        is_invoice_type = is_purchase_type or vch_type.startswith("Sales")
         ledger_tag = "LEDGERENTRIES.LIST" if is_invoice_type else "ALLLEDGERENTRIES.LIST"
 
         if inventory and not is_invoice_type:
@@ -237,7 +241,7 @@ class TallyWriter:
         # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
         # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
         # GST lines (matches Op 6/7 and both this method's callers' test fixtures) — Task 6 must keep that ordering.
-        inventory_deemed_positive = "Yes" if vch_type == "Purchase" else "No"
+        inventory_deemed_positive = "Yes" if is_purchase_type else "No"        # Op 7: goods in (Yes/−)
         nominal_ledger = next((ledger for ledger, _, _ in lines if ledger != party), party)
         inventory_blocks = []
         for item, unit, qty, rate, amount in inventory:
