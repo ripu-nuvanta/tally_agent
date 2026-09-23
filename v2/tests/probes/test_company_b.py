@@ -1,15 +1,21 @@
+import re
+from datetime import date
 from decimal import Decimal
 
 import pytest
 
 from v2.probes.companies import COMPANIES
-from v2.probes.setup.company_b import CompanyBLoadError, LoadReport, _load_masters, _verify, load_company_b
-from v2.probes.setup.company_b_data import Dataset, GroupSpec, UnitSpec, generate
+from v2.probes.setup.company_b import (
+    CompanyBLoadError, LoadReport, _load_masters, _load_vouchers, _verify, load_company_b,
+)
+from v2.probes.setup.company_b_data import Dataset, GroupSpec, LineSpec, UnitSpec, VoucherSpec, generate
 from v2.probes.setup.writes import TallyWriter, WriteRefused
 from v2.tests.probes.fake_books import FakeBooks, sync_client
 from v2.tests.probes.fakes import ScriptedIO
 
 B = COMPANIES["B"]
+
+_FLAG_PAUSE_RE = re.compile(r"^\[S0-B:(\d+)\].*?(ISCANCELLED|ISOPTIONAL) did not stick")
 
 
 def _loader(books, **io_kwargs):
@@ -24,25 +30,36 @@ def _empty_b():
     return books
 
 
-def _only_known_permanent_problems(problems: list[str]) -> bool:
-    """Two conditions are permanent and structural for THIS dataset, not something a clean run can avoid (see
-    task-6-report.md Fix round 1 appendix):
-    1. `create_b_voucher` never writes ISCANCELLED, so tags 201/202 always fail their I1 re-read.
-    2. The dataset's opening balances (Kolhapur 45,000 + Pune Digital Solutions 62,500 + HDFC Bank 5,00,000 +
-       Capital Account 10,00,000 — company_b_data.py, Task 1/2, outside this loader's scope) do not net to zero
-       by exactly ₹16,07,500.00, so the group-level Dr=Cr statement check always reports it.
-    A genuinely clean `_verify` call reports ONLY these two; anything else is a real problem."""
-    return all("ISCANCELLED" in p or "Dr/Cr total is 1607500.00" in p for p in problems)
+def _operator_who_honours_flag_pauses(books: FakeBooks):
+    """F10: the fake never simulates the Tally UI, so a flag pause's re-read fails forever by construction —
+    that's an artefact of the fake, not the design. In reality the operator honours the pause and sets the flag
+    by hand, and the re-read then sees it (LESSONS/spec §4.3). Mirrors test_p08_ledger_rename.py's
+    `on_action`-simulates-the-operator pattern, but for `io.wait` (our pauses carry no `Action` — see the
+    module docstring's F2/flag-pause ruling) rather than `io.ask`."""
+    def on_wait(instruction: str) -> None:
+        match = _FLAG_PAUSE_RE.match(instruction)
+        if not match:
+            return
+        tag, xml_tag = match.group(1), match.group(2)
+        field = "cancelled" if xml_tag == "ISCANCELLED" else "optional"
+
+        def fix(s):
+            for v in s["vouchers"].values():
+                if v["narration"].startswith(f"[S0-B:{tag}]"):
+                    v[field] = "Yes"
+
+        books.edit_state(fix)
+    return on_wait
 
 
 def test_a_first_load_lists_before_creating_and_reads_back_every_write():
     books = _empty_b()
-    writer, io, _ = _loader(books)
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     report = load_company_b(writer, io)
     ds = generate()
     assert report.created["groups"] == len(ds.groups)
     assert report.created["vouchers"] == len(ds.vouchers)
-    assert _only_known_permanent_problems(report.problems)
+    assert report.problems == []
     # the first request for each type is a read, not an import
     first = books.requests[0]
     assert "<TALLYREQUEST>Import Data</TALLYREQUEST>" not in first
@@ -98,9 +115,9 @@ def test_a_flag_that_did_not_stick_becomes_a_pause_naming_the_voucher():
 
 def test_the_run_ends_by_checking_counts_and_balances_against_the_expected_figures():
     books = _empty_b()
-    writer, io, _ = _loader(books)
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     report = load_company_b(writer, io)
-    assert _only_known_permanent_problems(report.problems)
+    assert report.problems == []
 
 
 def test_a_wrong_count_in_an_already_complete_fy_is_reported_as_a_problem_not_swallowed():
@@ -185,6 +202,52 @@ def test_a_failed_master_create_raises_if_the_operator_never_fixes_it():
     assert any("National Creditors" in p for p in report.pauses)
 
 
+def test_a_failed_voucher_create_pauses_and_recovers_when_the_operator_fixes_it_in_the_ui():
+    """C1's crash guard was extended to voucher creates (same failure class as master creates) but had no test
+    of its own — this is that test, structured exactly like the master-create one above."""
+    books = _empty_b()
+    books.fail_imports = True
+    writer, io, _ = _loader(books)
+    tiny_voucher = VoucherSpec(
+        tag=999, kind="payment", vch_type="Payment", date=date(2025, 6, 1), party="Office Rent",
+        narration="[S0-B:999] Payment for Office Rent",
+        lines=(LineSpec(ledger="Office Rent", amount=Decimal("100.00"), deemed_positive=True),
+               LineSpec(ledger="HDFC Bank Current A/c", amount=Decimal("-100.00"), deemed_positive=False)),
+        inventory=(), bills=())
+    tiny = Dataset(groups=(), units=(), items=(), ledgers=(), vouchers=(tiny_voucher,), licence="licensed")
+
+    def operator_creates_it(instruction: str) -> None:
+        # simulate the operator creating the voucher by hand in the Tally UI (bypassing the fake's
+        # fail_imports, which only gates the XML import path)
+        books.edit_state(lambda s: s["vouchers"].__setitem__(
+            "9001", {"narration": tiny_voucher.narration, "date": "20250601", "post_dated": "No",
+                     "cancelled": "No", "optional": "No", "lines": []}))
+
+    io2 = ScriptedIO(on_wait=operator_creates_it)
+    report = LoadReport()
+    _load_vouchers(writer, io2, B, tiny, report)          # must not raise
+    assert any("[S0-B:999]" in p for p in report.pauses)
+    assert report.created["vouchers"] == 0
+    assert report.skipped["vouchers"] == 1
+
+
+def test_a_failed_voucher_create_raises_if_the_operator_never_fixes_it():
+    books = _empty_b()
+    books.fail_imports = True
+    writer, io, _ = _loader(books)
+    tiny_voucher = VoucherSpec(
+        tag=999, kind="payment", vch_type="Payment", date=date(2025, 6, 1), party="Office Rent",
+        narration="[S0-B:999] Payment for Office Rent",
+        lines=(LineSpec(ledger="Office Rent", amount=Decimal("100.00"), deemed_positive=True),
+               LineSpec(ledger="HDFC Bank Current A/c", amount=Decimal("-100.00"), deemed_positive=False)),
+        inventory=(), bills=())
+    tiny = Dataset(groups=(), units=(), items=(), ledgers=(), vouchers=(tiny_voucher,), licence="licensed")
+    report = LoadReport()
+    with pytest.raises(CompanyBLoadError, match=r"S0-B:999"):
+        _load_vouchers(writer, io, B, tiny, report)
+    assert any("[S0-B:999]" in p for p in report.pauses)
+
+
 # --- C2: `_verify` has real, direct coverage -------------------------------------------------------------------
 def test_verify_reports_a_voucher_count_mismatch_directly():
     books = _empty_b()
@@ -212,14 +275,17 @@ def test_verify_reports_a_whole_missing_fy():
     assert any("2022-23" in p for p in report.problems)
 
 
-def test_verify_reports_only_the_known_permanent_conditions_when_nothing_else_is_doctored():
+def test_verify_passes_when_nothing_was_doctored():
+    """The negative case C2 asked for: `_verify` doesn't touch flags at all (that's `_settle_flags`'s job), so
+    with F9's opening-balance fix this is a genuine `problems == []` — not a default, not a whitelist. The other
+    two `_verify`-direct tests above prove it can find something real; this proves it doesn't cry wolf."""
     books = _empty_b()
     writer, io, _ = _loader(books)
     load_company_b(writer, io)
     ds = generate()
     report = LoadReport()
     _verify(writer, B, ds, report)
-    assert _only_known_permanent_problems(report.problems)
+    assert report.problems == []
 
 
 # --- C3: group-level balance verification --------------------------------------------------------------------

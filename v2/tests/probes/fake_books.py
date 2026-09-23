@@ -24,6 +24,10 @@ from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, tb_x
 # Tally's own fixed reserved-group hierarchy (not dataset-specific — just enough of it to build a believable
 # Trial Balance fixture for whatever masters a test created). A bucket not listed here is already a primary
 # group (e.g. "Capital Account", "Sales Accounts") and gets no separate child row.
+# ASSUMPTION, not a verified read (coordinator review round 2, "noted, no action"): this hierarchy is hand-built
+# Tally domain knowledge, not derived from anything the loader itself reads. It's acceptable for now because the
+# group-level TB comparison is the deliberately-scoped check (ledger-level is probe 17's job, S0-D7) — but it
+# must be scrutinised, not trusted, against a live Tally read the first time this loader actually runs live.
 RESERVED_GROUP_PARENTS = {
     "Sundry Debtors": "Current Assets", "Bank Accounts": "Current Assets", "Cash-in-Hand": "Current Assets",
     "Sundry Creditors": "Current Liabilities", "Duties & Taxes": "Current Liabilities",

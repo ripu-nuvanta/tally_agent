@@ -27,10 +27,25 @@ Round 1 fixes (coordinator review, see .superpowers/sdd/2026-09-23-bi-s0-company
 - I7: every read in `_verify` (and in `_settle_flags`) is wrapped — a `WriteFailed`/`WriteTimeout` becomes one
   `problems` line instead of discarding the whole report (including its `pauses`).
 
-Known remaining gap: `create_b_voucher` never writes `ISCANCELLED` (its own docstring: "cancelling is not
-reliably settable on import"), so the two cancelled-tag vouchers always fail their flag read-back and always
-produce a pause + (after I1) a `problems` line. There is no code path that could make this succeed given the
-current write surface — it's the pause step the brief's step 6 describes, not a bug.
+`create_b_voucher` never writes `ISCANCELLED` (its own docstring: "cancelling is not reliably settable on
+import"), so the two cancelled-tag vouchers always fail their flag re-read UNLESS the operator honours the
+pause and sets the flag by hand in the Tally UI — that's real behaviour, not a fake artefact, and it's exactly
+what `io.wait` is for. A caller (test or live run) that never answers the pause will always see the `problems`
+line; one that does (see `test_the_run_ends_by_checking_counts_and_balances_against_the_expected_figures`'s
+`on_wait` in the test file) genuinely clears it.
+
+Round 2 fixes (coordinator review round 2/5):
+
+- F9 was a `company_b_data.py` defect, not this module's: the dataset's opening balances were unsigned (all
+  positive, including the three asset ledgers), which silently gave every asset ledger's `expected_figures`
+  balance the wrong sign from month one. Fixed there — see `test_opening_balances_net_to_zero`. That fix left
+  one residual in `_verify_balances`'s Dr=Cr check: opening stock (an asset, ₹24,450) isn't a ledger at all, so
+  a ledger-only Dr=Cr total can never net to zero — it nets to exactly the opening stock value instead. See
+  `_opening_stock_value`.
+- F10: the golden-path tests assert `report.problems == []` again (a whitelist of "known permanent" problems
+  was slow-acting poison — the next real problem that happened to match the shape would have been silently
+  absorbed). What made that whitelist seem necessary was the fake never simulating an operator who honours a
+  flag pause; the tests now do, the same way `test_p08_ledger_rename.py` simulates a rename via `on_action`.
 """
 from __future__ import annotations
 
@@ -423,10 +438,22 @@ def _posted_group_balances(dataset: Dataset) -> dict[str, Decimal]:
     return buckets
 
 
+def _opening_stock_value(dataset: Dataset) -> Decimal:
+    """The one component of the opening trial balance that isn't a ledger. F9 (company_b_data.py's own
+    `test_opening_balances_net_to_zero`) proves `sum(ledger openings) == this`, i.e. capital exactly balances
+    debtors + bank + opening stock. This loader's Dr=Cr check is ledger-only (it never touches stock
+    accounting, matching `_posted_group_balances`), so it will always net to exactly this figure, not to zero —
+    a real, computable constant, not noise to be tolerated."""
+    return sum((i.opening_qty * i.opening_rate for i in dataset.items
+               if i.opening_qty is not None and i.opening_rate is not None), Decimal("0.00"))
+
+
 def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report: LoadReport) -> None:
     """C3: group-level balance verification only (never ledger-level — see `_primary_bucket`), plus a
-    statement-level Dr=Cr sanity check, within a ₹1.00 tolerance."""
+    statement-level Dr=Cr sanity check (against the known opening-stock residual, not zero — see
+    `_opening_stock_value`), within a ₹1.00 tolerance."""
     expected_buckets = _posted_group_balances(dataset)
+    expected_total = _opening_stock_value(dataset)
     try:
         raw = writer.b_trial_balance(company, B_READBACK_FROM, B_READBACK_TO)
     except (WriteFailed, WriteTimeout) as exc:                                                              # I7
@@ -437,8 +464,10 @@ def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report
     primaries = primary_group_rows(rows)
     total = sum((row["closing_balance"] for row in primaries.values() if row["closing_balance"] is not None),
                Decimal("0.00"))
-    if abs(total) > BALANCE_TOLERANCE:
-        report.problems.append(f"Trial Balance does not balance: Dr/Cr total is {total} (expected ~0)")
+    if abs(total - expected_total) > BALANCE_TOLERANCE:
+        report.problems.append(
+            f"Trial Balance does not balance: Dr/Cr total is {total}, expected {expected_total} (opening stock, "
+            "the one component this ledger-only check doesn't otherwise account for)")
 
     actual_by_name: dict[str, Decimal] = {}
     for row in rows:

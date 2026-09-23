@@ -18,6 +18,19 @@ def test_every_voucher_balances_to_zero():
         assert total == Decimal("0.00"), f"{v.tag} {v.kind} does not balance: {total}"
 
 
+def test_opening_balances_net_to_zero():
+    """F9: the same double-entry invariant as `test_every_voucher_balances_to_zero`, for the OPENING position
+    rather than the movements — a Task 2 anchor that probes 16/18 build on, so it must hold exactly. Ledger
+    openings use the signed convention (debit negative, matching `LineSpec.amount`); opening stock (an asset,
+    from each StockItemSpec's opening_qty * opening_rate) is a debit too and is not carried as a ledger opening
+    at all, so it's added into the same invariant separately, also on the debit (negative) side."""
+    ds = generate()
+    ledger_total = sum((l.opening or Decimal("0.00") for l in ds.ledgers), Decimal("0.00"))
+    stock_total = sum((i.opening_qty * i.opening_rate for i in ds.items
+                       if i.opening_qty is not None and i.opening_rate is not None), Decimal("0.00"))
+    assert ledger_total - stock_total == Decimal("0.00")
+
+
 def test_the_calendar_covers_four_financial_years_at_twenty_a_month():
     ds = generate()
     assert len(ds.vouchers) == 960

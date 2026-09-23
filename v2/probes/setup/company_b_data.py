@@ -184,7 +184,7 @@ def _items() -> tuple[StockItemSpec, ...]:
 def _ledgers() -> tuple[LedgerSpec, ...]:
     debtors = (
         LedgerSpec(name=NON_BILLWISE_DEBTOR, parent="Sundry Debtors", bill_wise=False,
-                   opening=Decimal("45000.00"), gstin=None, opening_bill=None),
+                   opening=Decimal("-45000.00"), gstin=None, opening_bill=None),
         LedgerSpec(name=USD_DEBTOR, parent="Sundry Debtors", bill_wise=True,
                    opening=None, gstin=None, opening_bill=None),
         LedgerSpec(name=HINDI_DEBTOR, parent="Sundry Debtors", bill_wise=True,
@@ -192,7 +192,7 @@ def _ledgers() -> tuple[LedgerSpec, ...]:
         LedgerSpec(name="Nagpur Wholesale Traders", parent="Sundry Debtors", bill_wise=True,
                    opening=None, gstin=gstin("27", "AAECN5678E"), opening_bill=None),
         LedgerSpec(name="Pune Digital Solutions", parent="Sundry Debtors", bill_wise=True,
-                   opening=Decimal("62500.00"), gstin=gstin("27", "AAFCP4321F"),
+                   opening=Decimal("-62500.00"), gstin=gstin("27", "AAFCP4321F"),
                    opening_bill="Op/2022-001"),
         LedgerSpec(name="Indore Home Needs", parent="Sundry Debtors", bill_wise=True,
                    opening=None, gstin=None, opening_bill=None),
@@ -208,8 +208,12 @@ def _ledgers() -> tuple[LedgerSpec, ...]:
                    opening=None, gstin=None, opening_bill=None),
     )
     other = (
+        # The balancing figure of the opening trial balance (capital introduced minus everything else already
+        # committed elsewhere — debtors + opening stock — sits in the bank): -45000 (Kolhapur) - 62500 (Pune
+        # Digital Solutions) - 24450 (opening stock: 120 USB Cable Type-C @ 85 + 15 A4 Paper Ream @ 950) -
+        # 868050 (this ledger) + 1000000 (Capital Account) == 0.00 (F9; test_opening_balances_net_to_zero).
         LedgerSpec(name="HDFC Bank Current A/c", parent="Bank Accounts", bill_wise=False,
-                   opening=Decimal("500000.00"), gstin=None, opening_bill=None),
+                   opening=Decimal("-868050.00"), gstin=None, opening_bill=None),
         LedgerSpec(name="Cash", parent="Cash-in-Hand", bill_wise=False,
                    opening=None, gstin=None, opening_bill=None),
         LedgerSpec(name="Domestic Sales", parent="Sales Accounts", bill_wise=False,
