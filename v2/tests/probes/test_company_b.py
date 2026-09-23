@@ -291,6 +291,26 @@ def test_verify_passes_when_nothing_was_doctored():
     assert report.problems == []
 
 
+def test_verify_reports_a_duplicated_voucher():
+    """I4: `_read_vouchers` used to key rows by tag, last-wins, and `_verify` counted the dict's values — so 960
+    vouchers plus a duplicate read as exactly 960 and the run came back clean. Ruling C17's whole rationale is
+    that a duplicate is worse than a gap, so the verifier must be able to see one: the raw row count now drives
+    the per-FY comparison, and any tag seen more than once gets its own `problems` line."""
+    books = _empty_b()
+    writer, io, _ = _loader(books)
+    load_company_b(writer, io)
+
+    def duplicate_one_voucher(s):
+        mid, v = next((mid, v) for mid, v in s["vouchers"].items() if v["narration"].startswith("[S0-B:5]"))
+        s["vouchers"]["90001"] = dict(v)          # the same tag, a second Master ID — what a re-run would land
+
+    books.edit_state(duplicate_one_voucher)
+    report = LoadReport()
+    _verify(writer, B, generate(), report)
+    assert any("[S0-B:5]" in p and "duplicate" in p.lower() for p in report.problems)
+    assert any("count mismatch" in p for p in report.problems)     # and the FY count sees the extra copy too
+
+
 # --- C3: group-level balance verification --------------------------------------------------------------------
 def test_verify_reports_a_group_balance_mismatch():
     books = _empty_b()

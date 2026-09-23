@@ -248,21 +248,40 @@ def _parse_tag(narration: str) -> int | None:
     return int(match.group(1)) if match else None
 
 
-def _read_vouchers(writer: TallyWriter, company: str, fields: list[str]) -> dict[int, dict[str, str]]:
-    """Every company-B voucher over its full date window (S0-B spec §4), keyed by its `[S0-B:n]` tag."""
+@dataclass
+class VoucherRows:
+    """I4: keying by tag is last-wins, so a dict alone cannot see a DUPLICATE — 960 vouchers plus 5 duplicates
+    read as exactly 960. Ruling C17's whole rationale is that a duplicate is worse than a gap, so the raw rows
+    (one entry per copy) and the tags seen more than once are carried alongside the by-tag view."""
+    by_tag: dict[int, dict[str, str]]
+    rows: list[dict[str, str]]                   # raw, pre-dedup: a duplicated tag appears once per copy
+    duplicate_tags: dict[int, int]               # tag -> number of copies, for tags with more than one
+
+    def __contains__(self, tag: int) -> bool:
+        return tag in self.by_tag
+
+
+def _read_vouchers(writer: TallyWriter, company: str, fields: list[str]) -> VoucherRows:
+    """Every company-B voucher over its full date window (S0-B spec §4), keyed by its `[S0-B:n]` tag — and the
+    raw rows behind that key, so duplicates stay visible (I4)."""
     xml = voucher_request("S0BVouchers", fields, company, from_date=B_READBACK_FROM, to_date=B_READBACK_TO)
-    rows = read_objects(writer.post(xml), "VOUCHER", fields)
-    out: dict[int, dict[str, str]] = {}
-    for row in rows:
+    raw = read_objects(writer.post(xml), "VOUCHER", fields)
+    by_tag: dict[int, dict[str, str]] = {}
+    tagged: list[dict[str, str]] = []
+    seen: dict[int, int] = {}
+    for row in raw:
         tag = _parse_tag(row.get("Narration", ""))
-        if tag is not None:
-            out[tag] = row
-    return out
+        if tag is None:
+            continue
+        by_tag[tag] = row
+        tagged.append(row)
+        seen[tag] = seen.get(tag, 0) + 1
+    return VoucherRows(by_tag, tagged, {tag: n for tag, n in seen.items() if n > 1})
 
 
-def _pre_run_fy_counts(existing: dict[int, dict[str, str]]) -> dict[str, int]:
+def _pre_run_fy_counts(rows: list[dict[str, str]]) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for row in existing.values():
+    for row in rows:
         d = _parse_tally_date(row.get("Date", ""))
         if d is not None:
             label = fy_label(d)
@@ -302,7 +321,7 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
     # blind-creating without knowing what already exists risks duplicates — a hard stop here is the safer choice.
     existing = _read_vouchers(writer, company, _VOUCHER_LIST_FIELDS)
     expected = expected_figures(dataset)
-    pre_by_fy = _pre_run_fy_counts(existing)
+    pre_by_fy = _pre_run_fy_counts(existing.rows)
     latest_complete = _latest_complete_fy(pre_by_fy, expected.voucher_count_by_fy)
     _flag_predated_drift(pre_by_fy, expected.voucher_count_by_fy, latest_complete, report)
 
@@ -343,7 +362,7 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
             msg = f"[S0-B:{v.tag}] {v.narration}: voucher create failed — create it manually in the Tally UI: {exc}"
             report.pauses.append(msg)
             io.wait(msg)
-            if v.tag not in _read_vouchers(writer, company, _VOUCHER_LIST_FIELDS):
+            if v.tag not in _read_vouchers(writer, company, _VOUCHER_LIST_FIELDS).by_tag:
                 raise CompanyBLoadError(f"[S0-B:{v.tag}] still missing after the operator pause — cannot continue.")
             report.skipped["vouchers"] += 1
             continue
@@ -362,7 +381,7 @@ def _settle_flags(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
     if not flagged:
         return
     try:
-        by_tag = _read_vouchers(writer, company, _VOUCHER_FLAG_FIELDS)
+        by_tag = _read_vouchers(writer, company, _VOUCHER_FLAG_FIELDS).by_tag
     except (WriteFailed, WriteTimeout) as exc:                                                              # I7
         report.problems.append(f"Flag read-back failed: {exc}")
         return
@@ -379,7 +398,7 @@ def _settle_flags(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
     # I1 / spec §4.3: "asks you to set it in the UI, then reads it back" — re-read after the pauses rather than
     # trust that the operator's fix took, and surface anything still wrong as a problem, not silently.
     try:
-        by_tag = _read_vouchers(writer, company, _VOUCHER_FLAG_FIELDS)
+        by_tag = _read_vouchers(writer, company, _VOUCHER_FLAG_FIELDS).by_tag
     except (WriteFailed, WriteTimeout) as exc:                                                              # I7
         report.problems.append(f"Flag re-read after the pause failed: {exc}")
         return
@@ -399,8 +418,12 @@ def _verify(writer: TallyWriter, company: str, dataset: Dataset, report: LoadRep
         report.problems.append(f"Verification voucher read failed: {exc}")
         rows = None
     if rows is not None:
+        for tag, copies in sorted(rows.duplicate_tags.items()):                                             # I4
+            report.problems.append(
+                f"[S0-B:{tag}] appears {copies} times in Tally — a duplicate voucher (Ruling C17: worse than a "
+                "gap). Delete the extra copies in the Tally UI; the loader never removes a voucher.")
         actual_by_fy: dict[str, int] = {}
-        for row in rows.values():
+        for row in rows.rows:
             d = _parse_tally_date(row.get("Date", ""))
             if d is None:
                 continue
