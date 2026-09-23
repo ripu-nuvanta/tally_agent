@@ -270,6 +270,19 @@ def test_a_party_ledger_carries_bill_wise_and_a_valid_gstin():
     assert "<PARTYGSTIN>27AAAPL1234C1ZV</PARTYGSTIN>" in sent
 
 
+def test_a_negative_dataset_opening_emits_a_positive_openingbalance_on_the_wire():
+    """F11: company_b_data.py signs `opening` (debit negative) for `expected_figures`' own arithmetic, but Tally
+    infers OPENINGBALANCE's side from the parent group's nature (docs/tally-write-exploration-v4.md Op 5) — the
+    wire value is never signed. A negative dataset opening must still emit a positive OPENINGBALANCE."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_party_ledger(B, "Kolhapur Retail Mart", parent="Sundry Debtors", bill_wise=False,
+                               opening=Decimal("-45000.00"))
+    sent = _imports(books)[-1]
+    assert "<OPENINGBALANCE>45000.00</OPENINGBALANCE>" in sent
+    assert "-45000.00" not in sent
+
+
 def test_the_non_billwise_debtor_is_written_bill_wise_off():
     books = FakeBooks(name=B)
     writer, _ = _writer(books)

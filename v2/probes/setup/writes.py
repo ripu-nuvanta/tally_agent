@@ -7,6 +7,17 @@
 
 Every write is read back (LESSONS §12). Writes go only to companies with "Probe" in the name; the one exception is
 renaming the fresh seed copy to company A, which the operator does only on its own s0probe Tally.
+
+**The dataset<->wire sign boundary (bitten twice — Task 5's inventory unit suffix, Task 6's F11 opening
+balance):** a caller's dataset is free to carry values signed however its own arithmetic needs (company_b_data.py
+signs LEDGER OPENINGS debit-negative to match `expected_figures`'s running-balance math). What reaches THIS
+module's create methods is not automatically what reaches the wire. Exactly one place is genuinely signed on the
+wire: `create_b_voucher`'s `lines` (AMOUNT + ISDEEMEDPOSITIVE) — Op 6/7's sign convention table is about ledger
+ENTRIES, which really do carry a side. Everywhere else a caller passes an "opening" value — `create_party_ledger`'s
+`opening`, `create_stock_item`'s `opening_qty`/`opening_rate` — Tally infers the side from the master's own nature
+(the parent group, for a ledger; a quantity is simply never negative, for stock) and the wire value must be
+unsigned. `create_party_ledger` takes `abs(opening)` for exactly this reason (Op 5's gotcha); never re-introduce a
+signed OPENINGBALANCE.
 """
 from __future__ import annotations
 
@@ -406,12 +417,17 @@ class TallyWriter:
 
     def create_party_ledger(self, company: str, name: str, *, parent: str, bill_wise: bool,
                             opening: Decimal | None = None, gstin: str | None = None) -> None:
+        """`opening` is signed (debit negative, matching Op 6/7's voucher-line convention and
+        company_b_data.py's `expected_figures` arithmetic) — but the WIRE value must not be: per
+        docs/tally-write-exploration-v4.md Op 5, Tally infers OPENINGBALANCE's side from the parent group's
+        own nature (positive with Capital Account = credit; positive with Cash-in-Hand = debit), so the sign
+        this method sends is never the caller's to choose. Always `abs(opening)` on the wire."""
         check_writable(company)
         if self.ledger(company, name) is not None:
             self.say(f"{name} already exists — not re-created")
             return
         extra = "".join(filter(None, [
-            f"\n  <OPENINGBALANCE>{opening:.2f}</OPENINGBALANCE>" if opening is not None else "",
+            f"\n  <OPENINGBALANCE>{abs(opening):.2f}</OPENINGBALANCE>" if opening is not None else "",
             f"\n  <PARTYGSTIN>{esc(gstin)}</PARTYGSTIN>\n  <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" if gstin
             else "\n  <GSTREGISTRATIONTYPE>Unregistered</GSTREGISTRATIONTYPE>",
         ]))
