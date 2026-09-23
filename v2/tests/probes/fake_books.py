@@ -101,6 +101,9 @@ class FakeBooks:
         self.popup = False
         self.requests: list[str] = []
         self.drop_flags = drop_flags          # a voucher import "succeeds" but ISCANCELLED/ISOPTIONAL don't stick
+        # A test seam for "something changes at request N", e.g. Tally's modal appearing partway through a run:
+        # called with each request body before it is answered.
+        self.before_request: Callable[[str], None] | None = None
         self.fail_imports = fail_imports      # every import fails, modelling a report/company-level write refusal
 
     # --- company data ---------------------------------------------------------------------------------------------
@@ -150,6 +153,8 @@ class FakeBooks:
         def handle(request: httpx.Request) -> httpx.Response:
             body = request.content.decode("utf-8")
             self.requests.append(body)
+            if self.before_request is not None:
+                self.before_request(body)
             if not self.running:
                 raise httpx.ConnectError("connection refused", request=request)
             if self.popup:

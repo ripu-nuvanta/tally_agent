@@ -42,8 +42,11 @@ has touched a real Tally instance.**
    `Sharma & Sons' Probe Traders` (the `&` and `'` are what probe 14 tests), books from **01-04-2022**, Maharashtra,
    GST enabled like the seed company, **F2 ≥ 31-03-2026**, and one custom voucher type **`Sales - GST`** under Sales
    created in the UI (voucher-type config via XML is unreliable — LESSONS §11 / §15 rule 4). **Confirm its company
-   number is 100004** — `OperatorConfig.company_numbers["B"]` assumes it, and a mismatch shows up immediately as
-   "wrong company loaded".
+   number is 100004** — `OperatorConfig.company_numbers["B"]` assumes it. Since 2026-09-23 a mismatch really does
+   stop the run before anything is written: `setup_company_b` now does `ensure_running()` → `_open_company("B")`
+   → `check_company(..., mutating=True)` first, so a wrong number opens (or fails to open) the wrong company and
+   `TallyControl` fails fast with "Tally has […] open, not […]". Before that fix `company_numbers["B"]` was never
+   read by the `setup-b` path at all and the load would have gone into whichever company was already open.
 2. **Run `uv run --project v2 python -m v2.probes setup-b` with a person present.** The F2, flag-settle,
    failed-create and opening-bill pauses are action-less by design and prompt for a human — this is not a
    fire-and-forget step.

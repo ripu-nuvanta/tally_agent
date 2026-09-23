@@ -5,6 +5,8 @@ from v2.probes.companies import COMPANIES
 from v2.probes.core import ProbeBlocked
 from v2.probes.operator.auto import build_auto_operator
 from v2.probes.operator.tally_control import CLICK_NEEDED, OperatorError, TallyProcess
+from v2.probes.setup.company_b import CompanyBLoadError
+from v2.probes.setup.writes import WriteFailed
 from v2.tests.probes.fake_books import OWN_COMMAND, FakeBooks, FakeRunner, tmp_config, write_company_folder
 
 A = COMPANIES["A"]
@@ -106,6 +108,33 @@ def test_open_company_b_loads_it(tmp_path):
     assert books.companies() == [B]
 
 
+def _books_b(tmp_path):
+    """A folder-backed fake with company B open — what `setup_company_b`'s own guard (C1) now insists on."""
+    folder = tmp_path / "company_b_fake"
+    write_company_folder(folder, B)
+    return FakeBooks(folder, name=B)
+
+
+def test_setup_company_b_refuses_when_tally_has_another_company_open(tmp_path):
+    """C1 (final review): `check_writable` inside `load_company_b` inspects the string literal COMPANIES["B"],
+    never what Tally actually has loaded — and company A ('Bharat Traders Probe Copy') also contains "Probe", so
+    the realistic sequence "run the A probes, then load B" would have sailed straight past it and written ~1,000
+    objects with A open. `setup_company_b` now runs the same guard every probe run does (ensure_running →
+    _open_company("B") → check_company(..., mutating=True)) BEFORE the loader is reached. The assertion that
+    matters is on the transport, not the exception: nothing at all may be imported.
+
+    The fake is given the 'Sales - GST' voucher type on purpose: without it the loader would stop at its own
+    preflight pause and import nothing anyway, so the test would pass with the guard deleted. With it present,
+    removing the guard lets ~1,000 creates land in company A — verified by mutation."""
+    books = FakeBooks(name=A)
+    books.edit_state(lambda s: s.__setitem__(
+        "voucherTypes", ["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
+    op, books, _, _ = _operator(tmp_path, books=books)
+    with pytest.raises(OperatorError):
+        op.setup_company_b()
+    assert [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r] == []
+
+
 def test_setup_company_b_wraps_write_failed_as_operator_error(tmp_path):
     """F16 fix: a genuine WriteFailed reaching `setup_company_b`, driven through the real loader — not the
     'Sales - GST' preflight pause (that's CompanyBLoadError, covered separately below). Every `writer.create_*`
@@ -113,33 +142,45 @@ def test_setup_company_b_wraps_write_failed_as_operator_error(tmp_path):
     and the explicit try/except around `create_b_voucher`), so `fail_imports` alone never produces a raw
     WriteFailed — it gets caught and turned into CompanyBLoadError instead (see the test below). What isn't
     guarded is company_b.py's handful of plain reads (e.g. `_require_voucher_type`'s very first call,
-    `writer.list_voucher_types`) — `books.popup = True` makes every request raise `httpx.ReadTimeout`, which
-    `TallyWriter.post` turns into `WriteTimeout` (a `WriteFailed` subclass), and that request is the first one
-    the loader makes."""
-    op, books, _, _ = _operator(tmp_path)
-    books.popup = True
-    with pytest.raises(OperatorError, match="setup-b"):
+    `writer.list_voucher_types`) — raising Tally's modal exactly when that read goes out makes every request
+    raise `httpx.ReadTimeout`, which `TallyWriter.post` turns into `WriteTimeout` (a `WriteFailed` subclass).
+    The modal is raised on that request rather than up front so C1's open/guard sequence, which runs first and
+    needs a live port, still completes.
+
+    M5: `match="setup-b"` alone does not distinguish this from the CompanyBLoadError case below (both messages
+    start "setup-b: "), so the cause class is asserted explicitly."""
+    books = _books_b(tmp_path)
+
+    def modal_when_the_loader_starts_reading(body: str) -> None:
+        if "S0BVoucherTypes" in body:
+            books.popup = True
+
+    books.before_request = modal_when_the_loader_starts_reading
+    op, *_ = _operator(tmp_path, books=books)
+    with pytest.raises(OperatorError, match="setup-b") as excinfo:
         op.setup_company_b()
+    assert isinstance(excinfo.value.__cause__, WriteFailed)
 
 
 def test_setup_company_b_wraps_company_b_load_error(tmp_path):
-    """The default FakeBooks has no 'Sales - GST' voucher type; the preflight pause (`_require_voucher_type`)
+    """FakeBooks' seed state has no 'Sales - GST' voucher type; the preflight pause (`_require_voucher_type`)
     doesn't create one — the fake console prompt just presses Enter — so the loader's own CompanyBLoadError
-    ('still missing after the operator pause') propagates and setup_company_b wraps it."""
-    op, *_ = _operator(tmp_path)
-    with pytest.raises(OperatorError, match="setup-b"):
+    ('still missing after the operator pause') propagates and setup_company_b wraps it. M5: assert the cause
+    class, not just the "setup-b" prefix both failure modes share."""
+    op, *_ = _operator(tmp_path, books=_books_b(tmp_path))
+    with pytest.raises(OperatorError, match="setup-b") as excinfo:
         op.setup_company_b()
+    assert isinstance(excinfo.value.__cause__, CompanyBLoadError)
 
 
-# F16/F17: WriteRefused and GuardError are also named in setup_company_b's except clause, but neither is
-# reachable through it without contorting the fake. WriteRefused's only raise site is check_writable(company) —
-# the very first line of load_company_b — and both load_company_b's `company` default and setup_company_b's own
-# signature (Ruling C3: `setup_company_b(self, licence: str = "licensed")`, no company override) are fixed to
-# COMPANIES["B"], which always contains "Probe"; there is no way to feed it a non-Probe company without changing
-# a signature this task's rulings fixed. GuardError's only raise sites (v2/probes/safety.py) are check_request
-# (a forbidden XML pattern — none of company_b.py's own request-building ever emits one) and
-# check_company/check_mutation_allowed (never called anywhere in the load_company_b path). Left uncovered
-# rather than faked; see the matching comment on the `except` clause in auto.py.
+# F16/F17: WriteRefused is also named in setup_company_b's except clause but is not reachable through it: its
+# only raise site is check_writable(company) — the very first line of load_company_b — and both
+# load_company_b's `company` default and setup_company_b's own signature (Ruling C3:
+# `setup_company_b(self, licence: str = "licensed")`, no company override) are fixed to COMPANIES["B"], which
+# always contains "Probe". GuardError, by contrast, IS now raised from this path: C1 added
+# `check_company(..., mutating=True)` to it. In the fake the wrong-company case is caught one layer earlier by
+# TallyControl's own fail-fast (see the C1 test above), so check_company here is the second line of defence;
+# its own behaviour is covered directly in test_safety.py.
 
 
 def test_asks_are_answered_from_tally_and_config(tmp_path):

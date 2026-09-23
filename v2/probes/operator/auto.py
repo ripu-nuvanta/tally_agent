@@ -18,7 +18,7 @@ from v2.probes.companies import COMPANIES, SEED_COMPANY
 from v2.probes.operator import company_a
 from v2.probes.operator.config import OperatorConfig, default_config
 from v2.probes.operator.tally_control import OperatorError, ProcessRunner, SystemRunner, TallyControl
-from v2.probes.safety import GuardError
+from v2.probes.safety import GuardError, check_company
 from v2.probes.setup.company_b import CompanyBLoadError, LoadReport, load_company_b
 from v2.probes.setup.writes import TallyWriter, WriteFailed, WriteRefused
 
@@ -132,12 +132,24 @@ class AutoOperator:
     def setup_company_b(self, licence: str = "licensed") -> LoadReport:
         self.log.write("setup-b: loading company B from the deterministic dataset")
         try:
-            # WriteFailed and CompanyBLoadError are covered (test_auto_operator.py). WriteRefused and GuardError
-            # are not: WriteRefused's only raise site is check_writable(company), and both load_company_b's
-            # `company` default and this method's own fixed signature (no company override, Ruling C3) always
-            # pass COMPANIES["B"] (contains "Probe"); GuardError's raise sites are never reached from this path
-            # (check_request never matches company_b.py's own requests; check_company/check_mutation_allowed are
-            # never called here). Left uncovered rather than faked into a false positive.
+            # C1 (final review): ~1,000 objects are about to be written, and `check_writable` inside
+            # load_company_b only inspects the string literal COMPANIES["B"] — it cannot see WHICH company Tally
+            # actually has open. Company A is also a "Probe" company, so the realistic operator sequence ("run
+            # the A probes, then load B") would sail straight past it, and whether Tally honours
+            # SVCURRENTCOMPANY for a company that is not loaded is unverified. Every probe run guards this via
+            # runner.py; this path now guards it the same way, before the first write.
+            self.control.ensure_running()
+            self._open_company({"label": "B"})
+            check_company(self.control.company_names() or [], COMPANIES["B"], mutating=True)
+            # WriteFailed and CompanyBLoadError are covered (test_auto_operator.py). WriteRefused is not:
+            # its only raise site is check_writable(company), and both load_company_b's `company` default and
+            # this method's own fixed signature (no company override, Ruling C3) always pass COMPANIES["B"]
+            # (contains "Probe"). GuardError IS now reachable from this path — check_company above is the guard
+            # that raises it — but in the fake the wrong-company case is caught one layer earlier, by
+            # TallyControl's own fail-fast ("Tally has [...] open, not [...]"), which is what
+            # test_setup_company_b_refuses_when_tally_has_another_company_open asserts; check_company is the
+            # second line of defence for the case where that wait returns something unexpected (its own
+            # behaviour is covered directly in test_safety.py).
             return load_company_b(self.writer, self, licence=licence)
         except (WriteFailed, WriteRefused, GuardError, CompanyBLoadError) as exc:
             raise OperatorError(f"setup-b: {exc}") from exc
