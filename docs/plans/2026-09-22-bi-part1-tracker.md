@@ -113,12 +113,34 @@ the one test the in-flight fix is currently editing. **Nothing has run against l
 | Operator wiring (`company_numbers["B"]`, `setup_company_b`, action-less pause fall-through) | ✅ | `test_auto_operator.py`; `e416cd4`, `fd603d8`, `3d1b4e6` |
 | `setup-b` command (exit 0 only when `problems` is empty) | ✅ | `test_cli.py`; `b80584f`, `18f98b5` |
 
-**Pending — code:** the final-review fix wave is mid-flight. Remaining: I3 (re-anchor the polarity test to the live
-company-A captures `p16_A_tb_fy_end.xml`/`p17_A_tb_exploded_explodealllevels.xml`; it currently uses a fixture whose
-`SOURCE.md` says "parser tests only, never seed-parity anchors" and asserts a sign those captures contradict), M2
-(the party-first line-ordering bare `assert` must raise `CompanyBLoadError` so a violation pauses instead of crashing
-mid-load — it is the only surviving behavioural mutation in the suite), deleting dead `TallyWriter.voucher_by_tag`,
-and minors M3/M4/M5/M1/M6/M7/M9.
+**Pending — code (fix wave, 10 of 15 findings landed).** Verified against the repo at `0b1a6b7`, tree clean,
+**435 tests green** (435 not 436 because the dead `voucher_by_tag` test was deleted along with the method).
+
+*Landed:* C1 `3d1b4e6` (company guard) · I2 `e4903ce` (per-builder sign arms) · I1 `22df890` (inventory flag drift)
+· I4 `5f12217` (duplicate vouchers visible) · I5 `027a9ca` (fake enforces the Op 6/7/8 rule) · I3 `cf271e3`
+(polarity test re-anchored to this project's own live company-A captures) · M2 + dead-code deletion + M3 `0b1a6b7`
+· M5 (verified present in the tree).
+
+*Not started — five minors, none blocking, each ~10 minutes:*
+| ID | What | Where |
+|---|---|---|
+| M1 | `create_party_ledger` sends `abs(opening)` unconditionally — correct for company B, silently wrong for a contra-natural opening (a bank overdraft in `Bank Accounts`). Document the constraint on `LedgerSpec` or raise on violation | `writes.py`, `company_b_data.py` |
+| M4 | `test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted` asserts only counts — add the balance half so it is named for what it tests | `test_company_b_data.py` |
+| M6 | Spec §4.3 still lists the R9 duplicate-ledger-name pause as a loader rule; the plan re-scoped it to probe 25's B part. Add a dated "Changed" note (the `Changed 2026-09-23` header line currently covers §14's GSTIN answer only) | `specs/2026-09-22-bi-s0-probes-design.md:144` |
+| M7 | One sentence saying `Expected.ledger_month_end` / `ledger_fy_opening` exist for probes 16/18, not for the loader — they are computed but never consumed by `_verify` (correct per Ruling C16/S0-D7, but a reader will wonder) | `company_b.py` |
+| M9 | The created/skipped block prints with no heading, unlike `Pauses:` / `Notes:` / `Problems:` | `__main__.py` |
+
+M8 (the fake-side `_unit_xml` envelope differing from what `create_unit` sends) was reviewed and **deliberately skipped**.
+
+**Two things tomorrow would otherwise rediscover** (from the fix-wave agent's hand-back):
+- I5's fake rule enforces flag⇔sign *agreement*, which a mirrored fixture still satisfies — no fake can tell "Cash"
+  from a party ledger. So it cannot replace M3-style role fixes; expect no help from it on the remaining minors.
+- Clear `__pycache__` when mutating a module between pytest runs; a stale one made a mutation check read misleadingly.
+
+**Only assertion changed in the whole wave:** `Current Assets < 0` was removed from both halves of the polarity test.
+It came from the fixture whose own `SOURCE.md` forbids that use, and company A's live capture shows **+2,605,093.00**
+because its Bank/Cash rows carry the known-corrupt seed sign. Replaced by `Sundry Debtors < 0`,
+`Sundry Creditors > 0`, `Duties & Taxes < 0` — the buckets `_verify_balances` actually compares.
 
 **Pending — operator, before anything runs live:**
 1. Create company B in the Tally UI: exactly `Sharma & Sons' Probe Traders`, books from 01-04-2022, Maharashtra,
@@ -338,3 +360,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-23 | **S0 plan part 3 (company-B loader) written**: `docs/plans/2026-09-23-bi-s0-company-b-loader.md` — 9 tasks, TDD, offline against `FakeBooks`. Covers `company_b_data.py` (deterministic dataset + independently-computed expected figures), `company_b.py` (idempotent loader), new `TallyWriter` master/voucher writers, `FakeBooks` branches for GROUP/UNIT/STOCKITEM, operator `company_numbers["B"]` + `setup_company_b()`, and the `setup-b` command. Spec §14's open GSTIN question answered in the plan (company-level GST stays UI-only; party ledgers carry a check-digit-correct `PARTYGSTIN`). Not in scope: creating company B in the UI, the B probes, company C, the live run. Not yet implemented. |
 | 2026-09-23 | **S0 plan part 3 (company-B loader) built via 9 TDD tasks, commits `6f1c882..18f98b5` (17 commits)**: `v2/probes/setup/company_b_data.py` (deterministic dataset + `expected_figures`, independent of Tally) and `v2/probes/setup/company_b.py` (idempotent loader: list-before-create, read-back, pauses on flags that won't stick) are new; `TallyWriter` (`v2/probes/setup/writes.py`) gained master and voucher writers; `setup-b` is wired through the CLI and the auto-operator (`company_numbers["B"]` + `setup_company_b()`). Suite went **351 → 429 tests**, all green (`uv run --project v2 pytest v2/tests`). Built and unit-tested only, **entirely offline against `FakeBooks`** — not run against live Tally. Spec §14's GSTIN question formally answered in the spec (dated "Changed 2026-09-23" line). Next: create company B in the Tally UI, confirm company number 100004, run `setup-b` live with a person present, then batch 5 (probe 21 first). |
 | 2026-09-23 | **Company-B loader code review + fix wave (in progress).** Whole-branch review of `6bcb6f4..4e56ca8` (24 mutations run): **ready with fixes** — 11 of 12 behaviour-removing mutations were killed by the test named for that behaviour. Found **1 Critical**: `setup_company_b` wrote ~1,000 objects without checking which company Tally had OPEN (`check_writable` inspects the string literal `COMPANIES["B"]`, not the loaded company; company A's name also contains "Probe", and the realistic sequence is "run the A probes, then load B") — fixed in `3d1b4e6`, which now calls `ensure_running` + `_open_company` + `check_company` first. Also found the **5th and 6th false-passing tests** of this plan: the Op 6/7 convention test excluded the USD export sale and had no Op 8/9 arm, leaving `_build_usd_sale`/`_build_receipt`/`_build_payment` (**290 of 960 vouchers**) replaceable by the `EXCEPTIONS=1` permutation with the suite green (fixed `e4903ce`, mutation-verified by the controller); and the purchase-subtype inventory test asserted only tag presence while emitting the rejected permutation (fixed `22df890`). Landed so far: C1 `3d1b4e6`, I2 `e4903ce`, I1 `22df890`, I4 `5f12217` (duplicate vouchers were invisible to every count — everything keyed by tag), I5 `027a9ca` (the fake now stores `ISDEEMEDPOSITIVE` and enforces the Op 6/7/8 rule instead of echoing). **Still open in the wave:** I3 (polarity test is anchored to a fixture whose own SOURCE.md forbids that use, and asserts a sign the project's live captures contradict), M2 (line-ordering bare `assert` crashes mid-load instead of pausing — the only surviving behavioural mutation), delete dead `voucher_by_tag`, and minors M3/M4/M5/M1/M6/M7/M9. |
+| 2026-09-23 | **Session end — fix wave 10/15, tree clean and green at `0b1a6b7` (435 tests).** Landed since the previous row: I3 `cf271e3` (the polarity test was anchored to a fixture whose own SOURCE.md says "parser tests only, never seed-parity anchors", and asserted a sign this project's live captures contradict — now re-anchored to `p16_A_tb_fy_end.xml`/`p17_A_tb_exploded_explodealllevels.xml` and asserting the second-level buckets `_verify_balances` actually compares); M2 + dead-code deletion + M3 `0b1a6b7` (the party-first line-ordering bare `assert` now raises `CompanyBLoadError` so a violation pauses instead of crashing mid-load — it was the only surviving behavioural mutation in the suite; dead `TallyWriter.voucher_by_tag` deleted with its test; two receipt fixtures flipped off the mirror of Op 8). **Five minors not started: M1, M4, M6, M7, M9** — see "Resume here". Stopped deliberately at a committed green tree rather than mid-edit. |
