@@ -98,6 +98,57 @@ leave a stock group behind — `reset-a` clears it.
 **Progress ledger (every ruling, fix round, deferred minor):** `.superpowers/sdd/2026-09-22-bi-s0-probes-plan-part2/progress.md`
 (part 1: `.superpowers/sdd/2026-09-22-bi-s0-probes-plan/progress.md`).
 
+
+### Status of the company-B loader (updated 2026-09-23, mid-fix-wave)
+
+**Done** — built via 9 TDD tasks, then a whole-branch review and a fix wave. Suite **351 → 434** tests, green apart from
+the one test the in-flight fix is currently editing. **Nothing has run against live Tally.**
+
+| Piece | State | Proof |
+|---|---|---|
+| `v2/probes/setup/company_b_data.py` — deterministic dataset + `expected_figures` | ✅ | `test_company_b_data.py`; commits `6f1c882`, `105672e` |
+| `v2/probes/setup/company_b.py` — idempotent loader | ✅ | `test_company_b.py` (9 spec §11.4 cases + more); `abebf2a..4cc20df` |
+| `TallyWriter` master + voucher writers | ✅ | `test_setup_writes.py`; `8d00d5f..83981f1` |
+| `FakeBooks` support (groups/units/items, flag + import knobs, `ISDEEMEDPOSITIVE` enforcement) | ✅ | `test_fake_books_masters.py`; `651d705`, `027a9ca` |
+| Operator wiring (`company_numbers["B"]`, `setup_company_b`, action-less pause fall-through) | ✅ | `test_auto_operator.py`; `e416cd4`, `fd603d8`, `3d1b4e6` |
+| `setup-b` command (exit 0 only when `problems` is empty) | ✅ | `test_cli.py`; `b80584f`, `18f98b5` |
+
+**Pending — code:** the final-review fix wave is mid-flight. Remaining: I3 (re-anchor the polarity test to the live
+company-A captures `p16_A_tb_fy_end.xml`/`p17_A_tb_exploded_explodealllevels.xml`; it currently uses a fixture whose
+`SOURCE.md` says "parser tests only, never seed-parity anchors" and asserts a sign those captures contradict), M2
+(the party-first line-ordering bare `assert` must raise `CompanyBLoadError` so a violation pauses instead of crashing
+mid-load — it is the only surviving behavioural mutation in the suite), deleting dead `TallyWriter.voucher_by_tag`,
+and minors M3/M4/M5/M1/M6/M7/M9.
+
+**Pending — operator, before anything runs live:**
+1. Create company B in the Tally UI: exactly `Sharma & Sons' Probe Traders`, books from 01-04-2022, Maharashtra,
+   GST enabled, F2 ≥ 31-03-2026, and the custom voucher type `Sales - GST` created **in the UI** (LESSONS §15 rule 4).
+2. Confirm its company number is **100004** (`OperatorConfig.company_numbers["B"]`).
+3. Run `uv run --project v2 python -m v2.probes setup-b` **with a person at the machine** — the F2, flag-settle,
+   failed-create and opening-bill pauses are action-less by design and prompt for a human.
+4. Then batch 5, **probe 21 first** (it gates Q22/Q23 and therefore S1's schema).
+
+**What the live run should watch, in order** (from the final review):
+1. **Which company is open, before anything is sent.** This is the one failure that can damage company A.
+2. The first `Sales - GST` voucher's `IMPORTRESULT`. `CREATED=1, EXCEPTIONS=0` validates the invoice-mode convention
+   for ~670 vouchers at once; `EXCEPTIONS=1` means stop, don't grind through 960 failures.
+3. The first `Receipt` and the first `Payment` — Op 8/9 shapes that only just got pinned by a test.
+4. The compound unit `Box of 10 Nos` (Op 1: unit names cannot contain spaces — "BAD UNIT NAME"). A failed create is a
+   pause by design; check that `list_units` then returns the name **byte-identically**, or the second run attempts a
+   duplicate CREATE and raises the blocking modal (LESSONS §15 rule 10).
+5. The two USD export sales (tags 101/102), and the first sale of the `GSTAPPLICABLE=Not Applicable` item on an
+   invoice carrying explicit GST lines (96 vouchers rest on that assumption).
+6. Record the printed Trial Balance Dr/Cr **note** — it is the input probes 16/17/18 need to settle the netting rule.
+
+**Known limits of the green suite — do not read 434 passing as "the books are verified":**
+- `_verify_balances` compares per-bucket **absolute magnitudes**, so it catches a wrong or missing bucket but proves
+  nothing about which side a bucket nets to.
+- The balance check is still **circular on voucher lines**: the fake replays the same amounts the expectation is built
+  from. It is genuinely non-circular on opening balances and group structure (both mutation-verified).
+- Whether Tally accepts `Box of 10 Nos`, whether a plain Voucher collection returns cancelled/optional vouchers
+  (probe 3), and the statement-level Dr=Cr netting rule are all **unsettled by design** — S0-D7 forbids guessing a
+  figure another probe must confirm.
+
 ---
 
 ## 0. Stages
@@ -286,3 +337,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-23 | **Company-A probe batch run live** (auto operator): 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25 — all CONFIRMED on A except the three genuine DIFFERENTs (16 as-on, 18 bills/stock ignore the date, 25 nature/base-type don't export). Company A anchors checked OK before every batch and after. Results: `docs/bi-s0-probe-results-2026-09-23.md`; fixtures `v2/tests/fixtures/sync/p0*`, `p1*`, `p2*`. **Probe 25's consequence is a schema change**: S1 must DERIVE group `nature` (walk `Parent` → reserved primary group) and voucher-type `base_type` (walk the voucher-type `Parent` chain) instead of reading them — written into the Part 1 spec §"Minimum columns" and the Data contract. **Next: the company-B loader** — probes 21, 22, 5, 11, 14, 15 and the B parts of 3, 16, 18, 23, 25 are all blocked on it, and probe 21 gates Q22/Q23 before S1 can commit to a schema. |
 | 2026-09-23 | **S0 plan part 3 (company-B loader) written**: `docs/plans/2026-09-23-bi-s0-company-b-loader.md` — 9 tasks, TDD, offline against `FakeBooks`. Covers `company_b_data.py` (deterministic dataset + independently-computed expected figures), `company_b.py` (idempotent loader), new `TallyWriter` master/voucher writers, `FakeBooks` branches for GROUP/UNIT/STOCKITEM, operator `company_numbers["B"]` + `setup_company_b()`, and the `setup-b` command. Spec §14's open GSTIN question answered in the plan (company-level GST stays UI-only; party ledgers carry a check-digit-correct `PARTYGSTIN`). Not in scope: creating company B in the UI, the B probes, company C, the live run. Not yet implemented. |
 | 2026-09-23 | **S0 plan part 3 (company-B loader) built via 9 TDD tasks, commits `6f1c882..18f98b5` (17 commits)**: `v2/probes/setup/company_b_data.py` (deterministic dataset + `expected_figures`, independent of Tally) and `v2/probes/setup/company_b.py` (idempotent loader: list-before-create, read-back, pauses on flags that won't stick) are new; `TallyWriter` (`v2/probes/setup/writes.py`) gained master and voucher writers; `setup-b` is wired through the CLI and the auto-operator (`company_numbers["B"]` + `setup_company_b()`). Suite went **351 → 429 tests**, all green (`uv run --project v2 pytest v2/tests`). Built and unit-tested only, **entirely offline against `FakeBooks`** — not run against live Tally. Spec §14's GSTIN question formally answered in the spec (dated "Changed 2026-09-23" line). Next: create company B in the Tally UI, confirm company number 100004, run `setup-b` live with a person present, then batch 5 (probe 21 first). |
+| 2026-09-23 | **Company-B loader code review + fix wave (in progress).** Whole-branch review of `6bcb6f4..4e56ca8` (24 mutations run): **ready with fixes** — 11 of 12 behaviour-removing mutations were killed by the test named for that behaviour. Found **1 Critical**: `setup_company_b` wrote ~1,000 objects without checking which company Tally had OPEN (`check_writable` inspects the string literal `COMPANIES["B"]`, not the loaded company; company A's name also contains "Probe", and the realistic sequence is "run the A probes, then load B") — fixed in `3d1b4e6`, which now calls `ensure_running` + `_open_company` + `check_company` first. Also found the **5th and 6th false-passing tests** of this plan: the Op 6/7 convention test excluded the USD export sale and had no Op 8/9 arm, leaving `_build_usd_sale`/`_build_receipt`/`_build_payment` (**290 of 960 vouchers**) replaceable by the `EXCEPTIONS=1` permutation with the suite green (fixed `e4903ce`, mutation-verified by the controller); and the purchase-subtype inventory test asserted only tag presence while emitting the rejected permutation (fixed `22df890`). Landed so far: C1 `3d1b4e6`, I2 `e4903ce`, I1 `22df890`, I4 `5f12217` (duplicate vouchers were invisible to every count — everything keyed by tag), I5 `027a9ca` (the fake now stores `ISDEEMEDPOSITIVE` and enforces the Op 6/7/8 rule instead of echoing). **Still open in the wave:** I3 (polarity test is anchored to a fixture whose own SOURCE.md forbids that use, and asserts a sign the project's live captures contradict), M2 (line-ordering bare `assert` crashes mid-load instead of pausing — the only surviving behavioural mutation), delete dead `voucher_by_tag`, and minors M3/M4/M5/M1/M6/M7/M9. |
