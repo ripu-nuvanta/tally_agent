@@ -5,17 +5,21 @@ from v2.probes.companies import COMPANIES
 from v2.probes.core import ProbeBlocked
 from v2.probes.operator.auto import build_auto_operator
 from v2.probes.operator.tally_control import CLICK_NEEDED, OperatorError, TallyProcess
-from v2.tests.probes.fake_books import OWN_COMMAND, FakeBooks, FakeRunner, tmp_config
+from v2.tests.probes.fake_books import OWN_COMMAND, FakeBooks, FakeRunner, tmp_config, write_company_folder
 
 A = COMPANIES["A"]
+B = COMPANIES["B"]
 
 
-def _operator(tmp_path, books=None, procs=None, log_path=None):
+def _operator(tmp_path, books=None, procs=None, log_path=None, console_input=None):
     books = books or FakeBooks(name=A)
     runner = FakeRunner(books, [TallyProcess(8, OWN_COMMAND)] if procs is None else procs)
     lines: list[str] = []
+    prompts: list[str] = []
+    fake_console = console_input or (lambda prompt: prompts.append(prompt) or "")
     op = build_auto_operator(config=tmp_config(tmp_path), transport=books.transport(), runner=runner,
-                             log_path=log_path, echo=lines.append)
+                             log_path=log_path, echo=lines.append, console_input=fake_console)
+    op._prompts = prompts          # test convenience only; not part of AutoOperator's real interface
     return op, books, runner, lines
 
 
@@ -30,10 +34,20 @@ def test_every_pause_and_ask_kind_has_a_handler(tmp_path):
     assert op.handled_asks == ASK_KINDS
 
 
-def test_a_pause_without_an_action_blocks_the_part(tmp_path):
+def test_a_pause_without_an_action_falls_through_to_a_console_prompt(tmp_path):
+    """C18: an action-less wait (e.g. setting F2, toggling a cancelled flag) is UI-only — no XML can do it — so
+    AutoOperator does not raise; it prompts whoever is at the machine, the way ConsoleIO.wait does."""
+    op, *_ = _operator(tmp_path)
+    op.wait("Do something clever in the UI")
+    assert op._prompts == ["\n>>> Do something clever in the UI\n    Press Enter when done... "]
+
+
+def test_a_pause_with_an_unhandled_action_kind_still_raises(tmp_path):
+    """C18: the distinction that matters — an Action IS present but its kind isn't one `wait` handles (here, an
+    ask-only kind) is a real programming error, not a legitimate human-only step, so it still raises."""
     op, *_ = _operator(tmp_path)
     with pytest.raises(OperatorError) as info:
-        op.wait("Do something clever in the UI")
+        op.wait("Do something clever in the UI", Action("licence"))
     assert isinstance(info.value, ProbeBlocked)
 
 
@@ -77,10 +91,26 @@ def test_close_all_companies_restarts_without_a_company(tmp_path):
     assert books.running and not books.loaded
 
 
-def test_open_company_b_is_not_configured_yet(tmp_path):
-    op, *_ = _operator(tmp_path)
-    with pytest.raises(OperatorError, match="company B"):
-        op.wait("open", Action("open_company", {"label": "B"}))
+def test_company_b_has_a_configured_number(tmp_path):
+    assert tmp_config(tmp_path).company_numbers["B"] == "100004"
+
+
+def test_open_company_b_loads_it(tmp_path):
+    # C6: build our own fake for company B — the shared `_operator()` default seeds company A, so asserting B
+    # against it would fail for the wrong reason.
+    folder = tmp_path / "company_b_fake"
+    write_company_folder(folder, B)
+    books = FakeBooks(folder, name=B)
+    op, books, runner, _ = _operator(tmp_path, books=books)
+    op.wait("Switch Tally to company B", Action("open_company", {"label": "B"}))
+    assert books.companies() == [B]
+
+
+def test_setup_company_b_wraps_write_failures_as_operator_errors(tmp_path):
+    op, books, _, _ = _operator(tmp_path)
+    books.fail_imports = True
+    with pytest.raises(OperatorError, match="setup-b"):
+        op.setup_company_b()
 
 
 def test_asks_are_answered_from_tally_and_config(tmp_path):

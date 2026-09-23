@@ -21,7 +21,7 @@ class OperatorConfig:
     seed_dir: Path                     # repo seed_data/ — read-only source of the pristine company folder
     backups_dir: Path                  # beside s0probe, never inside it (Tally treats its data folder as companies)
     wine_log: Path                     # Wine's stdout / stderr
-    company_numbers: dict[str, str] = field(default_factory=lambda: {"A": "100003"})
+    company_numbers: dict[str, str] = field(default_factory=lambda: {"A": "100003", "B": "100004"})
     start_wait_s: float = 240.0
     stop_wait_s: float = 20.0
     click_wait_s: float = 900.0        # the licence box waits up to 15 minutes for the person

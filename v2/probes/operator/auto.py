@@ -19,6 +19,7 @@ from v2.probes.operator import company_a
 from v2.probes.operator.config import OperatorConfig, default_config
 from v2.probes.operator.tally_control import OperatorError, ProcessRunner, SystemRunner, TallyControl
 from v2.probes.safety import GuardError
+from v2.probes.setup.company_b import CompanyBLoadError, LoadReport, load_company_b
 from v2.probes.setup.writes import TallyWriter, WriteFailed, WriteRefused
 
 AUTO_RUN_MODE = (
@@ -52,11 +53,13 @@ class AutoOperator:
     interactive = True
     run_mode = "auto"
 
-    def __init__(self, *, control: TallyControl, writer: TallyWriter, config: OperatorConfig, log: OperatorLog):
+    def __init__(self, *, control: TallyControl, writer: TallyWriter, config: OperatorConfig, log: OperatorLog,
+                console_input: Callable[[str], str] = input):
         self.control = control
         self.writer = writer
         self.config = config
         self.log = log
+        self.console_input = console_input           # C18: how an action-less wait prompts the person at the machine
         self.vouchers: dict[str, str] = {}          # a probe's voucher ref → Tally Master ID
         self.popup_raised: bool | None = None       # did the last raise_popup step actually time out? (M9)
         self._pause: dict[str, Callable[[dict[str, Any]], None]] = {
@@ -91,7 +94,15 @@ class AutoOperator:
         self.log.write(message)
 
     def wait(self, instruction: str, action: Action | None = None) -> None:
-        if action is None or action.kind not in self._pause:
+        # Ruling C18: an action-less wait is not a programming error — some steps (e.g. setting F2, toggling a
+        # cancelled/optional flag) are UI-only and no XML can do them, so a person at the machine performs them.
+        # An action WITH a kind AutoOperator doesn't handle for `wait` (e.g. an ask-only kind) is a real bug and
+        # still raises.
+        if action is None:
+            self.log.write(f"STEP (manual — no automated action) — {instruction}")
+            self.console_input(f"\n>>> {instruction}\n    Press Enter when done... ")
+            return
+        if action.kind not in self._pause:
             raise OperatorError(f"No automated action for this step: {instruction}")
         self.log.write(f"STEP {action.kind} {action.params or ''} — {instruction}")
         try:
@@ -117,6 +128,13 @@ class AutoOperator:
         except (WriteFailed, WriteRefused, GuardError) as exc:
             raise OperatorError(f"reset-a: {exc}") from exc
         self.vouchers.clear()
+
+    def setup_company_b(self, licence: str = "licensed") -> LoadReport:
+        self.log.write("setup-b: loading company B from the deterministic dataset")
+        try:
+            return load_company_b(self.writer, self, licence=licence)
+        except (WriteFailed, WriteRefused, GuardError, CompanyBLoadError) as exc:
+            raise OperatorError(f"setup-b: {exc}") from exc
 
     def close(self) -> None:
         self.writer.http.close()
@@ -238,9 +256,11 @@ class AutoOperator:
 def build_auto_operator(*, host: str = "localhost", port: int = 9000, log_path: Path | None = None,
                         config: OperatorConfig | None = None, transport: httpx.BaseTransport | None = None,
                         runner: ProcessRunner | None = None, stop_any_tally: bool = False,
-                        echo: Callable[[str], None] | None = None) -> AutoOperator:
+                        echo: Callable[[str], None] | None = None,
+                        console_input: Callable[[str], str] = input) -> AutoOperator:
     config = config or default_config()
     log = OperatorLog(log_path, echo)
     http = httpx.Client(base_url=f"http://{host}:{port}", transport=transport, trust_env=False)
     control = TallyControl(config, runner or SystemRunner(), http, log.write, stop_any_tally=stop_any_tally)
-    return AutoOperator(control=control, writer=TallyWriter(http, log.write), config=config, log=log)
+    return AutoOperator(control=control, writer=TallyWriter(http, log.write), config=config, log=log,
+                        console_input=console_input)
