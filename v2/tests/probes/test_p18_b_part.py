@@ -40,6 +40,10 @@ async def test_b_tb_as_on_a_closed_year_equals_the_dataset(tmp_path):
 async def test_b_without_the_opening_stock_row_the_stock_group_does_not_reconcile(tmp_path):
     part = await _run(tmp_path, _books(opening_stock_row=False))
     assert part["outcome"] == "FAILED" and "Current Assets" in part["summary"]
+    # I2: a stock-only unreconciled failure must NOT carry TB_IMPACT's "parity suspended" claim — every non-stock
+    # primary group still matched, so only the stock-bearing group's own impact applies.
+    assert part["spec_impact"] == p18.B_STOCK_UNRECONCILED_IMPACT
+    assert "parity is suspended" not in part["spec_impact"]
 
 
 async def test_b_a_lost_sale_shows_up_in_its_group(tmp_path):
@@ -53,6 +57,7 @@ async def test_b_a_lost_sale_shows_up_in_its_group(tmp_path):
     books.edit_state(drop_first_fy22_sale)
     part = await _run(tmp_path, books)
     assert part["outcome"] == "FAILED" and "Sales Accounts" in part["summary"]
+    assert part["spec_impact"] == p18.TB_IMPACT
 
 
 async def test_b_an_extra_ledger_blocks_as_drift(tmp_path):

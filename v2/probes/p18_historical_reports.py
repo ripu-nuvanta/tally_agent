@@ -242,6 +242,13 @@ B_TB_AS_ON = "31-03-2023"            # FY 2022-23's end — a closed year three 
 B_TB_OK_IMPACT = ("A TB as-on a closed year's end is history on company B too — every primary group equals the "
                   "dataset, the stock-bearing one via its own `Opening Stock` row: parity has a valid anchor during "
                   "the backfill, and R30 needs no suspension (decision 11).")
+# I2: when every non-stock primary group reconciles and only the stock-bearing group fails to reconcile via its
+# `Opening Stock` row, that is NOT the same claim as TB_IMPACT ("a TB as-on isn't history, parity is suspended") —
+# the non-stock groups ARE history. This is its own, narrower finding.
+B_STOCK_UNRECONCILED_IMPACT = (
+    "The stock-bearing group doesn't reconcile via its `Opening Stock` row on this TB as-on (a valuation or row-shape "
+    "question, LESSONS §15 rule 19) — every non-stock primary group is history and R30 needs no suspension for them "
+    "(decision 11); stock parity on this report is revisited.")
 
 
 def dataset_rollup(ledger_parents: dict[str, str], groups: dict[str, str],
@@ -287,8 +294,13 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     bad = tb["mismatched"] + unreconciled_stock
     ctx.observe("sub_verdicts", {"tb": "FAILED" if bad or not tb["groups"] else "CONFIRMED"})
     if bad or not tb["groups"]:
+        # I2: a stock-only reconciliation miss (no non-stock group mismatched) gets its own, narrower impact — not
+        # TB_IMPACT's "a TB as-on isn't history, parity is suspended", which only applies when a real group mismatch
+        # makes the anchor itself unusable.
+        stock_only = not tb["mismatched"] and bool(unreconciled_stock)
+        impact = B_STOCK_UNRECONCILED_IMPACT if stock_only else TB_IMPACT
         return PartResult(Outcome.FAILED, f"TB as-on {B_TB_AS_ON} ≠ the dataset for {', '.join(bad) or 'every group'}",
-                          spec_impact=TB_IMPACT)
+                          spec_impact=impact)
     return PartResult(Outcome.CONFIRMED, f"TB as-on {B_TB_AS_ON} equals the dataset for all {len(tb['groups'])} "
                                          "primary groups, and the stock-bearing group reconciles via its Opening "
                                          "Stock row",

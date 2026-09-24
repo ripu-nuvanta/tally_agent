@@ -20,8 +20,16 @@ ESCAPED_FAILED_IMPACT = ("An escaped company name doesn't reach its company: R13
                          "addresses the company another way (the gate's GUID check, probe 2) before S2.")
 TOLERATED_IMPACT = ("Tally accepts the raw `&` in SVCurrentCompany: escaping stays mandatory in v2 (a malformed request "
                     "is never sent), but it isn't what makes such names work (R13).")
+# M1: two wordings, chosen by whether the unknown-company control shows SVCurrentCompany is actually read (`ok`
+# False) or ignored (`ok` True) with one company loaded. The old single CONFIRMED_IMPACT claimed escaping "is what
+# makes" the company reachable even when IGNORED_VAR_NOTE, appended right after it, said the variable doesn't
+# select the company at all — the two sentences contradicted each other.
 CONFIRMED_IMPACT = ("R13 holds: the v2 envelope's escaping is what makes `Sharma & Sons' Probe Traders` reachable, and "
                     "the unescaped form fails as recorded.")
+CONFIRMED_IGNORED_VAR_IMPACT = ("R13 holds for well-formedness: escaping keeps the request well-formed (the unescaped "
+                                "form fails as recorded), but with one company loaded SVCurrentCompany doesn't select "
+                                "the company — it doesn't make `Sharma & Sons' Probe Traders` reachable on its own; "
+                                "the agent addresses the company another way (the gate's GUID check, probe 2).")
 IGNORED_VAR_NOTE = ("With one company loaded Tally answered a request naming a company that isn't open: SVCurrentCompany "
                     "can't be the agent's company check — the gate's GUID read (probe 2) is.")
 
@@ -56,7 +64,15 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     company = ctx.company_name
     xml = escaped_request(company)
     escaped = await _read(ctx, "escaped_request", xml, expected)
+    # I3: a timeout here means Tally is already not responding — sending the malformed request next would then be
+    # blamed for a hang it didn't cause. Stop and name the step that actually timed out.
+    if escaped["kind"] == "timeout":
+        raise ProbeBlocked(f"escaped_request: Tally stopped answering ({escaped['message']}). {POPUP_HINT} The "
+                           "unescaped (malformed) request was never sent.")
     unknown = await _read(ctx, "unknown_company_request", escaped_request(company + UNKNOWN_SUFFIX), expected)
+    if unknown["kind"] == "timeout":
+        raise ProbeBlocked(f"unknown_company_request: Tally stopped answering ({unknown['message']}). {POPUP_HINT} "
+                           "The unescaped (malformed) request was never sent.")
     raw = await _read(ctx, "unescaped_request", unescaped(xml, company), expected, timeout=UNESCAPED_TIMEOUT_S)
     ctx.observe("escaped", escaped)
     ctx.observe("unknown_company", unknown)
@@ -72,9 +88,10 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     if raw["ok"]:
         return PartResult(Outcome.DIFFERENT, "The unescaped company name worked too", spec_impact=TOLERATED_IMPACT + note)
     failure = raw.get("error") or raw.get("kind")
+    # M1: CONFIRMED_IGNORED_VAR_IMPACT already carries the probe-2 wording, so it stands alone (no `note` append).
+    impact = CONFIRMED_IGNORED_VAR_IMPACT if unknown["ok"] else CONFIRMED_IMPACT
     return PartResult(Outcome.CONFIRMED, f"Escaped: {escaped['ledgers']} ledgers incl. the Hindi one; unescaped: "
-                                         f"{failure!r}; Tally answered afterwards",
-                      spec_impact=CONFIRMED_IMPACT + note)
+                                         f"{failure!r}; Tally answered afterwards", spec_impact=impact)
 
 
 PROBE = Probe(

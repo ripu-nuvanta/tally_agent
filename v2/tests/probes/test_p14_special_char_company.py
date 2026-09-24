@@ -1,4 +1,5 @@
 from v2.agent.tally.client import TallyClient
+from v2.agent.tally.envelopes import esc
 from v2.probes import p14_special_char_company as p14
 from v2.probes.capture import Capture
 from v2.probes.companies import COMPANIES
@@ -46,6 +47,15 @@ async def test_a_tally_that_ignores_the_company_variable_is_still_confirmed_with
     part = await _run(tmp_path, _books())
     assert part["outcome"] == "CONFIRMED" and part["observations"]["unknown_company"]["ok"] is True
     assert "probe 2" in part["spec_impact"]
+    # M1: when the company variable is ignored (unknown["ok"]), the impact must not also claim escaping "is what
+    # makes" the company reachable — that's the contradicting sentence the ignored-var note takes back.
+    assert "is what makes" not in part["spec_impact"]
+
+
+async def test_a_tally_that_honours_the_company_variable_keeps_the_stronger_wording(tmp_path):
+    part = await _run(tmp_path, _books(honour_company_var=True))
+    assert part["outcome"] == "CONFIRMED" and part["observations"]["unknown_company"]["ok"] is False
+    assert "is what makes" in part["spec_impact"]
 
 
 async def test_a_tally_that_tolerates_the_raw_ampersand_is_different(tmp_path):
@@ -63,6 +73,37 @@ async def test_a_wedge_after_the_unescaped_request_blocks_with_the_popup_hint(tm
     part = await _run(tmp_path, books)
     assert part["outcome"] == "BLOCKED" and "popup" in part["summary"].lower()
     assert part["observations"]["unescaped"]["kind"] == "timeout"
+
+
+async def test_a_wedge_on_the_escaped_request_blocks_before_sending_the_malformed_xml(tmp_path):
+    """I3: if the escaped read itself times out, Tally is already not responding — block naming that step and
+    never send the deliberately malformed (unescaped) request into it."""
+    books = _books(honour_company_var=True)
+
+    escaped_element = f"<SVCurrentCompany>{esc(B)}</SVCurrentCompany>"
+
+    def wedge_on_escaped(body: str) -> None:
+        if escaped_element in body:
+            books.popup = True
+    books.before_request = wedge_on_escaped
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "BLOCKED", part
+    assert "escaped_request" in part["summary"]
+    assert not any("unescaped" in f for f in part["fixtures"])
+
+
+async def test_a_wedge_on_the_unknown_company_request_blocks_before_sending_the_malformed_xml(tmp_path):
+    """I3: same for the unknown-company control — its own timeout must not be blamed on the unescaped request."""
+    books = _books(honour_company_var=True)
+
+    def wedge_on_unknown(body: str) -> None:
+        if p14.UNKNOWN_SUFFIX in body:
+            books.popup = True
+    books.before_request = wedge_on_unknown
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "BLOCKED", part
+    assert "unknown_company_request" in part["summary"]
+    assert not any("unescaped" in f for f in part["fixtures"])
 
 
 def test_probe_14_runs_last_in_company_b():

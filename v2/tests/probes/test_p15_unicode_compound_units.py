@@ -87,6 +87,31 @@ async def test_the_judgement_is_on_parsed_text_whatever_the_transport_form(tmp_p
     assert obs["hindi_narration"]["encoding"] == "character references"
 
 
+async def test_a_hindi_filter_miss_falls_back_to_the_unfiltered_read(tmp_path):
+    """I1: a `$Name = "<Hindi>"` TDL filter that returns nothing (never proven live) must not become a false R14
+    text FAILED — the verdict comes from an unfiltered Ledger read (as probe 14 already does)."""
+    books = FakeBooks(name=B, educational=True, hindi_ledger_filter_matches=False)
+    seed_company_b(books, "educational", masters=True)
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "CONFIRMED", part["summary"]
+    obs = part["observations"]
+    assert obs["hindi_ledger"]["exact"] is True
+    assert obs["hindi_ledger"]["filter_matched"] is False
+    assert "p15_B_hindi_ledger_unfiltered.xml" in part["fixtures"]
+
+
+async def test_hindi_genuinely_absent_from_the_unfiltered_read_is_a_real_failure(tmp_path):
+    """I1's other side: when the Hindi name really is absent/mangled even in the unfiltered read, that's the real
+    FAILED — the fallback must not paper over a genuine text problem."""
+    books = FakeBooks(name=B, educational=True, hindi_ledger_filter_matches=False)
+    seed_company_b(books, "educational", masters=True)
+    # Rename the Hindi ledger to a mangled form, as a live encoding failure would produce.
+    books.edit_state(lambda s: s["ledgers"].__setitem__("?????", s["ledgers"].pop(HINDI_DEBTOR)))
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "FAILED", part["summary"]
+    assert "Hindi text isn't exact" in part["summary"]
+
+
 async def test_without_probe_5_the_part_blocks(tmp_path):
     part = await _run(tmp_path, _books(), with_probe_5=False)
     assert part["outcome"] == "BLOCKED" and "5" in part["summary"]

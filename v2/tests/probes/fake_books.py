@@ -264,7 +264,8 @@ class FakeBooks:
                  current_period: tuple[str, str] = CURRENT_PERIOD, ledger_svtodate_honoured: bool = False,
                  ledger_opening_scope: str = "books", ledger_svfromdate_wedges: bool = True,
                  ledger_opening_bills_exported: bool = True, opening_stock_row: bool = False,
-                 honour_company_var: bool = False, tolerate_raw_ampersand: bool = False):
+                 honour_company_var: bool = False, tolerate_raw_ampersand: bool = False,
+                 hindi_ledger_filter_matches: bool = True):
         self.folder = folder
         # probe 16: the 2026-09-23 untyped evidence; the typed form is re-measured live
         self.ledger_svtodate_honoured = ledger_svtodate_honoured
@@ -274,6 +275,10 @@ class FakeBooks:
         self.opening_stock_row = opening_stock_row    # LESSONS §15 rule 19; off so the loader's tests keep their TB
         self.honour_company_var = honour_company_var                  # probe 14
         self.tolerate_raw_ampersand = tolerate_raw_ampersand          # probe 14
+        # I1: a hypothesis that a `$Name = "<non-ASCII>"` TDL formula filter can fail to match on live Tally (never
+        # measured) — False models the filter returning nothing for a non-ASCII `wanted`, so probe 15 must fall back
+        # to an unfiltered read rather than record a false text FAILED.
+        self.hindi_ledger_filter_matches = hindi_ledger_filter_matches
         self.current_period = current_period  # C33: what an untyped (ignored) period variable reads instead
         self._memory = seed_state(name)
         self.running = running
@@ -533,8 +538,11 @@ class FakeBooks:
         before_fy = self._ledger_balances(state, up_to="99991231", before=_fy_start(closing_to))
         out = []
         for name, led in state["ledgers"].items():
-            if wanted is not None and name != wanted:
-                continue
+            if wanted is not None:
+                if not self.hindi_ledger_filter_matches and not wanted.isascii():
+                    continue        # I1 knob: the formula filter never matches a non-ASCII `wanted`
+                if name != wanted:
+                    continue
             if self.ledger_opening_scope == "fy":
                 nominal = self._primary_of(state, led["parent"]) in NOMINAL_PRIMARIES
                 opening = Decimal("0.00") if nominal else before_fy.get(name, Decimal("0.00"))

@@ -76,8 +76,18 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     text = await ctx.send("hindi_ledger", master_request("S0P15Ledger", "Ledger", LEDGER_FIELDS, company, filters=[
         ("S0P15IsHindi", f"$Name = {formula_string(HINDI_DEBTOR)}")]))
     names = [row["Name"] for row in read_objects(text, "LEDGER", LEDGER_FIELDS)]
-    hindi_ledger = {"names": names, **text_check(names[0] if len(names) == 1 else None, HINDI_DEBTOR,
-                                                 ctx.last_response.raw)}
+    filter_matched = bool(names)
+    raw = ctx.last_response.raw
+    if not filter_matched:
+        # I1: nobody has proven live that a `$Name = "<non-ASCII>"` TDL formula filter matches. An empty result is
+        # the filter's own failure, not evidence of a text round-trip problem — fall back to the unfiltered read
+        # (probe 14 already does exactly this read) and judge from THAT instead.
+        all_text = await ctx.send("hindi_ledger_unfiltered", master_request("S0P15LedgerAll", "Ledger",
+                                                                             LEDGER_FIELDS, company))
+        names = [row["Name"] for row in read_objects(all_text, "LEDGER", LEDGER_FIELDS) if row["Name"] == HINDI_DEBTOR]
+        raw = ctx.last_response.raw
+    hindi_ledger = {"names": names, "filter_matched": filter_matched,
+                    **text_check(names[0] if len(names) == 1 else None, HINDI_DEBTOR, raw)}
 
     hindi_spec = first_voucher(licence, lambda v: not v.narration.isascii())
     got = await _one_voucher(ctx, "hindi_narration", template, licence, hindi_spec)
