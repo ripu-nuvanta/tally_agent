@@ -1,4 +1,5 @@
 import re
+from dataclasses import replace
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
@@ -81,7 +82,7 @@ def test_a_first_load_lists_before_creating_and_reads_back_every_write():
     report = load_company_b(writer, io)
     ds = generate()
     assert report.created["groups"] == len(ds.groups)
-    assert report.created["vouchers"] == len(ds.vouchers)
+    assert report.created["vouchers"] == len(ds.vouchers) - 2                  # C36: 101/102 are never written
     assert report.problems == []
     # the first request for each type is a read, not an import
     first = books.requests[0]
@@ -108,6 +109,32 @@ def test_a_full_load_leaves_exactly_the_bills_the_dataset_expects_open():
     assert any(name.startswith("Inv/") for _, name in actual) and any(name.startswith("Pur/") for _, name in actual)
 
 
+def test_the_usd_export_sales_are_never_sent_and_are_reported_in_one_note():
+    """C36 (review #2, user decision): tags 101/102 would land as plain INR sales (no forex anywhere), so they are
+    skipped — not silently: one Note in setup-b's report names them and why."""
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io)
+    imports = [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r]
+    assert not any("[S0-B:101]" in r or "[S0-B:102]" in r for r in imports)
+    assert any("[S0-B:103]" in r for r in imports)                               # its neighbours are not
+    usd = [n for n in report.notes if "101" in n]
+    assert len(usd) == 1 and "102" in usd[0] and "forex not implemented" in usd[0] and "probe 22 blocked" in usd[0]
+    assert report.problems == []
+
+
+def test_a_foreign_currency_voucher_that_is_not_skipped_stops_the_load_before_any_write():
+    """C36 / review #2: a voucher with currency != INR must never be written as a plain INR voucher."""
+    books = _empty_b()
+    writer, io, _ = _loader(books)
+    usd = next(v for v in generate().vouchers if v.tag == 101)
+    tiny = Dataset(groups=(), units=(), items=(), ledgers=(), vouchers=(replace(usd, skip_reason=None),),
+                   licence="licensed")
+    with pytest.raises(CompanyBLoadError, match=r"S0-B:101.*USD"):
+        _load_vouchers(writer, io, B, tiny, LoadReport())
+    assert [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r] == []
+
+
 def test_a_second_load_sends_zero_creates():
     books = _empty_b()
     writer, io, _ = _loader(books)
@@ -117,7 +144,7 @@ def test_a_second_load_sends_zero_creates():
     after = len([r for r in books.requests if "Import Data" in r])
     assert after == before                       # nothing new was sent
     assert sum(report.created.values()) == 0
-    assert report.skipped["vouchers"] == 960
+    assert report.skipped["vouchers"] == 958                                   # C36: 101/102 are never written
 
 
 def test_a_master_that_already_exists_is_not_recreated():
@@ -453,7 +480,7 @@ def test_a_missing_flagged_voucher_on_a_resumed_run_is_not_recreated():
     books.edit_state(remove_tag_201)
     report = load_company_b(writer, io)
     assert report.created["vouchers"] == 0
-    assert report.skipped["vouchers"] == 959
+    assert report.skipped["vouchers"] == 957                                   # 958 written (C36) less 201
     assert any("[S0-B:201]" in p for p in report.problems)
     assert any("[S0-B:201]" in p for p in report.pauses)
 

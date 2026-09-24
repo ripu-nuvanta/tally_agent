@@ -44,7 +44,7 @@ PROBES: tuple[ProbeInfo, ...] = (
     ProbeInfo(19, "counter_stability", "A", "B", module="v2.probes.p19_counter_stability"),
     ProbeInfo(20, "parity_cost", "—", "C", deferred=True),
     ProbeInfo(21, "full_history_reach", "B", "B+C"),
-    ProbeInfo(22, "forex", "B", "B"),
+    ProbeInfo(22, "forex", "B", "B"),   # BLOCKED 2026-09-24 (C36): setup-b skips the USD export sales 101/102
     ProbeInfo(23, "gst_due_dates", "A+B", "B", module="v2.probes.p23_gst_due_dates"),
     ProbeInfo(24, "secured_company", "C", "B"),
     ProbeInfo(25, "masters_classification", "A+B", "B", module="v2.probes.p25_masters_classification"),

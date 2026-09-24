@@ -34,6 +34,9 @@ _GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 # Fixed-tag specials (S0 spec §4.3): tags land wherever they naturally fall in the calendar (always a sales
 # slot, see the loop below) and are overridden in place, so the surrounding month's shape stays untouched.
 _USD_TAGS = (101, 102)
+# C36 (review 2026-09-24 #2, user decision): the USD export was written as a plain INR sale — no Currency master, no
+# CURRENCYNAME, no forex AMOUNT — so probe 22 would measure no forex at all. Skipped until forex is implemented.
+USD_SKIP_REASON = "USD export sales skipped — forex not implemented; probe 22 blocked"
 _CANCELLED_TAGS = (201, 202)
 _OPTIONAL_TAGS = (301, 302)
 
@@ -113,6 +116,9 @@ class VoucherSpec:
     optional: bool = False
     currency: str = "INR"
     fx_amount: Decimal | None = None
+    # C36: set => the loader never writes this voucher and expected_figures ignores it. The tag stays in the
+    # dataset so no other tag renumbers (tags are the loader's idempotency key and several are already live).
+    skip_reason: str | None = None
 
 
 @dataclass(frozen=True)
@@ -297,7 +303,8 @@ def _build_usd_sale(rng: random.Random, tag: int, d: date) -> VoucherSpec:
     )
     narration = f"[{TAG_PREFIX}:{tag}] Export sale to {USD_DEBTOR}"
     return VoucherSpec(tag=tag, kind="sales", vch_type="Sales", date=d, party=USD_DEBTOR, narration=narration,
-                        lines=lines, inventory=(), bills=(), currency="USD", fx_amount=fx_amount)
+                        lines=lines, inventory=(), bills=(), currency="USD", fx_amount=fx_amount,
+                        skip_reason=USD_SKIP_REASON)
 
 
 def _build_purchase(rng: random.Random, tag: int, d: date, party: str,
@@ -443,7 +450,7 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
             elif tag in _OPTIONAL_TAGS:
                 v = replace(v, optional=True)
 
-            if not (v.cancelled or v.optional):
+            if not (v.cancelled or v.optional or v.skip_reason):
                 _post_to_pool(v, open_bills)
             vouchers.append(v)
     return tuple(vouchers)
@@ -480,7 +487,7 @@ def expected_figures(dataset: Dataset) -> Expected:
             for name, value in running.items():
                 fy_opening[(name, date(year, 4, 1))] = value
         for v in sorted(dataset.vouchers, key=lambda v: (v.date, v.tag)):
-            if (v.date.year, v.date.month) != (year, month):
+            if (v.date.year, v.date.month) != (year, month) or v.skip_reason:     # C36: never written
                 continue
             by_month[(year, month)] = by_month.get((year, month), 0) + 1
             by_fy[fy_label(v.date)] = by_fy.get(fy_label(v.date), 0) + 1

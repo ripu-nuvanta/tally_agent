@@ -55,7 +55,8 @@ def test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention():
     assert party_line.deemed_positive is False and party_line.amount > 0
     assert other_lines and all(line.deemed_positive is True and line.amount < 0 for line in other_lines)
 
-    # `_build_usd_sale` — the zero-rated export (probe 22's fixture): same Op 6 convention, no GST lines.
+    # `_build_usd_sale` — the zero-rated export (probe 22's fixture; skipped by the loader for now, C36): same Op 6
+    # convention, no GST lines.
     usd_sale = next(v for v in ds.vouchers if v.currency == "USD")
     usd_party = next(line for line in usd_sale.lines if line.ledger == usd_sale.party)
     usd_nominal = next(line for line in usd_sale.lines if line.ledger == "Export Sales")
@@ -196,15 +197,15 @@ def test_month_end_balances_equal_openings_plus_the_running_sum():
                 continue
             opening = next((l.opening or Decimal("0.00") for l in ds.ledgers if l.name == name), Decimal("0.00"))
             moved = sum((line.amount for v in ds.vouchers if v.date <= day and not v.cancelled
-                         for line in v.lines if line.ledger == name), Decimal("0.00"))
+                         and not v.skip_reason for line in v.lines if line.ledger == name), Decimal("0.00"))
             assert value == opening + moved
 
 
 def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
     ds = generate()
     exp = expected_figures(ds)
-    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers)
-    assert exp.voucher_count_by_fy["2022-23"] == 240
+    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2           # C36: 101/102 skipped
+    assert exp.voucher_count_by_fy["2022-23"] == 238
 
     # M4 — the balance half. Recompute every month-end independently from openings + NON-cancelled lines only.
     cancelled = [v for v in ds.vouchers if v.cancelled]
@@ -215,7 +216,8 @@ def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
     fy_end = date(y, m, monthrange(y, m)[1])
     for name in touched:
         opening = next((l.opening or Decimal("0.00")) for l in ds.ledgers if l.name == name)
-        live = opening + sum((l.amount for v in ds.vouchers if not v.cancelled for l in v.lines if l.ledger == name),
+        live = opening + sum((l.amount for v in ds.vouchers if not v.cancelled and not v.skip_reason
+                              for l in v.lines if l.ledger == name),
                              Decimal("0.00"))
         with_cancelled = live + sum((l.amount for v in cancelled for l in v.lines if l.ledger == name),
                                     Decimal("0.00"))
@@ -225,7 +227,8 @@ def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
         for cv in cancelled:
             cy, cm = cv.date.year, cv.date.month
             month_end = date(cy, cm, monthrange(cy, cm)[1])
-            upto = opening + sum((l.amount for v in ds.vouchers if not v.cancelled and v.date <= month_end
+            upto = opening + sum((l.amount for v in ds.vouchers if not v.cancelled and not v.skip_reason
+                                  and v.date <= month_end
                                   for l in v.lines if l.ledger == name), Decimal("0.00"))
             assert exp.ledger_month_end[(name, month_end)] == upto, (name, month_end)
 
@@ -283,7 +286,7 @@ def _settlement_walk(ds):
             open_bills[l.opening_bill] = {"party": l.name, "date": OPENING_BILL_DATE, "left": abs(l.opening)}
     problems: list[str] = []
     for v in sorted(ds.vouchers, key=lambda v: (v.date, v.tag)):
-        if v.cancelled or v.optional:
+        if v.cancelled or v.optional or v.skip_reason:
             continue
         for b in v.bills:
             if b.bill_type == "New Ref":
@@ -344,3 +347,21 @@ def test_expected_bills_outstanding_are_the_residual_of_every_open_bill():
         open_bills, _ = _settlement_walk(ds)
         want = {(b["party"], name): b["left"] for name, b in open_bills.items() if b["left"] != 0}
         assert expected_figures(ds).bills_outstanding == want
+
+
+# --- C36: the two USD export sales are skipped this load (forex not implemented; probe 22 blocked) ----------------
+def test_the_usd_export_sales_are_skipped_with_a_reason_and_keep_their_tags():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        skipped = {v.tag: v.skip_reason for v in ds.vouchers if v.skip_reason}
+        assert set(skipped) == {101, 102}, licence
+        assert all("forex" in reason for reason in skipped.values())
+        assert [v.tag for v in ds.vouchers] == list(range(1, 961))      # nothing renumbered
+
+
+def test_skipped_vouchers_are_left_out_of_the_expected_figures():
+    ds = generate()
+    exp = expected_figures(ds)
+    assert exp.voucher_count_by_fy["2022-23"] == 238
+    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2
+    assert all(value == 0 for (name, _), value in exp.ledger_month_end.items() if name == "Export Sales")

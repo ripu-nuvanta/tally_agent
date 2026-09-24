@@ -320,7 +320,26 @@ def _flag_predated_drift(pre_by_fy: dict[str, int], expected_by_fy: dict[str, in
                 f"{expected_count - pre_count}) — recreated the gap now; investigate why they went missing.")
 
 
+def _skip_notes(dataset: Dataset) -> list[str]:
+    """C36: one note per skip reason, naming every tag it covers — skipped vouchers are never silently dropped."""
+    by_reason: dict[str, list[int]] = {}
+    for v in dataset.vouchers:
+        if v.skip_reason:
+            by_reason.setdefault(v.skip_reason, []).append(v.tag)
+    return [f"[S0-B:{', '.join(str(t) for t in sorted(tags))}] not written: {reason}"
+            for reason, tags in by_reason.items()]
+
+
 def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Dataset, report: LoadReport) -> None:
+    # C36 / review #2: create_b_voucher has no currency parameter, so a foreign-currency voucher would go out as a
+    # plain INR one. Unless the dataset skips it, that is a stop — before anything is read or written.
+    for v in dataset.vouchers:
+        if v.currency != "INR" and not v.skip_reason:
+            raise CompanyBLoadError(f"[S0-B:{v.tag}] {v.narration}: currency {v.currency} — the writer can only "
+                                    "send INR, so it would be written as a plain INR voucher. Skip it (skip_reason) "
+                                    "until forex is implemented.")
+    report.notes.extend(_skip_notes(dataset))
+
     # Not guarded like `_verify`'s reads (I7): if Tally can't even be read at the START of the voucher stage,
     # blind-creating without knowing what already exists risks duplicates — a hard stop here is the safer choice.
     existing = _read_vouchers(writer, company, _VOUCHER_LIST_FIELDS)
@@ -331,6 +350,8 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
 
     unit_by_item = {i.name: i.unit for i in dataset.items}
     for v in sorted(dataset.vouchers, key=lambda v: (v.date, v.tag)):
+        if v.skip_reason:                                                                                    # C36
+            continue
         if v.tag in existing:
             report.skipped["vouchers"] += 1
             continue
@@ -466,6 +487,8 @@ def _posted_group_balances(dataset: Dataset) -> dict[str, Decimal]:
     "what Tally will actually show", not "what the dataset says should happen if everything worked"."""
     running: dict[str, Decimal] = {l.name: (l.opening or Decimal("0.00")) for l in dataset.ledgers}
     for v in dataset.vouchers:
+        if v.skip_reason:                        # C36: never written, so never in Tally's balances
+            continue
         for line in v.lines:
             running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
     group_parents = {g.name: g.parent for g in dataset.groups}

@@ -565,14 +565,15 @@ def test_inventory_allocations_that_disagree_with_the_nominal_line_are_refused(i
     assert _imports(books) == []
 
 
-def test_a_sale_without_inventory_still_emits_every_line():
-    """The zero-rated export sale (no stock) has nowhere else to carry its nominal ledger — unchanged by C32."""
+def test_a_non_inventory_sale_still_emits_every_line():
+    """A sale with no stock rows has nowhere else to carry its nominal ledger — unchanged by C32. (Not the USD export:
+    that one is skipped, C36, and this asserts ledger names only — nothing about currency or rate.)"""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_b_voucher(
-        B, vch_type="Sales", date="20230601", narration="[S0-B:5] export", party="Global Tech LLC",
-        lines=[("Global Tech LLC", Decimal("-5000.00"), True), ("Export Sales", Decimal("5000.00"), False)])
-    assert _ledger_entry_names(_imports(books)[-1]) == ["Global Tech LLC", "Export Sales"]
+        B, vch_type="Sales", date="20230601", narration="[S0-B:5] service sale", party="Pune Traders",
+        lines=[("Pune Traders", Decimal("-5000.00"), True), ("Domestic Sales", Decimal("5000.00"), False)])
+    assert _ledger_entry_names(_imports(books)[-1]) == ["Pune Traders", "Domestic Sales"]
 
 
 # --- C34: each BILLALLOCATIONS AMOUNT carries the sign of the party line it nests under ------------------------------

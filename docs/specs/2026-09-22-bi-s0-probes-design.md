@@ -9,6 +9,10 @@
 > **Changed 2026-09-24:** §4.3's duplicate-ledger-name pause (R9) is no longer a loader rule — it is a probe
 > observation, re-scoped to probe 25's B part by [`plans/2026-09-23-bi-s0-company-b-loader.md`](../plans/2026-09-23-bi-s0-company-b-loader.md);
 > `setup-b` never runs it. See §4.3.
+> **Changed 2026-09-24 (Ruling C36):** **probe 22 is BLOCKED.** The 2 USD export sales (tags 101/102) were being written
+> as plain INR sales (no Currency master, no ledger CURRENCYNAME, no forex AMOUNT), so probe 22 would have measured no
+> forex. `setup-b` now skips them (tags kept, nothing renumbers), leaves them out of the expected figures, and reports
+> one note. Unblocking needs a live-probed forex write shape first (review `code-review-bi-s0-company-b-live-fixes-2026-09-24.md` #2).
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -420,7 +424,8 @@ saves its fixture per §5.6.
 - The Hindi ledger, a Hindi narration, the compound-unit item, a voucher using it, and a Stock Summary including
   it. Text byte-exact against the dataset; the unit string recorded; no crash, and Tally answers a cheap read after.
 
-**Probe 22 — Forex** · B · feeds decision 15
+**Probe 22 — Forex** · B · feeds decision 15 · **BLOCKED 2026-09-24 (C36)** — `setup-b` skips the 2 USD export
+sales until a forex write shape is live-verified; see the header's "Changed 2026-09-24 (Ruling C36)".
 - The 2 USD export sales: record each line's raw AMOUNT text (it may be an expression like `$… @ ₹…/$ = ₹…`) and
   any *candidate* forex fields. `amounts.parse_decimal` raising on the expression is expected; the probe records
   the raw text.

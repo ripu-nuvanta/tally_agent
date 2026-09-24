@@ -236,7 +236,8 @@ def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
                              echo=lambda line: None, console_input=_console_input_honouring_flag_pauses(books))
     assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 0
     out = capsys.readouterr().out
-    assert "Company B loaded" in out and "960" in out
+    assert "Company B loaded" in out and "vouchers: created 958" in out          # C36: 101/102 skipped
+    assert "probe 22 blocked" in out
     # F19: a note (the observed Trial Balance Dr/Cr total) is informational — it appears, separated under its
     # own "Notes:" heading, and does NOT flip the exit code (asserted together with `== 0` above, same run).
     assert "Notes:" in out and "Trial Balance Dr/Cr total observed" in out
