@@ -94,7 +94,7 @@ def test_close_all_companies_restarts_without_a_company(tmp_path):
 
 
 def test_company_b_has_a_configured_number(tmp_path):
-    assert tmp_config(tmp_path).company_numbers["B"] == "100004"
+    assert tmp_config(tmp_path).company_numbers["B"] == "100000"
 
 
 def test_open_company_b_loads_it(tmp_path):
