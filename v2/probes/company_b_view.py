@@ -16,14 +16,16 @@ import re
 from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from functools import lru_cache
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Callable
 
 from v2.probes.core import ProbeBlocked
 from v2.probes.reads import dmy, fill_month_request, parse_vouchers, tally_date, untyped_period_vars
 from v2.probes.safety import EDUCATIONAL_DATE_VAR_DAYS, check_educational_date_values
-from v2.probes.setup.company_b_data import (COMPANY_B_BOOKS_FROM, COMPANY_B_LAST_MONTH, TAG_PREFIX, Dataset,
-                                            VoucherSpec, _educational_days, generate)
+from v2.probes.setup.company_b_data import (COMPANY_B_BOOKS_FROM, COMPANY_B_LAST_MONTH, COMPOUND_UNIT, HINDI_DEBTOR,
+                                            TAG_PREFIX, Dataset, Expected, LedgerSpec, StockItemSpec, VoucherSpec,
+                                            _educational_days, expected_figures, generate, quantity_unit)
 
 if TYPE_CHECKING:
     from v2.probes.context import ProbeContext
@@ -181,3 +183,54 @@ def loaded_licence(environment: dict[str, Any]) -> str:
     if licence not in ("licensed", "educational"):
         raise ProbeBlocked("No licence recorded: run probe 0 first (company B's voucher dates depend on it).")
     return licence
+
+
+@lru_cache(maxsize=2)
+def expected(licence: str) -> Expected:
+    """expected_figures of the dataset: computed from the dataset alone, never from Tally (spec §4.3). C42: flagged
+    vouchers move nothing; C36: skipped ones don't exist."""
+    return expected_figures(dataset(licence))
+
+
+def ledger_balances_at(licence: str, day: date) -> dict[str, Decimal]:
+    """Every dataset ledger's balance at the close of `day`, which must be a month end inside the books. Running
+    balances from the books start: right for balance-sheet ledgers; a nominal ledger's is cumulative across FYs,
+    which Tally resets every April — callers compare balance-sheet ledgers only, or a period starting at books start."""
+    rows = {name: value for (name, when), value in expected(licence).ledger_month_end.items() if when == day}
+    if not rows:
+        raise ValueError(f"{day.isoformat()} is not a month end inside company B's books")
+    return rows
+
+
+def ledger_openings_at(licence: str, fy_start: date) -> dict[str, Decimal]:
+    """Every dataset ledger's balance at the start of the FY beginning `fy_start` (1 April); the books-start one is
+    the loader's signed opening (C30)."""
+    rows = {name: value for (name, when), value in expected(licence).ledger_fy_opening.items() if when == fy_start}
+    if not rows:
+        raise ValueError(f"{fy_start.isoformat()} is not an FY start inside company B's books")
+    return rows
+
+
+def ledger_specs(licence: str) -> dict[str, LedgerSpec]:
+    return {spec.name: spec for spec in dataset(licence).ledgers}
+
+
+def item_specs(licence: str) -> dict[str, StockItemSpec]:
+    return {spec.name: spec for spec in dataset(licence).items}
+
+
+def qty_unit(licence: str, item: str) -> str:
+    """The unit a quantity of `item` is written and read in (C40: a compound unit's FIRST unit, e.g. "Box")."""
+    return quantity_unit(dataset(licence).units, item_specs(licence)[item].unit)
+
+
+def stock_qty_at(licence: str, item: str, day: date) -> Decimal:
+    return expected(licence).stock_month_end[(item, day)]
+
+
+def first_voucher(licence: str, wanted: Callable[[VoucherSpec], bool]) -> VoucherSpec:
+    """The earliest (date, then tag) voucher the loader wrote, not flagged, that `wanted` accepts."""
+    for v in sorted(dataset(licence).vouchers, key=lambda v: (v.date, v.tag)):
+        if not v.skip_reason and not v.cancelled and not v.optional and wanted(v):
+            return v
+    raise LookupError("no such voucher in company B's dataset")

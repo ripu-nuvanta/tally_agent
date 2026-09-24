@@ -239,3 +239,31 @@ async def test_fetch_window_refuses_an_educational_date_tally_would_silently_ign
     store.update_environment(licence="licensed")      # the request-level C43 guard reads the store's licence (Task 2)
     result, _ = await fetch_window(ctx, "window", template, "licensed", start, end)   # licensed: any date is fine
     assert result["returned"] == 0
+
+
+def test_dataset_balances_and_openings_come_from_the_dataset_alone():
+    from datetime import date
+    from decimal import Decimal
+    import pytest
+    from v2.probes.company_b_view import ledger_balances_at, ledger_openings_at, ledger_specs
+    books = ledger_openings_at("educational", date(2022, 4, 1))
+    assert books["Pune Digital Solutions"] == Decimal("-62500.00")
+    assert books["Capital Account"] == Decimal("1000000.00")
+    assert books == {n: (s.opening or Decimal("0.00")) for n, s in ledger_specs("educational").items()}
+    assert set(ledger_balances_at("educational", date(2023, 3, 31))) == set(books)
+    with pytest.raises(ValueError):
+        ledger_balances_at("educational", date(2023, 3, 30))
+    with pytest.raises(ValueError):
+        ledger_openings_at("educational", date(2023, 5, 1))
+
+
+def test_first_voucher_units_and_stock_for_probe_15():
+    from datetime import date
+    from decimal import Decimal
+    from v2.probes.company_b_view import COMPOUND_UNIT, HINDI_DEBTOR, first_voucher, item_specs, qty_unit, stock_qty_at
+    hindi = first_voucher("educational", lambda v: not v.narration.isascii())
+    # F5: the EDUCATIONAL dataset's first non-ASCII voucher is tag 7 (01-04-2022); tag 2 is the licensed dataset's.
+    assert hindi.tag == 7 and HINDI_DEBTOR in hindi.narration
+    compound = next(n for n, i in item_specs("educational").items() if i.unit == COMPOUND_UNIT)
+    assert compound == "A4 Paper Ream" and qty_unit("educational", compound) == "Box"
+    assert stock_qty_at("educational", compound, date(2026, 3, 31)) == Decimal("20")

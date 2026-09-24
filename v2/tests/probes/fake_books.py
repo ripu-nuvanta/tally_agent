@@ -20,7 +20,7 @@ from v2.agent.tally.envelopes import esc
 from v2.probes.companies import SEED_COMPANY
 from v2.probes.operator.config import OperatorConfig
 from v2.probes.operator.tally_control import TallyProcess
-from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, tb_xml, vouchers_xml
+from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, stock_summary_xml, tb_xml, vouchers_xml
 
 # Tally's own fixed reserved-group hierarchy (not dataset-specific — just enough of it to build a believable
 # Trial Balance fixture for whatever masters a test created). A bucket not listed here is already a primary
@@ -33,6 +33,32 @@ RESERVED_GROUP_PARENTS = {
     "Sundry Debtors": "Current Assets", "Bank Accounts": "Current Assets", "Cash-in-Hand": "Current Assets",
     "Sundry Creditors": "Current Liabilities", "Duties & Taxes": "Current Liabilities",
 }
+
+# Every Tally company's reserved groups (name -> parent, "" = primary), for probes that walk Parent to a primary group.
+PRIMARY_GROUPS = ("Capital Account", "Loans (Liability)", "Current Liabilities", "Fixed Assets", "Investments",
+                  "Current Assets", "Branch / Divisions", "Misc. Expenses (ASSET)", "Suspense A/c", "Sales Accounts",
+                  "Purchase Accounts", "Direct Incomes", "Direct Expenses", "Indirect Incomes", "Indirect Expenses")
+RESERVED_GROUPS = {**{g: "" for g in PRIMARY_GROUPS}, **RESERVED_GROUP_PARENTS, "Stock-in-Hand": "Current Assets"}
+NOMINAL_PRIMARIES = frozenset({"Sales Accounts", "Purchase Accounts", "Direct Incomes", "Direct Expenses",
+                               "Indirect Incomes", "Indirect Expenses"})
+# Collection-name prefixes answered by the generic company-B master routes below (probes 11, 14, 15, 16 B, 18 B).
+B_PROBE_COLLECTIONS = ("S0P11", "S0P14", "S0P15", "S0P16B", "S0P18B")
+# The fake's answer to request XML that isn't well-formed (probe 14's deliberately unescaped `&`). The live shape is
+# what probe 14 records; this is only a Tally-style LINEERROR so `detect_error` sees a failure.
+MALFORMED_ANSWER = ("<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>0</STATUS></HEADER><BODY><DATA>"
+                    "<LINEERROR>fake: request XML is not well-formed</LINEERROR></DATA></BODY></ENVELOPE>")
+_BARE_AMP = re.compile(r"&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);)")
+_COMPANY_VAR = re.compile(r"<SVCurrentCompany>([^<]*)</SVCurrentCompany>")
+
+
+def _amount_text(value: Decimal) -> str:
+    """Tally exports a zero balance as an empty tag (probe 16 A: `empty_closing_for_zero`)."""
+    return "" if value == 0 else f"{value:.2f}"
+
+
+def _fy_start(yyyymmdd: str) -> str:
+    year, month = int(yyyymmdd[:4]), int(yyyymmdd[4:6])
+    return f"{year if month >= 4 else year - 1}0401"
 
 
 def _dr_cr(value: Decimal) -> tuple[str, str]:
@@ -168,20 +194,27 @@ def _export_voucher(state: dict, mid: str, v: dict) -> str:
                  f"<ISDEEMEDPOSITIVE>{line['deemed_positive']}</ISDEEMEDPOSITIVE><AMOUNT>{line['amount']}</AMOUNT>"
                  f"{bills or '<BILLALLOCATIONS.LIST>  </BILLALLOCATIONS.LIST>'}</ALLLEDGERENTRIES.LIST>")
     for inv in v.get("inventory", []):
+        unit = state.get("items", {}).get(inv["item"], {}).get("qty_unit", "")
+        qty = inv["qty"].lstrip("-") + (f" {unit}" if unit else "")
         body += (f"<ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>{esc(inv['item'])}</STOCKITEMNAME>"
-                 f"<ACTUALQTY> {inv['qty'].lstrip('-')}</ACTUALQTY></ALLINVENTORYENTRIES.LIST>")
+                 f"<ACTUALQTY> {qty}</ACTUALQTY></ALLINVENTORYENTRIES.LIST>")
     return f'<VOUCHER VCHTYPE="{esc(header["VOUCHERTYPENAME"])}">{body}</VOUCHER>'
 
 
-def seed_company_b(books: "FakeBooks", licence: str = "educational") -> None:
+def seed_company_b(books: "FakeBooks", licence: str = "educational", *, masters: bool = False) -> None:
     """Company B as a clean `setup-b` leaves it: every written voucher on record with its flags, BooksFrom
     1-Apr-2022. It goes straight into state, NOT through the loader (read-probe tests only; the loader has its own
-    tests). Skipped vouchers (C36) are absent. A cancelled voucher keeps no bill postings, as `_voucher` does."""
-    from v2.probes.setup.company_b_data import generate
+    tests). Skipped vouchers (C36) are absent. A cancelled voucher keeps no bill postings, as `_voucher` does.
+    With `masters=True` it also puts company B's masters in state the way the loader leaves
+    them: custom groups, units, stock items with signed opening values (C39) in their first unit (C40), ledgers with
+    signed openings (C30), the opening bill Op/2022-001, and Tally's own Profit & Loss A/c. Company A's seed ledgers
+    are replaced."""
+    from v2.probes.setup.company_b_data import OPENING_BILL_DATE, generate, quantity_unit
+    data = generate(licence)
 
     def fill(state: dict) -> None:
         state["books_from"] = "20220401"
-        for v in generate(licence).vouchers:
+        for v in data.vouchers:
             if v.skip_reason:
                 continue
             mid = str(state["next_master_id"])
@@ -196,6 +229,29 @@ def seed_company_b(books: "FakeBooks", licence: str = "educational") -> None:
                               for i in v.inventory],
                 "bills": [] if v.cancelled else [{"name": b.name, "type": b.bill_type, "amount": f"{b.amount:.2f}"}
                                                  for b in v.bills]}
+        if masters:
+            state["groups"] = {g.name: {"parent": g.parent} for g in data.groups}
+            state["units"] = {u.name: {"base": u.first_unit, "additional": u.second_unit,
+                                       "conversion": str(u.conversion) if u.conversion else None} for u in data.units}
+            state["items"] = {}
+            for item in data.items:
+                unit = quantity_unit(data.units, item.unit)
+                has = item.opening_qty is not None and item.opening_rate is not None
+                state["items"][item.name] = {
+                    "parent": "", "base_units": item.unit, "qty_unit": unit,
+                    "opening_qty": f"{item.opening_qty} {unit}" if has else "",
+                    "opening_rate": f"{item.opening_rate:.2f}/{unit}" if has else "",
+                    "opening_value": f"{-(item.opening_qty * item.opening_rate):.2f}" if has else "0.00"}
+            state["ledgers"] = {"Profit & Loss A/c": {"parent": "Primary", "email": "", "alter_id": 100,
+                                                      "guid": f"{state['guid']}-b0000000", "opening": "0.00"}}
+            for n, led in enumerate(data.ledgers, start=1):
+                state["ledgers"][led.name] = {"parent": led.parent, "email": "", "alter_id": 100 + n,
+                                              "guid": f"{state['guid']}-b{n:07x}",
+                                              "opening": f"{led.opening:.2f}" if led.opening is not None else "0.00"}
+                if led.opening_bill and led.opening is not None:
+                    state.setdefault("bills", {})[led.opening_bill] = {
+                        "party": led.name, "amount": f"{led.opening:.2f}", "opening": True,
+                        "date": OPENING_BILL_DATE.strftime("%Y%m%d")}
     books.edit_state(fill)
 
 
@@ -205,8 +261,19 @@ class FakeBooks:
     def __init__(self, folder: Path | None = None, *, name: str = SEED_COMPANY, running: bool = True,
                  loaded: bool = True, educational: bool = True, click_polls_on_load: int = 0,
                  busy_polls_on_load: int = 0, drop_flags: bool = False, fail_imports: bool = False,
-                 current_period: tuple[str, str] = CURRENT_PERIOD):
+                 current_period: tuple[str, str] = CURRENT_PERIOD, ledger_svtodate_honoured: bool = False,
+                 ledger_opening_scope: str = "books", ledger_svfromdate_wedges: bool = True,
+                 ledger_opening_bills_exported: bool = True, opening_stock_row: bool = False,
+                 honour_company_var: bool = False, tolerate_raw_ampersand: bool = False):
         self.folder = folder
+        # probe 16: the 2026-09-23 untyped evidence; the typed form is re-measured live
+        self.ledger_svtodate_honoured = ledger_svtodate_honoured
+        self.ledger_opening_scope = ledger_opening_scope              # probe 16 B
+        self.ledger_svfromdate_wedges = ledger_svfromdate_wedges      # LESSONS §15 rule 17
+        self.ledger_opening_bills_exported = ledger_opening_bills_exported   # probe 11
+        self.opening_stock_row = opening_stock_row    # LESSONS §15 rule 19; off so the loader's tests keep their TB
+        self.honour_company_var = honour_company_var                  # probe 14
+        self.tolerate_raw_ampersand = tolerate_raw_ampersand          # probe 14
         self.current_period = current_period  # C33: what an untyped (ignored) period variable reads instead
         self._memory = seed_state(name)
         self.running = running
@@ -297,6 +364,18 @@ class FakeBooks:
             return "<ENVELOPE></ENVELOPE>"
         if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in body:
             return self._import(body, request)
+        if "<TALLYREQUEST>Export</TALLYREQUEST>" in body:
+            try:
+                ET.fromstring(body)
+            except ET.ParseError:
+                if not self.tolerate_raw_ampersand:
+                    return MALFORMED_ANSWER
+                body = _BARE_AMP.sub("&amp;", body)
+            company = _COMPANY_VAR.search(body)
+            wanted_company = html.unescape(company.group(1)) if company else ""
+            if self.honour_company_var and wanted_company and wanted_company != self.state["name"]:
+                return ("<ENVELOPE><BODY><DATA><LINEERROR>Could not find Company "
+                        f"'{esc(wanted_company)}'</LINEERROR></DATA></BODY></ENVELOPE>")
         state = self.state
         if "S0CompanyCounters" in body:
             return objects_xml("COMPANY", [{
@@ -347,6 +426,11 @@ class FakeBooks:
             return bills_xml(state.get("bills_receivable", []) + self._open_bills(state, receivable=True))
         if "<ID>Bills Payable</ID>" in body:
             return bills_xml(self._open_bills(state, receivable=False))
+        if "<ID>Stock Summary</ID>" in body:
+            return self._stock_summary(state, period[1])
+        generic = self._b_collection(state, body, period, request)
+        if generic is not None:
+            return generic
         return "<ENVELOPE></ENVELOPE>"
 
     def _bucket_of(self, state: dict, ledger_parent: str) -> str:
@@ -391,7 +475,100 @@ class FakeBooks:
         rows = list(primaries.items())
         rows += [(bucket, value) for bucket, value in buckets.items()
                 if RESERVED_GROUP_PARENTS.get(bucket, bucket) != bucket]
+        if stock and self.opening_stock_row:
+            rows.append(("Opening Stock", stock))
         return [(name, *_dr_cr(value)) for name, value in rows]
+
+    def _all_groups(self, state: dict) -> dict[str, str]:
+        return {**RESERVED_GROUPS, **{n: g["parent"] for n, g in state["groups"].items()}}
+
+    def _primary_of(self, state: dict, group: str) -> str:
+        parents, seen = self._all_groups(state), []
+        while parents.get(group, "") not in ("", "Primary") and group not in seen:
+            seen.append(group)
+            group = parents[group]
+        return group
+
+    @staticmethod
+    def _ledger_balances(state: dict, *, up_to: str, before: str | None = None) -> dict[str, Decimal]:
+        """Opening + unflagged lines dated ≤ up_to (and < before, when given). C42: flagged vouchers post nothing."""
+        balances = {n: Decimal(l.get("opening") or "0.00") for n, l in state["ledgers"].items()}
+        for v in state["vouchers"].values():
+            day = _yyyymmdd(v["date"]) or v["date"]
+            if _flagged(v) or day > up_to or (before is not None and day >= before):
+                continue
+            for line in v.get("lines", []):
+                balances[line["ledger"]] = balances.get(line["ledger"], Decimal("0.00")) + Decimal(line["amount"] or "0")
+        return balances
+
+    def _b_collection(self, state: dict, body: str, period: tuple[str, str], request: httpx.Request) -> str | None:
+        """Probes 11, 14, 15, 16 B, 18 B: Ledger / Group / StockItem collections, fields by NATIVEMETHOD, a
+        `$Name = "…"` filter honoured. None = not one of these collections."""
+        name = re.search(r"<ID>([^<]+)</ID>", body)
+        if name is None or not name.group(1).startswith(B_PROBE_COLLECTIONS):
+            return None
+        kind = re.search(r"<COLLECTION [^>]*>\s*<TYPE>([^<]+)</TYPE>", body)
+        kind = kind.group(1) if kind else ""
+        fields = {f.lower() for f in re.findall(r"<NATIVEMETHOD>([^<]+)</NATIVEMETHOD>", body)}
+        match = re.search(r'\$Name = "([^"]*)"', body)
+        wanted = html.unescape(match.group(1)) if match else None
+        if kind == "Ledger":
+            if self.ledger_svfromdate_wedges and "<SVFROMDATE" in body:
+                self.popup = True                     # LESSONS §15 rule 17 (measured untyped, 2026-09-23)
+                raise httpx.ReadTimeout("SVFROMDATE on a master collection", request=request)
+            return self._ledger_export(state, fields, period, wanted)
+        if kind == "Group":
+            return objects_xml("GROUP", [{"Name": n, "Parent": p} for n, p in self._all_groups(state).items()])
+        if kind == "StockItem":
+            return objects_xml("STOCKITEM", [
+                {"Name": n, "Parent": i.get("parent", ""), "BaseUnits": i.get("base_units", ""),
+                 "OpeningBalance": i.get("opening_qty", ""), "OpeningRate": i.get("opening_rate", ""),
+                 "OpeningValue": i.get("opening_value", "")}
+                for n, i in state["items"].items() if wanted in (None, n)])
+        return "<ENVELOPE></ENVELOPE>"
+
+    def _ledger_export(self, state: dict, fields: set[str], period: tuple[str, str], wanted: str | None) -> str:
+        closing_to = period[1] if self.ledger_svtodate_honoured else self.current_period[1]
+        closing = self._ledger_balances(state, up_to=closing_to)
+        before_fy = self._ledger_balances(state, up_to="99991231", before=_fy_start(closing_to))
+        out = []
+        for name, led in state["ledgers"].items():
+            if wanted is not None and name != wanted:
+                continue
+            if self.ledger_opening_scope == "fy":
+                nominal = self._primary_of(state, led["parent"]) in NOMINAL_PRIMARIES
+                opening = Decimal("0.00") if nominal else before_fy.get(name, Decimal("0.00"))
+            else:
+                opening = Decimal(led.get("opening") or "0.00")
+            parts = [f"<NAME>{esc(name)}</NAME>"]
+            if "parent" in fields:
+                parts.append(f"<PARENT>{esc(led['parent'])}</PARENT>")
+            if "openingbalance" in fields:
+                parts.append(f"<OPENINGBALANCE>{_amount_text(opening)}</OPENINGBALANCE>")
+            if "closingbalance" in fields:
+                parts.append(f"<CLOSINGBALANCE>{_amount_text(closing.get(name, Decimal('0.00')))}</CLOSINGBALANCE>")
+            if "billallocations" in fields and self.ledger_opening_bills_exported:
+                for bill_name, bill in state.get("bills", {}).items():
+                    if bill.get("opening") and bill["party"] == name:
+                        parts.append(f"<BILLALLOCATIONS.LIST><NAME>{esc(bill_name)}</NAME><BILLDATE>{bill['date']}"
+                                     f"</BILLDATE><OPENINGBALANCE>{bill['amount']}</OPENINGBALANCE>"
+                                     "</BILLALLOCATIONS.LIST>")
+            out.append(f'<LEDGER NAME="{esc(name)}">{"".join(parts)}</LEDGER>')
+        return f"<ENVELOPE><BODY><DATA><COLLECTION>{''.join(out)}</COLLECTION></DATA></BODY></ENVELOPE>"
+
+    @staticmethod
+    def _stock_summary(state: dict, as_on: str) -> str:
+        """Closing quantity per item as on `as_on` (the fake keeps no valuation, so values are blank)."""
+        rows = []
+        for name, item in state["items"].items():
+            words = (item.get("opening_qty") or "").split()
+            qty = Decimal(words[0]) if words else Decimal("0")
+            for v in state["vouchers"].values():
+                if _flagged(v) or (_yyyymmdd(v["date"]) or v["date"]) > as_on:
+                    continue
+                qty += sum((Decimal(i["qty"]) for i in v.get("inventory", []) if i["item"] == name), Decimal("0"))
+            rows.append((name, f"{qty} {item.get('qty_unit', '')}".strip(), "", ""))
+        return stock_summary_xml(rows)
 
     def _import(self, body: str, request: httpx.Request) -> str:
         if self.fail_imports:
