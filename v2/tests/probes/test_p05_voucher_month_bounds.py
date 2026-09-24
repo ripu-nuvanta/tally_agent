@@ -131,6 +131,10 @@ async def test_an_untyped_answer_that_is_also_bounded_is_flagged_not_trusted(tmp
     assert part["outcome"] == "CONFIRMED"
     assert part["observations"]["c33_reproduced"] is False
     assert "C33 NOT reproduced" in part["summary"]
+    # M4: untyped evidence must never change the CONFIRMED verdict, but the spec_impact text must not assert the
+    # C33 silent-fallback claim when it wasn't reproduced this run.
+    assert 'TYPE="Date"' in part["spec_impact"]
+    assert "silently answers for the company's current period" not in part["spec_impact"]
 
 
 def test_ordered_runs_put_probe_5_right_before_probe_21():

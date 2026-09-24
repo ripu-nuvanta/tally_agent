@@ -167,7 +167,11 @@ def storage_table(stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
         "q23": {"per_extra_fy_with_raw_mb": {str(v): _mb(v * with_raw) for v in VOLUMES},
                 "per_extra_fy_without_raw_mb": {str(v): _mb(v * per["columns"]) for v in VOLUMES},
                 "month_chunks": chunks,
-                "caveats": ["indexes excluded", "JSONB stored size ≈ text JSON (not modelled)",
+                "caveats": ["indexes excluded",
+                            "JSONB binary overhead and TOAST compression (values over ~2 kB) are not modelled, "
+                            "so `raw` is an estimate in either direction",
+                            "child-row voucher_id and referenced GUIDs are sized as GUID strings — an upper "
+                            "bound if S1 uses bigint FKs",
                             "company B's mix: one stock line per invoice — scale with block_bytes"]},
     }
 
@@ -244,7 +248,9 @@ def _headline(storage: dict[str, Any]) -> str:
     return (f"Q22/Q23 inputs (company B's mix, sizes under Wine): {per['columns']} B/voucher without raw, raw JSON "
             f"{per['raw']} B more ({storage['q22']['raw_share_pct']}% of the total); 200k vouchers/yr × 10 yr = "
             f"{row['with_raw_mb']} MB with raw, {row['without_raw_mb']} MB without, {row['raw_recent_2_fy_only_mb']} MB "
-            "keeping raw for the recent 2 FYs only (indexes excluded). S1 decides Q22/Q23 on these.")
+            "keeping raw for the recent 2 FYs only (indexes excluded); upper bounds — JSONB overhead/TOAST "
+            "compression and bigint-vs-GUID FK sizing are unmodelled (see caveats). S1 decides Q22/Q23 on "
+            "these.")
 
 
 async def run_b(ctx: ProbeContext) -> PartResult:

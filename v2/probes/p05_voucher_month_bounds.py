@@ -30,6 +30,9 @@ FORMULA_CANDIDATE = f'$Date >= $$Date:"{FROM_PLACEHOLDER}" AND $Date <= $$Date:"
 TYPED_IMPACT = ('The extractor\'s month request types its period variables (TYPE="Date", C33): untyped, Tally '
                 "silently answers for the company's current period, so an untyped chunk looks healthy and is wrong "
                 "(Part 1 §5 extractor).")
+TYPED_IMPACT_UNCONFIRMED = ('The extractor\'s month request types its period variables (TYPE="Date"); this run did '
+                            "not reproduce C33's untyped silent-fallback claim, so that specific behaviour is not "
+                            "confirmed evidence (Part 1 §5 extractor).")
 FORMULA_IMPACT = ("Typed SVFROMDATE/SVTODATE don't bound a Voucher collection: the extractor bounds month chunks with "
                   "the $Date formula filter inside a books-wide typed period (Part 1 §5 extractor).")
 DAY_IMPACT = ("A one-day window doesn't return exactly that day's vouchers, so month chunks can't auto-split to days: "
@@ -117,7 +120,8 @@ async def run_b(ctx: ProbeContext) -> PartResult:
         return PartResult(Outcome.DIFFERENT, "; ".join(notes) + f". {evidence}", spec_impact=" ".join(impacts))
     return PartResult(Outcome.CONFIRMED, f"Typed SVFROMDATE/SVTODATE bound June 2023 exactly ({typed['returned']} "
                                          f"vouchers) and a one-day window returns exactly {DAY}'s {day['returned']}. "
-                                         f"{evidence}", spec_impact=TYPED_IMPACT)
+                                         f"{evidence}",
+                      spec_impact=TYPED_IMPACT if reproduced else TYPED_IMPACT_UNCONFIRMED)
 
 
 PROBE = Probe(

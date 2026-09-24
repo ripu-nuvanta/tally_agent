@@ -86,6 +86,25 @@ def test_storage_table_from_hand_numbers():
     assert out["q22"]["saving_if_raw_dropped_beyond_2_fy_mb"]["10000"] == {"5": "18.0", "10": "48.0"}
 
 
+def test_storage_caveats_flag_unmodelled_jsonb_overhead_and_guid_sized_fks():
+    stats = {"k": {"count": 2, "xml_bytes": 2000, "json_bytes": 1200, "column_bytes": 800, "rows": 10}}
+    caveats = p21.storage_table(stats)["q23"]["caveats"]
+    assert caveats == [
+        "indexes excluded",
+        "JSONB binary overhead and TOAST compression (values over ~2 kB) are not modelled, so `raw` is an "
+        "estimate in either direction",
+        "child-row voucher_id and referenced GUIDs are sized as GUID strings — an upper bound if S1 uses "
+        "bigint FKs",
+        "company B's mix: one stock line per invoice — scale with block_bytes",
+    ]
+
+
+def test_headline_calls_the_storage_figures_upper_bounds():
+    stats = {"k": {"count": 2, "xml_bytes": 2000, "json_bytes": 1200, "column_bytes": 800, "rows": 10}}
+    storage = p21.storage_table(stats)
+    assert "upper bounds" in p21._headline(storage)
+
+
 def test_month_chunks_flag_volumes_over_the_chunk_cap():
     stats = {"k": {"count": 1, "xml_bytes": 1000, "json_bytes": 600, "column_bytes": 400, "rows": 5}}
     chunks = {c["vouchers_per_year"]: c for c in p21.storage_table(stats)["q23"]["month_chunks"]}
