@@ -27,7 +27,7 @@ PROBES: tuple[ProbeInfo, ...] = (
     ProbeInfo(2, "active_company_guid", "A", "B", module="v2.probes.p02_active_company_guid"),
     ProbeInfo(3, "voucher_ids_flags", "A+B", "B", module="v2.probes.p03_voucher_ids_flags"),
     ProbeInfo(4, "alterid_filter", "A", "B", module="v2.probes.p04_alterid_filter"),
-    ProbeInfo(5, "voucher_month_bounds", "B", "B"),
+    ProbeInfo(5, "voucher_month_bounds", "B", "B", module="v2.probes.p05_voucher_month_bounds"),
     ProbeInfo(6, "nested_lines_ledger_guid", "A", "B", module="v2.probes.p06_nested_lines_ledger_guid"),
     ProbeInfo(7, "deleted_vouchers", "A", "B", module="v2.probes.p07_deleted_vouchers"),
     ProbeInfo(8, "ledger_rename", "A", "B", module="v2.probes.p08_ledger_rename"),
@@ -43,7 +43,7 @@ PROBES: tuple[ProbeInfo, ...] = (
     ProbeInfo(18, "historical_reports", "A+B", "B", module="v2.probes.p18_historical_reports"),
     ProbeInfo(19, "counter_stability", "A", "B", module="v2.probes.p19_counter_stability"),
     ProbeInfo(20, "parity_cost", "—", "C", deferred=True),
-    ProbeInfo(21, "full_history_reach", "B", "B+C"),
+    ProbeInfo(21, "full_history_reach", "B", "B+C", module="v2.probes.p21_full_history_reach"),
     ProbeInfo(22, "forex", "B", "B"),   # BLOCKED 2026-09-24 (C36): setup-b skips the USD export sales 101/102
     ProbeInfo(23, "gst_due_dates", "A+B", "B", module="v2.probes.p23_gst_due_dates"),
     ProbeInfo(24, "secured_company", "C", "B"),
@@ -53,7 +53,7 @@ PROBES: tuple[ProbeInfo, ...] = (
 FIRST_ORDER: list[OrderStep] = [
     (0, "A"), (2, "A"), (1, "A"),
     (ANCHORS_BEFORE_PARITY, "A"), (16, "A"), (17, "A"), (18, "A"), (ANCHORS_AFTER_A, "A"),
-    (21, "B"), (16, "B"), (18, "B"),
+    (5, "B"), (21, "B"), (16, "B"), (18, "B"),
 ]
 
 ALL_ORDER: list[OrderStep] = [
@@ -61,7 +61,8 @@ ALL_ORDER: list[OrderStep] = [
     (ANCHORS_BEFORE_PARITY, "A"), (16, "A"), (17, "A"), (18, "A"), (19, "A"),
     (3, "A"), (4, "A"), (6, "A"), (12, "A"), (23, "A"), (25, "A"),
     (7, "A"), (8, "A"), (10, "A"), (13, "A"), (ANCHORS_AFTER_A, "A"),
-    (21, "B"), (16, "B"), (18, "B"), (5, "B"), (3, "B"), (11, "B"), (14, "B"), (15, "B"), (22, "B"), (23, "B"), (25, "B"),
+    # 5 before 21: probe 21 fetches with probe 5's confirmed request (S0-D7); spec §6 "21 first" = first after 5.
+    (5, "B"), (21, "B"), (16, "B"), (18, "B"), (3, "B"), (11, "B"), (14, "B"), (15, "B"), (22, "B"), (23, "B"), (25, "B"),
     (24, "C"),
 ]
 
