@@ -270,35 +270,75 @@ def test_a_party_ledger_carries_bill_wise_and_a_valid_gstin():
     assert "<PARTYGSTIN>27AAAPL1234C1ZV</PARTYGSTIN>" in sent
 
 
-def test_a_negative_dataset_opening_emits_a_positive_openingbalance_on_the_wire():
-    """F11: company_b_data.py signs `opening` (debit negative) for `expected_figures`' own arithmetic, but Tally
-    infers OPENINGBALANCE's side from the parent group's nature (docs/tally-write-exploration-v4.md Op 5) — the
-    wire value is never signed. A negative dataset opening must still emit a positive OPENINGBALANCE."""
+def test_a_negative_dataset_opening_is_sent_signed_on_the_wire():
+    """C30 (overturns C21/F11): Tally reads OPENINGBALANCE's sign — negative = Dr, positive = Cr — it does NOT
+    infer the side from the parent group. Live evidence: backend/tally_bridge/import_builder.py's abs() landed
+    company A's HDFC −5,00,000 / SBI −2,00,000 as CREDITS (v2/tests/fixtures/sync/p18_A_ledger_list.xml shows them
+    positive, like Capital Account). So the dataset's debit-negative value goes on the wire as is."""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_party_ledger(B, "Kolhapur Retail Mart", parent="Sundry Debtors", bill_wise=False,
                                opening=Decimal("-45000.00"))
     sent = _imports(books)[-1]
-    assert "<OPENINGBALANCE>45000.00</OPENINGBALANCE>" in sent
-    assert "-45000.00" not in sent
+    assert "<OPENINGBALANCE>-45000.00</OPENINGBALANCE>" in sent
 
 
-@pytest.mark.parametrize("name, parent, opening", [
-    ("HDFC OD A/c", "Bank Accounts", Decimal("25000.00")),          # an overdraft: a CREDIT under a debit group
-    ("Advance from Kolhapur", "Sundry Debtors", Decimal("1000.00")),  # a debtor in credit
-    ("Drawings", "Capital Account", Decimal("-5000.00")),           # a DEBIT under a credit group
-    ("Pune Traders", "Local Creditors", Decimal("-1.00")),          # custom sub-group: nature unknown here
-])
-def test_a_contra_natural_or_unclassifiable_opening_is_refused_before_anything_is_sent(name, parent, opening):
-    """M1: the wire value is abs(opening) and Tally infers the side from the parent group (Op 5), so an opening
-    whose sign (debit negative, Rulings C19/C21/C22) opposes the group's nature would silently land on the wrong
-    side. Refuse it — and refuse an opening under a group whose nature this module cannot name — before any
-    request reaches Tally."""
+def test_a_positive_dataset_opening_is_sent_as_a_positive_credit():
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
-    with pytest.raises(ValueError, match="opening"):
+    writer.create_party_ledger(B, "Capital Account", parent="Capital Account", bill_wise=False,
+                               opening=Decimal("1000000.00"))
+    assert "<OPENINGBALANCE>1000000.00</OPENINGBALANCE>" in _imports(books)[-1]
+
+
+def _tb_row(books, group):
+    return next(row for row in books._trial_balance_rows(books.state) if row[0] == group)
+
+
+def test_a_debit_opening_lands_on_the_debit_side_of_the_fake_trial_balance():
+    """The fake must read the wire sign the way Tally does (negative = Dr), so the balance tests mean something."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_party_ledger(B, "Kolhapur Retail Mart", parent="Sundry Debtors", bill_wise=False,
+                               opening=Decimal("-45000.00"))
+    assert _tb_row(books, "Sundry Debtors")[1:] == ("-45000.00", "")
+
+
+def test_the_fake_reads_the_wire_sign_not_the_parent_groups_nature():
+    """A positive OPENINGBALANCE under a debit-nature group (an overdraft under Bank Accounts) is a CREDIT in
+    Tally — the fake must not re-sign it from the group (the disproven Op 5 / C21 rule)."""
+    books = FakeBooks(name=B)
+    xml = wrap_import("All Masters", B, '<LEDGER NAME="HDFC OD" ACTION="Create">\n  <NAME.LIST><NAME>HDFC OD</NAME>'
+                      '</NAME.LIST>\n  <PARENT>Bank Accounts</PARENT>\n  <OPENINGBALANCE>25000.00</OPENINGBALANCE>'
+                      '\n</LEDGER>')
+    sync_client(books.transport()).post("/", content=xml.encode("utf-8"))
+    assert _tb_row(books, "Bank Accounts")[1:] == ("", "25000.00")
+
+
+@pytest.mark.parametrize("name, parent, opening, match", [
+    ("HDFC OD A/c", "Bank Accounts", Decimal("25000.00"), "contra-natural"),     # a CREDIT under a debit group
+    ("Advance from Kolhapur", "Sundry Debtors", Decimal("1000.00"), "contra-natural"),  # a debtor in credit
+    ("Drawings", "Capital Account", Decimal("-5000.00"), "contra-natural"),      # a DEBIT under a credit group
+    ("Pune Traders", "Local Creditors", Decimal("1.00"), "nature is unknown"),   # m3: natural credit, custom group
+])
+def test_a_contra_natural_or_unclassifiable_opening_is_refused_before_anything_is_sent(name, parent, opening, match):
+    """M1, kept as a DATASET sanity check after C30: the wire is now signed, so a contra-natural opening would
+    land where its sign says — but in this dataset one is far likelier a sign slip than a real overdraft, so it is
+    still refused, as is an opening under a group whose nature this module cannot name. m3: each case matches
+    its own branch's message, so the custom-group case cannot pass via the contra-natural branch."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match=match):
         writer.create_party_ledger(B, name, parent=parent, bill_wise=False, opening=opening)
     assert books.requests == []
+
+
+@pytest.mark.parametrize("opening", [Decimal("-18000.00"), Decimal("18000.00")])
+def test_a_duties_and_taxes_opening_may_sit_on_either_side(opening):
+    """m1: an Input GST ledger carries a DEBIT opening (ITC carried forward), Output GST a credit — both normal."""
+    from v2.probes.setup.writes import check_opening_side
+
+    check_opening_side("Input CGST", "Duties & Taxes", opening)
 
 
 def test_every_company_b_opening_matches_its_parent_groups_nature():

@@ -99,9 +99,9 @@ def test_opening_balances_net_to_zero():
     a debit is NEGATIVE, a credit is POSITIVE, matching `LineSpec.amount` after F12's sign fix
     (docs/tally-write-exploration-v4.md Op 6/7's live-verified convention). Under this convention the three
     asset ledgers (the two debtors, the bank) and opening stock are debits and carry negative openings; Capital
-    Account is a credit and stays positive. This is a DATASET-INTERNAL convention only, for `expected_figures`'
-    own Python arithmetic — `create_party_ledger` (writes.py) always sends `abs(opening)` on the wire (Op 5:
-    Tally infers the side from the parent group, never from the caller's sign).
+    Account is a credit and stays positive. It is ALSO the wire convention: `create_party_ledger` (writes.py)
+    sends the signed opening as is, because Tally reads OPENINGBALANCE's sign — negative = Dr (Ruling C30,
+    2026-09-24, overturning Op 5's "Tally infers the side from the parent group" / C21 / F11).
 
     Ledger openings use this signed convention; opening stock (an asset, from each StockItemSpec's
     opening_qty * opening_rate) is a debit too and is not carried as a ledger opening at all, so it's added into

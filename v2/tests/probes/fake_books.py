@@ -19,7 +19,6 @@ import httpx
 from v2.probes.companies import SEED_COMPANY
 from v2.probes.operator.config import OperatorConfig
 from v2.probes.operator.tally_control import TallyProcess
-from v2.probes.reads import PRIMARY_NATURE
 from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, tb_xml
 
 # Tally's own fixed reserved-group hierarchy (not dataset-specific — just enough of it to build a believable
@@ -234,28 +233,18 @@ class FakeBooks:
         group = state["groups"].get(ledger_parent)
         return group["parent"] if group else ledger_parent
 
-    def _primary_of(self, state: dict, ledger_parent: str) -> str:
-        return RESERVED_GROUP_PARENTS.get(self._bucket_of(state, ledger_parent), self._bucket_of(state, ledger_parent))
-
     def _trial_balance_rows(self, state: dict) -> list[tuple[str, str, str]]:
         """An exploded-to-two-levels Trial Balance (EXPLODEFLAG=Yes shape, probe 17), computed from whatever
         ledgers/groups/vouchers this fake actually has on record — not from any dataset's idea of what should
         be there. Real Tally XML signs a debit-natured closing balance negative and a credit-natured one
         positive (verified against tests/fixtures/tally_samples/trial_balance_live.xml); `_dr_cr` mirrors that.
 
-        F11: a ledger's `OPENINGBALANCE` on record is UNSIGNED (docs/tally-write-exploration-v4.md Op 5 — Tally
-        infers the side from the parent group's nature, `create_party_ledger` always sends `abs(opening)`), so
-        this fake must do the same inference real Tally does, not just re-use whatever sign it was given. A
-        positive OPENINGBALANCE is a debit for an asset/expense-natured group, a credit for a
-        liability/income-natured one (`PRIMARY_NATURE`, reads.py) — unlisted (e.g. no `parent` resolved at all)
-        defaults to credit-normal, matching Tally's own default for an unclassified group.
+        C30 (overturns F11/C21): a ledger's `OPENINGBALANCE` on record is SIGNED exactly as it came over the wire,
+        and real Tally reads that sign — negative = Dr, positive = Cr — whatever the parent group (company A's
+        abs()'d bank openings landed as credits). So this fake takes the sign as given and never re-derives it
+        from the group's nature.
         """
-        def signed_opening(led: dict) -> Decimal:
-            raw = Decimal(led.get("opening", "0.00"))
-            nature = PRIMARY_NATURE.get(self._primary_of(state, led["parent"]))
-            return -raw if nature in ("assets", "expenses") else raw
-
-        balances = {name: signed_opening(led) for name, led in state["ledgers"].items()}
+        balances = {name: Decimal(led.get("opening", "0.00")) for name, led in state["ledgers"].items()}
         for voucher in state["vouchers"].values():
             for line in voucher.get("lines", []):
                 name = line["ledger"]

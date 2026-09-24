@@ -8,16 +8,17 @@
 Every write is read back (LESSONS §12). Writes go only to companies with "Probe" in the name; the one exception is
 renaming the fresh seed copy to company A, which the operator does only on its own s0probe Tally.
 
-**The dataset<->wire sign boundary (bitten twice — Task 5's inventory unit suffix, Task 6's F11 opening
-balance):** a caller's dataset is free to carry values signed however its own arithmetic needs (company_b_data.py
-signs LEDGER OPENINGS debit-negative to match `expected_figures`'s running-balance math). What reaches THIS
-module's create methods is not automatically what reaches the wire. Exactly one place is genuinely signed on the
-wire: `create_b_voucher`'s `lines` (AMOUNT + ISDEEMEDPOSITIVE) — Op 6/7's sign convention table is about ledger
-ENTRIES, which really do carry a side. Everywhere else a caller passes an "opening" value — `create_party_ledger`'s
-`opening`, `create_stock_item`'s `opening_qty`/`opening_rate` — Tally infers the side from the master's own nature
-(the parent group, for a ledger; a quantity is simply never negative, for stock) and the wire value must be
-unsigned. `create_party_ledger` takes `abs(opening)` for exactly this reason (Op 5's gotcha); never re-introduce a
-signed OPENINGBALANCE.
+**The dataset<->wire sign boundary (bitten three times — Task 5's inventory unit suffix, Task 6's F11 opening
+balance, and F11 itself being wrong, C30):** company_b_data.py signs LEDGER OPENINGS debit-negative, credit-positive,
+and that is ALSO what Tally reads on the wire. Two places are signed on the wire:
+- `create_b_voucher`'s `lines` (AMOUNT + ISDEEMEDPOSITIVE) — Op 6/7's sign convention (Ruling C22, live-verified).
+- `create_party_ledger`'s `opening` → OPENINGBALANCE, sent SIGNED: negative = Dr, positive = Cr (Ruling C30,
+  2026-09-24). Tally does NOT infer the side from the parent group — Op 5's gotcha / Ruling C21 / F11 were never
+  tested (Op 5 only checked that Capital Account existed). Live evidence: backend/tally_bridge/import_builder.py's
+  `abs(opening)` landed company A's HDFC −5,00,000 and SBI −2,00,000 as CREDITS
+  (docs/specs/2026-09-21-bi-part1-sync-design.md "Settled 2026-09-23"; v2/tests/fixtures/sync/p18_A_ledger_list.xml
+  shows them positive, like Capital Account). Never re-introduce `abs(opening)`.
+A stock opening (`create_stock_item`'s `opening_qty`/`opening_rate`) is a quantity and a rate — never negative.
 """
 from __future__ import annotations
 
@@ -45,10 +46,10 @@ ITEM_FIELDS = ["Name", "BaseUnits", "Parent"]
 VOUCHER_TYPE_FIELDS = ["Name", "Parent"]
 
 
-# M1: the side Tally gives an unsigned OPENINGBALANCE under each group it reserves (Op 5: positive with Capital
-# Account = credit, positive with Cash-in-Hand = debit). Primary groups come from reads.PRIMARY_NATURE; the reserved
-# sub-groups map to the primary they sit under. A custom group (e.g. "Local Creditors") is deliberately absent: its
-# nature is its root's, which only a Tally read can tell, so an opening under one is refused rather than guessed.
+# M1: each reserved group's natural side, for `check_opening_side`'s dataset sanity check (the WIRE side comes from
+# the sign alone, C30). Primary groups come from reads.PRIMARY_NATURE; the reserved sub-groups map to the primary
+# they sit under. A custom group (e.g. "Local Creditors") is deliberately absent: its nature is its root's, which
+# only a Tally read can tell, so an opening under one is refused rather than guessed.
 _RESERVED_SUBGROUP_PRIMARY: dict[str, str] = {
     "Bank Accounts": "Current Assets", "Cash-in-Hand": "Current Assets", "Deposits (Asset)": "Current Assets",
     "Loans & Advances (Asset)": "Current Assets", "Stock-in-Hand": "Current Assets",
@@ -59,27 +60,30 @@ _RESERVED_SUBGROUP_PRIMARY: dict[str, str] = {
     "Reserves & Surplus": "Capital Account",
 }
 _DEBIT_NATURES = frozenset({"assets", "expenses"})
+# m1: groups whose ledgers normally carry an opening on EITHER side — Duties & Taxes holds Input GST (a debit: ITC
+# carried forward) as well as Output GST (a credit).
+_EITHER_SIDE_GROUPS = frozenset({"Duties & Taxes"})
 
 
 def check_opening_side(name: str, parent: str, opening: Decimal) -> None:
-    """Raise ValueError if `opening` (debit negative — Rulings C19/C21/C22) opposes `parent`'s nature.
+    """Raise ValueError if `opening` (debit negative — Rulings C19/C22/C30) opposes `parent`'s nature.
 
-    `create_party_ledger` sends abs(opening) and Tally infers the side from the parent group, so a contra-natural
-    opening — a bank overdraft under Bank Accounts, a debtor in credit, drawings under Capital Account — would land
-    on the WRONG side with no error. There is no verified wire shape for a contra-natural opening, so it is refused.
-    A zero opening has no side and always passes."""
-    if opening == 0:
+    A DATASET sanity check, not a wire constraint: since C30 the wire is signed, so a contra-natural opening — a bank
+    overdraft under Bank Accounts, a debtor in credit, drawings under Capital Account — would land exactly where its
+    sign says. In a generated dataset, though, one is far likelier a sign slip than intended, so it is refused. A
+    zero opening has no side and always passes; Duties & Taxes accepts either side (m1)."""
+    if opening == 0 or parent in _EITHER_SIDE_GROUPS:
         return
     primary = _RESERVED_SUBGROUP_PRIMARY.get(parent, parent)
     nature = PRIMARY_NATURE.get(primary)
     if nature is None:
         raise ValueError(f"Ledger {name!r}: cannot send an opening under {parent!r} — its nature is unknown here "
-                         "(a custom group), and abs(opening) would let Tally pick the side")
+                         "(a custom group), so its sign cannot be sanity-checked")
     debit_group = nature in _DEBIT_NATURES
     if (opening < 0) != debit_group:
         side, natural = ("debit", "credit") if opening < 0 else ("credit", "debit")
         raise ValueError(f"Ledger {name!r}: a {side} opening of {opening} under {parent!r} (a {natural}-nature group) "
-                         "is contra-natural — abs(opening) on the wire would land it on the wrong side")
+                         "is contra-natural — almost certainly a sign slip in the dataset (debit negative, credit positive)")
 
 
 class WriteRefused(Exception):
@@ -452,13 +456,13 @@ class TallyWriter:
 
     def create_party_ledger(self, company: str, name: str, *, parent: str, bill_wise: bool,
                             opening: Decimal | None = None, gstin: str | None = None) -> None:
-        """`opening` is signed (debit negative, matching Op 6/7's voucher-line convention and
-        company_b_data.py's `expected_figures` arithmetic) — but the WIRE value must not be: per
-        docs/tally-write-exploration-v4.md Op 5, Tally infers OPENINGBALANCE's side from the parent group's
-        own nature (positive with Capital Account = credit; positive with Cash-in-Hand = debit), so the sign
-        this method sends is never the caller's to choose. Always `abs(opening)` on the wire — which is only
-        correct when the opening's sign matches the parent's nature, so `check_opening_side` refuses anything
-        else (M1) before a single request is sent."""
+        """`opening` is signed (debit negative, credit positive — company_b_data.py's convention) and goes on the
+        wire AS IS: Tally reads OPENINGBALANCE's sign, negative = Dr, positive = Cr (Ruling C30, overturning
+        C21/F11 — see the module docstring for the company-A evidence). Never `abs()` it.
+
+        `check_opening_side` (M1) runs FIRST — before the "already exists" skip, on purpose (m4): bad dataset
+        signs fail loud on every run, even a re-run where the ledger exists and nothing would be sent. Do not move
+        it after the skip."""
         check_writable(company)
         if opening is not None:
             check_opening_side(name, parent, opening)
@@ -466,7 +470,7 @@ class TallyWriter:
             self.say(f"{name} already exists — not re-created")
             return
         extra = "".join(filter(None, [
-            f"\n  <OPENINGBALANCE>{abs(opening):.2f}</OPENINGBALANCE>" if opening is not None else "",
+            f"\n  <OPENINGBALANCE>{opening:.2f}</OPENINGBALANCE>" if opening is not None else "",
             f"\n  <PARTYGSTIN>{esc(gstin)}</PARTYGSTIN>\n  <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" if gstin
             else "\n  <GSTREGISTRATIONTYPE>Unregistered</GSTREGISTRATIONTYPE>",
         ]))

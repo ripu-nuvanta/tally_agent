@@ -36,8 +36,10 @@ line; one that does (see `test_the_run_ends_by_checking_counts_and_balances_agai
 
 Round 2 fixes (F9 — company_b_data.py's opening balances were unsigned; F10 — deleted a `problems`-whitelist
 in favour of simulating the operator honouring a flag pause, `test_p08_ledger_rename.py`-style) and round 3
-(F11 — `create_party_ledger` must send `abs(opening)` on the wire; Tally infers the side from the parent group,
-docs/tally-write-exploration-v4.md Op 5) are covered in task-6-report.md's "Fix round 2/3" appendices.
+(F11 — `create_party_ledger` sent `abs(opening)` on the wire, believing Tally infers the side from the parent
+group, docs/tally-write-exploration-v4.md Op 5) are covered in task-6-report.md's "Fix round 2/3" appendices.
+**Changed 2026-09-24 (Ruling C30):** F11 was wrong — Tally reads the wire sign (negative = Dr), as company A's
+abs()'d bank openings landing as credits showed. `create_party_ledger` now sends the signed opening.
 
 Round 4 fixes (coordinator review round 4/5) — the sign convention itself was inverted:
 
@@ -46,7 +48,8 @@ Round 4 fixes (coordinator review round 4/5) — the sign convention itself was 
   (`test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention` pins the actual convention now, since a
   sum-to-zero invariant can't tell a convention from its mirror image).
 - F13: round 2's signed openings (debit negative) were and remain CORRECT under this convention — see
-  `test_opening_balances_net_to_zero`'s comment. F11's `abs()` on the wire stays; Tally infers the side.
+  `test_opening_balances_net_to_zero`'s comment. (F11's `abs()` on the wire was later overturned — C30: the
+  signed opening goes on the wire as is.)
 - F14/F15: see `_verify_balances`'s own docstring for exactly what the balance check does and does not prove.
 """
 from __future__ import annotations
