@@ -36,7 +36,7 @@ PROBES: tuple[ProbeInfo, ...] = (
     ProbeInfo(11, "openings", "B", "B", module="v2.probes.p11_openings"),
     ProbeInfo(12, "current_snapshots", "A", "B", module="v2.probes.p12_current_snapshots"),
     ProbeInfo(13, "backup_restore", "A", "B", module="v2.probes.p13_backup_restore"),
-    ProbeInfo(14, "special_char_company", "B", "B"),
+    ProbeInfo(14, "special_char_company", "B", "B", module="v2.probes.p14_special_char_company"),
     ProbeInfo(15, "unicode_compound_units", "B", "B"),
     ProbeInfo(16, "ledger_closing_balance", "A+B", "B", module="v2.probes.p16_ledger_closing_balance"),
     ProbeInfo(17, "ledger_level_tb", "A", "B", module="v2.probes.p17_ledger_level_tb"),
@@ -62,7 +62,9 @@ ALL_ORDER: list[OrderStep] = [
     (3, "A"), (4, "A"), (6, "A"), (12, "A"), (23, "A"), (25, "A"),
     (7, "A"), (8, "A"), (10, "A"), (13, "A"), (ANCHORS_AFTER_A, "A"),
     # 5 before 21: probe 21 fetches with probe 5's confirmed request (S0-D7); spec §6 "21 first" = first after 5.
-    (5, "B"), (21, "B"), (16, "B"), (18, "B"), (3, "B"), (11, "B"), (14, "B"), (15, "B"), (22, "B"), (23, "B"), (25, "B"),
+    # 14 LAST in company B (Ruling Q6, spec §6 Changed 2026-09-24): it deliberately sends malformed XML that may
+    # leave Tally behind a popup, so nothing else in B runs after it.
+    (5, "B"), (21, "B"), (16, "B"), (18, "B"), (3, "B"), (11, "B"), (15, "B"), (22, "B"), (23, "B"), (25, "B"), (14, "B"),
     (24, "C"),
 ]
 

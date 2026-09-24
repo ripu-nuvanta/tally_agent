@@ -31,6 +31,9 @@
 > voucher dates (§4.6) — and falls back to the current period's end; §4.6's educational-sensitive list gains probe 5.
 > Full detail: `.superpowers/sdd/2026-09-24-bi-s0-probes-plan-part4/progress.md`, `docs/bi-s0-probe-results-2026-09-24.md`,
 > `docs/code-review-bi-s0-part4-2026-09-24.md`.
+> **Changed 2026-09-24 (plan part 5, Ruling Q6):** §6 batch 5 runs **probe 14 last** in company B (after 15, 22, 23,
+> 25): it deliberately sends an unescaped, malformed request that may leave Tally behind a popup, so no other B probe
+> runs after it. `registry.ALL_ORDER` matches.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -342,7 +345,7 @@ interface: each `pause` is performed, each `ask` is answered, and every action i
 | 3 | A | 3, 4, 6, 12, 23, 25 (A parts) | Non-mutating reads |
 | 4 | A | 7, 8, 10, then **13 last** → anchors check | Mutating; 13 restores A, so it goes last. In auto mode probe 10 runs popup → no company → quit, then reopens A so 13 can run (ruling 2026-09-22) |
 | — | B | `setup-b` | Loader + its pause steps |
-| 5 | B | 16, 18 (B parts), **5, then 21**, 3, 11, 14, 15, 22 (BLOCKED — C36), 23, 25 (B parts) | Changed 2026-09-24: 5 runs immediately before 21 — 21 fetches with 5's confirmed `voucher_month` request (S0-D7); "21 first" is read as "first after the request it depends on" |
+| 5 | B | 16, 18 (B parts), **5, then 21**, 3, 11, 15, 22 (BLOCKED — C36), 23, 25 (B parts), then **14 last** | Changed 2026-09-24: 5 runs immediately before 21 — 21 fetches with 5's confirmed `voucher_month` request (S0-D7); "21 first" is read as "first after the request it depends on". Changed 2026-09-24 (plan part 5, Ruling Q6): 14 runs last — its deliberately malformed request may upset Tally |
 | 6 | C | 24 | Security, then Vault |
 
 ## 7. Probe methods
