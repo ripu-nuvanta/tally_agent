@@ -38,6 +38,14 @@ gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probe
 has touched a real Tally instance.**
 
 **Next steps, in order:**
+0e. **2026-09-24 (late afternoon) — C35–C40 landed and live-verified; C41 in flight; load not yet resumed.**
+   C35 `8565146`, C36 `710d354`, C37 `7273838`, C38 `107d435`, C39 `1f5cd93`, C40 `c866d74` — **523 green**.
+   Live (`logs/live-checks-c38-c40-2026-09-24.log`): **C38 settles C30 for good** — +1.00 under Sundry Debtors reads
+   back +1.00 (Cr); ledger deleted after. **C40 on vouchers**: tag 2 (A4 Paper Ream 10 Box @ 1020.45 to शर्मा ट्रेडर्स)
+   `created=1`, read-back ACTUALQTY " 10 Box 0 Nos", stock 15 → 5 Box. Company B now holds vouchers 1 and 2, all
+   masters, opening bill Op/2022-001; TB balanced. **Operator decision: stocked purchases before the load** (dataset
+   purchases carried no inventory → every item ended deeply negative). C41 fix wave dispatched (sales must stay
+   byte-identical). Next: verify C41, live-check one stocked purchase, then resume `setup-b` (it skips tags 1–2).
 0d. **2026-09-24 (afternoon) — C32–C34 fixed and live-verified; run 3 stopped before any receipt; C35–C40 in a
    fix wave.** C32 `2c7860a`, C33 `7f32848`, C34 `9a6f7b4` (480 green). Live check with the fixed writer
    (`logs/live-check-vch1-fixed-2026-09-24.log`): voucher 1 `created=1`, the loader's reader finds tag 1, bill
@@ -421,3 +429,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-24 | **setup-b live run 1 → stopped deliberately; C30 + C31.** Run 1 created 2 custom groups + `Nos`, then paused on `Box of 10 Nos` (our XML sent `Nos` as both units). Meanwhile review of the minors (`docs/code-review-bi-s0-company-b-minors-2026-09-24.md`) found a **Critical**: the `abs(opening)` wire (Ruling C21/F11, reaffirmed by M1) contradicts company A's live evidence (HDFC/SBI debits stored as credits). Run killed at the unit pause — **no ledger had been written** (read-back: only `Cash`, `Profit & Loss A/c`). Fixed: signed wire `67a67a3` (live-verified −1.00 → −1.00), compound unit `47cf175`, docs `d2b05c1`, sign check `4f81b1d`. 451 green. Run 2 started. |
 | 2026-09-24 | **setup-b run 2: masters ✅, vouchers blocked — C32 + C33 found live.** All 31 masters created cleanly; signed openings confirmed in the UI. Voucher 1 `EXCEPTIONS=1`: root cause C32 = nominal ledger emitted twice in invoice mode (fixed by hand for voucher 1 only, `CREATED=1`). Then the loader's own read-back saw 0 vouchers: root cause C33 = period variables need `TYPE="Date"`, otherwise Tally silently uses the current period — **probes 16/17/18 conclusions suspect**. Run stopped cleanly; code fixes next. Logs: `logs/setup-b-live-2026-09-24-run2.log`, `logs/debug-vch1-*.log`. |
 | 2026-09-24 | **C32–C34 live-verified; run 3 stopped; C35–C40 found.** Voucher 1 rewritten correctly (receivable bill). Opening bill written by XML ALTER after the UI entry failed to save. Review found every Agst Ref names a non-existent bill (Critical) — run stopped before any receipt. USD sales skipped by operator decision (probe 22 blocked). Stock opening sign + compound qty text found and fixed live on the two affected items; TB balances. Fix wave C35–C40 dispatched. |
+| 2026-09-24 | **C35–C40 committed (523 green) and live-verified**: +1.00 sign check proves C30; voucher 2 lands compound quantities as "10 Box 0 Nos". Operator chose stocked purchases before loading; C41 dispatched. |
