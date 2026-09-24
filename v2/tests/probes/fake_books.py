@@ -290,8 +290,16 @@ class FakeBooks:
             return self._create_master(state, "groups", element, request,
                                         lambda el: {"parent": el.findtext("PARENT", "")})
         if element.tag == "UNIT" and action == "Create":
+            first, second = element.findtext("BASEUNITS"), element.findtext("ADDITIONALUNITS")
+            if first is not None and first == second:
+                # C31: the live answer to BASEUNITS=ADDITIONALUNITS=Nos (logs/setup-b-live-2026-09-24.log).
+                return import_result(exceptions=1, line_error="Next Unit already contains the First unit!")
+            missing = [u for u in (first, second) if u is not None and u not in state["units"]]
+            if missing:                              # the fake's own wording — no live answer recorded for this
+                return import_result(exceptions=1, line_error=f"fake: unit {missing[0]!r} does not exist")
             return self._create_master(state, "units", element, request,
                                         lambda el: {"base": el.findtext("BASEUNITS"),
+                                                    "additional": el.findtext("ADDITIONALUNITS"),
                                                     "conversion": el.findtext("CONVERSION")})
         if element.tag == "STOCKITEM" and action == "Create":
             return self._create_master(state, "items", element, request,

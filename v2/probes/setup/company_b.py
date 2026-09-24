@@ -178,7 +178,8 @@ def _load_masters(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
             report.skipped["units"] += 1
             continue
         if _create_or_pause(writer, io, report, "unit", u.name,
-                            lambda u=u: writer.create_unit(company, u.name, base=u.base, conversion=u.conversion),
+                            lambda u=u: writer.create_unit(company, u.name, first_unit=u.first_unit,
+                                                               second_unit=u.second_unit, conversion=u.conversion),
                             lambda u=u: u.name in set(writer.list_units(company))):
             report.created["units"] += 1
         else:

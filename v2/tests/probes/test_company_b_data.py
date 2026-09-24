@@ -3,7 +3,7 @@ from datetime import date
 from decimal import Decimal
 
 from v2.probes.setup.company_b_data import (
-    COMPOUND_UNIT, HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_DEBTOR,
+    BASE_UNIT, BOX_UNIT, COMPOUND_UNIT, HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_DEBTOR,
     expected_figures, generate, gstin,
 )
 
@@ -140,6 +140,22 @@ def test_the_dataset_carries_the_messy_shapes_the_probes_need():
     assert any(u.name == COMPOUND_UNIT and u.conversion == 10 for u in ds.units)
     assert any(i.unit == COMPOUND_UNIT for i in ds.items)
     assert not any(i.name == "Primary" for i in ds.items)                      # LESSONS §15 r13
+
+
+def test_the_compound_unit_is_box_of_10_nos_built_from_two_simple_units_created_first():
+    """C31: live Tally rejected BASEUNITS=Nos + ADDITIONALUNITS=Nos ("Next Unit already contains the First
+    unit!"). A compound unit is first unit (a simple unit that must already exist) x CONVERSION = second unit, and
+    Tally NAMES it "<first> of <conversion> <second>" — the loader's read-back looks for exactly that name."""
+    ds = generate()
+    names = [u.name for u in ds.units]
+    compound = next(u for u in ds.units if u.name == COMPOUND_UNIT)
+    assert (compound.first_unit, compound.conversion, compound.second_unit) == (BOX_UNIT, 10, BASE_UNIT)
+    assert compound.first_unit != compound.second_unit
+    assert compound.name == f"{compound.first_unit} of {compound.conversion} {compound.second_unit}"
+    for simple in (BOX_UNIT, BASE_UNIT):
+        spec = next(u for u in ds.units if u.name == simple)
+        assert (spec.first_unit, spec.second_unit, spec.conversion) == (None, None, None)
+        assert names.index(simple) < names.index(COMPOUND_UNIT)
 
 
 def test_the_non_billwise_debtor_never_gets_a_bill():

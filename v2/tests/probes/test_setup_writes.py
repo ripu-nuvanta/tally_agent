@@ -215,14 +215,44 @@ def test_a_simple_unit_has_no_name_attribute_and_is_marked_simple():
     assert "<ISSIMPLEUNIT>Yes</ISSIMPLEUNIT>" in sent
 
 
-def test_a_compound_unit_carries_its_base_and_conversion():
+def test_a_compound_unit_sends_its_first_unit_as_base_and_its_second_as_additional():
+    """C31: live Tally answered BASEUNITS=Nos + ADDITIONALUNITS=Nos with "Next Unit already contains the First
+    unit!". "Box of 10 Nos" is first unit Box (BASEUNITS) x CONVERSION 10 = second unit Nos (ADDITIONALUNITS)."""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_unit(B, "Nos")
-    writer.create_unit(B, "Box of 10 Nos", base="Nos", conversion=10)
+    writer.create_unit(B, "Box")
+    writer.create_unit(B, "Box of 10 Nos", first_unit="Box", second_unit="Nos", conversion=10)
     sent = _imports(books)[-1]
-    assert "<BASEUNITS>Nos</BASEUNITS>" in sent and "<CONVERSION>10</CONVERSION>" in sent
+    assert "<BASEUNITS>Box</BASEUNITS>" in sent
+    assert "<ADDITIONALUNITS>Nos</ADDITIONALUNITS>" in sent
+    assert "<CONVERSION>10</CONVERSION>" in sent
     assert "<ISSIMPLEUNIT>No</ISSIMPLEUNIT>" in sent
+    assert "Box of 10 Nos" in writer.list_units(B)
+
+
+def test_a_compound_unit_whose_name_is_not_tallys_generated_name_is_refused_before_sending():
+    """Tally names a compound unit "<first> of <conversion> <second>"; any other name could never be found on
+    read-back, so it is refused up front."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="Box of 10 Nos"):
+        writer.create_unit(B, "Carton", first_unit="Box", second_unit="Nos", conversion=10)
+    assert _imports(books) == []
+
+
+def test_the_fake_rejects_a_compound_unit_whose_two_units_are_the_same():
+    """The live failure (logs/setup-b-live-2026-09-24.log), reproduced offline so the regression is caught here."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_unit(B, "Nos")
+    inner = ('<UNIT ACTION="Create">\n  <NAME>Box of 10 Nos</NAME>\n  <BASEUNITS>Nos</BASEUNITS>\n'
+             '  <ADDITIONALUNITS>Nos</ADDITIONALUNITS>\n  <CONVERSION>10</CONVERSION>\n  <ISSIMPLEUNIT>No</ISSIMPLEUNIT>\n'
+             '</UNIT>')
+    result = writer.import_("All Masters", B, inner)
+    assert (result.created, result.exceptions) == (0, 1)
+    assert result.line_error == "Next Unit already contains the First unit!"
+    assert "Box of 10 Nos" not in writer.list_units(B)
 
 
 def test_a_stock_item_without_an_hsn_is_created_gst_not_applicable():

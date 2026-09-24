@@ -183,7 +183,7 @@ def test_a_failed_unit_create_pauses_and_recovers_when_the_operator_fixes_it_in_
     books = _empty_b()
     books.fail_imports = True
     writer, io, _ = _loader(books)
-    tiny = Dataset(groups=(), units=(UnitSpec(name="Box of 10 Nos", base="Nos", conversion=10),),
+    tiny = Dataset(groups=(), units=(UnitSpec(name="Box of 10 Nos", first_unit="Box", second_unit="Nos", conversion=10),),
                    items=(), ledgers=(), vouchers=(), licence="licensed")
 
     def operator_fixes_it(instruction: str) -> None:

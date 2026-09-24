@@ -417,14 +417,29 @@ class TallyWriter:
         if name not in self.list_groups(company):
             raise WriteFailed(f"Group {name!r} not found on read-back")
 
-    def create_unit(self, company: str, name: str, *, base: str | None = None, conversion: int | None = None) -> None:
+    def create_unit(self, company: str, name: str, *, first_unit: str | None = None, second_unit: str | None = None,
+                    conversion: int | None = None) -> None:
+        """A simple unit (no compound arguments), or a compound unit (Ruling C31): `first_unit` x `conversion` =
+        `second_unit`, sent as BASEUNITS=first, ADDITIONALUNITS=second. Both must already exist as simple units
+        and must differ — live Tally answered BASEUNITS=ADDITIONALUNITS=Nos with "Next Unit already contains the
+        First unit!" (logs/setup-b-live-2026-09-24.log). Tally names the compound "<first> of <conversion>
+        <second>", so `name` must be exactly that or the read-back could never find it."""
         check_writable(company)
+        is_compound = any(v is not None for v in (first_unit, second_unit, conversion))
+        if is_compound:
+            if first_unit is None or second_unit is None or conversion is None:
+                raise ValueError(f"Compound unit {name!r} needs first_unit, second_unit and conversion")
+            if first_unit == second_unit:
+                raise ValueError(f"Compound unit {name!r}: the first and second units must differ")
+            tally_name = f"{first_unit} of {conversion} {second_unit}"
+            if name != tally_name:
+                raise ValueError(f"Compound unit {name!r}: Tally will name it {tally_name!r}")
         if name in self.list_units(company):
             self.say(f"{name} already exists — not re-created")
             return
-        compound = ("\n  <ISSIMPLEUNIT>Yes</ISSIMPLEUNIT>" if base is None else
-                    f"\n  <BASEUNITS>{esc(base)}</BASEUNITS>\n  <ADDITIONALUNITS>{esc(base)}</ADDITIONALUNITS>"
-                    f"\n  <CONVERSION>{conversion}</CONVERSION>\n  <ISSIMPLEUNIT>No</ISSIMPLEUNIT>")
+        compound = (f"\n  <BASEUNITS>{esc(first_unit)}</BASEUNITS>\n  <ADDITIONALUNITS>{esc(second_unit)}</ADDITIONALUNITS>"
+                    f"\n  <CONVERSION>{conversion}</CONVERSION>\n  <ISSIMPLEUNIT>No</ISSIMPLEUNIT>"
+                    if is_compound else "\n  <ISSIMPLEUNIT>Yes</ISSIMPLEUNIT>")
         inner = f'<UNIT ACTION="Create">\n  <NAME>{esc(name)}</NAME>{compound}\n</UNIT>'
         result = self.import_("All Masters", company, inner)
         if not ((result.created == 1 or result.altered == 1) and result.clean):

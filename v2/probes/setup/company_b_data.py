@@ -21,8 +21,10 @@ VOUCHERS_PER_MONTH = 20
 NON_BILLWISE_DEBTOR = "Kolhapur Retail Mart"     # LESSONS §15 r16 — never assert this one in a bills report
 USD_DEBTOR = "Gulf Office Supplies LLC"
 HINDI_DEBTOR = "शर्मा ट्रेडर्स"
-COMPOUND_UNIT = "Box of 10 Nos"
 BASE_UNIT = "Nos"
+BOX_UNIT = "Box"
+# C31: Tally NAMES a compound unit "<first unit> of <conversion> <second unit>" — here Box x 10 = Nos.
+COMPOUND_UNIT = f"{BOX_UNIT} of 10 {BASE_UNIT}"
 SALES_GST_VOUCHER_TYPE = "Sales - GST"           # created in the Tally UI, never by the loader
 
 _GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -42,9 +44,14 @@ class GroupSpec:
 
 @dataclass(frozen=True)
 class UnitSpec:
+    """A simple unit (all three compound fields None) or a Tally compound unit: `first_unit` x `conversion` =
+    `second_unit` (C31 — e.g. Box x 10 = Nos, which Tally names "Box of 10 Nos"). Both parts are simple units
+    that must exist before the compound is created, and they must differ ("Next Unit already contains the First
+    unit!" otherwise — live 2026-09-24)."""
     name: str
-    base: str | None
-    conversion: int | None
+    first_unit: str | None = None
+    second_unit: str | None = None
+    conversion: int | None = None
 
 
 @dataclass(frozen=True)
@@ -161,8 +168,9 @@ def _groups() -> tuple[GroupSpec, ...]:
 
 def _units() -> tuple[UnitSpec, ...]:
     return (
-        UnitSpec(name=BASE_UNIT, base=None, conversion=None),
-        UnitSpec(name=COMPOUND_UNIT, base=BASE_UNIT, conversion=10),
+        UnitSpec(name=BASE_UNIT),
+        UnitSpec(name=BOX_UNIT),                                     # C31: the compound's first unit
+        UnitSpec(name=COMPOUND_UNIT, first_unit=BOX_UNIT, second_unit=BASE_UNIT, conversion=10),
     )
 
 
