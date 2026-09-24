@@ -507,3 +507,69 @@ def test_an_unbalanced_voucher_is_refused_before_anything_is_sent():
                                 lines=[("P", Decimal("-100.00"), True), ("Sales", Decimal("90.00"), False)])
     assert _imports(books) == []
 
+
+
+# --- C32: an inventory invoice carries the nominal ledger ONLY in ACCOUNTINGALLOCATIONS ----------------------------
+def _ledger_entry_names(sent: str) -> list[str]:
+    root = ET.fromstring(sent)
+    return [e.findtext("LEDGERNAME") for tag in ("LEDGERENTRIES.LIST", "ALLLEDGERENTRIES.LIST")
+            for e in root.iter(tag)]
+
+
+def test_an_inventory_sale_does_not_emit_the_nominal_ledger_line():
+    """C32 (live 2026-09-24, logs/debug-vch1-*.log): the nominal ledger as a LEDGERENTRIES line AND in each
+    inventory row's ACCOUNTINGALLOCATIONS made Tally count the goods twice (EXCEPTIONS=1). Removing only the
+    nominal line gave CREATED=1 — which is also what production build_create_sales_voucher emits."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(
+        B, vch_type="Sales", date="20230601", narration="[S0-B:7] sale", party="Pune Traders",
+        lines=[("Pune Traders", Decimal("-11800.00"), True), ("Sales", Decimal("10000.00"), False),
+               ("Output CGST", Decimal("900.00"), False), ("Output SGST", Decimal("900.00"), False)],
+        inventory=[("A4 Paper", "Nos", Decimal("6"), Decimal("1000.00"), Decimal("6000.00")),
+                   ("Pen", "Nos", Decimal("4"), Decimal("1000.00"), Decimal("4000.00"))])
+    sent = _imports(books)[-1]
+    assert _ledger_entry_names(sent) == ["Pune Traders", "Output CGST", "Output SGST"]
+    allocations = [(a.findtext("LEDGERNAME"), a.findtext("AMOUNT"))
+                   for a in ET.fromstring(sent).iter("ACCOUNTINGALLOCATIONS.LIST")]
+    assert allocations == [("Sales", "6000.00"), ("Sales", "4000.00")]
+
+
+def test_an_inventory_purchase_does_not_emit_the_nominal_ledger_line():
+    """Same rule under Op 7's inverted signs (production build_create_purchase_voucher: party No/+, GST Yes/−,
+    inventory + allocation Yes/−goods, no nominal LEDGERENTRIES line)."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(
+        B, vch_type="Purchase - GST", date="20230601", narration="[S0-B:60] buy", party="Mumbai Supplies",
+        lines=[("Mumbai Supplies", Decimal("1180.00"), False), ("Purchase", Decimal("-1000.00"), True),
+               ("Input CGST", Decimal("-90.00"), True), ("Input SGST", Decimal("-90.00"), True)],
+        inventory=[("A4 Paper", "Nos", Decimal("1"), Decimal("1000.00"), Decimal("-1000.00"))])
+    sent = _imports(books)[-1]
+    assert _ledger_entry_names(sent) == ["Mumbai Supplies", "Input CGST", "Input SGST"]
+    assert books.state["vouchers"]["51"]  # the fake (which now balances allocations) accepted it
+
+
+@pytest.mark.parametrize("inventory_amount", [Decimal("9000.00"), Decimal("-10000.00")])
+def test_inventory_allocations_that_disagree_with_the_nominal_line_are_refused(inventory_amount):
+    """The nominal line is no longer sent, so its amount must be carried EXACTLY (sign-aware) by the inventory
+    rows' allocations — otherwise the voucher Tally computes would not balance, even though `lines` does."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="inventory"):
+        writer.create_b_voucher(
+            B, vch_type="Sales", date="20230601", narration="[S0-B:7] sale", party="Pune Traders",
+            lines=[("Pune Traders", Decimal("-11800.00"), True), ("Sales", Decimal("10000.00"), False),
+                   ("Output CGST", Decimal("900.00"), False), ("Output SGST", Decimal("900.00"), False)],
+            inventory=[("A4 Paper", "Nos", Decimal("10"), Decimal("1000.00"), inventory_amount)])
+    assert _imports(books) == []
+
+
+def test_a_sale_without_inventory_still_emits_every_line():
+    """The zero-rated export sale (no stock) has nowhere else to carry its nominal ledger — unchanged by C32."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(
+        B, vch_type="Sales", date="20230601", narration="[S0-B:5] export", party="Global Tech LLC",
+        lines=[("Global Tech LLC", Decimal("-5000.00"), True), ("Export Sales", Decimal("5000.00"), False)])
+    assert _ledger_entry_names(_imports(books)[-1]) == ["Global Tech LLC", "Export Sales"]

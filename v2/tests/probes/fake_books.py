@@ -383,6 +383,20 @@ class FakeBooks:
                 return False
         return True
 
+    @staticmethod
+    def _posted_lines(element: ET.Element) -> list[dict[str, str]]:
+        """What a voucher posts to ledgers, as Tally computes it (C32): every ledger line plus every inventory
+        row's ACCOUNTINGALLOCATIONS (the nominal Sales/Purchase ledger of an invoice lives only there). The
+        Trial Balance is built from these, so the nominal ledger is booked exactly once either way."""
+        def line(entry: ET.Element) -> dict[str, str]:
+            return {"ledger": entry.findtext("LEDGERNAME", ""), "amount": entry.findtext("AMOUNT", "0.00"),
+                    "deemed_positive": entry.findtext("ISDEEMEDPOSITIVE", "No")}
+        lines = [line(entry) for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST")
+                 for entry in element.findall(tag)]
+        lines += [line(allocation) for inv in element.findall("ALLINVENTORYENTRIES.LIST")
+                  for allocation in inv.findall("ACCOUNTINGALLOCATIONS.LIST")]
+        return lines
+
     def _voucher(self, state: dict, element: ET.Element, action: str) -> str:
         vouchers = state["vouchers"]
         if action == "Create":
@@ -393,14 +407,17 @@ class FakeBooks:
                 # is exactly what the live exploration got for every wrong permutation (v4 doc, cross-cutting
                 # finding 2 — "there's no helpful error message").
                 return import_result(exceptions=1)
+            lines = self._posted_lines(element)
+            if sum((Decimal(line["amount"] or "0.00") for line in lines), Decimal("0.00")) != 0:
+                # C32 (live 2026-09-24, logs/debug-vch1-*.log): Tally totals the ledger lines AND every inventory
+                # row's ACCOUNTINGALLOCATIONS — a nominal Sales line sent as well counts the goods twice and the
+                # answer is EXCEPTIONS=1 with no LINEERROR. Any unbalanced voucher gets the same answer here.
+                return import_result(exceptions=1)
             mid = str(state["next_master_id"])
             state["next_master_id"] += 1
             date = element.findtext("DATE", "")
             cancelled = "No" if self.drop_flags else (element.findtext("ISCANCELLED") or "No")
             optional = "No" if self.drop_flags else (element.findtext("ISOPTIONAL") or "No")
-            lines = [{"ledger": entry.findtext("LEDGERNAME", ""), "amount": entry.findtext("AMOUNT", "0.00"),
-                      "deemed_positive": entry.findtext("ISDEEMEDPOSITIVE", "No")}
-                     for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST") for entry in element.findall(tag)]
             vouchers[mid] = {"narration": element.findtext("NARRATION", ""), "date": date,
                              "post_dated": element.findtext("ISPOSTDATED") or "No",
                              "cancelled": cancelled, "optional": optional, "lines": lines}

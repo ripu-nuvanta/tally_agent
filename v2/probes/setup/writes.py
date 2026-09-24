@@ -226,7 +226,8 @@ class TallyWriter:
         **Ordering contract for `lines` when `inventory` is non-empty:** the party line first, then the nominal
         Sales/Purchase ledger, then any GST lines — `ACCOUNTINGALLOCATIONS.LIST` on every inventory row points at
         the first non-party line, so a caller that puts a GST line there instead would silently misallocate goods
-        to a tax ledger. Enforced only to the extent that `lines` must have at least 2 entries when `inventory` is
+        to a tax ledger. That nominal line itself is NOT sent (C32) — its amount must equal the signed sum of the
+        inventory amounts, which is checked before anything is sent. Enforced only to the extent that `lines` must have at least 2 entries when `inventory` is
         given (`len(lines) >= 2`); the specific ordering itself cannot be checked at this layer (ledger names carry
         no semantic tag) and is the caller's (Task 6's) responsibility.
 
@@ -261,8 +262,26 @@ class TallyWriter:
         if inventory and len(lines) < 2:
             raise ValueError("Inventory lines need a party line and a nominal ledger line in `lines`")
 
+        # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
+        # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
+        # GST lines (matches Op 6/7 and both this method's callers' test fixtures) — Task 6 must keep that ordering.
+        nominal_index = next((i for i, (ledger, _, _) in enumerate(lines) if ledger != party), 0)
+        nominal_ledger, nominal_amount, _ = lines[nominal_index]
+        # C32 (live 2026-09-24, logs/debug-vch1-*.log): with inventory the nominal ledger is carried ONLY by the
+        # inventory rows' ACCOUNTINGALLOCATIONS — sending it as a ledger line as well makes Tally count the goods
+        # twice (EXCEPTIONS=1, no LINEERROR). Production build_create_sales/purchase_voucher emit party + GST +
+        # inventory only. So the nominal line is not sent, and the allocations must carry its amount EXACTLY
+        # (signed: Op 6 sale +goods, Op 7 purchase −goods) — then the voucher Tally totals (party + GST +
+        # allocations) balances exactly when `lines` does.
+        if inventory:
+            allocated = sum((amount for *_, amount in inventory), Decimal("0.00"))
+            if allocated != nominal_amount:
+                raise ValueError(f"Voucher {narration!r}: inventory allocations to {nominal_ledger!r} total "
+                                 f"{allocated}, but its line says {nominal_amount} — Tally would not balance")
+        sent_lines = [line for i, line in enumerate(lines) if not (inventory and i == nominal_index)]
+
         ledger_blocks = []
-        for ledger, amount, deemed_positive in lines:
+        for ledger, amount, deemed_positive in sent_lines:
             bill_xml = ""
             if ledger == party and bills:
                 bill_xml = "".join(
@@ -279,11 +298,7 @@ class TallyWriter:
     <AMOUNT>{amount:.2f}</AMOUNT>{party_flag}{bill_xml}
   </{ledger_tag}>""")
 
-        # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
-        # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
-        # GST lines (matches Op 6/7 and both this method's callers' test fixtures) — Task 6 must keep that ordering.
         inventory_deemed_positive = "Yes" if is_purchase_type else "No"        # Op 7: goods in (Yes/−)
-        nominal_ledger = next((ledger for ledger, _, _ in lines if ledger != party), party)
         inventory_blocks = []
         for item, unit, qty, rate, amount in inventory:
             qty_unit = f"{qty} {esc(unit)}"

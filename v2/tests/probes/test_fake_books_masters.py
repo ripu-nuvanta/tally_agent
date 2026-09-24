@@ -212,3 +212,62 @@ def test_a_zero_amount_pins_no_side_and_is_accepted_either_way():
     assert deemed_positive_matches("No", Decimal("0.00"))
     assert deemed_positive_matches("Yes", Decimal("-1.00")) and not deemed_positive_matches("Yes", Decimal("1.00"))
     assert deemed_positive_matches("No", Decimal("1.00")) and not deemed_positive_matches("No", Decimal("-1.00"))
+
+
+# --- C32: Tally counts ACCOUNTINGALLOCATIONS toward the voucher total, so a nominal line + allocation double-counts ---
+def _invoice_xml(entries: str, inventory: str) -> str:
+    return ('<VOUCHER VCHTYPE="Sales" ACTION="Create"><DATE>20220401</DATE>'
+            "<NARRATION>[S0-B:1] Sale</NARRATION><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+            "<PERSISTEDVIEW>Invoice Voucher View</PERSISTEDVIEW><ISINVOICE>Yes</ISINVOICE>"
+            f"{entries}{inventory}</VOUCHER>")
+
+
+def _invoice_entry(ledger: str, flag: str, amount: str) -> str:
+    return (f"<LEDGERENTRIES.LIST><LEDGERNAME>{esc(ledger)}</LEDGERNAME>"
+            f"<ISDEEMEDPOSITIVE>{flag}</ISDEEMEDPOSITIVE><AMOUNT>{amount}</AMOUNT></LEDGERENTRIES.LIST>")
+
+
+def _tag1_sale_entries_and_inventory(*, with_nominal_line: bool) -> tuple[str, str]:
+    """Voucher [S0-B:1] of company_b_data.generate("educational") — the live C32 voucher (logs/debug-vch1-*.log)."""
+    from v2.probes.setup.company_b_data import generate
+    v = next(v for v in generate("educational").vouchers if v.tag == 1)
+    assert v.inventory and v.lines[1].ledger == "Domestic Sales"
+    entries = "".join(_invoice_entry(l.ledger, "Yes" if l.deemed_positive else "No", f"{l.amount:.2f}")
+                      for i, l in enumerate(v.lines) if with_nominal_line or i != 1)
+    inv = v.inventory[0]
+    inventory = (f"<ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>{esc(inv.item)}</STOCKITEMNAME>"
+                 f"<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>{inv.amount:.2f}</AMOUNT>"
+                 "<ACCOUNTINGALLOCATIONS.LIST><LEDGERNAME>Domestic Sales</LEDGERNAME>"
+                 f"<ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE><AMOUNT>{inv.amount:.2f}</AMOUNT>"
+                 "</ACCOUNTINGALLOCATIONS.LIST></ALLINVENTORYENTRIES.LIST>")
+    return entries, inventory
+
+
+def test_the_fake_rejects_the_old_c32_shape_nominal_line_plus_allocation():
+    """C32 (live 2026-09-24, logs/debug-vch1-*.log): the nominal Sales ledger as a LEDGERENTRIES line AND in the
+    inventory row's ACCOUNTINGALLOCATIONS — Tally counts the goods twice and answers EXCEPTIONS=1, no LINEERROR."""
+    books = FakeBooks(name=B)
+    entries, inventory = _tag1_sale_entries_and_inventory(with_nominal_line=True)
+    result = ImportResult.parse(_post(books, wrap_import("Vouchers", B, _invoice_xml(entries, inventory))))
+    assert result.exceptions == 1 and result.created == 0 and result.line_error == ""
+    assert books.state["vouchers"] == {}
+
+
+def test_the_fake_accepts_the_c32_shape_and_books_the_nominal_ledger_from_the_allocation():
+    """The live-accepted shape (CREATED=1): no nominal LEDGERENTRIES line. The allocation still posts to the
+    nominal ledger, so the fake's Trial Balance must see Domestic Sales — otherwise balances drift silently."""
+    books = FakeBooks(name=B)
+    entries, inventory = _tag1_sale_entries_and_inventory(with_nominal_line=False)
+    result = ImportResult.parse(_post(books, wrap_import("Vouchers", B, _invoice_xml(entries, inventory))))
+    assert result.created == 1 and result.clean
+    lines = books.state["vouchers"]["51"]["lines"]
+    total = sum(Decimal(l["amount"]) for l in lines)
+    assert total == Decimal("0.00")
+    assert [l["amount"] for l in lines if l["ledger"] == "Domestic Sales"] == ["8357.40"]
+
+
+def test_the_fake_rejects_an_unbalanced_accounting_voucher():
+    books = FakeBooks(name=B)
+    result = ImportResult.parse(_post(books, wrap_import("Vouchers", B, _voucher_xml(
+        _entry("Cash", "Yes", "-1000.00") + _entry("Pune Traders", "No", "900.00")))))
+    assert result.exceptions == 1 and books.state["vouchers"] == {}
