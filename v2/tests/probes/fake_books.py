@@ -16,10 +16,11 @@ from typing import Callable
 
 import httpx
 
+from v2.agent.tally.envelopes import esc
 from v2.probes.companies import SEED_COMPANY
 from v2.probes.operator.config import OperatorConfig
 from v2.probes.operator.tally_control import TallyProcess
-from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, tb_xml
+from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, tb_xml, vouchers_xml
 
 # Tally's own fixed reserved-group hierarchy (not dataset-specific — just enough of it to build a believable
 # Trial Balance fixture for whatever masters a test created). A bucket not listed here is already a primary
@@ -141,6 +142,55 @@ def _effective_bills(state: dict) -> dict[str, dict[str, str]]:
     return bills
 
 
+def _export_voucher(state: dict, mid: str, v: dict) -> str:
+    """One stored voucher the way probe 5's month request gets it back: header, ledger lines (the voucher's bill
+    postings on its first line, the party line), and inventory rows. It is shaped for the probes' parsers (reads.
+    parse_vouchers), not a byte-for-byte copy of live Tally. Probe 21's live byte counts come from live Tally only."""
+    lines = v.get("lines", [])
+    header = {"DATE": v["date"], "GUID": f"{state['guid']}-{int(mid):08x}", "MASTERID": mid, "ALTERID": mid,
+              "VOUCHERTYPENAME": v.get("vch_type", ""), "VOUCHERNUMBER": mid, "REFERENCE": "",
+              "PARTYLEDGERNAME": lines[0]["ledger"] if lines else "", "NARRATION": v["narration"],
+              "ISCANCELLED": v["cancelled"], "ISOPTIONAL": v["optional"], "ISPOSTDATED": v["post_dated"]}
+    body = "".join(f"<{k}>{esc(str(value))}</{k}>" for k, value in header.items())
+    for i, line in enumerate(lines):
+        bills = "".join(f"<BILLALLOCATIONS.LIST><NAME>{esc(b['name'])}</NAME><BILLTYPE>{esc(b['type'])}</BILLTYPE>"
+                        f"<AMOUNT>{b['amount']}</AMOUNT></BILLALLOCATIONS.LIST>"
+                        for b in (v.get("bills", []) if i == 0 else []))
+        body += (f"<ALLLEDGERENTRIES.LIST><LEDGERNAME>{esc(line['ledger'])}</LEDGERNAME>"
+                 f"<ISDEEMEDPOSITIVE>{line['deemed_positive']}</ISDEEMEDPOSITIVE><AMOUNT>{line['amount']}</AMOUNT>"
+                 f"{bills or '<BILLALLOCATIONS.LIST>  </BILLALLOCATIONS.LIST>'}</ALLLEDGERENTRIES.LIST>")
+    for inv in v.get("inventory", []):
+        body += (f"<ALLINVENTORYENTRIES.LIST><STOCKITEMNAME>{esc(inv['item'])}</STOCKITEMNAME>"
+                 f"<ACTUALQTY> {inv['qty'].lstrip('-')}</ACTUALQTY></ALLINVENTORYENTRIES.LIST>")
+    return f'<VOUCHER VCHTYPE="{esc(header["VOUCHERTYPENAME"])}">{body}</VOUCHER>'
+
+
+def seed_company_b(books: "FakeBooks", licence: str = "educational") -> None:
+    """Company B as a clean `setup-b` leaves it: every written voucher on record with its flags, BooksFrom
+    1-Apr-2022. It goes straight into state, NOT through the loader (read-probe tests only; the loader has its own
+    tests). Skipped vouchers (C36) are absent. A cancelled voucher keeps no bill postings, as `_voucher` does."""
+    from v2.probes.setup.company_b_data import generate
+
+    def fill(state: dict) -> None:
+        state["books_from"] = "20220401"
+        for v in generate(licence).vouchers:
+            if v.skip_reason:
+                continue
+            mid = str(state["next_master_id"])
+            state["next_master_id"] += 1
+            state["vouchers"][mid] = {
+                "narration": v.narration, "date": v.date.strftime("%Y%m%d"), "post_dated": "No",
+                "cancelled": "Yes" if v.cancelled else "No", "optional": "Yes" if v.optional else "No",
+                "vch_type": v.vch_type,
+                "lines": [{"ledger": l.ledger, "amount": f"{l.amount:.2f}",
+                           "deemed_positive": "Yes" if l.deemed_positive else "No"} for l in v.lines],
+                "inventory": [{"item": i.item, "qty": f"{i.qty if v.kind == 'purchase' else -i.qty}"}
+                              for i in v.inventory],
+                "bills": [] if v.cancelled else [{"name": b.name, "type": b.bill_type, "amount": f"{b.amount:.2f}"}
+                                                 for b in v.bills]}
+    books.edit_state(fill)
+
+
 class FakeBooks:
     """Tally running or not, a loaded company, a licence box (`click_polls`), a busy load (`busy_polls`), a modal."""
 
@@ -243,11 +293,17 @@ class FakeBooks:
         if "S0CompanyCounters" in body:
             return objects_xml("COMPANY", [{
                 "Name": state["name"], "GUID": state["guid"], "AltVchId": str(state["alt_vch"]),
-                "AltMstId": str(state["alt_mst"]), "BooksFrom": "20250401",
+                "AltMstId": str(state["alt_mst"]), "BooksFrom": state.get("books_from", "20250401"),
                 "LastVoucherDate": state["last_voucher_date"], "AlterID": str(state["alt_mst"])}])
         period = requested_period(body, self.current_period)
         in_period = {mid: v for mid, v in state["vouchers"].items()
                      if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1]}
+        if "<TYPE>Voucher</TYPE>" in body and ("S0VoucherMonth" in body or "S0P05MonthFormula" in body):
+            # Probe 5's month request and its formula candidate: full exports, bounded ONLY by the typed period
+            # (C33: an untyped one reads current_period). The fake does not evaluate the formula; typed dates always
+            # bound here, so probe 5 never needs it against FakeBooks (its formula path is tested with FakeTally).
+            return vouchers_xml([_export_voucher(state, mid, v)
+                                 for mid, v in sorted(in_period.items(), key=lambda kv: int(kv[0]))])
         if "S0OpVouchers" in body:
             return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
                                             "IsPostDated": v["post_dated"]} for mid, v in in_period.items()])
