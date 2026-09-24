@@ -78,6 +78,7 @@ from v2.probes.setup.writes import (
     WriteFailed,
     WriteTimeout,
     check_writable,
+    validate_b_voucher,
 )
 
 F2_INSTRUCTION = ("In TallyPrime press F2 and set the working date to 31-03-2026 or later, then press Enter here. "
@@ -330,6 +331,35 @@ def _skip_notes(dataset: Dataset) -> list[str]:
             for reason, tags in by_reason.items()]
 
 
+def validate_dataset(dataset: Dataset) -> list[str]:
+    """C37 (review #7): every check `create_b_voucher` would make before sending, run over every voucher the loader
+    will write — so a bad voucher stops the load BEFORE the first send, never mid-run. Returns one line per bad
+    tag (empty = all good). Includes M2's ordering contract, which `create_b_voucher` itself cannot check."""
+    bad: list[str] = []
+    unit_by_item = {i.name: i.unit for i in dataset.items}
+    for v in sorted(dataset.vouchers, key=lambda v: (v.date, v.tag)):
+        if v.skip_reason:
+            continue
+        lines = [(line.ledger, line.amount, line.deemed_positive) for line in v.lines]
+        if v.inventory and (lines[0][0] != v.party or len(lines) < 2 or lines[1][0] == v.party):
+            # M2: create_b_voucher's ordering contract (party first, then the nominal ledger) is enforced only by
+            # "len(lines) >= 2" at that layer — a violation silently misallocates stock to whatever ledger sits
+            # second (e.g. a GST line) with no error.
+            bad.append(f"[S0-B:{v.tag}] {v.narration}: an inventory voucher must list the party {v.party!r} first "
+                       f"and the nominal ledger second; got {[ledger for ledger, _, _ in lines[:2]]}. Loading it "
+                       "would misallocate the stock to whatever ledger sits second.")
+            continue
+        try:
+            validate_b_voucher(
+                vch_type=v.vch_type, narration=v.narration, party=v.party, lines=lines,
+                inventory=[(inv.item, unit_by_item.get(inv.item, ""), inv.qty, inv.rate, inv.amount)
+                           for inv in v.inventory],
+                bills=[(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills])
+        except ValueError as exc:
+            bad.append(f"[S0-B:{v.tag}] {exc}")
+    return bad
+
+
 def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Dataset, report: LoadReport) -> None:
     # C36 / review #2: create_b_voucher has no currency parameter, so a foreign-currency voucher would go out as a
     # plain INR one. Unless the dataset skips it, that is a stop — before anything is read or written.
@@ -338,6 +368,10 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
             raise CompanyBLoadError(f"[S0-B:{v.tag}] {v.narration}: currency {v.currency} — the writer can only "
                                     "send INR, so it would be written as a plain INR voucher. Skip it (skip_reason) "
                                     "until forex is implemented.")
+    bad = validate_dataset(dataset)                                                                      # C37
+    if bad:
+        raise CompanyBLoadError(f"{len(bad)} voucher(s) fail pre-send validation — no voucher was sent:\n  "
+                                + "\n  ".join(bad))
     report.notes.extend(_skip_notes(dataset))
 
     # Not guarded like `_verify`'s reads (I7): if Tally can't even be read at the START of the voucher stage,
@@ -370,19 +404,6 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
             continue
 
         lines = [(line.ledger, line.amount, line.deemed_positive) for line in v.lines]
-        if v.inventory:
-            # M2: create_b_voucher's ordering contract (party first, then the nominal ledger) is enforced only
-            # by "len(lines) >= 2" at that layer — a violation here silently misallocates stock to whatever
-            # ledger sits second (e.g. a GST line) with no error. This used to be a bare `assert`, which
-            # disappears under `python -O` and, being an AssertionError, is not caught by this function's
-            # `except WriteFailed` either — it crashed the load mid-run instead of becoming a stop the operator
-            # can read. CompanyBLoadError is the loader's own "can't continue" signal and is handled all the way
-            # up through setup_company_b.
-            if lines[0][0] != v.party or lines[1][0] == v.party:
-                raise CompanyBLoadError(
-                    f"[S0-B:{v.tag}] {v.narration}: an inventory voucher must list the party {v.party!r} first "
-                    f"and the nominal ledger second; got {[ledger for ledger, _, _ in lines[:2]]}. Loading it "
-                    "would misallocate the stock to whatever ledger sits second.")
         inventory = [(inv.item, unit_by_item[inv.item], inv.qty, inv.rate, inv.amount) for inv in v.inventory]
         bills = [(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills]
         try:

@@ -649,3 +649,63 @@ def test_dataset_voucher_1_files_its_bill_as_a_receivable():
     assert party_amount < 0
     assert _bill_amounts(_imports(books)[-1]) == [("Inv/1", f"{party_amount:.2f}")]
     assert books.state["bills"] == {"Inv/1": {"party": v.party, "amount": f"{party_amount:.2f}"}}
+
+
+# --- C37 / review #7-#8: every pre-send check is a pure function the loader can run over the whole dataset ---------
+from v2.probes.setup.writes import validate_b_voucher  # noqa: E402
+
+_SALE_LINES = [("Pune Traders", Decimal("-1180.00"), True), ("Domestic Sales", Decimal("1000.00"), False),
+               ("Output CGST", Decimal("90.00"), False), ("Output SGST", Decimal("90.00"), False)]
+_SALE_ROW = [("Wireless Mouse", "Nos", Decimal("2"), Decimal("500.00"), Decimal("1000.00"))]
+
+
+def _validate(**overrides):
+    kwargs = dict(vch_type="Sales", narration="[S0-B:9] x", party="Pune Traders", lines=_SALE_LINES,
+                  inventory=_SALE_ROW, bills=[("Inv/9", "New Ref", Decimal("1180.00"), "30 Days")])
+    kwargs.update(overrides)
+    return validate_b_voucher(**kwargs)
+
+
+def test_validate_b_voucher_accepts_a_good_sale_and_drops_the_nominal_line():
+    checked = _validate()
+    assert [ledger for ledger, _, _ in checked.sent_lines] == ["Pune Traders", "Output CGST", "Output SGST"]
+    assert checked.signed_bills == [("Inv/9", "New Ref", Decimal("-1180.00"), "30 Days")]
+    assert checked.nominal_ledger == "Domestic Sales"
+
+
+@pytest.mark.parametrize("overrides,message", [
+    (dict(lines=[("Pune Traders", Decimal("-1180.00"), True), ("Domestic Sales", Decimal("1000.00"), False)]),
+     "does not balance"),
+    (dict(inventory=[("Wireless Mouse", "Nos", Decimal("2"), Decimal("400.00"), Decimal("800.00"))]),
+     "inventory allocations"),
+    (dict(bills=[("Inv/9", "New Ref", Decimal("-1180.00"), None)]), "magnitude"),
+    (dict(bills=[("Inv/9", "New Ref", Decimal("1000.00"), None)]), "bill allocations total"),
+    (dict(party="Nagpur Traders", inventory=()), "exactly one"),
+    (dict(vch_type="Receipt"), "Sales/Purchase only"),
+])
+def test_validate_b_voucher_refuses_each_bad_shape(overrides, message):
+    with pytest.raises(ValueError, match=message):
+        _validate(**overrides)
+
+
+def test_the_dropped_nominal_line_must_carry_the_inventory_rows_flag():
+    """Review #8: the nominal line is never sent (C32), so its ISDEEMEDPOSITIVE was never checked. A sale's
+    inventory rows go out No/+goods; a nominal line flagged Yes (or signed −) says the caller meant something else."""
+    wrong_flag = [_SALE_LINES[0], ("Domestic Sales", Decimal("1000.00"), True), *_SALE_LINES[2:]]
+    with pytest.raises(ValueError, match="ISDEEMEDPOSITIVE"):
+        _validate(lines=wrong_flag)
+    mirrored_sale = [("Pune Traders", Decimal("1180.00"), False), ("Domestic Sales", Decimal("-1000.00"), True),
+                     ("Output CGST", Decimal("-90.00"), True), ("Output SGST", Decimal("-90.00"), True)]
+    with pytest.raises(ValueError, match="ISDEEMEDPOSITIVE"):
+        _validate(lines=mirrored_sale, bills=(),
+                  inventory=[("Wireless Mouse", "Nos", Decimal("2"), Decimal("500.00"), Decimal("-1000.00"))])
+
+
+def test_create_b_voucher_runs_the_same_validation_before_sending():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="ISDEEMEDPOSITIVE"):
+        writer.create_b_voucher(B, vch_type="Sales", date="20230601", narration="[S0-B:9] x", party="Pune Traders",
+                                lines=[_SALE_LINES[0], ("Domestic Sales", Decimal("1000.00"), True), *_SALE_LINES[2:]],
+                                inventory=_SALE_ROW)
+    assert _imports(books) == []

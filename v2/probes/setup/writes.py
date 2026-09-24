@@ -22,6 +22,7 @@ A stock opening (`create_stock_item`'s `opening_qty`/`opening_rate`) is a quanti
 """
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Callable
 
@@ -101,6 +102,95 @@ class WriteTimeout(WriteFailed):
 def check_writable(company: str) -> None:
     if "Probe" not in company:
         raise WriteRefused(f"Refusing to write to {company!r}: only companies with 'Probe' in the name.")
+
+
+@dataclass(frozen=True)
+class CheckedVoucher:
+    """What `validate_b_voucher` proved and derived — exactly what `create_b_voucher` then renders."""
+    sent_lines: list[tuple[str, Decimal, bool]]
+    signed_bills: list[tuple[str, str, Decimal, str | None]]
+    nominal_ledger: str
+    is_purchase_type: bool
+    is_invoice_type: bool
+
+
+def validate_b_voucher(*, vch_type: str, narration: str, party: str, lines: list[tuple[str, Decimal, bool]],
+                       inventory: list[tuple[str, str, Decimal, Decimal, Decimal]] = (),
+                       bills: list[tuple[str, str, Decimal, str | None]] = ()) -> CheckedVoucher:
+    """Every pre-send check of `create_b_voucher`, as a pure function (C37, review #7): no request, no company.
+    The loader runs it over the whole dataset BEFORE the first voucher is sent, so a bad voucher stops the load up
+    front instead of crashing it mid-run with a ValueError. Raises ValueError naming the voucher."""
+    total = sum((amount for _, amount, _ in lines), Decimal("0.00"))
+    if total != Decimal("0.00"):
+        raise ValueError(f"Voucher {narration!r} does not balance: {total}")
+
+    # Op 6/7 (docs/tally-write-exploration-v4.md) — confirmed 2026-09-23 by backend/tally_bridge/import_builder.py,
+    # the production writer that has actually landed invoices in live Tally: stock+GST Sales/Purchase are
+    # live-verified only under unprefixed LEDGERENTRIES.LIST + Invoice Voucher View + ISINVOICE=Yes +
+    # ISPARTYLEDGER=Yes on the party line. ALLLEDGERENTRIES.LIST + Accounting Voucher View (used here for
+    # Receipt/Payment/Journal/Contra, matching create_payment/Op 8/9) is reserved for the non-invoice path.
+    # Defined once and reused by the inventory-placement guard below so the two checks cannot drift apart again.
+    # I1 (final review): the inventory block's ISDEEMEDPOSITIVE must be derived from the SAME predicate, not
+    # re-decided with `vch_type == "Purchase"` — exact equality there meant "Purchase - GST" + inventory
+    # emitted No/negative, the mismatched permutation Op 7 records as EXCEPTIONS=1. Same drift Ruling C14
+    # fixed one expression over.
+    is_purchase_type = vch_type.startswith("Purchase")
+    is_invoice_type = is_purchase_type or vch_type.startswith("Sales")
+
+    if inventory and not is_invoice_type:
+        raise ValueError("Inventory lines belong on Sales/Purchase only")
+    if inventory and len(lines) < 2:
+        raise ValueError("Inventory lines need a party line and a nominal ledger line in `lines`")
+
+    # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
+    # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
+    # GST lines (matches Op 6/7 and both this method's callers' test fixtures) — Task 6 must keep that ordering.
+    nominal_index = next((i for i, (ledger, _, _) in enumerate(lines) if ledger != party), 0)
+    nominal_ledger, nominal_amount, nominal_deemed_positive = lines[nominal_index]
+    # C32 (live 2026-09-24, logs/debug-vch1-*.log): with inventory the nominal ledger is carried ONLY by the
+    # inventory rows' ACCOUNTINGALLOCATIONS — sending it as a ledger line as well makes Tally count the goods
+    # twice (EXCEPTIONS=1, no LINEERROR). Production build_create_sales/purchase_voucher emit party + GST +
+    # inventory only. So the nominal line is not sent, and the allocations must carry its amount EXACTLY
+    # (signed: Op 6 sale +goods, Op 7 purchase −goods) — then the voucher Tally totals (party + GST +
+    # allocations) balances exactly when `lines` does.
+    if inventory:
+        # Review #8: the nominal line is dropped, so its own flag never reaches Tally — the inventory rows and their
+        # allocations go out with the flag the voucher TYPE implies (sale No/+goods, purchase Yes/−goods). A nominal
+        # line that disagrees means the caller signed the voucher some other way; Tally would answer EXCEPTIONS=1.
+        if nominal_deemed_positive is not is_purchase_type or (nominal_amount < 0) is not is_purchase_type:
+            raise ValueError(f"Voucher {narration!r}: the {nominal_ledger!r} line is ISDEEMEDPOSITIVE="
+                             f"{'Yes' if nominal_deemed_positive else 'No'} / {nominal_amount}, but a {vch_type} "
+                             f"inventory row goes out ISDEEMEDPOSITIVE={'Yes' if is_purchase_type else 'No'} "
+                             f"({'−' if is_purchase_type else '+'}goods)")
+        allocated = sum((amount for *_, amount in inventory), Decimal("0.00"))
+        if allocated != nominal_amount:
+            raise ValueError(f"Voucher {narration!r}: inventory allocations to {nominal_ledger!r} total "
+                             f"{allocated}, but its line says {nominal_amount} — Tally would not balance")
+    sent_lines = [line for i, line in enumerate(lines) if not (inventory and i == nominal_index)]
+
+    # C34 (live UI 2026-09-24): Tally files a bill by the SIGN of its BILLALLOCATIONS AMOUNT — [S0-B:1] sent
+    # +9,861.74 under a −9,861.74 sales party line and Inv/1 landed in Bills PAYABLE. Like production
+    # _render_bill_allocations, `bills` carry magnitudes and each AMOUNT takes the sign of the party line it
+    # nests under (sale Dr −, purchase Cr +, receipt/payment Agst Ref mirror their party line too). The signed
+    # bills must add up to that line's amount, or the bill-wise split would not match the ledger.
+    signed_bills: list[tuple[str, str, Decimal, str | None]] = []
+    if bills:
+        for name, _, bill_amount, _ in bills:
+            if bill_amount < 0:
+                raise ValueError(f"Voucher {narration!r}: bill {name!r} amount {bill_amount} must be a magnitude "
+                                 "— the sign is mirrored from the party line (C34)")
+        party_amounts = [amount for ledger, amount, _ in sent_lines if ledger == party]
+        if len(party_amounts) != 1:
+            raise ValueError(f"Voucher {narration!r}: bills need exactly one {party!r} line, got {len(party_amounts)}")
+        sign = Decimal("-1") if party_amounts[0] < 0 else Decimal("1")
+        signed_bills = [(name, bill_type, sign * bill_amount, credit_period)
+                        for name, bill_type, bill_amount, credit_period in bills]
+        bill_total = sum((amount for _, _, amount, _ in signed_bills), Decimal("0.00"))
+        if bill_total != party_amounts[0]:
+            raise ValueError(f"Voucher {narration!r}: bill allocations total {bill_total}, but the {party!r} "
+                             f"line is {party_amounts[0]}")
+
+    return CheckedVoucher(sent_lines, signed_bills, nominal_ledger, is_purchase_type, is_invoice_type)
 
 
 class TallyWriter:
@@ -240,68 +330,12 @@ class TallyWriter:
         `EXCEPTIONS=1`. Callers naming such a type must alias it to start with `Sales`/`Purchase`.
         """
         check_writable(company)
-        total = sum((amount for _, amount, _ in lines), Decimal("0.00"))
-        if total != Decimal("0.00"):
-            raise ValueError(f"Voucher {narration!r} does not balance: {total}")
-
-        # Op 6/7 (docs/tally-write-exploration-v4.md) — confirmed 2026-09-23 by backend/tally_bridge/import_builder.py,
-        # the production writer that has actually landed invoices in live Tally: stock+GST Sales/Purchase are
-        # live-verified only under unprefixed LEDGERENTRIES.LIST + Invoice Voucher View + ISINVOICE=Yes +
-        # ISPARTYLEDGER=Yes on the party line. ALLLEDGERENTRIES.LIST + Accounting Voucher View (used here for
-        # Receipt/Payment/Journal/Contra, matching create_payment/Op 8/9) is reserved for the non-invoice path.
-        # Defined once and reused by the inventory-placement guard below so the two checks cannot drift apart again.
-        # I1 (final review): the inventory block's ISDEEMEDPOSITIVE must be derived from the SAME predicate, not
-        # re-decided with `vch_type == "Purchase"` — exact equality there meant "Purchase - GST" + inventory
-        # emitted No/negative, the mismatched permutation Op 7 records as EXCEPTIONS=1. Same drift Ruling C14
-        # fixed one expression over.
-        is_purchase_type = vch_type.startswith("Purchase")
-        is_invoice_type = is_purchase_type or vch_type.startswith("Sales")
+        checked = validate_b_voucher(vch_type=vch_type, narration=narration, party=party, lines=lines,
+                                     inventory=inventory, bills=bills)
+        sent_lines, signed_bills = checked.sent_lines, checked.signed_bills
+        nominal_ledger, is_purchase_type, is_invoice_type = (checked.nominal_ledger, checked.is_purchase_type,
+                                                             checked.is_invoice_type)
         ledger_tag = "LEDGERENTRIES.LIST" if is_invoice_type else "ALLLEDGERENTRIES.LIST"
-
-        if inventory and not is_invoice_type:
-            raise ValueError("Inventory lines belong on Sales/Purchase only")
-        if inventory and len(lines) < 2:
-            raise ValueError("Inventory lines need a party line and a nominal ledger line in `lines`")
-
-        # The nominal (goods) ledger for every inventory row's ACCOUNTINGALLOCATIONS.LIST: the first line that isn't
-        # the party line. `lines` is expected to list party first, then the nominal Sales/Purchase ledger, then any
-        # GST lines (matches Op 6/7 and both this method's callers' test fixtures) — Task 6 must keep that ordering.
-        nominal_index = next((i for i, (ledger, _, _) in enumerate(lines) if ledger != party), 0)
-        nominal_ledger, nominal_amount, _ = lines[nominal_index]
-        # C32 (live 2026-09-24, logs/debug-vch1-*.log): with inventory the nominal ledger is carried ONLY by the
-        # inventory rows' ACCOUNTINGALLOCATIONS — sending it as a ledger line as well makes Tally count the goods
-        # twice (EXCEPTIONS=1, no LINEERROR). Production build_create_sales/purchase_voucher emit party + GST +
-        # inventory only. So the nominal line is not sent, and the allocations must carry its amount EXACTLY
-        # (signed: Op 6 sale +goods, Op 7 purchase −goods) — then the voucher Tally totals (party + GST +
-        # allocations) balances exactly when `lines` does.
-        if inventory:
-            allocated = sum((amount for *_, amount in inventory), Decimal("0.00"))
-            if allocated != nominal_amount:
-                raise ValueError(f"Voucher {narration!r}: inventory allocations to {nominal_ledger!r} total "
-                                 f"{allocated}, but its line says {nominal_amount} — Tally would not balance")
-        sent_lines = [line for i, line in enumerate(lines) if not (inventory and i == nominal_index)]
-
-        # C34 (live UI 2026-09-24): Tally files a bill by the SIGN of its BILLALLOCATIONS AMOUNT — [S0-B:1] sent
-        # +9,861.74 under a −9,861.74 sales party line and Inv/1 landed in Bills PAYABLE. Like production
-        # _render_bill_allocations, `bills` carry magnitudes and each AMOUNT takes the sign of the party line it
-        # nests under (sale Dr −, purchase Cr +, receipt/payment Agst Ref mirror their party line too). The signed
-        # bills must add up to that line's amount, or the bill-wise split would not match the ledger.
-        signed_bills: list[tuple[str, str, Decimal, str | None]] = []
-        if bills:
-            for name, _, bill_amount, _ in bills:
-                if bill_amount < 0:
-                    raise ValueError(f"Voucher {narration!r}: bill {name!r} amount {bill_amount} must be a magnitude "
-                                     "— the sign is mirrored from the party line (C34)")
-            party_amounts = [amount for ledger, amount, _ in sent_lines if ledger == party]
-            if len(party_amounts) != 1:
-                raise ValueError(f"Voucher {narration!r}: bills need exactly one {party!r} line, got {len(party_amounts)}")
-            sign = Decimal("-1") if party_amounts[0] < 0 else Decimal("1")
-            signed_bills = [(name, bill_type, sign * bill_amount, credit_period)
-                            for name, bill_type, bill_amount, credit_period in bills]
-            bill_total = sum((amount for _, _, amount, _ in signed_bills), Decimal("0.00"))
-            if bill_total != party_amounts[0]:
-                raise ValueError(f"Voucher {narration!r}: bill allocations total {bill_total}, but the {party!r} "
-                                 f"line is {party_amounts[0]}")
 
         ledger_blocks = []
         for ledger, amount, deemed_positive in sent_lines:

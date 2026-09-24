@@ -12,7 +12,7 @@ from v2.probes.setup.company_b import (
     CompanyBLoadError, LoadReport, _load_masters, _load_vouchers, _verify, load_company_b,
 )
 from v2.probes.setup.company_b_data import (
-    Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, expected_figures, generate,
+    BillSpec, Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, expected_figures, generate,
 )
 from v2.probes.setup.writes import B_READBACK_FROM, B_READBACK_TO, TallyWriter, WriteRefused
 from v2.tests.probes.fake_books import FakeBooks, sync_client
@@ -541,3 +541,36 @@ def test_an_inventory_voucher_whose_party_is_not_the_first_line_stops_the_load()
     with pytest.raises(CompanyBLoadError, match="must list the party"):
         _load_vouchers(writer, io, B, tiny, report)
     assert [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r] == []
+
+
+# --- C37 (review #7): every voucher is validated before the first one is sent --------------------------------------
+def test_bad_vouchers_stop_the_load_before_any_voucher_is_written_and_are_all_named():
+    """create_b_voucher's ValueErrors (balance, C32 allocation, C34 bills) used to escape `_load_vouchers`
+    (it catches WriteFailed only) and crash the load mid-run, after earlier vouchers were already in Tally. Now the
+    whole dataset is validated first; every bad tag is named in one CompanyBLoadError, and nothing is imported —
+    not even the good voucher dated before them."""
+    books = _empty_b()
+    writer, io, _ = _loader(books)
+    good = VoucherSpec(
+        tag=990, kind="payment", vch_type="Payment", date=date(2022, 4, 1), party="Office Rent",
+        narration="[S0-B:990] Payment for Office Rent",
+        lines=(LineSpec(ledger="Office Rent", amount=Decimal("-100.00"), deemed_positive=True),
+               LineSpec(ledger="HDFC Bank Current A/c", amount=Decimal("100.00"), deemed_positive=False)),
+        inventory=(), bills=())
+    unbalanced = replace(good, tag=991, date=date(2022, 5, 1), narration="[S0-B:991] unbalanced",
+                         lines=(good.lines[0], replace(good.lines[1], amount=Decimal("99.00"))))
+    bad_bill = replace(good, tag=992, date=date(2022, 6, 1), narration="[S0-B:992] bad bill", party="Office Rent",
+                       bills=(BillSpec(name="Pur/1", bill_type="Agst Ref", amount=Decimal("50.00"), credit_period=None),))
+    tiny = Dataset(groups=(), units=(), items=(), ledgers=(), vouchers=(good, unbalanced, bad_bill),
+                   licence="licensed")
+    with pytest.raises(CompanyBLoadError) as info:
+        _load_vouchers(writer, io, B, tiny, LoadReport())
+    assert "[S0-B:991]" in str(info.value) and "[S0-B:992]" in str(info.value)
+    assert "[S0-B:990]" not in str(info.value)
+    assert [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r] == []
+
+
+def test_the_whole_company_b_dataset_passes_pre_validation():
+    from v2.probes.setup.company_b import validate_dataset
+    for licence in ("licensed", "educational"):
+        assert validate_dataset(generate(licence)) == []
