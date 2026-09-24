@@ -2876,7 +2876,7 @@
       "remaining": []
     },
     "3": {
-      "outcome": "PARTIAL",
+      "outcome": "CONFIRMED",
       "parts": {
         "A": {
           "outcome": "CONFIRMED",
@@ -2920,12 +2920,133 @@
           ],
           "manual_steps": [],
           "ran_at": "2026-09-23T12:25:35+05:30"
+        },
+        "B": {
+          "outcome": "CONFIRMED",
+          "summary": "cancelled [201, 202] and optional [301, 302] carry their flags on both reads (the cancelled ones with no ledger lines and an empty PartyLedgerName); the other 954 vouchers carry none",
+          "observations": {
+            "count": 958,
+            "flags": {
+              "IsCancelled": {
+                "empty": 0,
+                "yes": 2
+              },
+              "IsOptional": {
+                "empty": 0,
+                "yes": 2
+              },
+              "IsPostDated": {
+                "empty": 0,
+                "yes": 0
+              }
+            },
+            "header_flagged": {
+              "201": {
+                "returned": true,
+                "IsCancelled": "Yes",
+                "IsOptional": "No",
+                "flags_ok": true
+              },
+              "202": {
+                "returned": true,
+                "IsCancelled": "Yes",
+                "IsOptional": "No",
+                "flags_ok": true
+              },
+              "301": {
+                "returned": true,
+                "IsCancelled": "No",
+                "IsOptional": "Yes",
+                "flags_ok": true
+              },
+              "302": {
+                "returned": true,
+                "IsCancelled": "No",
+                "IsOptional": "Yes",
+                "flags_ok": true
+              }
+            },
+            "months": {
+              "2023-02": {
+                "returned": 20,
+                "flags": {
+                  "201": {
+                    "returned": true,
+                    "IsCancelled": "Yes",
+                    "IsOptional": "No",
+                    "flags_ok": true
+                  },
+                  "202": {
+                    "returned": true,
+                    "IsCancelled": "Yes",
+                    "IsOptional": "No",
+                    "flags_ok": true
+                  }
+                },
+                "lines": {
+                  "201": {
+                    "ledger_lines": 0,
+                    "amounts": 0,
+                    "party": ""
+                  },
+                  "202": {
+                    "ledger_lines": 0,
+                    "amounts": 0,
+                    "party": ""
+                  }
+                }
+              },
+              "2023-07": {
+                "returned": 20,
+                "flags": {
+                  "301": {
+                    "returned": true,
+                    "IsCancelled": "No",
+                    "IsOptional": "Yes",
+                    "flags_ok": true
+                  },
+                  "302": {
+                    "returned": true,
+                    "IsCancelled": "No",
+                    "IsOptional": "Yes",
+                    "flags_ok": true
+                  }
+                },
+                "lines": {
+                  "301": {
+                    "ledger_lines": 7,
+                    "amounts": 7,
+                    "party": "शर्मा ट्रेडर्स"
+                  },
+                  "302": {
+                    "ledger_lines": 7,
+                    "amounts": 7,
+                    "party": "Kolhapur Retail Mart"
+                  }
+                }
+              }
+            },
+            "others": 954,
+            "cancelled_party_names": {
+              "201": "",
+              "202": ""
+            },
+            "prior_evidence": "probe 21 (2026-09-24): 201/202 returned by probe 5's month request, p21_B_fy2022_month_02.xml — recorded there, judged here",
+            "unlisted_month": [],
+            "unlisted_header": []
+          },
+          "spec_impact": "R16: the extractor's month request returns cancelled and optional vouchers WITH their flags (a cancelled one exports no ledger lines); S1 ingests them and keeps both out of balances by IsCancelled / IsOptional, as Tally does (C42). No other voucher carries a flag.",
+          "fixtures": [
+            "p03_B_vouchers_flags.xml",
+            "p03_B_flagged_month_2023_02.xml",
+            "p03_B_flagged_month_2023_07.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-24T20:57:45+05:30"
         }
       },
       "history": [],
-      "remaining": [
-        "B"
-      ]
+      "remaining": []
     },
     "4": {
       "outcome": "CONFIRMED",
@@ -3235,7 +3356,7 @@
       "remaining": []
     },
     "23": {
-      "outcome": "PARTIAL",
+      "outcome": "CONFIRMED",
       "parts": {
         "A": {
           "outcome": "CONFIRMED",
@@ -3282,15 +3403,260 @@
           ],
           "manual_steps": [],
           "ran_at": "2026-09-23T12:25:36+05:30"
+        },
+        "B": {
+          "outcome": "CONFIRMED",
+          "summary": "voucher credit periods: 12 New Ref bill(s) in Jun 2023 (CONFIRMED); Bills Receivable due dates: 202/202 = bill date + credit period (CONFIRMED)",
+          "observations": {
+            "credit_period": {
+              "compared": 12,
+              "missing": [],
+              "wrong": {},
+              "values": [
+                "30 Days",
+                "45 Days"
+              ],
+              "verdict": "CONFIRMED"
+            },
+            "due_dates": {
+              "compared": 202,
+              "ok": 202,
+              "as_bill_date": [],
+              "no_due": [],
+              "wrong": {},
+              "unknown": [],
+              "flagged_listed": [],
+              "opening": {},
+              "offsets": {
+                "Inv/226": 30,
+                "Inv/244": 30,
+                "Inv/262": 30,
+                "Inv/268": 30,
+                "Inv/263": 30,
+                "Inv/282": 30,
+                "Inv/286": 30,
+                "Inv/304": 30,
+                "Inv/308": 30,
+                "Inv/327": 30,
+                "Inv/322": 30,
+                "Inv/328": 30,
+                "Inv/346": 30,
+                "Inv/364": 30,
+                "Inv/365": 30,
+                "Inv/385": 30,
+                "Inv/382": 30,
+                "Inv/384": 30,
+                "Inv/388": 30,
+                "Inv/407": 30,
+                "Inv/403": 30,
+                "Inv/406": 30,
+                "Inv/421": 30,
+                "Inv/427": 30,
+                "Inv/424": 30,
+                "Inv/425": 30,
+                "Inv/422": 30,
+                "Inv/445": 30,
+                "Inv/443": 30,
+                "Inv/441": 30,
+                "Inv/442": 30,
+                "Inv/448": 30,
+                "Inv/461": 30,
+                "Inv/467": 30,
+                "Inv/468": 30,
+                "Inv/463": 30,
+                "Inv/466": 30,
+                "Inv/483": 30,
+                "Inv/481": 30,
+                "Inv/487": 30,
+                "Inv/485": 30,
+                "Inv/484": 30,
+                "Inv/486": 30,
+                "Inv/501": 30,
+                "Inv/507": 30,
+                "Inv/504": 30,
+                "Inv/502": 30,
+                "Inv/505": 30,
+                "Inv/508": 30,
+                "Inv/503": 30,
+                "Inv/525": 30,
+                "Inv/523": 30,
+                "Inv/521": 30,
+                "Inv/527": 30,
+                "Inv/522": 30,
+                "Inv/528": 30,
+                "Inv/524": 30,
+                "Inv/526": 30,
+                "Inv/541": 30,
+                "Inv/547": 30,
+                "Inv/544": 30,
+                "Inv/545": 30,
+                "Inv/546": 30,
+                "Inv/543": 30,
+                "Inv/561": 30,
+                "Inv/567": 30,
+                "Inv/564": 30,
+                "Inv/565": 30,
+                "Inv/562": 30,
+                "Inv/568": 30,
+                "Inv/563": 30,
+                "Inv/585": 30,
+                "Inv/583": 30,
+                "Inv/587": 30,
+                "Inv/581": 30,
+                "Inv/582": 30,
+                "Inv/586": 30,
+                "Inv/588": 30,
+                "Inv/601": 30,
+                "Inv/604": 30,
+                "Inv/607": 30,
+                "Inv/605": 30,
+                "Inv/603": 30,
+                "Inv/606": 30,
+                "Inv/621": 30,
+                "Inv/627": 30,
+                "Inv/625": 30,
+                "Inv/623": 30,
+                "Inv/624": 30,
+                "Inv/622": 30,
+                "Inv/626": 30,
+                "Inv/628": 30,
+                "Inv/641": 30,
+                "Inv/647": 30,
+                "Inv/642": 30,
+                "Inv/648": 30,
+                "Inv/645": 30,
+                "Inv/643": 30,
+                "Inv/646": 30,
+                "Inv/661": 30,
+                "Inv/667": 30,
+                "Inv/664": 30,
+                "Inv/665": 30,
+                "Inv/663": 30,
+                "Inv/666": 30,
+                "Inv/681": 30,
+                "Inv/687": 30,
+                "Inv/685": 30,
+                "Inv/683": 30,
+                "Inv/684": 30,
+                "Inv/682": 30,
+                "Inv/688": 30,
+                "Inv/701": 30,
+                "Inv/707": 30,
+                "Inv/705": 30,
+                "Inv/708": 30,
+                "Inv/702": 30,
+                "Inv/703": 30,
+                "Inv/706": 30,
+                "Inv/723": 30,
+                "Inv/727": 30,
+                "Inv/725": 30,
+                "Inv/721": 30,
+                "Inv/726": 30,
+                "Inv/724": 30,
+                "Inv/728": 30,
+                "Inv/741": 30,
+                "Inv/744": 30,
+                "Inv/747": 30,
+                "Inv/745": 30,
+                "Inv/742": 30,
+                "Inv/748": 30,
+                "Inv/743": 30,
+                "Inv/765": 30,
+                "Inv/763": 30,
+                "Inv/761": 30,
+                "Inv/767": 30,
+                "Inv/762": 30,
+                "Inv/768": 30,
+                "Inv/766": 30,
+                "Inv/781": 30,
+                "Inv/787": 30,
+                "Inv/784": 30,
+                "Inv/785": 30,
+                "Inv/783": 30,
+                "Inv/786": 30,
+                "Inv/801": 30,
+                "Inv/807": 30,
+                "Inv/804": 30,
+                "Inv/805": 30,
+                "Inv/802": 30,
+                "Inv/808": 30,
+                "Inv/803": 30,
+                "Inv/825": 30,
+                "Inv/821": 30,
+                "Inv/827": 30,
+                "Inv/823": 30,
+                "Inv/822": 30,
+                "Inv/828": 30,
+                "Inv/826": 30,
+                "Inv/841": 30,
+                "Inv/847": 30,
+                "Inv/844": 30,
+                "Inv/845": 30,
+                "Inv/842": 30,
+                "Inv/843": 30,
+                "Inv/846": 30,
+                "Inv/867": 30,
+                "Inv/865": 30,
+                "Inv/863": 30,
+                "Inv/861": 30,
+                "Inv/864": 30,
+                "Inv/862": 30,
+                "Inv/868": 30,
+                "Inv/881": 30,
+                "Inv/887": 30,
+                "Inv/885": 30,
+                "Inv/882": 30,
+                "Inv/888": 30,
+                "Inv/883": 30,
+                "Inv/886": 30,
+                "Inv/901": 30,
+                "Inv/907": 30,
+                "Inv/904": 30,
+                "Inv/905": 30,
+                "Inv/903": 30,
+                "Inv/906": 30,
+                "Inv/921": 30,
+                "Inv/927": 30,
+                "Inv/923": 30,
+                "Inv/925": 30,
+                "Inv/924": 30,
+                "Inv/922": 30,
+                "Inv/928": 30,
+                "Inv/941": 30,
+                "Inv/947": 30,
+                "Inv/944": 30,
+                "Inv/945": 30,
+                "Inv/942": 30,
+                "Inv/948": 30,
+                "Inv/943": 30,
+                "Inv/946": 30
+              },
+              "offsets_by_credit_days": {
+                "30": [
+                  30
+                ]
+              },
+              "verdict": "CONFIRMED"
+            },
+            "sub_verdicts": {
+              "voucher_credit_period": "CONFIRMED",
+              "report_due_date": "CONFIRMED"
+            }
+          },
+          "spec_impact": "Part 3's overdue split has two agreeing sources: each New Ref bill's BILLCREDITPERIOD on the voucher, and Bills Receivable's due-date column (BILLDUE = bill date + credit period). S1 stores the credit period on the bill row and reads due dates from the Bills snapshot.",
+          "fixtures": [
+            "p23_B_bills_credit_period.xml",
+            "p23_B_bills_receivable_due.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-24T20:57:45+05:30"
         }
       },
       "history": [],
-      "remaining": [
-        "B"
-      ]
+      "remaining": []
     },
     "25": {
-      "outcome": "PARTIAL",
+      "outcome": "DIFFERENT",
       "parts": {
         "A": {
           "outcome": "DIFFERENT",
@@ -3354,12 +3720,46 @@
           ],
           "manual_steps": [],
           "ran_at": "2026-09-23T12:25:36+05:30"
+        },
+        "B": {
+          "outcome": "DIFFERENT",
+          "summary": "voucher type: 'Sales - GST' resolves to Sales only by the Parent walk (Sales - GST → Sales) (DIFFERENT); duplicate name (R9): skipped by the operator",
+          "observations": {
+            "voucher_type": {
+              "name": "Sales - GST",
+              "parent": "Sales",
+              "reserved_name": "",
+              "walk": [
+                "Sales - GST",
+                "Sales"
+              ],
+              "resolved_by": "Parent walk"
+            },
+            "r9": {
+              "status": "skipped by the operator"
+            },
+            "sub_verdicts": {
+              "voucher_type": "DIFFERENT",
+              "duplicate_name": "skipped by the operator"
+            }
+          },
+          "spec_impact": "A custom voucher type exports no base type of its own: S1 derives it by walking the voucher-type Parent chain (R16): 'Sales - GST' → Sales — the same Parent-chain rule probe 25 A put into the S1 spec.",
+          "fixtures": [
+            "p25_B_voucher_types.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Probe 25 B, duplicate ledger name (R9). In TallyPrime: Gateway of Tally → Create → Ledger. Name: Delhi Metal Traders   Under: Sundry Debtors   (it already exists under National Creditors). Try to save it (A: Accept on the right-hand button bar). Then press Esc until you are back at the Gateway of Tally, answering Yes if TallyPrime asks to quit without saving. Type TallyPrime's message word for word, or 'saved' if it saved the ledger, or 'skip' to leave R9 unmeasured.",
+              "input": "skip",
+              "done_at": "2026-09-24T21:10:44+05:30"
+            }
+          ],
+          "ran_at": "2026-09-24T21:10:44+05:30"
         }
       },
       "history": [],
-      "remaining": [
-        "B"
-      ]
+      "remaining": []
     },
     "7": {
       "outcome": "CONFIRMED",
@@ -5839,9 +6239,225 @@
       "remaining": []
     },
     "11": {
-      "outcome": "FAILED",
+      "outcome": "DIFFERENT",
       "parts": {
         "B": {
+          "outcome": "DIFFERENT",
+          "summary": "ledgers: OpeningBalance equals the current FY's opening for 14 ledger(s) (DIFFERENT); opening bill: 'Op/2022-001' (₹62500.00) on the ledger master (CONFIRMED); stock: openings are the current period's (as at 2025-04-01) for 5 item(s), not the books-start ones (C46) (DIFFERENT)",
+          "observations": {
+            "ledgers": {
+              "compared": 25,
+              "mismatched": {
+                "Kolhapur Retail Mart": {
+                  "tally": "65468.06",
+                  "setup": "-45000.00",
+                  "current_fy_opening": "65468.06"
+                },
+                "Gulf Office Supplies LLC": {
+                  "tally": "-178008.58",
+                  "setup": "0",
+                  "current_fy_opening": "-178008.58"
+                },
+                "शर्मा ट्रेडर्स": {
+                  "tally": "-678655.57",
+                  "setup": "0",
+                  "current_fy_opening": "-678655.57"
+                },
+                "Nagpur Wholesale Traders": {
+                  "tally": "-315637.10",
+                  "setup": "0",
+                  "current_fy_opening": "-315637.10"
+                },
+                "Pune Digital Solutions": {
+                  "tally": "-355057.65",
+                  "setup": "-62500.00",
+                  "current_fy_opening": "-355057.65"
+                },
+                "Indore Home Needs": {
+                  "tally": "-421930.89",
+                  "setup": "0",
+                  "current_fy_opening": "-421930.89"
+                },
+                "Chennai Components Ltd": {
+                  "tally": "983077.51",
+                  "setup": "0",
+                  "current_fy_opening": "983077.51"
+                },
+                "Satara Packaging Co": {
+                  "tally": "304733.78",
+                  "setup": "0",
+                  "current_fy_opening": "304733.78"
+                },
+                "HDFC Bank Current A/c": {
+                  "tally": "-1562043.95",
+                  "setup": "-868050.00",
+                  "current_fy_opening": "-1562043.95"
+                },
+                "Cash": {
+                  "tally": "-374074.32",
+                  "setup": "0",
+                  "current_fy_opening": "-374074.32"
+                },
+                "Input CGST": {
+                  "tally": "-147010.48",
+                  "setup": "0",
+                  "current_fy_opening": "-147010.48"
+                },
+                "Input SGST": {
+                  "tally": "-147010.48",
+                  "setup": "0",
+                  "current_fy_opening": "-147010.48"
+                },
+                "Output CGST": {
+                  "tally": "279085.03",
+                  "setup": "0",
+                  "current_fy_opening": "279085.03"
+                },
+                "Output SGST": {
+                  "tally": "279085.03",
+                  "setup": "0",
+                  "current_fy_opening": "279085.03"
+                }
+              },
+              "as_current_fy": [
+                "Cash",
+                "Chennai Components Ltd",
+                "Gulf Office Supplies LLC",
+                "HDFC Bank Current A/c",
+                "Indore Home Needs",
+                "Input CGST",
+                "Input SGST",
+                "Kolhapur Retail Mart",
+                "Nagpur Wholesale Traders",
+                "Output CGST",
+                "Output SGST",
+                "Pune Digital Solutions",
+                "Satara Packaging Co",
+                "शर्मा ट्रेडर्स"
+              ]
+            },
+            "opening_bill": {
+              "party": "Pune Digital Solutions",
+              "bill": "Op/2022-001",
+              "expected": "-62500.00",
+              "candidate": {
+                "found": true,
+                "amount": "-62500.00",
+                "date": "20220331",
+                "magnitude_match": true,
+                "sign": "negative",
+                "bills_seen": 1
+              }
+            },
+            "stock": {
+              "USB Cable Type-C": {
+                "present": true,
+                "qty_text": "11 Nos",
+                "rate_text": "695.51/Nos",
+                "value": "-7650.65",
+                "base_units": "Nos",
+                "qty_unit": "Nos",
+                "books_qty": "120",
+                "current_period_qty": "11",
+                "qty_ok": false,
+                "qty_current_ok": true,
+                "rate_ok": false,
+                "value_ok": false,
+                "value_sign_flipped": false
+              },
+              "Wireless Mouse": {
+                "present": true,
+                "qty_text": "47 Nos",
+                "rate_text": "335.92/Nos",
+                "value": "-15788.07",
+                "base_units": "Nos",
+                "qty_unit": "Nos",
+                "books_qty": "0",
+                "current_period_qty": "47",
+                "qty_ok": false,
+                "qty_current_ok": true,
+                "rate_ok": false,
+                "value_ok": false,
+                "value_sign_flipped": false
+              },
+              "A4 Paper Ream": {
+                "present": true,
+                "qty_text": "19 Box 0 Nos",
+                "rate_text": "431.11/Box",
+                "value": "-8191.10",
+                "base_units": "Box of 10 Nos",
+                "qty_unit": "Box",
+                "books_qty": "15",
+                "current_period_qty": "19",
+                "qty_ok": false,
+                "qty_current_ok": true,
+                "rate_ok": false,
+                "value_ok": false,
+                "value_sign_flipped": false
+              },
+              "Office Stapler": {
+                "present": true,
+                "qty_text": "9 Nos",
+                "rate_text": "669.00/Nos",
+                "value": "-6021.03",
+                "base_units": "Nos",
+                "qty_unit": "Nos",
+                "books_qty": "0",
+                "current_period_qty": "9",
+                "qty_ok": false,
+                "qty_current_ok": true,
+                "rate_ok": false,
+                "value_ok": false,
+                "value_sign_flipped": false
+              },
+              "Whiteboard Marker Set": {
+                "present": true,
+                "qty_text": "4 Nos",
+                "rate_text": "534.93/Nos",
+                "value": "-2139.72",
+                "base_units": "Nos",
+                "qty_unit": "Nos",
+                "books_qty": "0",
+                "current_period_qty": "4",
+                "qty_ok": false,
+                "qty_current_ok": true,
+                "rate_ok": false,
+                "value_ok": false,
+                "value_sign_flipped": false
+              }
+            },
+            "stock_scope": {
+              "scope": "current_period",
+              "telling": 5,
+              "as_books": [],
+              "as_current_period": [
+                "A4 Paper Ream",
+                "Office Stapler",
+                "USB Cable Type-C",
+                "Whiteboard Marker Set",
+                "Wireless Mouse"
+              ],
+              "neither": []
+            },
+            "sub_verdicts": {
+              "ledgers": "DIFFERENT",
+              "opening_bill": "CONFIRMED",
+              "stock": "DIFFERENT"
+            }
+          },
+          "spec_impact": "Ledger OpeningBalance reads as the current FY's opening, not the books-start one: R5's books-start anchor is computed or read with the period in the first FY — probe 16 B settles the scope. C46: StockItem OpeningBalance / OpeningRate / OpeningValue are the CURRENT period's opening, not the books-start one — S1 may use them only as the current FY's stock opening; a books-start stock opening comes from a Stock Summary as-on the books start (probe 18's route), never the StockItem master (R5).",
+          "fixtures": [
+            "p11_B_ledger_openings.xml",
+            "p11_B_opening_bills.xml",
+            "p11_B_stock_openings.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-24T20:57:35+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "B",
           "outcome": "FAILED",
           "summary": "stock openings ≠ setup for A4 Paper Ream, Office Stapler, USB Cable Type-C, Whiteboard Marker Set, Wireless Mouse",
           "observations": {
@@ -6021,8 +6637,7 @@
           "manual_steps": [],
           "ran_at": "2026-09-24T18:18:51+05:30"
         }
-      },
-      "history": [],
+      ],
       "remaining": []
     },
     "15": {
