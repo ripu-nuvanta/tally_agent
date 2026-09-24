@@ -14,7 +14,8 @@
       "Purchase Accounts": "-2521300.00",
       "Indirect Expenses": "-1343000.00"
     },
-    "company_a_reset_at": "2026-09-23T11:06:28+05:30"
+    "company_a_reset_at": "2026-09-23T11:06:28+05:30",
+    "company_b_loaded_at": "2026-09-24T13:02:33+05:30"
   },
   "confirmed_requests": {
     "active_company": {
