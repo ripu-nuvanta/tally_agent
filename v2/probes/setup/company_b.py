@@ -417,6 +417,8 @@ def _settle_flags(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
 def _verify(writer: TallyWriter, company: str, dataset: Dataset, report: LoadReport) -> None:
     """Per-FY voucher counts, and (C3) group-level balances, compared against the dataset. Never raises (I7:
     every read is wrapped) — the operator must see the whole picture in one run."""
+    # M7: `expected.ledger_month_end` / `ledger_fy_opening` exist for probes 16/18, not for the loader — this
+    # function deliberately never consumes them (Ruling C16 / S0-D7: don't guess figures a probe must confirm).
     expected = expected_figures(dataset)
     try:
         rows = _read_vouchers(writer, company, _VOUCHER_LIST_FIELDS)
