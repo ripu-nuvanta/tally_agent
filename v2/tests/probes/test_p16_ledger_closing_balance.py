@@ -366,7 +366,8 @@ async def test_unbalanced_voucher_makes_the_lines_check_inconclusive_not_failed(
 # --- M5: the stock gap's evidence is recorded, and it reconciles on the LIVE company -------------------------------
 
 
-SYNC = Path(__file__).resolve().parents[1] / "fixtures" / "sync"
+# The 2026-09-23 run (untyped dates, C33), moved here before plan part 5 re-runs these probes (Task 1).
+SNAPSHOT = Path(__file__).resolve().parents[1] / "fixtures" / "sync" / "c33_untyped_2026-09-23"
 
 
 def test_the_live_company_a_reconciles_every_tb_group_via_the_opening_stock_row():
@@ -375,9 +376,9 @@ def test_the_live_company_a_reconciles_every_tb_group_via_the_opening_stock_row(
     The Stock Summary's CLOSING total the same day was -9,89,462.31 — a different quantity, which is exactly why
     comparing against it left this reconciliation recorded as a mismatch.
     """
-    ledgers = p16._balances((SYNC / "p16_A_ledgers.xml").read_text(encoding="utf-8"))
-    groups = p16.parse_parents((SYNC / "p16_A_groups.xml").read_text(encoding="utf-8"))
-    rows = p16.exploded_tb_rows((SYNC / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
+    ledgers = p16._balances((SNAPSHOT / "p16_A_ledgers.xml").read_text(encoding="utf-8"))
+    groups = p16.parse_parents((SNAPSHOT / "p16_A_groups.xml").read_text(encoding="utf-8"))
+    rows = p16.exploded_tb_rows((SNAPSHOT / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
     opening_stock = p16.opening_stock_row(rows)["closing_balance"]
     assert opening_stock == Decimal("1855800.00")
     compare = p16._group_compare(ledgers, p16._kinds(ledgers, groups), groups, p16.primary_group_rows(rows),

@@ -14,6 +14,7 @@ from v2.probes.reads import (PROBE_POSTING_RULE, amount, ancestors, dmy, explode
 from v2.tests.probes.fakes import line, stock_summary_xml, vch, vouchers_xml
 
 SYNC = Path(__file__).resolve().parents[1] / "fixtures" / "sync"
+C33_SNAPSHOT = SYNC / "c33_untyped_2026-09-23"   # 2026-09-23 p16/p17/p18 captures (C33)
 SALES = vouchers_xml([
     vch({"DATE": "20251001", "VOUCHERTYPENAME": "Sales", "MASTERID": "7"},
         lines=[line("Apex", "-118.00", bills=[{"NAME": "S001", "BILLTYPE": "New Ref", "AMOUNT": "-118.00"}],
@@ -59,7 +60,7 @@ def test_the_default_posting_rule_is_all_only():
 
 def test_live_inventory_vouchers_balance_only_under_all_only():
     """Company A's 50 live vouchers: 'all_only' leaves 0 unbalanced, 'default' leaves exactly the 24 inventory ones."""
-    vouchers = parse_vouchers((SYNC / "p16_A_vouchers_fy.xml").read_text(encoding="utf-8"))
+    vouchers = parse_vouchers((C33_SNAPSHOT / "p16_A_vouchers_fy.xml").read_text(encoding="utf-8"))
     assert len(vouchers) == 50 and all(is_countable(v) for v in vouchers)
 
     def unbalanced(rule):
@@ -75,9 +76,9 @@ def test_live_inventory_vouchers_balance_only_under_all_only():
 
 def test_live_movements_reproduce_tallys_own_as_on_tb_only_under_all_only():
     """The 2x is measurable against Tally: as-on 31-10-2025 the TB says Purchase -11,57,000 / Sales +5,44,000."""
-    vouchers = parse_vouchers((SYNC / "p18_A_vouchers_to_2025-10-31.xml").read_text(encoding="utf-8"))
+    vouchers = parse_vouchers((C33_SNAPSHOT / "p18_A_vouchers_to_2025-10-31.xml").read_text(encoding="utf-8"))
     tb = {row["account_name"]: row["closing_balance"]
-          for row in parse_trial_balance((SYNC / "p18_A_tb_asof_2025-10-31.xml").read_text(encoding="utf-8"))}
+          for row in parse_trial_balance((C33_SNAPSHOT / "p18_A_tb_asof_2025-10-31.xml").read_text(encoding="utf-8"))}
     as_on = dmy("31-10-2025")
 
     def total(prefix, rule):
@@ -95,17 +96,17 @@ def test_live_movements_reproduce_tallys_own_as_on_tb_only_under_all_only():
 
 
 def test_the_exploded_tb_carries_a_synthetic_opening_stock_row_no_ledger_holds():
-    rows = exploded_tb_rows((SYNC / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
+    rows = exploded_tb_rows((C33_SNAPSHOT / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
     stock = opening_stock_row(rows)
     assert stock is not None and stock["closing_balance"] == Decimal("1855800.00")
-    ledgers = parse_parents((SYNC / "p16_A_ledgers.xml").read_text(encoding="utf-8"), "LEDGER")
+    ledgers = parse_parents((C33_SNAPSHOT / "p16_A_ledgers.xml").read_text(encoding="utf-8"), "LEDGER")
     assert "Opening Stock" not in ledgers                     # it is a report row, not a ledger
     assert opening_stock_row(exploded_tb_rows((SYNC / "p00_A_anchors_tb.xml").read_text(encoding="utf-8"))) is None
 
 
 def test_primary_group_rows_take_the_group_row_not_the_like_named_ledger():
     """Company A has a LEDGER called "Capital Account" too; the group row is the FIRST of the two."""
-    rows = exploded_tb_rows((SYNC / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
+    rows = exploded_tb_rows((C33_SNAPSHOT / "p17_A_tb_exploded_explodeflag.xml").read_text(encoding="utf-8"))
     assert [row["account_name"] for row in rows[:2]] == ["Capital Account", "Capital Account"]
     groups = primary_group_rows(rows)
     assert groups["Capital Account"] is rows[0]

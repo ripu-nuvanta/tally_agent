@@ -20,8 +20,8 @@ from v2.tests.probes.fakes import ScriptedIO
 
 B = COMPANIES["B"]
 _SYNC_FIXTURES = Path(__file__).parent.parent / "fixtures" / "sync"
-LIVE_A_TB_FY_END = _SYNC_FIXTURES / "p16_A_tb_fy_end.xml"                    # live company A, probe 16, 2026-09-23
-LIVE_A_TB_EXPLODED = _SYNC_FIXTURES / "p17_A_tb_exploded_explodealllevels.xml"   # ditto, probe 17
+LIVE_A_TB_FY_END = _SYNC_FIXTURES / "c33_untyped_2026-09-23" / "p16_A_tb_fy_end.xml"                    # live company A, probe 16, 2026-09-23
+LIVE_A_TB_EXPLODED = _SYNC_FIXTURES / "c33_untyped_2026-09-23" / "p17_A_tb_exploded_explodealllevels.xml"   # ditto, probe 17
 
 _FLAG_PAUSE_RE = re.compile(r"^\[S0-B:(\d+)\].*?(ISCANCELLED|ISOPTIONAL) did not stick")
 

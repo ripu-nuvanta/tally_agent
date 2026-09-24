@@ -16,8 +16,8 @@ and that is ALSO what Tally reads on the wire. Two places are signed on the wire
   2026-09-24). Tally does NOT infer the side from the parent group — Op 5's gotcha / Ruling C21 / F11 were never
   tested (Op 5 only checked that Capital Account existed). Live evidence: backend/tally_bridge/import_builder.py's
   `abs(opening)` landed company A's HDFC −5,00,000 and SBI −2,00,000 as CREDITS
-  (docs/specs/2026-09-21-bi-part1-sync-design.md "Settled 2026-09-23"; v2/tests/fixtures/sync/p18_A_ledger_list.xml
-  shows them positive, like Capital Account). Never re-introduce `abs(opening)`.
+  (docs/specs/2026-09-21-bi-part1-sync-design.md "Settled 2026-09-23";
+  v2/tests/fixtures/sync/c33_untyped_2026-09-23/p18_A_ledger_list.xml shows them positive, like Capital Account). Never re-introduce `abs(opening)`.
 A stock opening (`create_stock_item`'s `opening_qty`/`opening_rate`) is a quantity and a rate — never negative — but
 its OPENINGVALUE is signed on the wire like a ledger opening: the stock is a debit, so it goes out NEGATIVE (C39).
 """

@@ -128,11 +128,12 @@ async def test_the_stock_bearing_group_reconciles_against_the_tbs_own_opening_st
 
 # --- 2026-09-23 live findings: the as-on TB IS history; Bills and Stock Summary IGNORE the as-on date ----------------
 
-SYNC = Path(__file__).resolve().parents[1] / "fixtures" / "sync"
+# The 2026-09-23 run (untyped dates, C33), moved here before plan part 5 re-runs these probes (Task 1).
+SNAPSHOT = Path(__file__).resolve().parents[1] / "fixtures" / "sync" / "c33_untyped_2026-09-23"
 
 
 def _live(name):
-    return (SYNC / name).read_text(encoding="utf-8")
+    return (SNAPSHOT / name).read_text(encoding="utf-8")
 
 
 def test_the_live_as_on_tb_is_correct_history_under_all_only():
@@ -154,11 +155,16 @@ def test_the_live_as_on_tb_is_correct_history_under_all_only():
     assert sum(v for k, v in doubled.items() if k.startswith("Purchase")) == 2 * Decimal("-1157000.00")
 
 
+# The as-on date the 2026-09-23 bills/stock captures were SENT with (Ruling Q2: pinned here, not p18.BILLS_AS_ON —
+# the probe's constant moved to 31-10-2025 in plan part 5, and this test must describe the capture it reads).
+SNAPSHOT_AS_ON = p18.dmy("30-09-2025")
+
+
 def test_the_live_bills_and_stock_reports_ignore_the_as_on_date_and_return_the_current_position():
     vouchers = p18.parse_vouchers(_live("p18_A_vouchers_to_2025-10-31.xml"))
     ledgers = {row["name"]: row for row in parse_ledger_list(_live("p18_A_ledger_list.xml"))}
     groups = p18.parse_parents(_live("p18_A_group_list.xml"))
-    as_on, period_end = p18.dmy(p18.BILLS_AS_ON), p18.dmy(p18.A_FY_TO)
+    as_on, period_end = SNAPSHOT_AS_ON, p18.dmy(p18.A_FY_TO)
     for side, fixture, anchor in (("receivable", "p18_A_bills_receivable_asof_2025-09-30.xml", Decimal("970537.00")),
                                   ("payable", "p18_A_bills_payable_asof_2025-09-30.xml", Decimal("1834142.00"))):
         entry = p18._bills_side(_live(fixture), p18.pending_bills(vouchers, ledgers, groups, as_on, side),

@@ -304,8 +304,8 @@ def test_a_party_ledger_carries_bill_wise_and_a_valid_gstin():
 def test_a_negative_dataset_opening_is_sent_signed_on_the_wire():
     """C30 (overturns C21/F11): Tally reads OPENINGBALANCE's sign — negative = Dr, positive = Cr — it does NOT
     infer the side from the parent group. Live evidence: backend/tally_bridge/import_builder.py's abs() landed
-    company A's HDFC −5,00,000 / SBI −2,00,000 as CREDITS (v2/tests/fixtures/sync/p18_A_ledger_list.xml shows them
-    positive, like Capital Account). So the dataset's debit-negative value goes on the wire as is."""
+    company A's HDFC −5,00,000 / SBI −2,00,000 as CREDITS
+    (v2/tests/fixtures/sync/c33_untyped_2026-09-23/p18_A_ledger_list.xml shows them positive, like Capital Account). So the dataset's debit-negative value goes on the wire as is."""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_party_ledger(B, "Kolhapur Retail Mart", parent="Sundry Debtors", bill_wise=False,

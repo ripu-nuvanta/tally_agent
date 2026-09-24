@@ -92,15 +92,16 @@ async def test_a_candidate_that_hangs_tally_fails_and_stops(tmp_path):
 
 # --- 2026-09-23 live finding: ISLEDGERWISE=Yes IS a working ledger-level TB -------------------------------------------
 
-SYNC = Path(__file__).resolve().parents[1] / "fixtures" / "sync"
+# The 2026-09-23 run (untyped dates, C33), moved here before plan part 5 re-runs these probes (Task 1).
+SNAPSHOT = Path(__file__).resolve().parents[1] / "fixtures" / "sync" / "c33_untyped_2026-09-23"
 
 
 def _live(name):
-    return (SYNC / name).read_text(encoding="utf-8")
+    return (SNAPSHOT / name).read_text(encoding="utf-8")
 
 
 LIVE_BASELINE = {row["account_name"]: str(row["closing_balance"])
-                 for row in parse_trial_balance(_live("p00_A_anchors_tb.xml"))}
+                 for row in parse_trial_balance((SNAPSHOT.parent / "p00_A_anchors_tb.xml").read_text(encoding="utf-8"))}
 LIVE_LEDGERS = p17.parse_parents(_live("p17_A_ledger_list.xml"), "LEDGER")
 LIVE_GROUPS = p17.parse_parents(_live("p17_A_group_list.xml"))
 
