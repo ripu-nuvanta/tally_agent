@@ -21,7 +21,7 @@ async def _run(tmp_path, groups):
     fake.route("S0P25VoucherTypes", lambda body: objects_xml("VOUCHERTYPE", VOUCHER_TYPES))
     client, store, capture = make_harness(tmp_path, fake)
     ready_store(store)
-    await run_probe(p25.PROBE, labels=None, client=client, store=store, capture=capture, io=ScriptedIO())
+    await run_probe(p25.PROBE, labels=["A"], client=client, store=store, capture=capture, io=ScriptedIO())
     return store.probe_entry(25)["parts"]["A"]
 
 

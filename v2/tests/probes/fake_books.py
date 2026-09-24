@@ -637,11 +637,12 @@ class FakeBooks:
             return objects_xml("VOUCHER", rows)
         if kind == "VoucherType":                          # probe 25 B
             parents = state.get("voucher_type_parents", {})
+            reserved = state.get("voucher_type_reserved", {})    # a custom type exporting its base (unseen live)
             rows = []
             for vtype in state["voucherTypes"]:
                 if vtype in parents:                       # a custom type: Parent = its base type, no ReservedName
                     rows.append({"Name": vtype, "Parent": parents[vtype] if self.voucher_type_parent_exported else "",
-                                 "ReservedName": ""})
+                                 "ReservedName": reserved.get(vtype, "")})
                 else:                                      # live p25 A: a reserved type is its own Parent and ReservedName
                     rows.append({"Name": vtype, "Parent": vtype, "ReservedName": vtype})
             return objects_xml("VOUCHERTYPE", rows)

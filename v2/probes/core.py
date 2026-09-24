@@ -73,3 +73,24 @@ def combine(part_outcomes: dict[str, Outcome | None]) -> Outcome:
         if outcome in present:
             return outcome
     return Outcome.CONFIRMED
+
+
+HALF_RANK = {"CONFIRMED": 0, "DIFFERENT": 1, "FAILED": 2}
+
+
+def worst_verdict(verdicts) -> str:
+    """The worst of several half verdicts (CONFIRMED < DIFFERENT < FAILED) — one part judged by independent halves."""
+    return max(verdicts, key=HALF_RANK.__getitem__)
+
+
+def judge_halves(halves: dict[str, tuple[str, str, str]]) -> tuple[Outcome, str, list[str]]:
+    """A part judged half by half (probes 11, 24, 25): `halves` = name → (verdict, text, spec impact).
+
+    Returns the worst verdict, a summary naming EVERY half with its verdict (C46: a FAILED half must not hide a
+    DIFFERENT one), and the impacts that apply: those of the non-CONFIRMED halves, or every non-empty impact when all
+    halves are CONFIRMED. The caller may still choose its own impact text."""
+    worst = worst_verdict(verdict for verdict, _, _ in halves.values())
+    summary = "; ".join(f"{name.replace('_', ' ')}: {text} ({verdict})" for name, (verdict, text, _) in halves.items())
+    impacts = [impact for verdict, _, impact in halves.values()
+               if impact and (verdict != "CONFIRMED" or worst == "CONFIRMED")]
+    return Outcome(worst), summary, impacts

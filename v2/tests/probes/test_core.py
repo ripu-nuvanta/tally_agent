@@ -33,3 +33,16 @@ def test_different_and_failed_need_spec_impact():
 def test_partial_is_never_a_part_outcome():
     with pytest.raises(ValueError):
         PartResult(Outcome.PARTIAL, "x")
+
+
+def test_judge_halves_takes_the_worst_and_names_every_half():
+    from v2.probes.core import judge_halves, worst_verdict
+    assert worst_verdict(["CONFIRMED", "DIFFERENT", "CONFIRMED"]) == "DIFFERENT"
+    assert worst_verdict(["DIFFERENT", "FAILED"]) == "FAILED" and worst_verdict(["CONFIRMED"]) == "CONFIRMED"
+    halves = {"voucher_type": ("DIFFERENT", "by walk", "walk impact"), "duplicate_name": ("CONFIRMED", "refused", "r9")}
+    outcome, summary, impacts = judge_halves(halves)
+    assert outcome == Outcome.DIFFERENT
+    assert summary == "voucher type: by walk (DIFFERENT); duplicate name: refused (CONFIRMED)"
+    assert impacts == ["walk impact"]                        # a CONFIRMED half's impact only when all are CONFIRMED
+    outcome, _, impacts = judge_halves({"a": ("CONFIRMED", "x", "i1"), "b": ("CONFIRMED", "y", "")})
+    assert outcome == Outcome.CONFIRMED and impacts == ["i1"]
