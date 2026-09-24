@@ -88,6 +88,10 @@ B_CANCELLED_LINES_IMPACT = ("R16: a cancelled voucher comes back from the extrac
 B_NOT_LISTED_IMPACT = ("The extractor's request never returns {kinds} vouchers: S1 never ingests them, and when a person "
                        "turns one into a regular voucher it arrives as a new voucher (AltVchId moves). R16's filter "
                        "only has to handle what is listed.")
+B_HEADER_ONLY_IMPACT = ("R16: probe 5's month request (the extractor's) returns {kinds} vouchers WITH their flags, so S1 "
+                        "ingests them and filters by IsCancelled / IsOptional; only 3 B's own plain Voucher header "
+                        "collection leaves them out. No S1 read may rely on a plain Voucher collection to list them "
+                        "(e.g. a count check against the month request).")
 
 
 def _wanted(tag: int, cancelled: frozenset[int]) -> tuple[str, str]:
@@ -197,16 +201,34 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     if wrong:
         return PartResult(Outcome.FAILED, f"flagged voucher(s) {', '.join(wrong)} came back without their flag",
                           spec_impact=B_WRONG_FLAG_IMPACT)
-    unlisted = [k for k in keys if not header[k]["returned"] or not month_flags.get(k, {}).get("returned")]
-    if unlisted:
-        kinds = " and ".join(sorted({"cancelled" if int(k) in cancelled else "optional" for k in unlisted}))
-        return PartResult(Outcome.DIFFERENT, f"{kinds} voucher(s) {', '.join(unlisted)} are not listed "
-                                             "(header read and/or probe 5's month request)",
-                          spec_impact=B_NOT_LISTED_IMPACT.format(kinds=kinds))
+    # Review I3: two different reads. Only the month request (the extractor's) decides B_NOT_LISTED_IMPACT; an
+    # omission by 3 B's own header collection alone is its own finding.
+    unlisted_month = [k for k in keys if not month_flags.get(k, {}).get("returned")]
+    unlisted_header = [k for k in keys if not header[k]["returned"]]
+    header_only = [k for k in unlisted_header if k not in unlisted_month]
+    ctx.observe("unlisted_month", unlisted_month)
+    ctx.observe("unlisted_header", unlisted_header)
+    kinds_of = lambda ks: " and ".join(sorted({"cancelled" if int(k) in cancelled else "optional" for k in ks}))
+    texts: list[str] = []
+    impacts: list[str] = []
+    if unlisted_month:
+        text = (f"{kinds_of(unlisted_month)} voucher(s) {', '.join(unlisted_month)} are not returned by probe 5's "
+                "month request (the extractor's)")
+        both = [k for k in unlisted_month if k in unlisted_header]
+        if both:
+            text += f", nor by 3 B's header read ({', '.join(both)})"
+        texts.append(text)
+        impacts.append(B_NOT_LISTED_IMPACT.format(kinds=kinds_of(unlisted_month)))
+    if header_only:
+        texts.append(f"{kinds_of(header_only)} voucher(s) {', '.join(header_only)} are missing from 3 B's own header "
+                     "read only — probe 5's month request returns them with their flags")
+        impacts.append(B_HEADER_ONLY_IMPACT.format(kinds=kinds_of(header_only)))
     if with_lines:
-        return PartResult(Outcome.DIFFERENT, f"cancelled voucher(s) {', '.join(with_lines)} carry their flags but "
-                                             "export ledger lines on probe 5's month request",
-                          spec_impact=B_CANCELLED_LINES_IMPACT.format(tags=", ".join(with_lines)))
+        texts.append(f"cancelled voucher(s) {', '.join(with_lines)} carry their flags but export ledger lines on "
+                     "probe 5's month request")
+        impacts.append(B_CANCELLED_LINES_IMPACT.format(tags=", ".join(with_lines)))
+    if texts:
+        return PartResult(Outcome.DIFFERENT, "; ".join(texts), spec_impact=" ".join(impacts))
     parties = sorted({lines["party"] for lines in cancelled_lines.values()})
     party_text = "an empty PartyLedgerName" if parties == [""] else f"PartyLedgerName {parties}"
     return PartResult(Outcome.CONFIRMED, f"cancelled {sorted(cancelled)} and optional {sorted(optional)} carry their "

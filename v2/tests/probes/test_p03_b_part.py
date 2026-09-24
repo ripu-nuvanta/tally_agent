@@ -70,11 +70,45 @@ async def test_a_cancelled_voucher_that_exports_ledger_lines_is_different(tmp_pa
     assert "201" in part["summary"] and "ledger lines" in part["summary"] and "IsCancelled" in part["spec_impact"]
 
 
-async def test_optional_vouchers_missing_from_the_month_request_is_different(tmp_path):
+EXTRACTOR_NEVER = "The extractor's request never returns"
+
+
+async def test_optional_vouchers_missing_from_both_reads_is_different(tmp_path):
+    """Review I3: both reads omit them -> the extractor impact, and the header omission is named alongside."""
     part = await _run(tmp_path, _books(optional_vouchers_listed=False))
     assert part["outcome"] == "DIFFERENT", part["summary"]
-    assert "optional" in part["summary"] and "extractor" in part["spec_impact"]
-    assert part["observations"]["months"]["2023-07"]["flags"]["301"]["returned"] is False
+    assert "optional" in part["summary"] and EXTRACTOR_NEVER in part["spec_impact"]
+    assert "month request" in part["summary"] and "header read" in part["summary"]
+    assert p03.B_HEADER_ONLY_IMPACT.split("{")[0] not in part["spec_impact"]
+    obs = part["observations"]
+    assert obs["months"]["2023-07"]["flags"]["301"]["returned"] is False
+    assert obs["unlisted_month"] == ["301", "302"] and obs["unlisted_header"] == ["301", "302"]
+
+
+async def test_optional_vouchers_missing_from_the_month_request_only_is_different(tmp_path, monkeypatch):
+    """Review I3: only the extractor's request omits them -> the extractor impact; the header read is not blamed."""
+    real = p03.month_flag_rows
+    monkeypatch.setattr(p03, "month_flag_rows",
+                        lambda raw: {t: r for t, r in real(raw).items() if t not in (301, 302)})
+    part = await _run(tmp_path, _books())
+    assert part["outcome"] == "DIFFERENT", part["summary"]
+    assert "optional" in part["summary"] and EXTRACTOR_NEVER in part["spec_impact"]
+    assert "header read" not in part["summary"]
+    obs = part["observations"]
+    assert obs["unlisted_month"] == ["301", "302"] and obs["unlisted_header"] == []
+
+
+async def test_flagged_vouchers_missing_from_the_header_read_only_is_its_own_different(tmp_path):
+    """Review I3: 3 B's own header collection omits them but probe 5's month request returns them with their flags
+    -> DIFFERENT with its own impact, never "the extractor's request never returns them"."""
+    part = await _run(tmp_path, _books(header_lists_flagged=False))
+    assert part["outcome"] == "DIFFERENT", part["summary"]
+    assert EXTRACTOR_NEVER not in part["spec_impact"]
+    assert p03.B_HEADER_ONLY_IMPACT.split("{")[0] in part["spec_impact"]
+    assert "header read only" in part["summary"] and "month request returns them" in part["summary"]
+    obs = part["observations"]
+    assert obs["unlisted_header"] == ["201", "202", "301", "302"] and obs["unlisted_month"] == []
+    assert obs["months"]["2023-07"]["flags"]["301"]["flags_ok"]
 
 
 async def test_a_flag_that_did_not_stick_fails(tmp_path):

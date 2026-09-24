@@ -361,13 +361,16 @@ class FakeBooks:
                  cancelled_vouchers_listed: bool = True, optional_vouchers_listed: bool = True,
                  bill_credit_period_exported: bool = True, bill_due_from_credit_period: bool = True,
                  voucher_type_parent_exported: bool = True, stock_opening_scope: str = "books",
-                 bill_due_offset_days: int = 0):
+                 bill_due_offset_days: int = 0, header_lists_flagged: bool = True):
         self.folder = folder
         # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
         # BILLCREDITPERIOD (p21_B_fy2022_month_02.xml). Hypotheses measured live by probes 3 B / 23 B / 25 B:
         # optional vouchers listed, BILLDUE = bill date + credit period, a custom voucher type exports its Parent.
         self.cancelled_vouchers_listed = cancelled_vouchers_listed
         self.optional_vouchers_listed = optional_vouchers_listed
+        # probe 3 B / review I3: False = 3 B's plain Voucher header collection leaves out cancelled and optional
+        # vouchers while probe 5's month request still returns them (a Day Book-like default, unmeasured).
+        self.header_lists_flagged = header_lists_flagged
         self.bill_credit_period_exported = bill_credit_period_exported
         self.bill_due_from_credit_period = bill_due_from_credit_period
         # probe 23 B / Ruling S4: a due rule other than bill date + credit days (e.g. -1 = one day short).
@@ -639,7 +642,8 @@ class FakeBooks:
         if kind == "Voucher":                              # probe 3 B: header fields only, typed period, knobs
             rows = [_voucher_header(state, mid, v)
                     for mid, v in sorted(state["vouchers"].items(), key=lambda kv: int(kv[0]))
-                    if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1] and self._listed(v)]
+                    if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1] and self._listed(v)
+                    and (self.header_lists_flagged or not _flagged(v))]
             return objects_xml("VOUCHER", rows)
         if kind == "VoucherType":                          # probe 25 B
             parents = state.get("voucher_type_parents", {})

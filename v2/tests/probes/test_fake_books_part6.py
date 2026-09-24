@@ -70,6 +70,8 @@ def test_header_collection_lists_flags_and_honours_the_listed_knobs():
     assert sum(r["IsCancelled"] == "Yes" for r in rows) == 2 and sum(r["IsOptional"] == "Yes" for r in rows) == 2
     hidden = read_objects(_post(_b(optional_vouchers_listed=False), xml), "VOUCHER", ["Narration"])
     assert len(hidden) == 956
+    header_only = read_objects(_post(_b(header_lists_flagged=False), xml), "VOUCHER", ["Narration"])
+    assert len(header_only) == 954                     # review I3: the header read alone drops all four flagged
 
 
 def test_month_export_carries_bill_date_and_credit_period():
