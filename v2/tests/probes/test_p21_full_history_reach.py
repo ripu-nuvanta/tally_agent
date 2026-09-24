@@ -1,4 +1,5 @@
 import json
+import re
 import xml.etree.ElementTree as ET
 
 from v2.probes import p21_full_history_reach as p21
@@ -138,15 +139,15 @@ KINDS = {"sales+inventory+bills", "purchase+inventory+bills", "receipt+bills", "
          "payment", "receipt"}
 
 
-def _books() -> FakeBooks:
-    books = FakeBooks(name=B)
-    seed_company_b(books, "educational")
+def _books(licence: str = "educational") -> FakeBooks:
+    books = FakeBooks(name=B, educational=licence == "educational")     # C43: the fake's edition matches the books
+    seed_company_b(books, licence)
     return books
 
 
-async def _run(tmp_path, books, io=None, *, with_probe_5=True):
+async def _run(tmp_path, books, io=None, *, with_probe_5=True, licence="educational"):
     store = ResultsStore(tmp_path / "results.json")
-    ready_store(store, licence="educational")
+    ready_store(store, licence=licence)
     store.update_environment(company_b_loaded_at="2026-09-24T13:02:33+05:30")
     client, capture = TallyClient(transport=books.transport()), Capture(tmp_path / "fixtures")
     if with_probe_5:
@@ -272,3 +273,34 @@ async def test_probe_21_blocks_until_probe_5_has_confirmed_the_month_request(tmp
     part, _ = await _run(tmp_path, books, with_probe_5=False)
     assert part["outcome"] == "BLOCKED" and "probe(s) 5" in part["summary"]
     assert not any("<TYPE>Voucher</TYPE>" in body for body in books.requests)
+
+
+_DATE_VAR = re.compile(r'<(SVFROMDATE|SVTODATE) TYPE="Date">(\d\d)-(\d\d)-(\d{4})</')
+
+
+def _p21_voucher_date_vars(books: FakeBooks) -> list[tuple[str, str]]:
+    return [(name, f"{d}-{m}-{y}") for body in books.requests if "S0VoucherMonth" in body
+            for name, d, m, y in _DATE_VAR.findall(body)]
+
+
+async def test_c43_every_educational_month_request_ends_on_an_allowed_day(tmp_path):
+    """C43: an educational Tally ignores a date variable off day 1/2/31, so FY 2022-23's 30-day months (and Feb)
+    end on the 2nd; the 31-day months end on the 31st; every month is still exact."""
+    books = _books()
+    part, _ = await _run(tmp_path, books, ScriptedIO(answers=["locked"]))
+    assert part["outcome"] == "CONFIRMED", part["summary"]
+    sent = _p21_voucher_date_vars(books)
+    assert sent and all(int(value[:2]) in (1, 2, 31) for _, value in sent), sent
+    to_dates = [value for name, value in sent if name == "SVTODATE"]
+    for expected in ("02-04-2022", "31-05-2022", "02-06-2022", "02-02-2023", "31-03-2023", "31-03-2026"):
+        assert expected in to_dates, expected
+    assert "30-04-2022" not in to_dates and "28-02-2023" not in to_dates
+    assert part["observations"]["period_lock"]["read"]["match"]
+
+
+async def test_c43_a_licensed_run_asks_for_whole_calendar_months(tmp_path):
+    books = _books("licensed")
+    part, _ = await _run(tmp_path, books, licence="licensed")
+    assert part["outcome"] == "CONFIRMED", part["summary"]
+    to_dates = [value for name, value in _p21_voucher_date_vars(books) if name == "SVTODATE"]
+    assert "30-04-2022" in to_dates and "28-02-2023" in to_dates and "02-04-2022" not in to_dates

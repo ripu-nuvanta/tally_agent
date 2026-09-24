@@ -1,3 +1,4 @@
+import json
 from datetime import date
 
 from v2.agent.tally.client import TallyClient
@@ -13,6 +14,7 @@ from v2.tests.probes.fakes import FakeTally, ScriptedIO, make_harness, objects_x
 
 B = COMPANIES["B"]
 JUNE = (date(2023, 6, 1), date(2023, 6, 30))
+CURRENT_FY = (date(2025, 4, 1), date(2026, 3, 31))
 JUNE_1 = (date(2023, 6, 1), date(2023, 6, 1))
 LOADED_AT = "2026-09-24T13:02:33+05:30"
 
@@ -32,8 +34,11 @@ async def _run_books(tmp_path, books, **store_kwargs):
     return store, store.probe_entry(5)["parts"]["B"]
 
 
-def _books(licence="educational") -> FakeBooks:
-    books = FakeBooks(name=B)
+def _books(licence="educational", *, tally_educational=None) -> FakeBooks:
+    """Company B seeded for `licence`, on a fake Tally of the same edition unless `tally_educational` says otherwise
+    (C43: only an educational fake ignores period variables off day 1/2/31)."""
+    educational = licence == "educational" if tally_educational is None else tally_educational
+    books = FakeBooks(name=B, educational=educational)
     seed_company_b(books, licence)
     return books
 
@@ -42,6 +47,26 @@ def _vouchers(window, *, extra=()):
     exp = expect_window("educational", *window)
     return vouchers_xml([vch({"DATE": v.date.strftime("%Y%m%d"), "VOUCHERTYPENAME": v.vch_type,
                               "NARRATION": v.narration}) for v in exp.written.values()] + list(extra))
+
+
+def store_bodies(tmp_path) -> list[str]:
+    return [json.loads(f.read_text())["request_xml"] for f in (tmp_path / "fixtures").glob("*.json")]
+
+
+def _current_fy_vouchers() -> str:
+    exp = expect_window("educational", *CURRENT_FY)
+    return vouchers_xml([vch({"DATE": v.date.strftime("%Y%m%d"), "VOUCHERTYPENAME": v.vch_type,
+                              "NARRATION": v.narration}) for v in exp.written.values()])
+
+
+def _live_run_1(body: str) -> str:
+    """Live run 1's shape (logs/p05-live-2026-09-24.log): typed, a to-date Tally dropped (June..current FY end);
+    untyped, the current FY 2025-26 only."""
+    if 'TYPE="Date"' not in body:
+        return _current_fy_vouchers()
+    return vouchers_xml([vch({"DATE": v.date.strftime("%Y%m%d"), "VOUCHERTYPENAME": v.vch_type,
+                              "NARRATION": v.narration})
+                         for v in expect_window("educational", date(2023, 6, 1), CURRENT_FY[1]).written.values()])
 
 
 JULY_STRAY = vch({"DATE": "20230701", "VOUCHERTYPENAME": "Sales", "NARRATION": "[S0-B:301] Sale"})
@@ -80,6 +105,13 @@ async def test_typed_svdates_bound_june_2023_and_the_request_is_confirmed(tmp_pa
                                 "p05_B_day_svdates.xml", "p05_B_report_tb_typed.xml", "p05_B_report_tb_untyped.xml"]
     confirmed = store.confirmed("voucher_month")
     assert confirmed["probe"] == 5 and confirmed["form"] == "svdates_typed" and confirmed["day_window_exact"]
+    # C43: the educational June window ends on the 2nd, is recorded, and 30-06-2023 is never sent.
+    assert obs["window"] == {"licence": "educational", "from": "01-06-2023", "to": "02-06-2023", "clamped": True,
+                             "reason": p05.C43_REASON}
+    assert ("educational: to-date clamped to 02-06-2023 because Tally ignores non-1/2/31 date variables — C43"
+            in part["summary"])
+    assert obs["report_period_vars"]["as_on"] == "02-06-2023"
+    assert not any("30-06-2023" in body for body in store_bodies(tmp_path))
     assert '<SVFROMDATE TYPE="Date">__FROM__</SVFROMDATE>' in confirmed["xml_template"]
     assert "<SVCurrentCompany>__COMPANY__</SVCurrentCompany>" in confirmed["xml_template"]
 
@@ -88,10 +120,14 @@ async def test_licensed_books_put_one_voucher_on_the_first(tmp_path):
     _, part = await _run_books(tmp_path, _books("licensed"), licence="licensed")
     assert part["outcome"] == "CONFIRMED", part["summary"]
     assert part["observations"]["day"]["returned"] == 1
+    assert part["observations"]["window"] == {"licence": "licensed", "from": "01-06-2023", "to": "30-06-2023",
+                                              "clamped": False, "reason": None}
+    assert "clamped" not in part["summary"] and "C43" not in part["summary"]
+    assert part["observations"]["report_period_vars"]["as_on"] == "30-06-2023"
 
 
 async def test_a_licence_that_does_not_match_the_books_shows_in_the_day_window(tmp_path):
-    _, part = await _run_books(tmp_path, _books("educational"), licence="licensed")
+    _, part = await _run_books(tmp_path, _books("educational", tally_educational=False), licence="licensed")
     assert part["outcome"] == "DIFFERENT"
     assert part["observations"]["month_typed"]["match"]                  # same 20 tags, all inside June either way
     assert not part["observations"]["day"]["match"] and "half-month" in part["spec_impact"]
@@ -106,7 +142,7 @@ async def test_company_b_not_loaded_blocks_before_any_voucher_request(tmp_path):
 
 async def test_the_formula_is_confirmed_when_typed_svdates_do_not_bound(tmp_path):
     fake = _b_tally(lambda body: _vouchers(JUNE, extra=[JULY_STRAY]),
-                    lambda body: _vouchers(JUNE if '"30-06-2023"' in body else JUNE_1))
+                    lambda body: _vouchers(JUNE if '"02-06-2023"' in body else JUNE_1))
     store, part = await _run_fake(tmp_path, fake)
     assert part["outcome"] == "DIFFERENT", part["summary"]
     assert part["observations"]["month_formula"]["match"] and "$Date formula" in part["spec_impact"]
@@ -142,7 +178,8 @@ def test_ordered_runs_put_probe_5_right_before_probe_21():
         assert order.index((5, "B")) == order.index((21, "B")) - 1
 
 
-UNTAGGED_JUNE_ROW = vch({"DATE": "20230615", "VOUCHERTYPENAME": "Journal", "NARRATION": "typed by hand"})
+# Day 2: under C43 the educational June window is 01-06..02-06, and an educational company holds nothing on the 15th.
+UNTAGGED_JUNE_ROW = vch({"DATE": "20230602", "VOUCHERTYPENAME": "Journal", "NARRATION": "typed by hand"})
 
 
 async def test_a_bounded_window_with_an_untagged_row_is_books_drift_blocked(tmp_path):
@@ -171,3 +208,46 @@ async def test_a_bounded_window_with_a_duplicate_tag_is_books_drift_blocked(tmp_
     assert f"duplicates [{dup.tag}]" in part["summary"]
     assert store.confirmed("voucher_month") is None
     assert not any("S0P05MonthFormula" in body for body in fake.requests)
+
+
+async def test_c33_is_reproduced_when_the_untyped_answer_is_the_current_period(tmp_path):
+    """Live run 1: untyped → 240 vouchers 2025-04-01..2026-03-31 for a June-2023 request. That IS C33, even though
+    the typed form failed to bound too — the old check (typed match and untyped mismatch) called it NOT reproduced."""
+    _, part = await _run_fake(tmp_path, _b_tally(_live_run_1, _live_run_1))
+    assert part["outcome"] == "FAILED"
+    obs = part["observations"]
+    assert obs["month_untyped"]["returned"] == 240
+    assert obs["month_untyped"]["date_span"] == ["2025-04-01", "2026-03-31"]
+    assert obs["c33_reproduced"] is True
+    assert "C33 reproduced: untyped, Tally answered 240 voucher(s) dated 2025-04-01..2026-03-31" in part["summary"]
+    assert "NOT reproduced" not in part["summary"]
+    assert "to-date clamped to 02-06-2023" in part["summary"]
+
+
+async def test_c33_is_not_reproduced_when_the_untyped_strays_fall_outside_the_current_period(tmp_path):
+    def month(body: str) -> str:
+        return _vouchers(JUNE_1) if 'TYPE="Date"' in body else _vouchers(JUNE, extra=[JULY_STRAY])
+    _, part = await _run_fake(tmp_path, _b_tally(month))
+    assert part["observations"]["month_untyped"]["out_of_window"] == 1
+    assert part["observations"]["c33_reproduced"] is False
+    assert "C33 NOT reproduced" in part["summary"]
+
+
+async def test_c33_is_not_reproduced_when_the_untyped_answer_is_empty(tmp_path):
+    def month(body: str) -> str:
+        return _vouchers(JUNE_1) if 'TYPE="Date"' in body else vouchers_xml([])
+    _, part = await _run_fake(tmp_path, _b_tally(month))
+    assert part["observations"]["c33_reproduced"] is False
+
+
+async def test_the_educational_fake_reproduces_live_run_1_with_the_old_30th_window(tmp_path, monkeypatch):
+    """Item 4 end to end: with the pre-C43 window (to 30-06-2023) the educational fake gives live run 1's FAILED
+    shape — the typed month runs to the current FY's end. The guard is bypassed here on purpose."""
+    from v2.probes import company_b_view
+    monkeypatch.setattr(p05, "month_window", lambda y, m, licence: (date(2023, 6, 1), date(2023, 6, 30)))
+    monkeypatch.setattr(company_b_view, "check_date_vars", lambda licence, *dates: None)
+    _, part = await _run_books(tmp_path, _books())
+    obs = part["observations"]
+    assert part["outcome"] == "FAILED"
+    assert obs["month_typed"]["returned"] == 680 and obs["month_typed"]["date_span"] == ["2023-06-01", "2026-03-31"]
+    assert obs["c33_reproduced"] is True

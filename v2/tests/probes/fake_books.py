@@ -43,7 +43,11 @@ def _dr_cr(value: Decimal) -> tuple[str, str]:
 # C33 (live 2026-09-24): Tally honours SVFROMDATE/SVTODATE only with TYPE="Date" (formats 01-04-2022, 20220401 and
 # 1-Apr-2022 all work typed). Untyped, it silently answers for the company's CURRENT period — live that was
 # 1-Apr-2025..31-Mar-2026, the fake's default. A period variable the fake can't read also falls back to it.
+# C43 (live 2026-09-24): Educational TallyPrime also ignores a TYPED date variable whose day is not the 1st, 2nd or 31st
+# (the same rule it applies to voucher dates) and falls back to the current period for that variable alone — typed
+# 01-06-2023..30-06-2023 answered 2023-06-01..2026-03-31. A licensed fake honours any valid date.
 CURRENT_PERIOD = ("20250401", "20260331")
+EDUCATIONAL_DATE_VAR_DAYS = (1, 2, 31)
 _TYPED_DATE_VAR = r'<{name}\s+TYPE="Date">([^<]*)</{name}>'
 
 
@@ -57,13 +61,17 @@ def _yyyymmdd(text: str) -> str | None:
     return None
 
 
-def requested_period(body: str, current: tuple[str, str] = CURRENT_PERIOD) -> tuple[str, str]:
+def requested_period(body: str, current: tuple[str, str] = CURRENT_PERIOD, *,
+                     educational: bool = False) -> tuple[str, str]:
     """The (from, to) window Tally would use for a request: the typed SVFROMDATE/SVTODATE, each falling back to
-    the current period when absent or UNTYPED (C33) — exactly the silent substitution live Tally makes."""
+    the current period when absent or UNTYPED (C33) — exactly the silent substitution live Tally makes — or, on an
+    educational Tally, when its day is not 1/2/31 (C43)."""
     period = []
     for name, fallback in (("SVFROMDATE", current[0]), ("SVTODATE", current[1])):
         match = re.search(_TYPED_DATE_VAR.format(name=name), body)
         parsed = _yyyymmdd(html.unescape(match.group(1))) if match else None
+        if parsed and educational and int(parsed[6:]) not in EDUCATIONAL_DATE_VAR_DAYS:
+            parsed = None
         period.append(parsed or fallback)
     return period[0], period[1]
 
@@ -295,7 +303,7 @@ class FakeBooks:
                 "Name": state["name"], "GUID": state["guid"], "AltVchId": str(state["alt_vch"]),
                 "AltMstId": str(state["alt_mst"]), "BooksFrom": state.get("books_from", "20250401"),
                 "LastVoucherDate": state["last_voucher_date"], "AlterID": str(state["alt_mst"])}])
-        period = requested_period(body, self.current_period)
+        period = requested_period(body, self.current_period, educational=self.educational)
         in_period = {mid: v for mid, v in state["vouchers"].items()
                      if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1]}
         if "<TYPE>Voucher</TYPE>" in body and ("S0VoucherMonth" in body or "S0P05MonthFormula" in body):

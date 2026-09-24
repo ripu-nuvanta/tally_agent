@@ -33,7 +33,8 @@ def test_seeded_company_b_holds_every_written_voucher_with_its_flags():
 
 
 def test_a_typed_month_returns_exactly_that_month_in_full():
-    vouchers = parse_vouchers(_post(_seeded(), fill_month_request(TEMPLATE, B, "01-06-2023", "30-06-2023")))
+    # C43: an educational fake honours only day 1/2/31 period variables, so June is bounded by 01-06..02-06.
+    vouchers = parse_vouchers(_post(_seeded(), fill_month_request(TEMPLATE, B, "01-06-2023", "02-06-2023")))
     assert len(vouchers) == 20
     assert {v["header"]["DATE"][:6] for v in vouchers} == {"202306"}
     sale = next(v for v in vouchers if v["header"]["NARRATION"].startswith("[S0-B:281]"))
@@ -46,6 +47,38 @@ def test_an_untyped_window_silently_answers_for_the_current_period():
     xml = untyped_period_vars(fill_month_request(TEMPLATE, B, "01-06-2023", "30-06-2023"))
     dates = sorted(v["header"]["DATE"] for v in parse_vouchers(_post(_seeded(), xml)))
     assert len(dates) == 240 and (dates[0], dates[-1]) == ("20250401", "20260331")
+
+
+def _dates(books: FakeBooks, start: str, end: str) -> list[str]:
+    return sorted(v["header"]["DATE"] for v in parse_vouchers(_post(books, fill_month_request(TEMPLATE, B, start, end))))
+
+
+def test_c43_educational_ignores_a_typed_to_date_on_the_30th_like_live_run_1():
+    """C43 (live 2026-09-24, run 1): typed 01-06-2023..30-06-2023 on Educational Tally answered 680 vouchers
+    2023-06-01..2026-03-31 — the from-date honoured, the 30th silently replaced by the current period's end."""
+    dates = _dates(_seeded(), "01-06-2023", "30-06-2023")
+    assert len(dates) == 680 and (dates[0], dates[-1]) == ("20230601", "20260331")
+
+
+def test_c43_educational_honours_a_to_date_on_the_2nd_or_31st():
+    assert len(_dates(_seeded(), "01-06-2023", "02-06-2023")) == 20
+    july = _dates(_seeded(), "01-07-2023", "31-07-2023")
+    assert len(july) == 20 and (july[0], july[-1]) == ("20230701", "20230731")
+    assert len(_dates(_seeded(), "01-07-2023", "30-07-2023")) == 660
+    assert _dates(_seeded(), "01-06-2023", "01-06-2023") == ["20230601"] * 10
+
+
+def test_c43_educational_ignores_a_typed_from_date_off_1_2_31_too():
+    dates = _dates(_seeded(), "15-06-2023", "31-03-2026")          # from falls back to the current period's start
+    assert len(dates) == 240 and (dates[0], dates[-1]) == ("20250401", "20260331")
+
+
+def test_c43_a_licensed_fake_honours_any_valid_typed_date():
+    books = FakeBooks(name=B, educational=False)
+    seed_company_b(books, "licensed")
+    dates = _dates(books, "01-06-2023", "30-06-2023")
+    assert len(dates) == 20 and dates[0] >= "20230601" and dates[-1] <= "20230630"
+    assert all("20230603" <= d <= "20230630" for d in _dates(books, "03-06-2023", "30-06-2023"))
 
 
 def test_counters_report_books_from_from_state():

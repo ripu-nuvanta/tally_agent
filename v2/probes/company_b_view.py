@@ -22,7 +22,7 @@ from typing import TYPE_CHECKING, Any
 from v2.probes.core import ProbeBlocked
 from v2.probes.reads import dmy, fill_month_request, parse_vouchers, tally_date, untyped_period_vars
 from v2.probes.setup.company_b_data import (COMPANY_B_BOOKS_FROM, COMPANY_B_LAST_MONTH, TAG_PREFIX, Dataset,
-                                            VoucherSpec, generate)
+                                            VoucherSpec, _educational_days, generate)
 
 if TYPE_CHECKING:
     from v2.probes.context import ProbeContext
@@ -33,6 +33,12 @@ B_BOOKS_FROM = COMPANY_B_BOOKS_FROM.strftime("%d-%m-%Y")        # "01-04-2022"
 _B_BOOKS_TO_DATE = date(COMPANY_B_LAST_MONTH.year, COMPANY_B_LAST_MONTH.month,
                         monthrange(COMPANY_B_LAST_MONTH.year, COMPANY_B_LAST_MONTH.month)[1])
 B_BOOKS_TO = _B_BOOKS_TO_DATE.strftime("%d-%m-%Y")
+# The company's current period: the FY that holds its last month (live: 1-Apr-2025..31-Mar-2026). C33: an untyped
+# period variable silently answers for this period; C43: so does an educational one off day 1/2/31.
+B_CURRENT_PERIOD = (date(_B_BOOKS_TO_DATE.year - (1 if _B_BOOKS_TO_DATE.month < 4 else 0), 4, 1), _B_BOOKS_TO_DATE)
+# C43 (live 2026-09-24): Educational TallyPrime silently ignores a date static variable (SVFROMDATE/SVTODATE, typed)
+# whose day is not one of these — the same rule it applies to voucher dates — and falls back to the current period.
+EDUCATIONAL_DATE_VAR_DAYS = (1, 2, 31)
 _TAG = re.compile(rf"^\[{re.escape(TAG_PREFIX)}:(\d+)\]")
 
 
@@ -61,6 +67,35 @@ class WindowExpectation:
     @property
     def unflagged(self) -> frozenset[int]:
         return frozenset(self.written) - self.flagged
+
+
+def month_window(year: int, month: int, licence: str) -> tuple[date, date]:
+    """The (from, to) window every company-B probe asks Tally for when it means "this calendar month" (C43, Ruling R3).
+
+    Licensed: the 1st to the month's last day. Educational: the 1st to the last day ≤ month-end whose day is 1, 2 or 31
+    — the 31st in a 31-day month, else the 2nd. Educational TallyPrime silently ignores a date variable on any other
+    day and answers for the current period instead (C43: typed 01-06-2023..30-06-2023 returned 680 vouchers running to
+    2026-03-31). The clamp loses nothing: an educational company cannot hold a voucher on any other day either
+    (`_educational_days`, the loader's own rule), so 1st..2nd or 1st..31st still bounds the whole month exactly.
+    [Educational mode — confirm on a licensed Tally.]
+    """
+    if licence not in ("licensed", "educational"):
+        raise ValueError(f"unknown licence {licence!r}")
+    last = monthrange(year, month)[1]
+    if licence == "educational":
+        last = max(day for day in _educational_days(year, month) if day in EDUCATIONAL_DATE_VAR_DAYS)
+    return date(year, month, 1), date(year, month, last)
+
+
+def check_date_vars(licence: str, *dates: str) -> None:
+    """Refuse a DD-MM-YYYY request date an educational Tally would silently ignore (C43): sending it reads as a
+    healthy answer for the wrong period, which is worse than not asking."""
+    if licence != "educational":
+        return
+    bad = [d for d in dates if dmy(d).day not in EDUCATIONAL_DATE_VAR_DAYS]
+    if bad:
+        raise ValueError(f"C43: educational Tally ignores date variables off day 1/2/31 and answers for the current "
+                         f"period instead — {', '.join(bad)} would be silently replaced; use month_window().")
 
 
 def expect_window(licence: str, start: date, end: date) -> WindowExpectation:
@@ -129,7 +164,10 @@ async def fetch_window(ctx: "ProbeContext", step: str, template: str, licence: s
     DD-MM-YYYY. Returns (compare_tags result, the raw response text) — `parse_vouchers` sanitizes internally, so
     the same raw text is safe both for tag comparison (`voucher_rows`) and for probe 21's byte-accurate size
     measurement (`voucher_blocks`), which is why this hands back the raw text rather than `ctx.send`'s return value.
+    C43: under an educational licence a date off day 1/2/31 is refused before anything is sent (`check_date_vars`);
+    callers build month windows with `month_window`.
     """
+    check_date_vars(licence, start, end)
     xml = fill_month_request(template, ctx.company_name, start, end)
     await ctx.send(step, untyped_period_vars(xml) if untyped else xml)
     raw_text = ctx.last_response.raw.decode("utf-8")

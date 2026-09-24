@@ -7,9 +7,9 @@ from v2.agent.tally.client import TallyClient
 from v2.agent.tally.envelopes import COMPANY_PLACEHOLDER
 from v2.probes.capture import Capture
 from v2.probes.companies import COMPANIES
-from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, B_BOOKS_TO, compare_tags, dataset,
-                                      drift_message, expect_window, fetch_window, kind_label, loaded_licence, tag_of,
-                                      voucher_rows)
+from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, B_BOOKS_TO, B_CURRENT_PERIOD,
+                                      EDUCATIONAL_DATE_VAR_DAYS, compare_tags, dataset, drift_message, expect_window,
+                                      fetch_window, kind_label, loaded_licence, month_window, tag_of, voucher_rows)
 from v2.probes.context import ProbeContext
 from v2.probes.core import Probe, ProbeBlocked
 from v2.probes.p21_full_history_reach import voucher_blocks
@@ -168,7 +168,7 @@ async def test_fetch_window_gives_both_consumption_paths_the_same_tag_set(tmp_pa
     ctx = ProbeContext(probe=probe, part="B", company_name=B, client=TallyClient(transport=fake.transport()),
                        store=store, capture=Capture(tmp_path / "fixtures"), io=ScriptedIO())
 
-    result, raw_text = await fetch_window(ctx, "window", template, "educational", "01-06-2023", "30-06-2023")
+    result, raw_text = await fetch_window(ctx, "window", template, "educational", "01-06-2023", "02-06-2023")
 
     # Probe 5's path: compare_tags built from voucher_rows(raw_text).
     p05_rows = voucher_rows(raw_text)
@@ -183,3 +183,57 @@ async def test_fetch_window_gives_both_consumption_paths_the_same_tag_set(tmp_pa
     assert p05_tags == p21_tags == expected_tags
     assert p05_dates == p21_dates == expected_dates
     assert result["match"] and result["returned"] == len(june.written)
+
+
+# --- C43: the month window a licence can ask Tally for -----------------------------------------------------------
+@pytest.mark.parametrize("year, month, licence, window", [
+    (2023, 6, "licensed", (date(2023, 6, 1), date(2023, 6, 30))),
+    (2023, 6, "educational", (date(2023, 6, 1), date(2023, 6, 2))),
+    (2023, 7, "educational", (date(2023, 7, 1), date(2023, 7, 31))),
+    (2024, 2, "educational", (date(2024, 2, 1), date(2024, 2, 2))),
+    (2024, 2, "licensed", (date(2024, 2, 1), date(2024, 2, 29))),
+    (2026, 3, "educational", (date(2026, 3, 1), date(2026, 3, 31))),
+])
+def test_month_window_clamps_the_to_date_to_an_allowed_day_only_when_educational(year, month, licence, window):
+    assert month_window(year, month, licence) == window
+
+
+def test_month_window_rejects_an_unknown_licence():
+    with pytest.raises(ValueError):
+        month_window(2023, 6, "trial")
+
+
+def test_an_educational_month_window_still_bounds_every_voucher_of_that_month():
+    """C43's rationale, pinned against the dataset: an educational company holds vouchers only on days 1/2/31, so the
+    clamped window returns exactly what the whole calendar month holds — for every month company B has."""
+    months = sorted({(v.date.year, v.date.month) for v in dataset("educational").vouchers})
+    assert len(months) == 48
+    for year, month in months:
+        start, end = month_window(year, month, "educational")
+        assert start.day == 1 and end.day in EDUCATIONAL_DATE_VAR_DAYS
+        whole_month = {v.tag for v in dataset("educational").vouchers
+                       if (v.date.year, v.date.month) == (year, month) and not v.skip_reason}
+        assert set(expect_window("educational", start, end).written) == whole_month, (year, month)
+
+
+def test_b_current_period_is_the_last_fy_of_the_dataset():
+    assert B_CURRENT_PERIOD == (date(2025, 4, 1), date(2026, 3, 31))
+
+
+@pytest.mark.parametrize("start, end", [("01-06-2023", "30-06-2023"), ("15-06-2023", "31-07-2023")])
+async def test_fetch_window_refuses_an_educational_date_tally_would_silently_ignore(tmp_path, start, end):
+    """C43: sending it would read as a healthy answer for the wrong period, so fetch_window refuses before sending."""
+    fake = FakeTally([B])
+    fake.route("S0Test", lambda body: vouchers_xml([]))
+    template = voucher_request("S0Test", ["Date"], COMPANY_PLACEHOLDER, from_date=FROM_PLACEHOLDER,
+                               to_date=TO_PLACEHOLDER)
+    store = ResultsStore(tmp_path / "results.json")
+    ready_store(store, licence="educational")
+    ctx = ProbeContext(probe=Probe(id=999, name="test", question="", feeds=(), parts={}), part="B", company_name=B,
+                       client=TallyClient(transport=fake.transport()), store=store,
+                       capture=Capture(tmp_path / "fixtures"), io=ScriptedIO())
+    with pytest.raises(ValueError, match="C43"):
+        await fetch_window(ctx, "window", template, "educational", start, end)
+    assert not any("S0Test" in body for body in fake.requests)
+    result, _ = await fetch_window(ctx, "window", template, "licensed", start, end)   # licensed: any date is fine
+    assert result["returned"] == 0

@@ -1,7 +1,8 @@
 """Probe 21: full-history reach and size (S0 spec §7 "Probe 21", B part). Feeds decision 7b, Q22, Q23, R27.
 
 Reach: fetch FY 2022-23 (company B's first year, three FYs behind the current one) month by month with probe 5's
-confirmed request. Every month's tags must equal the dataset's (company_b_view.compare_tags; the cancelled pair is
+confirmed request, each month asked as company_b_view.month_window (C43: under an educational licence a month ends on
+the 2nd or the 31st, because Tally ignores other-day date variables; still exact). Every month's tags must equal the dataset's (company_b_view.compare_tags; the cancelled pair is
 reported, not judged, because probe 3's B part owns the flags, S0-D7).
 Size: measure bytes per voucher by kind in three forms. Raw XML; a generic JSON of the whole voucher (the stand-in for
 S1's `raw` JSONB); and the Part 1 §5 minimum columns plus a per-row overhead (the stand-in for S1's typed rows). Then
@@ -14,7 +15,6 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
-from calendar import monthrange
 from datetime import date
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Any
@@ -22,7 +22,7 @@ from typing import Any
 from v2.agent.tally.xml_utils import sanitize_xml
 from v2.probes.capture import TIMING_NOTE
 from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, drift_message, expect_window, fetch_window,
-                                      kind_label, loaded_licence, tag_of)
+                                      kind_label, loaded_licence, month_window, tag_of)
 from v2.probes.context import ProbeContext
 from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
 from v2.probes.reads import parse_vouchers, primary_lines, tally_date
@@ -193,10 +193,6 @@ LOCK_IMPACT = ("A locked period doesn't read back the same: the backfill must tr
 TIMING_TAIL = f"Timings recorded ({TIMING_NOTE}); the tier-C timing half stays ⏭ (Q29)."
 
 
-def month_window(year: int, month: int) -> tuple[date, date]:
-    return date(year, month, 1), date(year, month, monthrange(year, month)[1])
-
-
 def _dmy(day: date) -> str:
     return day.strftime("%d-%m-%Y")
 
@@ -235,7 +231,7 @@ async def _period_lock(ctx: ProbeContext, template: str, licence: str, unlocked:
     if answer != "locked":
         return {"status": "not attempted", "answer": answer}
     ctx.on_abort(LOCK_NOTE)
-    read, _ = await _month(ctx, template, licence, "period_locked_read", *month_window(2022, 4))
+    read, _ = await _month(ctx, template, licence, "period_locked_read", *month_window(2022, 4, licence))
     ctx.pause(f"Unlock {LOCK_FROM} to {LOCK_TO} for company B again, then press Enter.")
     ctx.resolve_abort(LOCK_NOTE)
     return {"status": "locked", "read": read,
@@ -269,7 +265,7 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     blocks: dict[int, str] = {}
     for year, month in FY2022_MONTHS:
         step = f"fy2022_month_{month:02d}"
-        months[step], found = await _month(ctx, template, licence, step, *month_window(year, month))
+        months[step], found = await _month(ctx, template, licence, step, *month_window(year, month, licence))
         timings[step] = ctx.last_response.elapsed_ms
         blocks.update(found)
     ctx.observe("months", months)
@@ -289,7 +285,7 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     storage = storage_table(stats) if stats else None
     ctx.observe("storage", storage)
 
-    sample_window = month_window(*CURRENT_FY_SAMPLE)
+    sample_window = month_window(*CURRENT_FY_SAMPLE, licence)
     sample, sample_blocks = await _month(ctx, template, licence, "fy2025_month_03", *sample_window)
     timings["fy2025_month_03"] = ctx.last_response.elapsed_ms
     ctx.observe("current_fy_sample", {
