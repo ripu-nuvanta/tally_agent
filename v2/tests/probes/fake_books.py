@@ -453,6 +453,36 @@ class FakeBooks:
         return lines
 
     @staticmethod
+    def _stock_moves(element: ET.Element) -> list[dict[str, str]]:
+        """C41: each inventory row's signed quantity — ISDEEMEDPOSITIVE=Yes brings stock in (a purchase, Op 7), No
+        takes it out (a sale, Op 6). The quantity is ACTUALQTY's leading number ("12 Nos", "10 Box")."""
+        moves = []
+        for inv in element.findall("ALLINVENTORYENTRIES.LIST"):
+            qty = Decimal((inv.findtext("ACTUALQTY") or "0").split()[0])
+            inward = inv.findtext("ISDEEMEDPOSITIVE", "No") == "Yes"
+            moves.append({"item": inv.findtext("STOCKITEMNAME", ""), "qty": f"{qty if inward else -qty}"})
+        return moves
+
+    def stock_day_closes(self) -> list[tuple[str, dict[str, Decimal]]]:
+        """C41: every item's quantity at the close of each voucher day (YYYYMMDD), from the items' opening quantities
+        plus every inventory row on record. Cancelled/optional vouchers move no stock, as in Tally."""
+        state = self.state
+        level = {name: Decimal((item.get("opening_qty") or "0").split()[0] if item.get("opening_qty") else "0")
+                 for name, item in state["items"].items()}
+        by_day: dict[str, list[dict]] = {}
+        for v in state["vouchers"].values():
+            if v.get("cancelled") == "Yes" or v.get("optional") == "Yes":
+                continue
+            by_day.setdefault(v["date"], []).append(v)
+        closes = []
+        for day in sorted(by_day):
+            for v in by_day[day]:
+                for move in v.get("inventory", []):
+                    level[move["item"]] = level.get(move["item"], Decimal("0")) + Decimal(move["qty"])
+            closes.append((day, dict(level)))
+        return closes
+
+    @staticmethod
     def _open_bills(state: dict, *, receivable: bool) -> list[tuple[str, str, str]]:
         """C34 (live UI 2026-09-24): Tally files a bill by the SIGN of its amount, not by the voucher type or the
         party's group — [S0-B:1]'s sales bill sent +9861.74 landed in Bills PAYABLE. Negative (Dr) = receivable,
@@ -538,7 +568,8 @@ class FakeBooks:
             optional = "No" if self.drop_flags else (element.findtext("ISOPTIONAL") or "No")
             vouchers[mid] = {"narration": element.findtext("NARRATION", ""), "date": date,
                              "post_dated": element.findtext("ISPOSTDATED") or "No",
-                             "cancelled": cancelled, "optional": optional, "lines": lines}
+                             "cancelled": cancelled, "optional": optional, "lines": lines,
+                             "inventory": self._stock_moves(element)}
             if cancelled != "Yes":
                 self._post_bills(state, element)
             state["alt_vch"] += 1

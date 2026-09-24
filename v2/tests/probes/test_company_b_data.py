@@ -1,9 +1,9 @@
 from calendar import monthrange
 from datetime import date
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from v2.probes.setup.company_b_data import (
-    BASE_UNIT, BOX_UNIT, COMPOUND_UNIT, HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_DEBTOR,
+    BillSpec, LineSpec, BASE_UNIT, BOX_UNIT, COMPOUND_UNIT, HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_DEBTOR,
     expected_figures, generate, gstin,
 )
 
@@ -374,3 +374,171 @@ def test_quantity_unit_resolves_a_compound_to_its_first_unit():
     assert quantity_unit(ds.units, COMPOUND_UNIT) == BOX_UNIT
     assert quantity_unit(ds.units, BASE_UNIT) == BASE_UNIT
     assert quantity_unit(ds.units, "Unknown") == "Unknown"
+
+
+# --- live-state pin: [S0-B:2] is already in company B too (2026-09-24) ----------------------------------------------
+def test_tag_2_is_pinned_to_exactly_what_live_company_b_already_holds():
+    """C41: [S0-B:2] (the first A4 Paper Ream sale) is live as well. Purchases now draw stock, so nothing about the
+    sales stream may move — pinned field by field, both licences (licensed day 5, educational day 2)."""
+    from v2.probes.setup.company_b_data import BillSpec, InventorySpec, LineSpec
+    for licence, day in (("licensed", 5), ("educational", 2)):
+        v = next(v for v in generate(licence).vouchers if v.tag == 2)
+        assert (v.kind, v.vch_type, v.date, v.party) == ("sales", "Sales", date(2022, 4, day), HINDI_DEBTOR)
+        assert v.narration == f"[S0-B:2] Sale to {HINDI_DEBTOR}"
+        assert v.lines == (
+            LineSpec(HINDI_DEBTOR, Decimal("-12041.32"), True),
+            LineSpec("Domestic Sales", Decimal("10204.50"), False),
+            LineSpec("Output CGST", Decimal("918.41"), False),
+            LineSpec("Output SGST", Decimal("918.41"), False),
+        )
+        assert v.inventory == (InventorySpec("A4 Paper Ream", Decimal("10"), Decimal("1020.45"), Decimal("10204.50")),)
+        assert v.bills == (BillSpec("Inv/2", "New Ref", Decimal("12041.32"), "30 Days"),)
+        assert (v.cancelled, v.optional, v.currency, v.fx_amount, v.skip_reason) == (False, False, "INR", None, None)
+
+
+# --- C41: purchases carry stock, so no item ever closes a day negative ---------------------------------------------
+# sha256 over repr() of every voucher of the kind, in tag order, as generated at c866d74 (before C41). Receipts and
+# expense payments ride the same shared RNG stream as the sales, so they are pinned too: if the purchase rewrite
+# drew one number more or less from that stream, every one of these would move.
+_HEAD_DIGESTS = {
+    ("licensed", "sales"): (384, "54ed1ed08ca8b42040b62bb24c31ddb42ec43b452c19ed16867edb8afec7e15c"),
+    ("licensed", "receipt"): (192, "3d916b839345578d01f6351e224bd057b3db005bb44baff95a70fd10e4e64e16"),
+    ("licensed", "expense"): (48, "53004f8a2ece0913c3536e752e7fc5ba4663cf1a1938b8fd2f0588943aa240f2"),
+    ("educational", "sales"): (384, "205c546cddaa72dbbcb65a2a326d36225412493b0d997a7f714052cd4a90fe9d"),
+    ("educational", "receipt"): (192, "2689418b6aad00e47640d503332b8e640b851278ef93f8696fd25aefd2a2fa11"),
+    ("educational", "expense"): (48, "acdfd5e5fbbb5881119219dd78552c9dc7c89724e5398590d799c9c19b0e4c87"),
+}
+
+
+def _digest(vouchers) -> tuple[int, str]:
+    import hashlib
+    rows = [repr(v) for v in vouchers]
+    return len(rows), hashlib.sha256("\n".join(rows).encode()).hexdigest()
+
+
+def test_every_sale_receipt_and_expense_payment_is_byte_identical_to_before_c41():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        picks = {
+            "sales": [v for v in ds.vouchers if v.kind == "sales"],
+            "receipt": [v for v in ds.vouchers if v.kind == "receipt"],
+            "expense": [v for v in ds.vouchers if v.kind == "payment" and v.party in EXPENSE_LEDGERS],
+        }
+        for kind, vouchers in picks.items():
+            assert _digest(vouchers) == _HEAD_DIGESTS[(licence, kind)], (licence, kind)
+
+
+def _stock_walk(ds, *, include_flagged: bool):
+    """Independent replay: opening qty, then every day's purchases (+) and sales (-); returns each item's minimum
+    day-close, its closing, and every (item, day, qty) that closed negative. Flagged (cancelled/optional) vouchers
+    move no stock in Tally; `include_flagged` also counts them, the stricter case (the operator flags a cancelled
+    voucher only AFTER its create, so it moves stock for a while)."""
+    level = {i.name: (i.opening_qty or Decimal("0")) for i in ds.items}
+    lowest = dict(level)
+    negative: list[tuple[str, date, Decimal]] = []
+    by_day: dict[date, list] = {}
+    for v in ds.vouchers:
+        if v.skip_reason or (not include_flagged and (v.cancelled or v.optional)):
+            continue
+        by_day.setdefault(v.date, []).append(v)
+    for day in sorted(by_day):
+        for v in by_day[day]:
+            sign = Decimal("1") if v.kind == "purchase" else Decimal("-1")
+            for inv in v.inventory:
+                level[inv.item] += sign * inv.qty
+        for item, qty in level.items():
+            lowest[item] = min(lowest[item], qty)
+            if qty < 0:
+                negative.append((item, day, qty))
+    return lowest, level, negative
+
+
+def test_no_item_closes_any_day_negative_in_either_licence():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        for include_flagged in (False, True):
+            _, _, negative = _stock_walk(ds, include_flagged=include_flagged)
+            assert negative == [], (licence, include_flagged, negative[:5])
+
+
+def test_a_purchase_on_1_april_2022_covers_tag_1s_twelve_wireless_mice():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        tag_1 = next(v for v in ds.vouchers if v.tag == 1)
+        bought = sum((inv.qty for v in ds.vouchers if v.kind == "purchase" and v.date == date(2022, 4, 1)
+                      for inv in v.inventory if inv.item == "Wireless Mouse"), Decimal("0"))
+        assert bought >= tag_1.inventory[0].qty == Decimal("12"), licence
+
+
+def test_every_purchase_buys_stock_on_the_op7_invoice_shape():
+    from v2.probes.setup.writes import validate_b_voucher
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        units = {i.name: i.unit for i in ds.items}
+        purchases = [v for v in ds.vouchers if v.kind == "purchase"]
+        assert len(purchases) == 240 and all(v.inventory for v in purchases), licence
+        for v in purchases:
+            goods = -sum((inv.amount for inv in v.inventory), Decimal("0.00"))     # Op 7: rows signed −goods
+            half = (goods * Decimal("0.09")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            assert [line.ledger for line in v.lines] == [v.party, "Local Purchases", "Input CGST", "Input SGST"]
+            assert v.lines[1:] == (LineSpec("Local Purchases", -goods, True), LineSpec("Input CGST", -half, True),
+                                   LineSpec("Input SGST", -half, True)), v.tag
+            assert v.lines[0].amount == goods + 2 * half and v.lines[0].deemed_positive is False
+            for inv in v.inventory:
+                assert inv.qty > 0 and inv.qty == inv.qty.to_integral_value() and inv.rate > 0
+                assert inv.amount == -(inv.qty * inv.rate).quantize(Decimal("0.01")), v.tag
+            assert v.vch_type == "Purchase"
+            # every creditor is bill-wise: one New Ref, a magnitude (C34)
+            assert v.bills == (BillSpec(f"Pur/{v.tag}", "New Ref", v.lines[0].amount, "45 Days"),), v.tag
+            validate_b_voucher(vch_type=v.vch_type, narration=v.narration, party=v.party,
+                               lines=[(l.ledger, l.amount, l.deemed_positive) for l in v.lines],
+                               inventory=[(i.item, units[i.item], i.qty, i.rate, i.amount) for i in v.inventory],
+                               bills=[(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills])
+
+
+def test_purchase_rates_sit_below_the_same_periods_sale_rates():
+    """A purchase row's rate is under every sale rate of that item in the purchase's calendar month AND in the window
+    it stocks (up to the item's next purchase) — a positive margin — and not absurdly far under (>= 60%)."""
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        sales = [(v.date, inv) for v in ds.vouchers if v.kind == "sales" for inv in v.inventory]
+        rows = sorted(((v.date, v.tag, inv) for v in ds.vouchers if v.kind == "purchase" for inv in v.inventory),
+                      key=lambda r: (r[0], r[1]))
+        for k, (day, tag, inv) in enumerate(rows):
+            nxt = next((d for d, _, other in rows[k + 1:] if other.item == inv.item and d > day), date.max)
+            period = [s.rate for d, s in sales if s.item == inv.item
+                      and ((d.year, d.month) == (day.year, day.month) or day <= d < nxt)]
+            if period:
+                assert inv.rate < min(period), (licence, tag, inv, min(period))
+                assert inv.rate >= min(period) * Decimal("0.6"), (licence, tag, inv, min(period))
+
+
+def test_payments_settle_real_purchase_bills():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        purchase_bills = {b.name: v for v in ds.vouchers if v.kind == "purchase" for b in v.bills}
+        agst = [(v, b) for v in ds.vouchers if v.kind == "payment" for b in v.bills if b.bill_type == "Agst Ref"]
+        assert agst, licence
+        for v, b in agst:
+            assert b.name in purchase_bills and purchase_bills[b.name].party == v.party, (v.tag, b)
+            assert purchase_bills[b.name].date < v.date
+        _, problems = _settlement_walk(ds)
+        assert problems == [], problems[:5]
+
+
+def test_expected_stock_month_ends_match_an_independent_replay():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        exp = expected_figures(ds)
+        assert exp.stock_month_end, licence
+        assert all(qty >= 0 for qty in exp.stock_month_end.values())
+        _, closing, _ = _stock_walk(ds, include_flagged=False)
+        for item, qty in closing.items():
+            assert exp.stock_month_end[(item, date(2026, 3, 31))] == qty, (licence, item)
+        # and one mid-way month-end, recomputed from scratch
+        cut = date(2023, 9, 30)
+        for i in ds.items:
+            moved = sum(((1 if v.kind == "purchase" else -1) * inv.qty for v in ds.vouchers
+                         if v.date <= cut and not (v.cancelled or v.optional or v.skip_reason)
+                         for inv in v.inventory if inv.item == i.name), Decimal("0"))
+            assert exp.stock_month_end[(i.name, cut)] == (i.opening_qty or 0) + moved, (licence, i.name)

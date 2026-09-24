@@ -454,7 +454,16 @@ def test_the_fakes_trial_balance_matches_the_live_fixtures_sign_pattern():
     assert fake["Indirect Expenses"]["closing_balance"] < 0
     assert fake_second["Sundry Debtors"] < 0
     assert fake_second["Sundry Creditors"] > 0
-    assert fake_second["Duties & Taxes"] < 0
+    # C41: company B's purchases now buy the stock its sales sell, at cost below the sale rate, so its Output GST
+    # outweighs its Input GST — Duties & Taxes nets to a CREDIT (a liability), positive by the same live convention
+    # as Sundry Creditors. Before C41 the purchases were random amounts ~2.7x the sales, a net input-GST debit.
+    # Company A's live capture (a net input-GST debit, asserted above) still pins the negative half of that rule.
+    ds = generate()
+    gst = {name: sum((line.amount for v in ds.vouchers if not (v.cancelled or v.skip_reason)
+                      for line in v.lines if line.ledger == name), Decimal("0.00"))
+           for name in ("Input CGST", "Input SGST", "Output CGST", "Output SGST")}
+    assert gst["Output CGST"] + gst["Output SGST"] > -(gst["Input CGST"] + gst["Input SGST"]) > 0   # not vacuous
+    assert fake_second["Duties & Taxes"] > 0
 
 
 # --- I1: the flag pause re-reads and reports if it still didn't take -----------------------------------------------
@@ -604,3 +613,31 @@ def test_a4_paper_is_created_and_sold_in_boxes_never_in_the_compound_units_full_
         assert re.search(r"<ACTUALQTY>\d+ Box</ACTUALQTY>", row) and re.search(r"<BILLEDQTY>\d+ Box</BILLEDQTY>", row)
         assert re.search(r"<RATE>[\d.]+/Box</RATE>", row)
     assert books.state["items"]["A4 Paper Ream"]["opening_value"] == "-14250.00"
+
+
+# --- C41: purchases carry stock, so a full load never takes an item negative -------------------------------------------
+@pytest.mark.parametrize("licence", ["licensed", "educational"])
+def test_a_full_load_never_takes_an_item_negative_and_the_trial_balance_still_closes(licence):
+    """Before C41 every purchase was accounting-only, so the sales alone drove each item negative (Wireless Mouse
+    −983 by the end; live Tally showed −12 after tag 1). The fake now tracks stock per item from the inventory rows
+    it is actually sent (ACTUALQTY + ISDEEMEDPOSITIVE) on top of each item's opening quantity."""
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io, licence=licence)
+    assert report.problems == []
+    assert any("Trial Balance Dr/Cr total observed: 0.00." in n for n in report.notes), report.notes
+    imports = [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r]
+    purchases = [r for r in imports if 'VCHTYPE="Purchase"' in r]
+    assert len(purchases) == 240 and all("<ALLINVENTORYENTRIES.LIST>" in r for r in purchases)
+    for r in purchases:          # Op 7: goods in (Yes/−), the allocation to Local Purchases likewise
+        assert re.search(r"<ALLINVENTORYENTRIES.LIST>.*?<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>\s*"
+                         r"<RATE>[\d.]+/(Nos|Box)</RATE>\s*<AMOUNT>-[\d.]+</AMOUNT>", r, re.S), r
+        assert re.search(r"<LEDGERNAME>Local Purchases</LEDGERNAME>\s*<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+                         r"\s*<AMOUNT>-[\d.]+</AMOUNT>\s*</ACCOUNTINGALLOCATIONS.LIST>", r), r
+    closes = books.stock_day_closes()
+    assert len(closes) > 100
+    negative = [(day, item, qty) for day, levels in closes for item, qty in levels.items() if qty < 0]
+    assert negative == [], negative[:5]
+    expected = expected_figures(generate(licence))
+    assert closes[-1][1] == {item: qty for (item, day), qty in expected.stock_month_end.items()
+                             if day == date(2026, 3, 31)}

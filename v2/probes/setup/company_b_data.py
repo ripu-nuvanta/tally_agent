@@ -8,11 +8,14 @@ from __future__ import annotations
 
 import random
 from calendar import monthrange
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 SEED = 20260923
+# C41: purchases draw from their OWN stream, so planning their stock can never move a sale (the shared `rng` feeds the
+# sales, receipts and expense payments, several of which are already live).
+PURCHASE_SEED = SEED + 41
 COMPANY_B_BOOKS_FROM = date(2022, 4, 1)
 COMPANY_B_LAST_MONTH = date(2026, 3, 1)
 TAG_PREFIX = "S0-B"
@@ -39,6 +42,12 @@ _USD_TAGS = (101, 102)
 USD_SKIP_REASON = "USD export sales skipped — forex not implemented; probe 22 blocked"
 _CANCELLED_TAGS = (201, 202)
 _OPTIONAL_TAGS = (301, 302)
+# C41: the month's five purchase slots are i = 8..12. Licensed, slot 8 is dated the 1st (it used to be the 26th) so
+# every month opens with a purchase before its first sale on the 2nd — above all 1-Apr-2022, which has to cover
+# [S0-B:1]'s 12 Wireless Mouse against a zero opening. Educational dates are untouched (_educational_days).
+_FIRST_PURCHASE_SLOT = 8
+_PURCHASE_BUFFER = (2, 10)              # units bought over the window's shortfall, so no purchase is ever empty
+_PURCHASE_MARGIN_PCT = (70, 85)         # purchase rate = this % of the period's lowest sale rate for the item
 
 
 @dataclass(frozen=True)
@@ -139,6 +148,9 @@ class Expected:
     voucher_count_by_fy: dict[str, int]                 # "2022-23" -> n
     # C35: (party, bill name) -> outstanding MAGNITUDE after every voucher, for bills not fully settled
     bills_outstanding: dict[tuple[str, str], Decimal]
+    # C41: (stock item, last day of month) -> closing quantity (in the item's quantity unit, C40); flagged/skipped
+    # vouchers move no stock
+    stock_month_end: dict[tuple[str, date], Decimal] = field(default_factory=dict)
 
 
 def gstin(state_code: str, pan: str) -> str:
@@ -315,24 +327,82 @@ def _build_usd_sale(rng: random.Random, tag: int, d: date) -> VoucherSpec:
                         skip_reason=USD_SKIP_REASON)
 
 
-def _build_purchase(rng: random.Random, tag: int, d: date, party: str,
+def _build_purchase(tag: int, d: date, party: str, inventory: tuple[InventorySpec, ...],
                      bill_wise: dict[str, bool]) -> VoucherSpec:
-    goods = Decimal(rng.randint(1000000, 8000000)) / 100
+    """C41: a goods purchase that brings stock in. Before C41 it posted a random amount to Local Purchases with no
+    inventory, so every sale drove its item further negative. The goods figure is now the inventory rows' total."""
+    goods = -sum((inv.amount for inv in inventory), Decimal("0.00"))      # the rows are signed Op 7 (−goods)
     cgst, sgst = _gst(goods)
     creditor_amount = goods + cgst + sgst
     # F12: Op 7 inverts Op 6 — nominal/GST lines ISDEEMEDPOSITIVE=Yes with AMOUNT NEGATIVE; purchase party
-    # ISDEEMEDPOSITIVE=No with AMOUNT POSITIVE.
+    # ISDEEMEDPOSITIVE=No with AMOUNT POSITIVE. C41: with inventory the order is create_b_voucher's contract (M2) —
+    # party first, then the nominal ledger (which C32 carries only in each row's ACCOUNTINGALLOCATIONS), then GST.
     lines = (
+        LineSpec(ledger=party, amount=creditor_amount, deemed_positive=False),
         LineSpec(ledger="Local Purchases", amount=-goods, deemed_positive=True),
         LineSpec(ledger="Input CGST", amount=-cgst, deemed_positive=True),
         LineSpec(ledger="Input SGST", amount=-sgst, deemed_positive=True),
-        LineSpec(ledger=party, amount=creditor_amount, deemed_positive=False),
     )
     bills = (BillSpec(name=f"Pur/{tag}", bill_type="New Ref", amount=creditor_amount,
                        credit_period="45 Days"),) if bill_wise.get(party, False) else ()
     narration = f"[{TAG_PREFIX}:{tag}] Purchase from {party}"
     return VoucherSpec(tag=tag, kind="purchase", vch_type="Purchase", date=d, party=party, narration=narration,
-                        lines=lines, inventory=(), bills=bills)
+                        lines=lines, inventory=inventory, bills=bills)
+
+
+@dataclass(frozen=True)
+class _Slot:
+    """A purchase / receipt / payment whose content depends on something only known once the whole calendar is laid
+    out (C41: purchases need every later sale; payments settle those purchases' bills). `drawn` is the shared-stream
+    draw taken at the slot's own place in the calendar, exactly as before C41."""
+    kind: str
+    tag: int
+    day: date
+    party: str
+    item_slot: int = 0
+    drawn: Decimal | None = None
+
+
+def _plan_purchases(items: tuple[StockItemSpec, ...], purchases: list[_Slot], sales: list[VoucherSpec],
+                    prng: random.Random) -> dict[int, tuple[InventorySpec, ...]]:
+    """C41: each purchase slot stocks one item — slot j buys item (j + 1) % 5, the item the month's sale in slot j
+    sells (sale i sells items[(tag) % 5] and 20 % 5 == 0, so slot i always sells item (i + 1) % 5). The quantity
+    covers every sale of that item from this purchase up to (not including) the day of its next purchase, less
+    what is already in stock, plus a small buffer — so the day-close stock never goes negative. Every sale counts,
+    cancelled and optional ones included: the operator flags a cancelled voucher only after its create, so its stock
+    is out for a while. The rate is a 70-85% margin on the lowest sale rate of the item in the purchase's month and
+    in the window it stocks."""
+    names = [i.name for i in items]
+    demand: dict[str, list[tuple[date, Decimal, Decimal]]] = {n: [] for n in names}
+    for v in sales:
+        if v.skip_reason:
+            continue
+        for inv in v.inventory:
+            demand[inv.item].append((v.date, inv.qty, inv.rate))
+    planned: dict[int, tuple[InventorySpec, ...]] = {}
+    for item in items:
+        schedule = sorted((p for p in purchases if names[(p.item_slot + 1) % len(names)] == item.name),
+                          key=lambda p: (p.day, p.tag))
+        sold = demand[item.name]
+        bought = Decimal("0")
+        last_ref = min(rate for _, _, rate in sold)
+        for k, p in enumerate(schedule):
+            until = schedule[k + 1].day if k + 1 < len(schedule) else date.max
+            on_hand = (item.opening_qty or Decimal("0")) + bought - sum(
+                (qty for d, qty, _ in sold if d < p.day), Decimal("0"))
+            needed = sum((qty for d, qty, _ in sold if p.day <= d < until), Decimal("0"))
+            qty = max(needed - on_hand, Decimal("0")) + prng.randint(*_PURCHASE_BUFFER)
+            period = [rate for d, _, rate in sold
+                      if (d.year, d.month) == (p.day.year, p.day.month) or p.day <= d < until]
+            last_ref = min(period) if period else last_ref
+            rate = (last_ref * prng.randint(*_PURCHASE_MARGIN_PCT) / 100).quantize(Decimal("0.01"),
+                                                                                  rounding=ROUND_DOWN)
+            # Op 7 / C32: a purchase row's AMOUNT (and its ACCOUNTINGALLOCATIONS) goes out ISDEEMEDPOSITIVE=Yes and
+            # NEGATIVE — the signed figure validate_b_voucher checks against the Local Purchases line (−goods).
+            amount = -(qty * rate).quantize(Decimal("0.01"))
+            planned[p.tag] = (InventorySpec(item=item.name, qty=qty, rate=rate, amount=amount),)
+            bought += qty
+    return planned
 
 
 @dataclass
@@ -359,9 +429,8 @@ def _settle(party: str, d: date, drawn: Decimal, bill_wise: dict[str, bool],
     return amount, (BillSpec(name=target.name, bill_type="Agst Ref", amount=amount, credit_period=None),)
 
 
-def _build_receipt(rng: random.Random, tag: int, d: date, party: str, bill_wise: dict[str, bool],
+def _build_receipt(drawn: Decimal, tag: int, d: date, party: str, bill_wise: dict[str, bool],
                    open_bills: dict[str, list[_OpenBill]]) -> VoucherSpec:
-    drawn = Decimal(rng.randint(500000, 5000000)) / 100      # one draw, as before C35: the sales stream is unmoved
     amount, bills = _settle(party, d, drawn, bill_wise, open_bills)
     bank_or_cash = "HDFC Bank Current A/c" if tag % 3 else "Cash"
     # F12: Op 8 — cash/bank debit ISDEEMEDPOSITIVE=Yes AMOUNT=NEGATIVE, party credit ISDEEMEDPOSITIVE=No
@@ -375,9 +444,8 @@ def _build_receipt(rng: random.Random, tag: int, d: date, party: str, bill_wise:
                         lines=lines, inventory=(), bills=bills)
 
 
-def _build_payment(rng: random.Random, tag: int, d: date, party: str, bill_wise: dict[str, bool],
+def _build_payment(drawn: Decimal, tag: int, d: date, party: str, bill_wise: dict[str, bool],
                    open_bills: dict[str, list[_OpenBill]]) -> VoucherSpec:
-    drawn = Decimal(rng.randint(500000, 4000000)) / 100      # one draw, as before C35
     amount, bills = _settle(party, d, drawn, bill_wise, open_bills)
     bank_or_cash = "HDFC Bank Current A/c" if tag % 2 else "Cash"
     # F12: Op 8/9 family — the ledger being paid ISDEEMEDPOSITIVE=Yes AMOUNT=NEGATIVE, cash/bank
@@ -416,7 +484,9 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
         l.name: [_OpenBill(l.opening_bill, OPENING_BILL_DATE, abs(l.opening))]
         for l in ledgers if l.opening_bill and l.opening is not None}
 
-    vouchers: list[VoucherSpec] = []
+    # Pass 1 (C41): lay out the calendar and take every shared-stream draw in exactly its pre-C41 place. Sales and
+    # expense payments are final here; purchases, receipts and payments are deferred to pass 2 as `_Slot`s.
+    laid_out: list[VoucherSpec | _Slot] = []
     tag = 0
     sales_counter = 0
     receipt_counter = 0
@@ -427,40 +497,63 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
                 allowed = _educational_days(y, m)
                 day = allowed[i % len(allowed)]
             else:
-                day = 2 + (i * 3) % 26
+                day = 1 if i == _FIRST_PURCHASE_SLOT else 2 + (i * 3) % 26                               # C41
             d = date(y, m, day)
 
             if tag in _USD_TAGS:
-                v = _build_usd_sale(rng, tag, d)
+                laid_out.append(_build_usd_sale(rng, tag, d))
             elif i < 8:
                 sales_counter += 1
                 vch_type = SALES_GST_VOUCHER_TYPE if sales_counter % 4 == 0 else "Sales"
                 party = HINDI_DEBTOR if sales_counter % 7 == 0 else debtor_names[sales_counter % len(debtor_names)]
-                v = _build_sales(rng, tag, d, party, vch_type, item_names, item_rate_hint, bill_wise)
+                laid_out.append(_build_sales(rng, tag, d, party, vch_type, item_names, item_rate_hint, bill_wise))
             elif i < 13:
+                # C41: the pre-C41 random goods figure. Unused now (the stock plan sets the amount) but still drawn,
+                # so the shared stream — and every sale, receipt and expense after this slot — is unmoved.
+                rng.randint(1000000, 8000000)
                 party = creditor_names[(tag + i) % len(creditor_names)]
-                v = _build_purchase(rng, tag, d, party, bill_wise)
+                laid_out.append(_Slot("purchase", tag, d, party, item_slot=i - 8))
             elif i < 17:
                 # C35: `(tag + i) % 6` is always odd here, so receipts only ever reached 3 of the 6 debtors — never
                 # Pune Digital Solutions (whose opening bill then could never be settled) nor the non-bill-wise
                 # debtor. A plain rotation reaches all six; it draws nothing from `rng`, so no sale moves.
                 receipt_counter += 1
                 party = debtor_names[receipt_counter % len(debtor_names)]
-                v = _build_receipt(rng, tag, d, party, bill_wise, open_bills)
+                drawn = Decimal(rng.randint(500000, 5000000)) / 100    # one draw, as before C35
+                laid_out.append(_Slot("receipt", tag, d, party, drawn=drawn))
             elif i < 19:
                 party = creditor_names[(tag + i) % len(creditor_names)]
-                v = _build_payment(rng, tag, d, party, bill_wise, open_bills)
+                drawn = Decimal(rng.randint(500000, 4000000)) / 100    # one draw, as before C35
+                laid_out.append(_Slot("payment", tag, d, party, drawn=drawn))
             else:
-                v = _build_expense_payment(rng, tag, d)
+                laid_out.append(_build_expense_payment(rng, tag, d))
 
-            if tag in _CANCELLED_TAGS:
-                v = replace(v, cancelled=True)
-            elif tag in _OPTIONAL_TAGS:
-                v = replace(v, optional=True)
+    # C41: purchases are planned against every sale, from their own stream.
+    sales = [v for v in laid_out if isinstance(v, VoucherSpec) and v.kind == "sales"]
+    purchase_slots = [s for s in laid_out if isinstance(s, _Slot) and s.kind == "purchase"]
+    stock = _plan_purchases(items, purchase_slots, sales, random.Random(PURCHASE_SEED))
 
-            if not (v.cancelled or v.optional or v.skip_reason):
-                _post_to_pool(v, open_bills)
-            vouchers.append(v)
+    # Pass 2: build the deferred vouchers in tag order, settling against the C35 pool as before.
+    vouchers: list[VoucherSpec] = []
+    for entry in laid_out:
+        if isinstance(entry, _Slot):
+            if entry.kind == "purchase":
+                v = _build_purchase(entry.tag, entry.day, entry.party, stock[entry.tag], bill_wise)
+            elif entry.kind == "receipt":
+                v = _build_receipt(entry.drawn, entry.tag, entry.day, entry.party, bill_wise, open_bills)
+            else:
+                v = _build_payment(entry.drawn, entry.tag, entry.day, entry.party, bill_wise, open_bills)
+        else:
+            v = entry
+
+        if v.tag in _CANCELLED_TAGS:
+            v = replace(v, cancelled=True)
+        elif v.tag in _OPTIONAL_TAGS:
+            v = replace(v, optional=True)
+
+        if not (v.cancelled or v.optional or v.skip_reason):
+            _post_to_pool(v, open_bills)
+        vouchers.append(v)
     return tuple(vouchers)
 
 
@@ -489,6 +582,8 @@ def expected_figures(dataset: Dataset) -> Expected:
     by_fy: dict[str, int] = {}
     bills: dict[tuple[str, str], Decimal] = {(l.name, l.opening_bill): abs(l.opening)
                                              for l in dataset.ledgers if l.opening_bill and l.opening is not None}
+    stock: dict[str, Decimal] = {i.name: (i.opening_qty or Decimal("0")) for i in dataset.items}       # C41
+    stock_month_end: dict[tuple[str, date], Decimal] = {}
     for (year, month) in _months():
         last = date(year, month, monthrange(year, month)[1])
         if month == 4:
@@ -505,6 +600,8 @@ def expected_figures(dataset: Dataset) -> Expected:
                 running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
             if v.optional:                       # an optional voucher posts nothing, bills included
                 continue
+            for inv in v.inventory:              # C41: purchases bring stock in, sales take it out
+                stock[inv.item] += inv.qty if v.kind == "purchase" else -inv.qty
             for b in v.bills:
                 if b.bill_type == "New Ref":
                     bills[(v.party, b.name)] = b.amount
@@ -512,8 +609,10 @@ def expected_figures(dataset: Dataset) -> Expected:
                     bills[(v.party, b.name)] -= b.amount
         for name, value in running.items():
             month_end[(name, last)] = value
+        for name, qty in stock.items():
+            stock_month_end[(name, last)] = qty
     outstanding = {key: left for key, left in bills.items() if left != 0}
-    return Expected(month_end, fy_opening, by_month, by_fy, outstanding)
+    return Expected(month_end, fy_opening, by_month, by_fy, outstanding, stock_month_end)
 
 
 def generate(licence: str = "licensed") -> Dataset:
