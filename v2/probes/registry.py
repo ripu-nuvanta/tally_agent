@@ -33,7 +33,7 @@ PROBES: tuple[ProbeInfo, ...] = (
     ProbeInfo(8, "ledger_rename", "A", "B", module="v2.probes.p08_ledger_rename"),
     ProbeInfo(9, "chunk_latency", "—", "C", deferred=True),
     ProbeInfo(10, "error_shapes", "A", "B", module="v2.probes.p10_error_shapes"),
-    ProbeInfo(11, "openings", "B", "B"),
+    ProbeInfo(11, "openings", "B", "B", module="v2.probes.p11_openings"),
     ProbeInfo(12, "current_snapshots", "A", "B", module="v2.probes.p12_current_snapshots"),
     ProbeInfo(13, "backup_restore", "A", "B", module="v2.probes.p13_backup_restore"),
     ProbeInfo(14, "special_char_company", "B", "B"),

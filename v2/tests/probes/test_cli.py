@@ -28,7 +28,7 @@ def test_list_shows_every_probe_and_deferred(tmp_path, capsys):
 
 
 def test_run_unbuilt_probe_returns_2(tmp_path, capsys):
-    assert main(["--results", str(tmp_path / "r.json"), "run", "11"]) == 2
+    assert main(["--results", str(tmp_path / "r.json"), "run", "22"]) == 2
     assert "not built yet" in capsys.readouterr().out
 
 
