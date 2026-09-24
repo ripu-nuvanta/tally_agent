@@ -235,6 +235,10 @@ def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
     # F19: a note (the observed Trial Balance Dr/Cr total) is informational — it appears, separated under its
     # own "Notes:" heading, and does NOT flip the exit code (asserted together with `== 0` above, same run).
     assert "Notes:" in out and "Trial Balance Dr/Cr total observed" in out
+    # M9: the created/skipped block sits under its own heading, like "Pauses:" / "Notes:" / "Problems:".
+    lines = out.splitlines()
+    heading = lines.index("Created / skipped:")
+    assert lines[heading + 1].startswith("  ") and ": created " in lines[heading + 1]
 
 
 def test_setup_b_returns_one_when_a_prerequisite_blocks_the_loader_before_it_can_verify(tmp_path, capsys):

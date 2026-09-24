@@ -153,6 +153,7 @@ def _setup_b(args, store: ResultsStore, operator: AutoOperator | None) -> int:
     finally:
         if operator is None:
             auto.close()
+    print("Created / skipped:")
     for kind in report.created:
         print(f"  {kind}: created {report.created[kind]}, skipped {report.skipped[kind]}")
     if report.pauses:
