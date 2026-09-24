@@ -198,12 +198,13 @@ class FakeBooks:
                                             "IsPostDated": v["post_dated"]} for mid, v in state["vouchers"].items()])
         if "S0LedgerList" in body:
             return objects_xml("LEDGER", [{"Name": n, "Parent": led["parent"]} for n, led in state["ledgers"].items()])
-        if "S0OpLedger" in body or "S0OneLedger" in body:
+        if "S0OpLedger" in body or "S0OneLedger" in body or "S0SignCheckOpening" in body:
             match = re.search(r'\$Name = "([^"]*)"', body)
             wanted = html.unescape(match.group(1)) if match else ""
             led = state["ledgers"].get(wanted)
             rows = [] if led is None else [{"Name": wanted, "Parent": led["parent"], "Email": led["email"],
-                                            "GUID": led["guid"], "AlterID": str(led["alter_id"])}]
+                                            "GUID": led["guid"], "AlterID": str(led["alter_id"]),
+                                            "OpeningBalance": led.get("opening", "0.00")}]
             return objects_xml("LEDGER", rows)
         if "S0BGroups" in body:
             return objects_xml("GROUP", [{"Name": n, "Parent": g["parent"]} for n, g in state["groups"].items()])
