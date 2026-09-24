@@ -90,6 +90,22 @@
 > of importing it. The cloud side is a separate FastAPI app with its own Alembic chain on the same Postgres.
 > What this spec calls `workspace.config.*` lives in a v2-owned table. Decision 2, §5, §6 "Storage", §7,
 > §9, §10, R13, §12, §13 and §14 updated to match. Moving v2 into the current code is a later, separate step.
+>
+> **Changed 2026-09-24 (S0 live, probes 5 + 21, plan part 4):** §5 "Windows agent" `extractor.py` — month chunks
+> use **probe 5's confirmed `voucher_month` request with typed period variables** (`SVFROMDATE`/`SVTODATE
+> TYPE="Date"`, C33): sent untyped, Tally silently answers for the company's *current* period instead of erroring,
+> so an untyped chunk looks healthy and is wrong. **Day-split finding:** the same typed form also bounds a one-day
+> window exactly, so the ~5k-voucher auto-split (§5) can safely fall back to day chunks. In §15, the **Q22** and
+> **Q23** rows get `Numbers (probe 21, 2026-09-24): …` — company B's measured mix (Wine, Educational): 1050.3 B/voucher
+> without `raw`, `raw` JSON adds 6518.5 B/voucher (86.1% of the total); at 200k vouchers/yr the full 10-year span is
+> 15137.5 MB with `raw` vs 2100.5 MB without, vs 4707.9 MB keeping `raw` for the recent 2 FYs only (see storage table,
+> `docs/bi-s0-probe-results-2026-09-24.md` probe 21). **These are numbers, not a decision — the Q22/Q23 decisions
+> stay open for the user.** In **R27** "Residual", add: probe 21 confirms full-history reach (3+ FYs back, decision
+> 7b) and gives the first real bytes-per-voucher figures above; the residual per-customer storage ceiling is still
+> not designed for v1. **Open note (not a conclusion):** probe 5's `report_period_vars` evidence (one Trial Balance,
+> typed vs untyped `SVFROMDATE`/`SVTODATE` as-on, byte-identical under Educational) is recorded against the open
+> question of whether an as-on **report** is silently wrong when untyped the way the voucher collection is (C33) —
+> probe 18's B part settles this, not probe 5.
 
 ## 1. Context
 New product direction:
@@ -1003,7 +1019,7 @@ R5, R16 and R25 are in Part 2; R24 and R28 are in Part 3.
 **R27: Data volume and DB cost**
 - *What:* a large trader has hundreds of thousands of vouchers, and `raw` JSONB doubles storage. **Decision 7b (backfill all history to books start) makes this materially worse** — a twelve-year-old company is roughly 6× the two-FY estimate, and it is unbounded by design.
 - *Handling:* measure bytes per month chunk in S0 (probe 9) and extrapolate to the **full books span** (probe 21), not just 2 FYs, before S1. Decide whether `raw` is kept permanently — and specifically whether it is kept for backfilled (older) years, where it is least likely to be needed. Q22 tracks this.
-- *Residual:* an unusually old or high-volume company may need a per-customer storage ceiling. Not designed for v1; revisit once probe 21 gives real numbers.
+- *Residual:* an unusually old or high-volume company may need a per-customer storage ceiling. Not designed for v1; revisit once probe 21 gives real numbers. **Probe 21 (2026-09-24, company B, Wine/Educational — headline):** full-history reach confirmed at least 3 FYs back (238/238 vouchers exact, month by month, decision 7b); `raw` JSON is 86.1% of per-voucher storage, and at 200k vouchers/yr the 10-year span is 15137.5 MB with `raw` vs 2100.5 MB without — Q22/Q23 numbers are in (§15); the ceiling decision itself is unchanged, still open.
 
 **R29: Background backfill never completes**
 - *What:* the backfill only advances on cycles where nothing else needs doing and Tally is open. A customer who opens Tally for twenty minutes a day, or whose books go back fifteen years, may never reach `books_from`. The UI would sit at "still loading" indefinitely.
@@ -1120,8 +1136,8 @@ together with this part's questions.
 | Q19 | **Parity tolerance:** flat ₹1.00 per line (`PARITY_TOLERANCE_PAISE=100`), or percentage-based for large balances? A ₹1 tolerance on a ₹4 crore ledger is effectively exact; on a ₹500 ledger it is 0.2%. | R5 | Flat is simpler and catches more; decide after probe 20 shows real diff magnitudes |
 | Q20 | **Rung 3 in or out for v1?** Decision 11 defers it. Does Q8 (previous-FY closing snapshot, Part 2) change that — i.e. do we need statement-level parity to trust a stored FY close? | R5, Q8 | Revisit when Q8 is settled |
 | Q21 | **Parity retention:** proposed 90 days for runs, 7 days for matching lines, 90 for mismatching. Enough history to debug a recurring drift without storing a daily full ledger dump forever? | R20, R27 | Size it against probe 20's ledger counts |
-| Q22 | **Is `raw` JSONB kept for backfilled years?** Decision 7b makes storage unbounded. Keeping `raw` for the recent 2 FYs but dropping it for older backfilled years would roughly halve the marginal cost of deep history. | R27, R29 | Decide after probe 21 |
-| Q23 | **Does the backfill need a floor?** Decision 7b says all history to books start. Do we want a safety ceiling (e.g. stop at 10 FYs, or at a storage budget) for pathological companies, and what does the UI say when it stops early? | R27, R29 | Revisit after probe 21 gives real numbers |
+| Q22 | **Is `raw` JSONB kept for backfilled years?** Decision 7b makes storage unbounded. Keeping `raw` for the recent 2 FYs but dropping it for older backfilled years would roughly halve the marginal cost of deep history. | R27, R29 | Decide after probe 21. **Numbers (probe 21, 2026-09-24):** `raw` is 86.1% of per-voucher storage; per-FY cost at 10k/50k/200k vouchers-a-year, MB with `raw` = 75.7/378.4/1513.7, without = 10.5/52.5/210.1; saving from dropping `raw` beyond the recent 2 FYs, at 5 yr = 195.6/977.8/3911.1 MB, at 10 yr = 521.5/2607.4/10429.5 MB (`storage.q22`, `v2/probes/results/results.json`). At 200k vouchers/yr × 10 yr: 15137.5 MB with `raw` vs 2100.5 MB without vs 4707.9 MB keeping `raw` for the recent 2 FYs only. These are inputs, not the decision — it stays with the user. |
+| Q23 | **Does the backfill need a floor?** Decision 7b says all history to books start. Do we want a safety ceiling (e.g. stop at 10 FYs, or at a storage budget) for pathological companies, and what does the UI say when it stops early? | R27, R29 | Revisit after probe 21 gives real numbers. **Numbers (probe 21, 2026-09-24):** per-extra-FY cost at 10k/50k/200k vouchers-a-year = 10.5/52.5/210.1 MB without `raw`, 75.7/378.4/1513.7 MB with (`storage.q23`); month-chunk XML size at 200k vouchers/yr is 626.9 MB and exceeds the ~5k-row chunk cap (`over_chunk_cap: true`) — a floor or a smaller chunk unit is needed at that volume; 10k and 50k/yr stay under the cap. At 200k vouchers/yr × 10 yr: 15137.5 MB with `raw`, 2100.5 MB without (same table as Q22). The decision on a floor stays with the user. |
 | Q25 | **Re-link on a new GUID:** is "same company name, different GUID → offer Re-link" (§4 "Company identity changes") the right trigger? Name matching can be fooled by two companies with the same name (e.g. one per FY split). Should re-link need the website password, or just a tray click? | R2, R8 | Default: tray + web prompt, website password required, never automatic |
 | Q28 | **Who can see a synced workspace?** v1 assumes the existing workspace ownership model: the account that bound the company. Owners often want their accountant on the same workspace, or the other way round. Share with other logins, and with what roles? | R19, R20 | Decide before the S3 spec (Part 3) |
 | Q29 | **Tier C machine (§7):** which x64 Windows machine do we use for everything the Mac can't cover — the installer, service, tray and updater, the Windows 10 minimum, SmartScreen checks and the timing probes — a cloud VM or a physical PC? | R3, R17 | Needed before S0's timing probes (9, 20, 21) and the first installer build |

@@ -1779,7 +1779,7 @@ open company A as well.
 **Files:** `docs/specs/2026-09-22-bi-s0-probes-design.md`, `docs/specs/2026-09-21-bi-part1-sync-design.md`,
 `docs/plans/2026-09-22-bi-part1-tracker.md`, `docs/roadmap.md`, and this plan (tick the boxes).
 
-- [ ] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 4):**` covering all of the following.
+- [x] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 4):**` covering all of the following.
   (a) §6 batch 5 now runs 5 → 21 (21 fetches with probe 5's request, S0-D7), and §5.3's `--first` includes 5.
   (b) §7 probe 5 records the untyped form and one TB pair as evidence only, and the typed form is the one confirmed.
   (c) The count rule (tag sets; flagged recorded, not judged; skipped never expected).
@@ -1789,20 +1789,20 @@ open company A as well.
   `fy2025_month_03`).
   (f) Probe modules read the dataset only through `company_b_view`.
   Update the header status line.
-- [ ] **Step 2: Part 1 spec.** Add one dated "Changed" line. In §5 "Windows agent" `extractor.py`: month chunks use
+- [x] **Step 2: Part 1 spec.** Add one dated "Changed" line. In §5 "Windows agent" `extractor.py`: month chunks use
   probe 5's confirmed request with typed period variables (C33), and add the day-split finding. In §15, add to the
   **Q22** and **Q23** rows `Numbers (probe 21, <date>): …`, copying `storage.q22` / `storage.q23` and the 200k × 10
   row. These are numbers, not a decision; the decision stays open for the user. In R27 "Residual", add the headline
   sentence (`spec_impact`). Record the probe 5 `report_period_vars` evidence as an open note on the C33 report
   question. It is not a conclusion.
-- [ ] **Step 3: Tracker.** §3 row 5 and row 21 get status (✅, or the real outcome) with proof: the outcome sentence,
+- [x] **Step 3: Tracker.** §3 row 5 and row 21 get status (✅, or the real outcome) with proof: the outcome sentence,
   the fixture names, the `results.json` keys, and the log paths from Task 7. Row 21's timing half stays ⏭ (Q29). The
   §2 Q22/Q23 rows get the numbers in the "Answer" column, marked "numbers in; decision pending". §0 S0 row: part 4
   done. Rewrite the "Resume here" block so it describes the state actually left behind, with the next step being the
   B parts of 16 and 18, then 3, 11, 14, 15, 23, 25 (22 is still BLOCKED by C36). Add a dated change-log row that
   includes anything that contradicted this plan's expectations (e.g. 236 instead of 238).
-- [ ] **Step 4: Roadmap.** Set C S0 row: one line with probes 5 + 21 done and Q22/Q23 numbers in.
-- [ ] **Step 5: Commit** these docs only:
+- [x] **Step 4: Roadmap.** Set C S0 row: one line with probes 5 + 21 done and Q22/Q23 numbers in.
+- [x] **Step 5: Commit** these docs only:
   `git commit -m "docs(bi/v2): probes 5 + 21 results into specs, tracker, roadmap" -m "Co-Authored-By: <session trailer>"`.
 
 ---

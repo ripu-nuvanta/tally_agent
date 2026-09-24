@@ -1,6 +1,7 @@
 # S0 — Live-Tally probes (BI Part 1, v2)
 
 > **Design spec; Part 1 of the plan implemented 2026-09-22** (harness + probes 0, 2, 1 — tier A tested, not yet run live).
+> **Plan part 4 (2026-09-24):** probes 5 and 21 built, tested and run live on company B — both CONFIRMED.
 > Brainstormed and approved section by section on 2026-09-22. **Changed 2026-09-22 (final review):** probe 0 checks anchors
 > before the rename and records the data folder; probe 1 uses the first Indirect Expenses ledger and reverts its change;
 > ordered runs stop/skip/`--rerun`; context gains `last_response`, `check_company`, cleanup notes; §10 uses `git status`.
@@ -13,6 +14,23 @@
 > as plain INR sales (no Currency master, no ledger CURRENCYNAME, no forex AMOUNT), so probe 22 would have measured no
 > forex. `setup-b` now skips them (tags kept, nothing renumbers), leaves them out of the expected figures, and reports
 > one note. Unblocking needs a live-probed forex write shape first (review `code-review-bi-s0-company-b-live-fixes-2026-09-24.md` #2).
+> **Changed 2026-09-24 (plan part 4):** probes 5 and 21 built, reviewed and **run live — both CONFIRMED** (company B).
+> (a) §6 batch 5 now runs **5 immediately before 21** (21 fetches with probe 5's confirmed request, S0-D7; `requires=(5,)`
+> in addition to (0, 1)), and §5.3's `--first` includes probe 5 in that position. (b) §7 probe 5 records the untyped
+> form and one Trial Balance pair (typed vs untyped as-on) as **evidence only**, never judged against the dataset; the
+> **typed** form (`SVFROMDATE`/`SVTODATE TYPE="Date"`) is the one confirmed via `confirm_request("voucher_month")`.
+> (c) The count rule reads: compare **tag sets**, not raw counts — flagged (cancelled/optional) vouchers are recorded
+> if returned, never judged (probe 3 B owns the flags); skipped (C36) vouchers are never expected. (d) §7 probe 21
+> defines its three size measures (raw XML bytes, parsed-JSON bytes as a `raw` JSONB stand-in, minimum-column bytes)
+> and adds one current-FY sample month (`fy2025_month_03`, sizes only, no verdict); the period-lock step is asked only
+> when interactive and not in auto mode (an action-less `ask`; Educational Tally here answered "no period lock in this
+> edition"). (e) §11.5 rows 5 and 21 gain `month_svdates_untyped`, `report_tb_typed`, `report_tb_untyped` (row 5) and
+> `fy2025_month_03` (row 21). (f) Probe modules read company B's dataset only through the new `company_b_view.py`
+> bridge (S0-D8 isolation), never `v2.probes.setup` directly. **New finding (Ruling C43):** Educational TallyPrime
+> silently ignores a date **static variable** (`SVFROMDATE`/`SVTODATE`) whose day is not 1, 2 or 31 — same rule as
+> voucher dates (§4.6) — and falls back to the current period's end; §4.6's educational-sensitive list gains probe 5.
+> Full detail: `.superpowers/sdd/2026-09-24-bi-s0-probes-plan-part4/progress.md`, `docs/bi-s0-probe-results-2026-09-24.md`,
+> `docs/code-review-bi-s0-part4-2026-09-24.md`.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -171,8 +189,11 @@ TallyVault, with throwaway passwords recorded in the results (the company holds 
 
 ### 4.6 Licence mode
 Probe 0 records licensed vs Educational. In Educational mode, setup-b uses only the voucher dates Educational
-allows, and results of probes 1, 7, 16 and 18 are tagged "Educational" (Part 1 R26). A result that looks odd under
-Wine or Educational is flagged "confirm on tier C" rather than designed around (Part 1 §7).
+allows, and results of probes 1, 7, 16, 18 and **5** are tagged "Educational" (Part 1 R26). A result that looks odd
+under Wine or Educational is flagged "confirm on tier C" rather than designed around (Part 1 §7).
+**Changed 2026-09-24 (Ruling P3 / C43):** probe 5 added to this list. Educational TallyPrime silently ignores a
+**date static variable** (`SVFROMDATE`/`SVTODATE`) whose day is not 1, 2 or 31 — the same rule already known for
+voucher dates — and falls back to the current period's end instead of erroring; see §7 probe 5 and LESSONS.md.
 
 ## 5. Harness
 
@@ -217,7 +238,7 @@ steps kept; Ctrl-C records the part, then stops the run. A step name may be used
 |---|---|
 | `list` | Every probe: id, name, companies, tier, last outcome (deferred ones shown ⏭) |
 | `run <id> [--company A\|B\|C]` | Runs that probe's parts (or one part). Between parts it pauses for the company switch |
-| `run --first [--rerun]` | 0 → 2 → 1 → 16, 17, 18 (A parts); B parts of 16 / 18 and probe 21 once B is set up |
+| `run --first [--rerun]` | 0 → 2 → 1 → 16, 17, 18 (A parts); B parts of 16 / 18, then **5, then 21**, once B is set up (Changed 2026-09-24: 21 requires 5's confirmed request, S0-D7) |
 | `run --all [--rerun]` | All tier-B probes, batched by company in the §6 order |
 | `setup-b` | Loads company B (§4.3) |
 | `report` | Regenerates `docs/bi-s0-probe-results-<date>.md` from `results.json` |
@@ -321,7 +342,7 @@ interface: each `pause` is performed, each `ask` is answered, and every action i
 | 3 | A | 3, 4, 6, 12, 23, 25 (A parts) | Non-mutating reads |
 | 4 | A | 7, 8, 10, then **13 last** → anchors check | Mutating; 13 restores A, so it goes last. In auto mode probe 10 runs popup → no company → quit, then reopens A so 13 can run (ruling 2026-09-22) |
 | — | B | `setup-b` | Loader + its pause steps |
-| 5 | B | **21**, 16, 18 (B parts), 5, 3, 11, 14, 15, 22, 23, 25 (B parts) | Probe 21 first: its numbers gate Q22 / Q23 |
+| 5 | B | 16, 18 (B parts), **5, then 21**, 3, 11, 14, 15, 22 (BLOCKED — C36), 23, 25 (B parts) | Changed 2026-09-24: 5 runs immediately before 21 — 21 fetches with 5's confirmed `voucher_month` request (S0-D7); "21 first" is read as "first after the request it depends on" |
 | 6 | C | 24 | Security, then Vault |
 
 ## 7. Probe methods
@@ -391,12 +412,27 @@ saves its fixture per §5.6.
 - **FAILED** if wrong or Tally hangs → rolling re-pull fallback (R6).
 
 **Probe 5 — Month bounds on a Voucher collection** · B · feeds the extractor
-1. SVFROMDATE / SVTODATE = 01-06-2023 … 30-06-2023 → every date in range and the count equals the dataset's.
-2. If not bounded: a *candidate* `$Date` formula filter (never `$$InDateRange`). Also a one-day request (for
+1. SVFROMDATE / SVTODATE, **typed** (`TYPE="Date"`) = 01-06-2023 … 30-06-2023 → every unflagged tag comes back, in
+   window, and nothing untagged/extra/duplicated (count rule = compare tag sets, not a raw count — Changed
+   2026-09-24 (c)). The **untyped** form of the same request is also sent and recorded as **evidence only**
+   (`month_svdates_untyped`), never judged against the dataset (S0-D7); it is C33's reproduction check.
+2. If not bounded: a *candidate* `$Date` formula filter (never `$$InDateRange`), run inside a typed books-wide
+   period (a formula alone inside an untyped/current period can never reach 2023). Also a one-day request (for
    auto-split).
-3. The working form → `confirm_request("voucher_month")`.
+3. The working (typed) form → `confirm_request("voucher_month")`.
+4. One Trial Balance pair, as-on the window's last date, typed vs untyped `SVFROMDATE`/`SVTODATE` — **evidence
+   only** (`report_tb_typed`, `report_tb_untyped`), byte-identical or not; probe 18's B part settles whether an
+   as-on report is history, not probe 5.
 - **DIFFERENT** if only the formula works; **FAILED** if neither → the extractor filters in Python and the chunk
   cap is re-sized.
+- **Changed 2026-09-24 (plan part 4, live run):** CONFIRMED. Typed form bounds June 2023 exactly (20 vouchers) and
+  a one-day window returns exactly 01-06-2023's 10. Under the Educational licence a `SVTODATE` whose day is not
+  1/2/31 is silently ignored and Tally falls back to the current period's end (**Ruling C43**, §4.6) — the
+  extractor's typed request therefore clamps a month's to-date under Educational to the 2nd (or the 31st when the
+  month has one). The untyped evidence reproduced C33 (240 vouchers, current-period window, 2025-04-01..2026-03-31).
+  `spec_impact`: the extractor types its period variables (`TYPE="Date"`); an untyped chunk under Educational looks
+  healthy and is silently wrong (Part 1 §5 extractor). Run 1 failed against this exact bug before the clamp was
+  built — see `.superpowers/sdd/2026-09-24-bi-s0-probes-plan-part4/progress.md` (Ruling R3).
 
 ### Data shape
 
@@ -515,13 +551,31 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
 
 ### Reach and robustness
 
-**Probe 21 — Full-history reach and size** · B · feeds decision 7b, Q22, Q23
-1. BooksFrom = 01-04-2022. Fetch FY 2022-23 month by month with probe 5's request; counts equal the dataset's.
-2. Bytes per voucher by kind (with / without inventory lines, with bill allocations), both as raw XML and as parsed
-   JSON (a stand-in for the `raw` JSONB).
-3. Storage table: 10k / 50k / 200k vouchers a year × 2 / 5 / 10 years, with and without `raw`.
-4. If the edition has a period lock, lock FY 2022-23 (pause) and confirm reads still work.
+**Probe 21 — Full-history reach and size** · B · feeds decision 7b, Q22, Q23 · `requires=(0, 1, 5)`
+1. BooksFrom = 01-04-2022. Fetch FY 2022-23 month by month with **probe 5's confirmed `voucher_month` request**
+   (S0-D7 — probe 21 never builds its own); counts equal the dataset's (tag-set rule, Changed 2026-09-24 (c)). Also
+   one current-FY sample month (`fy2025_month_03`) fetched for size comparison only, no verdict (closed- vs
+   open-year behaviour).
+2. Bytes per voucher by kind (with / without inventory lines, with bill allocations), in three measures: raw XML
+   bytes, parsed-JSON bytes (a stand-in for the `raw` JSONB), and minimum-column bytes (Part 1 §5's columns,
+   including `voucher_id` on every child row).
+3. Storage table: 10k / 50k / 200k vouchers a year × 2 / 5 / 10 years, with and without `raw`; feeds Q22 (per-FY
+   cost, share of `raw`, saving from dropping `raw` beyond the recent 2 FYs) and Q23 (per-extra-FY increment,
+   month-chunk XML size against the ~5k-row cap).
+4. If the edition has a period lock, lock FY 2022-23 (pause) and confirm reads still work. **The period-lock ask is
+   an action-less pause, asked only when the run is interactive and not in auto mode** — locking a period cannot be
+   done over XML and a blocked pause would sink the whole batch (Changed 2026-09-24 (d)). Otherwise recorded "not
+   attempted".
 - Timings recorded but labelled "Wine — not representative"; the tier-C timing part stays ⏭.
+- **Changed 2026-09-24 (plan part 4, live run):** CONFIRMED. BooksFrom = 01-04-2022 (exact match). 12/12 FY 2022-23
+  months reached exactly (238 tagged vouchers by count of written+unflagged tags; the cancelled pair — 201/202,
+  Feb 2023 — was reported back, recorded, not judged per S0-D7). Size stats are computed over the 236 unflagged
+  vouchers only (flagged vouchers excluded from size stats per plan resolution #10) — this is why the storage
+  table's `mix_vouchers` reads 236, not 238; not a discrepancy. This edition reported "no period lock" — step 4
+  recorded "not attempted"/none per Ruling R2 (locking would require reconfiguring the shared Educational Tally
+  mid-S0). Numbers: `logs/p21-numbers-2026-09-24.log`, `v2/probes/results/results.json` `probes.21`, rendered in
+  `docs/bi-s0-probe-results-2026-09-24.md`. These numbers are the Q22/Q23 **inputs**; the Q22/Q23 decisions
+  themselves stay with the user (Part 1 spec §15).
 
 **Probe 10 — Error shapes** · A · feeds the gate
 1. No company open (pause) → response for a collection and for a report.
@@ -656,7 +710,7 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 | 2 | `active_{a,b,c}`, `active_{a,b,c}_no_company` |
 | 3 | `A_vouchers_ids_flags`, `B_vouchers_flags` |
 | 4 | `{voucher,ledger,group,stockitem}_full`, `…_gt_m_minus_5`, `…_gt_m`, `…_gt_0` |
-| 5 | `month_svdates`, `month_formula` (if needed), `day_svdates` |
+| 5 | `month_svdates`, `month_svdates_untyped` (evidence only), `month_formula` (if needed), `day_svdates`, `report_tb_typed`, `report_tb_untyped` (evidence only) |
 | 6 | `vouchers_nested`, `line_guid_fetch`, `line_guid_tdl` |
 | 7 | `throwaway_created`, `after_delete`, `second_throwaway` |
 | 8 | `rename_before`, `rename_after`, `rename_restored` |
@@ -670,7 +724,7 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 | 17 | `tb_exploded_{variable}` (one per candidate) |
 | 18 | `A_tb_asof_2025-10-31`, `A_bills_receivable_asof_2025-09-30`, `A_bills_payable_asof_2025-09-30`, `A_stock_summary_asof_2025-09-30`, `A_vouchers_to_2025-10-31`, `B_tb_asof_2023-03-31` |
 | 19 | `capture_quiet_{1,2,3}_{counters_start,ledgers,tb,counters_end}`, `after_ui_view`, `capture_moving_*` |
-| 21 | `books_from`, `fy2022_month_{04..03}`, `period_locked_read` (if lockable) |
+| 21 | `books_from`, `fy2022_month_{04..03}`, `fy2025_month_03` (current-FY sample, sizes only), `period_locked_read` (if lockable) |
 | 22 | `forex_sales` |
 | 23 | `A_gst_ledgers`, `B_bills_credit_period`, `B_bills_receivable_due` |
 | 24 | `baseline`, `security_on`, `vault_on` |
