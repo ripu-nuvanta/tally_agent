@@ -542,16 +542,18 @@ class TallyWriter:
             raise WriteFailed(f"Stock item {name!r} not found on read-back")
 
     def create_party_ledger(self, company: str, name: str, *, parent: str, bill_wise: bool,
-                            opening: Decimal | None = None, gstin: str | None = None) -> None:
+                            opening: Decimal | None = None, gstin: str | None = None,
+                            allow_contra_natural: bool = False) -> None:
         """`opening` is signed (debit negative, credit positive — company_b_data.py's convention) and goes on the
         wire AS IS: Tally reads OPENINGBALANCE's sign, negative = Dr, positive = Cr (Ruling C30, overturning
         C21/F11 — see the module docstring for the company-A evidence). Never `abs()` it.
 
         `check_opening_side` (M1) runs FIRST — before the "already exists" skip, on purpose (m4): bad dataset
         signs fail loud on every run, even a re-run where the ledger exists and nothing would be sent. Do not move
-        it after the skip."""
+        it after the skip. `allow_contra_natural` skips it — ONLY for sign_check.run_positive (C38), whose whole
+        point is a credit opening under a debit-natured group."""
         check_writable(company)
-        if opening is not None:
+        if opening is not None and not allow_contra_natural:
             check_opening_side(name, parent, opening)
         if self.ledger(company, name) is not None:
             self.say(f"{name} already exists — not re-created")

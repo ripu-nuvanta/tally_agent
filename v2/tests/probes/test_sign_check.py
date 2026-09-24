@@ -51,3 +51,34 @@ def test_the_ledger_is_deleted_even_when_the_read_back_fails():
         run(_writer(books), B)
     assert LEDGER not in books.state["ledgers"]
     assert 'ACTION="Delete"' in _imports(books)[-1]
+
+
+# --- C38 (review #6): the discriminating form — a CREDIT opening under a debit-natured group ------------------------
+def test_run_positive_sends_a_credit_opening_under_sundry_debtors_and_deletes_it():
+    """−1.00 under Sundry Debtors reads back −1.00 whether Tally reads the sign (C30) or infers the side from the
+    group (C21) — non-discriminating. +1.00 is: C30 predicts 1.00 (Cr), C21 predicts −1.00 (Dr)."""
+    from v2.probes.setup.sign_check import run_positive
+    books = FakeBooks(name=B)                          # the fake models C30: it stores the wire value as sent
+    raw = run_positive(_writer(books), B)
+    assert raw == "1.00"
+    create, delete = _imports(books)
+    assert "<PARENT>Sundry Debtors</PARENT>" in create and "<OPENINGBALANCE>1.00</OPENINGBALANCE>" in create
+    assert 'ACTION="Delete"' in delete and LEDGER not in books.state["ledgers"]
+
+
+@pytest.mark.parametrize("raw,expected", [("1.00", "C30"), ("-1.00", "C21"), (" 1.00", "C30"), ("0.00", "neither"),
+                                          ("", "neither")])
+def test_the_positive_read_back_names_the_ruling_it_supports(raw, expected):
+    from v2.probes.setup.sign_check import positive_verdict
+    assert positive_verdict(raw).startswith(expected)
+
+
+def test_a_contra_natural_opening_is_still_refused_unless_asked_for():
+    """create_party_ledger's dataset sanity check (M1) must keep refusing +1.00 under Sundry Debtors by default —
+    only the sign check opts out, explicitly."""
+    from decimal import Decimal
+    books = FakeBooks(name=B)
+    with pytest.raises(ValueError, match="contra-natural"):
+        _writer(books).create_party_ledger(B, LEDGER, parent="Sundry Debtors", bill_wise=False,
+                                           opening=Decimal("1.00"))
+    assert _imports(books) == []
