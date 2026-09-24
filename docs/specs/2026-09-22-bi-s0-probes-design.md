@@ -6,6 +6,9 @@
 > ordered runs stop/skip/`--rerun`; context gains `last_response`, `check_company`, cleanup notes; §10 uses `git status`.
 > **Changed 2026-09-23:** §14's open GSTIN question answered — company-level GST registration stays UI-only (the
 > loader never writes it); party ledgers carry a check-digit-correct `PARTYGSTIN`. See §14.
+> **Changed 2026-09-24:** §4.3's duplicate-ledger-name pause (R9) is no longer a loader rule — it is a probe
+> observation, re-scoped to probe 25's B part by [`plans/2026-09-23-bi-s0-company-b-loader.md`](../plans/2026-09-23-bi-s0-company-b-loader.md);
+> `setup-b` never runs it. See §4.3.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -141,8 +144,10 @@ The float `parse_amount`, `writer.py`, `import_builder.py` (except the two helpe
 - A flag that doesn't stick on import (e.g. cancelled, optional) turns into a **pause step**: the loader names the
   voucher and asks you to set it in the UI, then reads it back.
 - Ends by checking per-FY voucher counts and closing balances against the expected figures.
-- **Duplicate ledger names (R9):** never attempted via XML (rule 10). A pause step asks you to try creating a
-  ledger with an existing name under another parent in the UI and record what Tally says.
+- ~~**Duplicate ledger names (R9):** never attempted via XML (rule 10). A pause step asks you to try creating a
+  ledger with an existing name under another parent in the UI and record what Tally says.~~ **Moved 2026-09-24:**
+  not a loader rule — this UI pause belongs to probe 25's B part, and `setup-b` does not run it (still never
+  attempted via XML, rule 10).
 
 ### 4.4 Company C — "Probe Vault Co"
 Created by you in the UI with one ledger and one voucher. Probe 24 turns on security (username + password), then
