@@ -25,8 +25,9 @@ def _books() -> FakeBooks:
 
 
 def operator(books: FakeBooks, *, prompt: str = "modal", after_vault=None, after_login=None, early=None):
-    """Plays the person at TallyPrime: a prompt either blocks the XML server (modal) or leaves no company open. The
-    credentials go into Tally (the fake's state) only. `early` = the pause (LOGIN / VAULT_OPEN) at which the person
+    """Plays the person at TallyPrime: a prompt either blocks the XML server (modal), leaves no company open (closed),
+    or lists company C while every named read fails (listed, review I1). The credentials go into Tally (the fake's
+    state) only. `early` = the pause (LOGIN / VAULT_OPEN) at which the person
     presses Enter before clearing the prompt (Ruling S3)."""
     def act(text: str) -> None:
         if text == p24.SECURITY_ON:
@@ -36,12 +37,14 @@ def operator(books: FakeBooks, *, prompt: str = "modal", after_vault=None, after
         elif text in (p24.SECURITY_RESELECT, p24.VAULT_RESELECT):
             if prompt == "modal":
                 books.popup = True
+            elif prompt == "listed":
+                books.popup_listed = True
             else:
                 books.loaded = False
         elif text in (p24.LOGIN, p24.VAULT_OPEN):
             if text == early:
                 return                                   # Enter pressed while the prompt is still up
-            books.popup, books.loaded = False, True
+            books.popup, books.popup_listed, books.loaded = False, False, True
             hook = after_vault if text == p24.VAULT_OPEN else after_login
             if hook:
                 hook(books)
@@ -96,11 +99,48 @@ async def test_an_empty_export_after_the_vault_fails(tmp_path):
     assert part["outcome"] == "FAILED" and "tallyvault" in part["summary"].lower()
 
 
+def _other_company(b: FakeBooks) -> None:
+    """Another company (its own name, GUID and data) open instead of C: an operator slip."""
+    b.edit_state(lambda s: (s.__setitem__("name", "Other Co"), s.__setitem__("guid", "other"),
+                            s["ledgers"].pop(p24.COMPANY_C_LEDGER), s["vouchers"].clear()))
+
+
 async def test_another_company_open_after_login_blocks(tmp_path):
     books = _books()
-    other = lambda b: b.edit_state(lambda s: (s.__setitem__("name", "Other Co"), s.__setitem__("guid", "other")))
-    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, after_login=other)))
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, after_login=_other_company)))
     assert part["outcome"] == "BLOCKED" and "Other Co" in part["summary"]
+
+
+async def test_a_blocked_slip_keeps_what_each_stage_measured(tmp_path):
+    """Review I2(a): every stage is observed before `_slip`, so a BLOCKED record keeps the evidence."""
+    books = _books()
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, after_login=_other_company)))
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    obs = part["observations"]
+    assert obs["baseline"]["ok"] and obs["security_on"]["companies"] == ["Other Co"]
+    assert obs["security_on"]["active_guid"] == "other"
+
+
+async def test_a_slip_after_the_vault_keeps_the_security_and_vault_stages(tmp_path):
+    books = _books()
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, after_vault=_other_company)))
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    obs = part["observations"]
+    assert obs["security_on"]["ok"] and obs["vault_on"]["companies"] == ["Other Co"]
+    assert "vault_on" in part["summary"] and "re-keyed" in part["summary"]
+
+
+async def test_a_vault_rename_with_a_new_guid_and_cs_data_is_different_not_blocked(tmp_path):
+    """Review I2(b): only C is open, its data equals the baseline, but name AND GUID changed (vault rename + re-key).
+    Blocking would ask for 'only company C' forever; it is recorded as DIFFERENT (like S9's same-GUID rename)."""
+    books = _books()
+    rekey = lambda b: b.edit_state(lambda s: (s.__setitem__("name", "Probe Vault Encrypted"),
+                                              s.__setitem__("guid", "vaulted-guid")))
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, after_vault=rekey)))
+    assert part["outcome"] == "DIFFERENT", part["summary"]
+    assert part["observations"]["sub_verdicts"] == {"security": "CONFIRMED", "TallyVault": "DIFFERENT"}
+    assert "vault renamed and re-keyed" in part["summary"] and "Probe Vault Encrypted" in part["summary"]
+    assert "Q25" in part["spec_impact"]
 
 
 async def test_company_c_without_setup_c_blocks(tmp_path):
@@ -166,3 +206,38 @@ async def test_a_vault_rename_with_the_same_guid_is_different(tmp_path):
     assert part["observations"]["sub_verdicts"] == {"security": "CONFIRMED", "TallyVault": "DIFFERENT"}
     assert "renamed" in part["summary"] and "Probe Vault Renamed" in part["summary"]
     assert "GUID" in part["spec_impact"]
+
+
+async def test_listed_prompt_shape_is_recorded_and_a_real_login_confirms(tmp_path):
+    """Review I1: the prompt lists company C while every named read fails. A proper login still confirms."""
+    books = _books()
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, prompt="listed")))
+    assert part["outcome"] == "CONFIRMED", part["summary"]
+    shape = part["observations"]["gate_shapes"]["security_login_pending"]["company_list"]
+    assert shape == {"transport": "answered", "body": {"companies": [C]}}
+
+
+async def test_enter_at_login_with_a_listed_prompt_still_open_blocks_not_fails(tmp_path):
+    """Review I1: Tally lists C but the prompt is still up — the post-Enter reads equal the prompt state."""
+    books = _books()
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, prompt="listed", early=p24.LOGIN)))
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    assert "prompt still open" in part["summary"] and "security_on" in part["summary"]
+    assert any(f.startswith("p24_C_security_on_ready_company_list") for f in part["fixtures"])
+
+
+async def test_enter_at_vault_open_with_a_listed_prompt_still_open_blocks_not_fails(tmp_path):
+    books = _books()
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, prompt="listed", early=p24.VAULT_OPEN)))
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    assert "prompt still open" in part["summary"] and "vault_on" in part["summary"]
+    assert part["observations"]["security_on"]["ok"]
+
+
+async def test_a_genuine_failure_after_login_with_a_listed_prompt_still_fails(tmp_path):
+    """Review I1: once the prompt is gone (the active company answers), a broken export is a real FAILED."""
+    books = _books()
+    empty = lambda b: b.edit_state(lambda s: (s["ledgers"].clear(), s["vouchers"].clear()))
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, prompt="listed", after_vault=empty)))
+    assert part["outcome"] == "FAILED", part["summary"]
+    assert "tallyvault" in part["summary"].lower()

@@ -398,6 +398,9 @@ class FakeBooks:
         self.click_polls = 0
         self.busy_polls = 0
         self.popup = False
+        # probe 24 / review I1: a login / TallyVault prompt that still LISTS the company while every named read fails
+        # (unmeasured; the prompt shape probe 24 must not mistake for "export doesn't work").
+        self.popup_listed = False
         self.requests: list[str] = []
         self.drop_flags = drop_flags          # a voucher import "succeeds" but ISCANCELLED/ISOPTIONAL don't stick
         # A test seam for "something changes at request N", e.g. Tally's modal appearing partway through a run:
@@ -431,12 +434,12 @@ class FakeBooks:
 
     # --- process lifecycle (driven by FakeRunner) ---------------------------------------------------------------------
     def start(self, load: bool) -> None:
-        self.running, self.loaded, self.popup = True, load, False
+        self.running, self.loaded, self.popup, self.popup_listed = True, load, False, False
         self.click_polls = self.click_polls_on_load if load else 0
         self.busy_polls = self.busy_polls_on_load if load else 0
 
     def stop(self) -> None:
-        self.running = self.loaded = self.popup = False
+        self.running = self.loaded = self.popup = self.popup_listed = False
 
     def companies(self) -> list[str]:
         """What a company-list request sees; while the licence box is up the list is empty."""
@@ -474,6 +477,9 @@ class FakeBooks:
                     "</RESULT></DATA></BODY></ENVELOPE>")
         if COMPANY_LIST_MARKER in body:
             return company_list_xml(self.companies())
+        if self.popup_listed:
+            return ("<ENVELOPE><BODY><DATA><LINEERROR>Could not find Company "
+                    f"'{esc(self.state['name'])}'</LINEERROR></DATA></BODY></ENVELOPE>")
         if not self.loaded or self.click_polls > 0:
             return "<ENVELOPE></ENVELOPE>"
         if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in body:

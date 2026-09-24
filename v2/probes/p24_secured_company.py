@@ -50,6 +50,8 @@ RELINK_IMPACT = ("Export works once the company is open, but its identity/conten
                  "name takes the re-link path (Q25), never a new company.")
 RENAME_IMPACT = ("TallyVault renamed the company but kept its GUID: S1 keys a company by GUID only and updates its "
                  "stored name; the extractor sends the name TallyPrime lists now (Q25).")
+REKEY_IMPACT = ("The company came back under a new name AND a new GUID with the same data: S1 can't key it by GUID, "
+                "so it takes the re-link path (Q25) — a person confirms it is the same company — never a new company.")
 FAILED_IMPACT = ("XML export of a company with {half} fails even with it open in TallyPrime: v1 can't sync such "
                  "companies — onboarding says so, and the gate reports it as its own condition (R26).")
 UNDO_NOTE = ("Company C has security and/or TallyVault on (the throwaway credentials you chose). Nothing to undo in "
@@ -104,12 +106,12 @@ async def export(ctx: ProbeContext, stage: str) -> dict[str, Any]:
     return out
 
 
-async def pending(ctx: ProbeContext, stage: str) -> dict[str, Any]:
-    """The gate's two cheap reads while a login / TallyVault prompt is on screen (a new gate shape, spec §7)."""
+async def _gate_reads(ctx: ProbeContext, prefix: str) -> dict[str, Any]:
+    """The gate's two cheap reads (company list, active company), captured as `<prefix>_<read>`."""
     shapes: dict[str, Any] = {}
     requests = _requests(ctx)
     for read in ("company_list", "active_company"):
-        text, error = await ctx.try_send(f"{stage}_{read}", requests[read], timeout=PENDING_TIMEOUT)
+        text, error = await ctx.try_send(f"{prefix}_{read}", requests[read], timeout=PENDING_TIMEOUT)
         if error:
             shapes[read] = {"transport": error["kind"], "body": None}
         else:
@@ -119,24 +121,49 @@ async def pending(ctx: ProbeContext, stage: str) -> dict[str, Any]:
     return shapes
 
 
-async def _ready(ctx: ProbeContext, stage: str) -> None:
-    """Ruling S3: after the person presses Enter at LOGIN / VAULT_OPEN, check the company is really open before
-    anything is judged. A prompt still on screen (timeout) or no company open is the person's timing -> BLOCKED,
-    never a FAILED "export doesn't work". This is check_company's own read (ctx.company_names); which company is open
-    is left to `_slip`/`_judge`, so a same-GUID rename is still recorded (Ruling S9)."""
-    try:
-        names = await ctx.company_names()
-    except ProbeBlocked as exc:
-        raise ProbeBlocked(PROMPT_STILL_OPEN.format(stage=stage, why=f"didn't answer ({exc})")) from exc
-    if not names:
-        raise ProbeBlocked(PROMPT_STILL_OPEN.format(stage=stage, why="lists no open company"))
+async def pending(ctx: ProbeContext, stage: str) -> dict[str, Any]:
+    """The gate's two cheap reads while a login / TallyVault prompt is on screen (a new gate shape, spec §7)."""
+    return await _gate_reads(ctx, stage)
 
 
-def _slip(stage: dict[str, Any], baseline_guid: str) -> None:
+async def _ready(ctx: ProbeContext, stage: str, prompt_shape: dict[str, Any]) -> dict[str, Any]:
+    """Ruling S3 / review I1: after the person presses Enter at LOGIN / VAULT_OPEN, check the prompt is really gone
+    before anything is judged. The same two reads as `pending` (captured as `<stage>_ready_*`) are compared with the
+    prompt-state shape measured moments ago: if both answer exactly as they did while the prompt was open (same
+    transport, same body) — whatever that shape is: a timeout, no company, or company C listed while named reads
+    fail — Tally is still at the prompt, which is the person's timing -> BLOCKED, never a FAILED "export doesn't
+    work". A timeout or an empty list is never an open company either. Which company is open is left to
+    `_slip`/`_judge`, so a same-GUID rename is still recorded (Ruling S9)."""
+    shape = await _gate_reads(ctx, f"{stage}_ready")
+    listing = shape["company_list"]
+    if shape == prompt_shape:
+        why = "still answers exactly as it did while the prompt was open (indistinguishable from the prompt state)"
+    elif listing["transport"] != "answered":
+        why = f"didn't answer the company list ({listing['transport']})"
+    elif not listing["body"]["companies"]:
+        why = "lists no open company"
+    else:
+        return shape
+    raise ProbeBlocked(PROMPT_STILL_OPEN.format(stage=stage, why=why))
+
+
+def _renamed_and_rekeyed(stage: dict[str, Any], baseline: dict[str, Any]) -> bool:
+    """Review I2(b): one company listed, not under C's name, a GUID other than C's baseline one, but exactly C's
+    baseline ledgers and vouchers — TallyVault renamed AND re-keyed company C (unmeasured), not another company."""
     names = stage["companies"] or []
-    if len(names) > 1 or (names and names != [C] and stage["active_guid"] != baseline_guid):
+    return (len(names) == 1 and names != [C] and stage["active_guid"] != baseline["active_guid"]
+            and COMPANY_C_LEDGER in stage["ledgers"] and stage["ledgers"] == baseline["ledgers"]
+            and stage["narrations"] == baseline["narrations"])
+
+
+def _slip(stage: dict[str, Any], baseline: dict[str, Any]) -> None:
+    names = stage["companies"] or []
+    if len(names) > 1 or (names and names != [C] and stage["active_guid"] != baseline["active_guid"]
+                          and not _renamed_and_rekeyed(stage, baseline)):
         raise ProbeBlocked(f"{stage['stage']}: Tally has {names} open, not only {C!r} — open only company C and re-run "
-                           "probe 24 (restore the company-C baseline backup first if security/TallyVault is on).")
+                           "probe 24 (restore the company-C baseline backup first if security/TallyVault is on). If "
+                           f"only company C IS open, TallyVault may have renamed and re-keyed it without its data "
+                           f"reading back as C's baseline — see observations.{stage['stage']}.")
 
 
 def _judge(stage: dict[str, Any], baseline: dict[str, Any], half: str) -> tuple[str, str, str]:
@@ -146,6 +173,10 @@ def _judge(stage: dict[str, Any], baseline: dict[str, Any], half: str) -> tuple[
     if len(names) == 1 and names != [C] and stage["active_guid"] and stage["active_guid"] == baseline["active_guid"]:
         reads = f"failed: {', '.join(stage['errors'])}" if stage["errors"] else "worked"
         return "DIFFERENT", f"company renamed to {names[0]!r} with the same GUID (named reads {reads})", RENAME_IMPACT
+    if _renamed_and_rekeyed(stage, baseline):
+        who = "vault" if half == "TallyVault" else half
+        return ("DIFFERENT", f"{who} renamed and re-keyed: listed as {names[0]!r} with a new GUID "
+                f"{stage['active_guid'] or '(none read)'}, C's baseline ledgers and vouchers", REKEY_IMPACT)
     if not stage["ok"]:
         why = ", ".join(f"{k}: {v['kind']}" for k, v in stage["errors"].items()) or (
             f"listed as {stage['companies']}, ledgers {stage['ledgers'][:3]}, vouchers {stage['narrations'][:2]}")
@@ -160,6 +191,11 @@ def _shape_text(shapes: dict[str, Any]) -> str:
     listing = shapes["company_list"]
     if listing["transport"] != "answered":
         return f"a {listing['transport']} (the prompt blocks the XML server)"
+    if listing["body"]["companies"]:
+        active = shapes["active_company"]
+        rows = active["body"]["rows"] if active["transport"] == "answered" else active["transport"]
+        return (f"an answer listing {listing['body']['companies']} with the active-company read giving {rows} "
+                "(listed, but not open for named reads)")
     return f"an answer listing {listing['body']['companies']} (as if no company were open)"
 
 
@@ -179,22 +215,24 @@ async def run_c(ctx: ProbeContext) -> PartResult:
     ctx.pause(SECURITY_RESELECT)
     login_pending = await pending(ctx, "security_login_pending")
     ctx.pause(LOGIN)
-    await _ready(ctx, "security_on")
+    ctx.observe("gate_shapes", {"security_login_pending": login_pending})
+    ctx.observe("security_on_ready", await _ready(ctx, "security_on", login_pending))
     security = await export(ctx, "security_on")
-    _slip(security, baseline["active_guid"])
+    ctx.observe("security_on", security)                  # review I2(a): observed before `_slip` can BLOCK
+    _slip(security, baseline)
     ctx.pause(VAULT_ON)
     ctx.pause(VAULT_RESELECT)
     vault_pending = await pending(ctx, "vault_prompt_pending")
     ctx.pause(VAULT_OPEN)
-    await _ready(ctx, "vault_on")
+    ctx.observe("gate_shapes", {"security_login_pending": login_pending, "vault_prompt_pending": vault_pending})
+    ctx.observe("vault_on_ready", await _ready(ctx, "vault_on", vault_pending))
     vault = await export(ctx, "vault_on")
-    _slip(vault, baseline["active_guid"])
+    ctx.observe("vault_on", vault)
+    _slip(vault, baseline)
 
     halves = {"security": _judge(security, baseline, "security"),
               "TallyVault": _judge(vault, baseline, "TallyVault")}
     shapes = {"security_login_pending": login_pending, "vault_prompt_pending": vault_pending}
-    ctx.observe("security_on", security)
-    ctx.observe("vault_on", vault)
     ctx.observe("gate_shapes", shapes)
     ctx.observe("sub_verdicts", {k: v[0] for k, v in halves.items()})
     outcome, summary, impacts = judge_halves({f"{k} on": v for k, v in halves.items()})
