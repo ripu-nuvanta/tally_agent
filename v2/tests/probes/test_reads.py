@@ -219,3 +219,30 @@ def test_voucher_request_and_wrap_report_still_send_both_period_variables():
     assert '<SVFROMDATE TYPE="Date">01-04-2025</SVFROMDATE>' in voucher and '<SVTODATE TYPE="Date">31-03-2026</SVTODATE>' in voucher
     report = wrap_report("Trial Balance", "01-04-2025", "31-10-2025", "Co")
     assert '<SVFROMDATE TYPE="Date">01-04-2025</SVFROMDATE>' in report and '<SVTODATE TYPE="Date">31-10-2025</SVTODATE>' in report
+
+
+def test_fill_month_request_escapes_the_company_and_fills_typed_dates():
+    import xml.etree.ElementTree as ET
+    from v2.agent.tally.envelopes import COMPANY_PLACEHOLDER
+    from v2.probes.reads import (FROM_PLACEHOLDER, TO_PLACEHOLDER, VOUCHER_MONTH_FIELDS, fill_month_request,
+                                 voucher_request)
+    template = voucher_request("S0VoucherMonth", VOUCHER_MONTH_FIELDS, COMPANY_PLACEHOLDER,
+                               from_date=FROM_PLACEHOLDER, to_date=TO_PLACEHOLDER)
+    xml = fill_month_request(template, "Sharma & Sons' Probe Traders", "01-06-2023", "30-06-2023")
+    assert "<SVCurrentCompany>Sharma &amp; Sons&apos; Probe Traders</SVCurrentCompany>" in xml
+    assert '<SVFROMDATE TYPE="Date">01-06-2023</SVFROMDATE>' in xml
+    assert '<SVTODATE TYPE="Date">30-06-2023</SVTODATE>' in xml
+    assert "__" not in xml
+    assert ET.fromstring(xml).find(".//SVCurrentCompany").text == "Sharma & Sons' Probe Traders"
+
+
+def test_untyped_period_vars_strips_only_the_date_type():
+    from v2.agent.tally.envelopes import wrap_report
+    from v2.probes.reads import untyped_period_vars
+    typed = wrap_report("Trial Balance", "01-04-2022", "30-06-2023", "B", extra_vars={"EXPLODEFLAG": "Yes"})
+    untyped = untyped_period_vars(typed)
+    assert "<SVFROMDATE>01-04-2022</SVFROMDATE>" in untyped
+    assert "<SVTODATE>30-06-2023</SVTODATE>" in untyped
+    assert 'TYPE="Date"' not in untyped
+    assert untyped.replace("<SVFROMDATE>", '<SVFROMDATE TYPE="Date">').replace(
+        "<SVTODATE>", '<SVTODATE TYPE="Date">') == typed

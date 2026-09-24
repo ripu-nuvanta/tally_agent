@@ -102,3 +102,15 @@ def test_probe_modules_never_import_write_code():
         if any(m.startswith(("v2.probes.setup", "v2.probes.operator")) for m in modules):
             offenders.append(path.name)
     assert offenders == []
+
+
+def test_company_b_view_is_the_only_bridge_from_probes_to_the_dataset():
+    modules = imported_modules((V2_ROOT / "probes" / "company_b_view.py").read_text(encoding="utf-8"))
+    reached = [m for m in modules if m.startswith(("v2.probes.setup", "v2.probes.operator"))]
+    assert reached, "company_b_view should read the dataset"
+    assert all(m.startswith("v2.probes.setup.company_b_data") for m in reached), reached
+
+
+def test_the_dataset_module_is_pure():
+    modules = imported_modules((V2_ROOT / "probes" / "setup" / "company_b_data.py").read_text(encoding="utf-8"))
+    assert [m for m in modules if m.split(".")[0] in {"v2", "httpx"}] == []

@@ -1,12 +1,13 @@
 """Read requests and parsers shared by the company-A probes (probe side only; S2 grows its own in v2/agent/tally/)."""
 from __future__ import annotations
 
+import re
 import xml.etree.ElementTree as ET
 from datetime import date, datetime
 from decimal import Decimal
 
 from v2.agent.tally.amounts import AmountParseError, parse_decimal
-from v2.agent.tally.envelopes import wrap_collection
+from v2.agent.tally.envelopes import COMPANY_PLACEHOLDER, esc, wrap_collection
 from v2.agent.tally.xml_utils import read_objects, sanitize_xml
 
 A_FY_FROM = "01-04-2025"
@@ -68,6 +69,32 @@ def voucher_request(name: str, fields: list[str], company: str, *, from_date: st
                     filters: list[tuple[str, str]] | None = None, extra_collection_xml: str = "") -> str:
     return wrap_collection(name, "Voucher", fields, company, static_vars={"SVFROMDATE": from_date, "SVTODATE": to_date},
                            filters=filters, extra_collection_xml=VOUCHER_CHILDOF + extra_collection_xml)
+
+
+# --- the month request (probe 5 confirms it, probe 21 and S2's extractor reuse it) --------------------------------
+FROM_PLACEHOLDER = "__FROM__"
+TO_PLACEHOLDER = "__TO__"
+# Everything S1 stores for a voucher (Part 1 §5 "Cloud" minimum columns) plus the nested lists (probe 6: fetched whole).
+VOUCHER_MONTH_FIELDS = ["GUID", "MasterID", "AlterID", "Date", "VoucherTypeName", "VoucherNumber", "Reference",
+                        "PartyLedgerName", "Narration", "IsCancelled", "IsOptional", "IsPostDated",
+                        "AllLedgerEntries", "AllInventoryEntries"]
+_TYPED_DATE_VAR = re.compile(r'<(SV[A-Z0-9]*DATE) TYPE="Date">', re.IGNORECASE)
+
+
+def fill_month_request(template: str, company: str, from_date: str, to_date: str) -> str:
+    """A confirmed month template (placeholders __COMPANY__ / __FROM__ / __TO__) for one company and window.
+
+    The company is XML-escaped here; dates are DD-MM-YYYY. Works for both forms probe 5 can confirm: typed period
+    variables, or a `$Date` formula whose bounds carry the placeholders.
+    """
+    return (template.replace(COMPANY_PLACEHOLDER, esc(company))
+            .replace(FROM_PLACEHOLDER, from_date).replace(TO_PLACEHOLDER, to_date))
+
+
+def untyped_period_vars(xml: str) -> str:
+    """The same request with TYPE="Date" stripped from every SV*DATE variable. Evidence only (C33): probe 5 sends
+    it once to record Tally's silent current-period fallback. Nothing may use it for data."""
+    return _TYPED_DATE_VAR.sub(r"<\1>", xml)
 
 
 def master_request(name: str, object_type: str, fields: list[str], company: str, *,
