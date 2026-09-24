@@ -37,7 +37,7 @@
     },
     "ledger_level_tb": {
       "probe": 17,
-      "xml_template": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Data</TYPE>\n<ID>Trial Balance</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n<SVFROMDATE>01-04-2025</SVFROMDATE>\n<SVTODATE>31-03-2026</SVTODATE>\n<ISLEDGERWISE>Yes</ISLEDGERWISE>\n<SVCurrentCompany>__COMPANY__</SVCurrentCompany>\n</STATICVARIABLES>\n</DESC>\n</BODY>\n</ENVELOPE>",
+      "xml_template": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Data</TYPE>\n<ID>Trial Balance</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n<SVFROMDATE TYPE=\"Date\">01-04-2025</SVFROMDATE>\n<SVTODATE TYPE=\"Date\">31-03-2026</SVTODATE>\n<ISLEDGERWISE>Yes</ISLEDGERWISE>\n<SVCurrentCompany>__COMPANY__</SVCurrentCompany>\n</STATICVARIABLES>\n</DESC>\n</BODY>\n</ENVELOPE>",
       "candidate": "isledgerwise",
       "note": "S2 substitutes SVFROMDATE / SVTODATE"
     },
@@ -674,7 +674,7 @@
       "parts": {
         "A": {
           "outcome": "DIFFERENT",
-          "summary": "per-ledger as-on balances can't be read from the Ledger collection: SVTODATE changed 0 of 22 closing balances; 10 nominal ledger(s) have a non-zero ClosingBalance [Educational mode — confirm on a licensed Tally]",
+          "summary": "10 nominal ledger(s) have a non-zero ClosingBalance [Educational mode — confirm on a licensed Tally]",
           "observations": {
             "last_voucher_date": "20260331",
             "ledger_kinds": {
@@ -769,12 +769,23 @@
               }
             },
             "as_on": {
-              "closing_follows_svtodate": false,
-              "closing_matches_lines": false,
-              "closing_changed": false,
+              "closing_follows_svtodate": true,
+              "closing_matches_lines": true,
+              "closing_changed": true,
               "ledgers_compared": 22,
-              "closing_changed_count": 0,
-              "closing_changed_ledgers": []
+              "closing_changed_count": 19,
+              "closing_changed_ledgers": [
+                "Apex Technologies Pvt Ltd",
+                "Bharat Paper Supplies",
+                "CGST Input",
+                "CGST Output",
+                "Cash",
+                "Eastern Digital Hub",
+                "Global IT Solutions",
+                "HDFC Bank - Current A/c",
+                "HP India Sales Pvt Ltd",
+                "Local Stationery Mart"
+              ]
             },
             "future_voucher": {
               "found": true,
@@ -784,8 +795,8 @@
               "included_in_closing": true
             },
             "post_dated_voucher": {
-              "found": false,
-              "is_post_dated_exported": "",
+              "found": true,
+              "is_post_dated_exported": "Yes",
               "cash_before": "23000.00",
               "cash_after": "23001.00",
               "included_in_closing": true
@@ -798,14 +809,14 @@
             },
             "as_on_svfromdate": {
               "attempted": false,
-              "note": "not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live 2026-09-23, twice) and needed a Tally restart. Opt in with `run 16 --company A --rerun --allow-risky`."
+              "note": "not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live 2026-09-23, twice — sent untyped, before C33 was known; the typed form has not been re-measured) and needed a Tally restart. Opt in with `run 16 --company A --rerun --allow-risky`."
             },
             "run_mode": "auto",
             "tags": [
               "Educational"
             ]
           },
-          "spec_impact": "Per-ledger as-on balances are unobtainable from the Ledger collection (SVFROMDATE hangs Tally, SVTODATE is silently ignored), so rung 1's per-ledger opening anchor during the backfill depends on probe 17's exploded ledger-level TB (decision 11) — that route is impossible, not merely unattractive. Reports (TYPE=Data) are unaffected. Rung 1 picks balance-sheet ledgers by group nature, never by 'ClosingBalance = 0' (Part 1 §6). Rung 2 compares the stock-bearing group as ledger rollup + the TB's own 'Opening Stock' row, which no ledger carries and which is NOT the Stock Summary closing total (Current Assets; Part 1 §6). Rung 1 rule (Part 1 §6): ClosingBalance is as of the period end (31-03-2026), not Tally's current date — the books reached only 20260301 before this run, so Tally's current date is before 31-Mar-2026 and the throwaway voucher was future data it still counted; the post-dated voucher wasn't found after the create, so the post-dated rule is still open. As-on reading doesn't work on the Ledger collection — SVTODATE is silently ignored (SVTODATE moved 0 of 22 balance-sheet closing balances), so ClosingBalance can only ever mean now: per-ledger opening anchors during the backfill depend on probe 17's exploded ledger-level TB (decision 11). SVFROMDATE not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live 2026-09-23, twice) and needed a Tally restart. Opt in with `run 16 --company A --rerun --allow-risky`.",
+          "spec_impact": "Rung 1 picks balance-sheet ledgers by group nature, never by 'ClosingBalance = 0' (Part 1 §6). Rung 2 compares the stock-bearing group as ledger rollup + the TB's own 'Opening Stock' row, which no ledger carries and which is NOT the Stock Summary closing total (Current Assets; Part 1 §6). Rung 1 rule (Part 1 §6): ClosingBalance is as of the period end (31-03-2026), not Tally's current date — the books reached only 20260301 before this run, so Tally's current date is before 31-Mar-2026 and the throwaway voucher was future data it still counted; post-dated vouchers are included; IsPostDated exported 'Yes'. As-on closing works (ClosingBalance follows SVTODATE; SVTODATE moved 19 of 22 balance-sheet closing balances): per-ledger anchors can use the as-on closing of the day before the window (decision 11). SVFROMDATE not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live 2026-09-23, twice — sent untyped, before C33 was known; the typed form has not been re-measured) and needed a Tally restart. Opt in with `run 16 --company A --rerun --allow-risky`.",
           "fixtures": [
             "p16_A_ledgers.xml",
             "p16_A_groups.xml",
@@ -822,49 +833,49 @@
               "n": 1,
               "instruction": "In Tally, open ledger 'Apex Technologies Pvt Ltd' (Display More Reports → Account Books → Ledger) and type the closing balance it shows, e.g. '62,800.00 Dr' — or press Enter to skip:",
               "input": "",
-              "done_at": "2026-09-23T12:10:32+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "ui_closing_balance"
             },
             {
               "n": 2,
               "instruction": "In Tally, open ledger 'HP India Sales Pvt Ltd' (Display More Reports → Account Books → Ledger) and type the closing balance it shows, e.g. '62,800.00 Dr' — or press Enter to skip:",
               "input": "",
-              "done_at": "2026-09-23T12:10:32+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "ui_closing_balance"
             },
             {
               "n": 3,
               "instruction": "In Tally, open ledger 'HDFC Bank - Current A/c' (Display More Reports → Account Books → Ledger) and type the closing balance it shows, e.g. '62,800.00 Dr' — or press Enter to skip:",
               "input": "",
-              "done_at": "2026-09-23T12:10:32+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "ui_closing_balance"
             },
             {
               "n": 4,
               "instruction": "Create a Payment voucher dated 31-Mar-2026, an ordinary (not post-dated) voucher: Cash → Electricity, ₹1, narration 'S0-throwaway 16 future'. Save it. (company: 'Bharat Traders Probe Copy')",
-              "done_at": "2026-09-23T12:10:32+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "create_voucher"
             },
             {
               "n": 5,
               "instruction": "Delete the voucher with narration 'S0-throwaway 16 future' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
-              "done_at": "2026-09-23T12:10:33+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "delete_voucher"
             },
             {
               "n": 6,
               "instruction": "Create a Payment voucher dated 31-Mar-2026, marked post-dated (Ctrl+T on the voucher screen): Cash → Electricity, ₹1, narration 'S0-throwaway 16 post-dated'. Save it. (company: 'Bharat Traders Probe Copy')",
-              "done_at": "2026-09-23T12:10:33+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "create_voucher"
             },
             {
               "n": 7,
               "instruction": "Delete the voucher with narration 'S0-throwaway 16 post-dated' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
-              "done_at": "2026-09-23T12:10:33+05:30",
+              "done_at": "2026-09-24T18:13:55+05:30",
               "action": "delete_voucher"
             }
           ],
-          "ran_at": "2026-09-23T12:10:33+05:30"
+          "ran_at": "2026-09-24T18:13:55+05:30"
         }
       },
       "history": [
@@ -1231,6 +1242,201 @@
             }
           ],
           "ran_at": "2026-09-23T11:12:34+05:30"
+        },
+        {
+          "part": "A",
+          "outcome": "DIFFERENT",
+          "summary": "per-ledger as-on balances can't be read from the Ledger collection: SVTODATE changed 0 of 22 closing balances; 10 nominal ledger(s) have a non-zero ClosingBalance [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "last_voucher_date": "20260331",
+            "ledger_kinds": {
+              "bs": 22,
+              "pl": 12,
+              "special": 1
+            },
+            "nominal": {
+              "zero": [],
+              "empty": [
+                "Courier & Freight",
+                "Packing Charges"
+              ],
+              "nonzero": {
+                "Electricity": "-12000.00",
+                "Internet & Phone": "-8000.00",
+                "Office Maintenance": "-8000.00",
+                "Purchase - Electronics": "-2322100.00",
+                "Purchase - Office Supplies": "-199200.00",
+                "Rent": "-300000.00",
+                "Salaries": "-1000000.00",
+                "Sales - Electronics": "1950900.00",
+                "Sales - Office Supplies": "106750.00",
+                "Travel & Conveyance": "-15000.00"
+              }
+            },
+            "closing_vs_lines": {
+              "mismatches": {},
+              "empty_closing_for_zero": [
+                "IGST Input",
+                "IGST Output"
+              ],
+              "vouchers": 50
+            },
+            "unbalanced_vouchers": [],
+            "tb_vs_rollup": {
+              "Capital Account": {
+                "tb": "750000.00",
+                "rollup": "750000.00",
+                "match": true,
+                "reconciled": true
+              },
+              "Current Assets": {
+                "tb": "2605093.00",
+                "rollup": "749293.00",
+                "match": false,
+                "opening_stock": "1855800.00",
+                "stock_gap": "1855800.00",
+                "stock_row_debit": "885263.00",
+                "stock_row_credit": "1719830.00",
+                "explained_by_stock": true,
+                "reconciled": true
+              },
+              "Current Liabilities": {
+                "tb": "1757357.00",
+                "rollup": "1757357.00",
+                "match": true,
+                "reconciled": true
+              }
+            },
+            "tb_opening_stock_row": {
+              "present": true,
+              "closing_balance": "1855800.00",
+              "tb_rows": 23,
+              "primary_group_rows": 6
+            },
+            "party_totals": {
+              "debtors": "-970537.00",
+              "creditors": "1834142.00"
+            },
+            "special_ledgers": {
+              "Profit & Loss A/c": "1038612.31"
+            },
+            "ui_compare": {
+              "Apex Technologies Pvt Ltd": {
+                "typed": "",
+                "ui": null,
+                "closing": "-62800.00",
+                "match": null
+              },
+              "HP India Sales Pvt Ltd": {
+                "typed": "",
+                "ui": null,
+                "closing": "710208.00",
+                "match": null
+              },
+              "HDFC Bank - Current A/c": {
+                "typed": "",
+                "ui": null,
+                "closing": "1633710.00",
+                "match": null
+              }
+            },
+            "as_on": {
+              "closing_follows_svtodate": false,
+              "closing_matches_lines": false,
+              "closing_changed": false,
+              "ledgers_compared": 22,
+              "closing_changed_count": 0,
+              "closing_changed_ledgers": []
+            },
+            "future_voucher": {
+              "found": true,
+              "is_post_dated_exported": "No",
+              "cash_before": "23000.00",
+              "cash_after": "23001.00",
+              "included_in_closing": true
+            },
+            "post_dated_voucher": {
+              "found": false,
+              "is_post_dated_exported": "",
+              "cash_before": "23000.00",
+              "cash_after": "23001.00",
+              "included_in_closing": true
+            },
+            "as_of_basis": {
+              "verdict": "period_end",
+              "books_reach_before_run": "20260301",
+              "available": true,
+              "source": "probe 1's baseline, before its throwaway voucher"
+            },
+            "as_on_svfromdate": {
+              "attempted": false,
+              "note": "not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live 2026-09-23, twice) and needed a Tally restart. Opt in with `run 16 --company A --rerun --allow-risky`."
+            },
+            "run_mode": "auto",
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "Per-ledger as-on balances are unobtainable from the Ledger collection (SVFROMDATE hangs Tally, SVTODATE is silently ignored), so rung 1's per-ledger opening anchor during the backfill depends on probe 17's exploded ledger-level TB (decision 11) — that route is impossible, not merely unattractive. Reports (TYPE=Data) are unaffected. Rung 1 picks balance-sheet ledgers by group nature, never by 'ClosingBalance = 0' (Part 1 §6). Rung 2 compares the stock-bearing group as ledger rollup + the TB's own 'Opening Stock' row, which no ledger carries and which is NOT the Stock Summary closing total (Current Assets; Part 1 §6). Rung 1 rule (Part 1 §6): ClosingBalance is as of the period end (31-03-2026), not Tally's current date — the books reached only 20260301 before this run, so Tally's current date is before 31-Mar-2026 and the throwaway voucher was future data it still counted; the post-dated voucher wasn't found after the create, so the post-dated rule is still open. As-on reading doesn't work on the Ledger collection — SVTODATE is silently ignored (SVTODATE moved 0 of 22 balance-sheet closing balances), so ClosingBalance can only ever mean now: per-ledger opening anchors during the backfill depend on probe 17's exploded ledger-level TB (decision 11). SVFROMDATE not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live 2026-09-23, twice) and needed a Tally restart. Opt in with `run 16 --company A --rerun --allow-risky`.",
+          "fixtures": [
+            "p16_A_ledgers.xml",
+            "p16_A_groups.xml",
+            "p16_A_vouchers_fy.xml",
+            "p16_A_tb_fy_end.xml",
+            "p16_A_ledgers_asof_2025-10-31.xml",
+            "p16_A_future_voucher.xml",
+            "p16_A_ledgers_with_future_voucher.xml",
+            "p16_A_post_dated_voucher.xml",
+            "p16_A_ledgers_with_post_dated.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "In Tally, open ledger 'Apex Technologies Pvt Ltd' (Display More Reports → Account Books → Ledger) and type the closing balance it shows, e.g. '62,800.00 Dr' — or press Enter to skip:",
+              "input": "",
+              "done_at": "2026-09-23T12:10:32+05:30",
+              "action": "ui_closing_balance"
+            },
+            {
+              "n": 2,
+              "instruction": "In Tally, open ledger 'HP India Sales Pvt Ltd' (Display More Reports → Account Books → Ledger) and type the closing balance it shows, e.g. '62,800.00 Dr' — or press Enter to skip:",
+              "input": "",
+              "done_at": "2026-09-23T12:10:32+05:30",
+              "action": "ui_closing_balance"
+            },
+            {
+              "n": 3,
+              "instruction": "In Tally, open ledger 'HDFC Bank - Current A/c' (Display More Reports → Account Books → Ledger) and type the closing balance it shows, e.g. '62,800.00 Dr' — or press Enter to skip:",
+              "input": "",
+              "done_at": "2026-09-23T12:10:32+05:30",
+              "action": "ui_closing_balance"
+            },
+            {
+              "n": 4,
+              "instruction": "Create a Payment voucher dated 31-Mar-2026, an ordinary (not post-dated) voucher: Cash → Electricity, ₹1, narration 'S0-throwaway 16 future'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:10:32+05:30",
+              "action": "create_voucher"
+            },
+            {
+              "n": 5,
+              "instruction": "Delete the voucher with narration 'S0-throwaway 16 future' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:10:33+05:30",
+              "action": "delete_voucher"
+            },
+            {
+              "n": 6,
+              "instruction": "Create a Payment voucher dated 31-Mar-2026, marked post-dated (Ctrl+T on the voucher screen): Cash → Electricity, ₹1, narration 'S0-throwaway 16 post-dated'. Save it. (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:10:33+05:30",
+              "action": "create_voucher"
+            },
+            {
+              "n": 7,
+              "instruction": "Delete the voucher with narration 'S0-throwaway 16 post-dated' (open it, Alt+D). (company: 'Bharat Traders Probe Copy')",
+              "done_at": "2026-09-23T12:10:33+05:30",
+              "action": "delete_voucher"
+            }
+          ],
+          "ran_at": "2026-09-23T12:10:33+05:30"
         }
       ],
       "remaining": [
@@ -1241,6 +1447,330 @@
       "outcome": "CONFIRMED",
       "parts": {
         "A": {
+          "outcome": "CONFIRMED",
+          "summary": "'isledgerwise' returns 29 ledger rows whose per-group sums equal the TB group totals (18 ms, 7341 bytes under Wine)",
+          "observations": {
+            "candidates": {
+              "explodeflag": {
+                "variables": {
+                  "EXPLODEFLAG": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 20,
+                "bytes": 5638,
+                "rows": 23,
+                "ledger_rows": 11,
+                "sums_match": false,
+                "mismatches": {
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ],
+                "emits_group_rows": true,
+                "non_ledger_rows": [
+                  "Opening Stock"
+                ]
+              },
+              "svexplodeflag": {
+                "variables": {
+                  "SVEXPLODEFLAG": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 6,
+                "bytes": 1503,
+                "rows": 6,
+                "ledger_rows": 0,
+                "sums_match": false,
+                "mismatches": {
+                  "Capital Account": {
+                    "group_row": "750000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "0"
+                  },
+                  "Indirect Expenses": {
+                    "group_row": "-1343000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Purchase Accounts": {
+                    "group_row": "-2521300.00",
+                    "ledger_sum": "0"
+                  },
+                  "Sales Accounts": {
+                    "group_row": "2057650.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ],
+                "emits_group_rows": true,
+                "non_ledger_rows": []
+              },
+              "isledgerwise": {
+                "variables": {
+                  "ISLEDGERWISE": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 18,
+                "bytes": 7341,
+                "rows": 30,
+                "ledger_rows": 29,
+                "sums_match": true,
+                "mismatches": {},
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ],
+                "emits_group_rows": false,
+                "non_ledger_rows": [
+                  "Opening Stock"
+                ]
+              },
+              "ledgerwise": {
+                "variables": {
+                  "LEDGERWISE": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 6,
+                "bytes": 1503,
+                "rows": 6,
+                "ledger_rows": 0,
+                "sums_match": false,
+                "mismatches": {
+                  "Capital Account": {
+                    "group_row": "750000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "0"
+                  },
+                  "Indirect Expenses": {
+                    "group_row": "-1343000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Purchase Accounts": {
+                    "group_row": "-2521300.00",
+                    "ledger_sum": "0"
+                  },
+                  "Sales Accounts": {
+                    "group_row": "2057650.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ],
+                "emits_group_rows": true,
+                "non_ledger_rows": []
+              },
+              "explodealllevels": {
+                "variables": {
+                  "EXPLODEFLAG": "Yes",
+                  "EXPLODEALLLEVELS": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 15,
+                "bytes": 7305,
+                "rows": 30,
+                "ledger_rows": 18,
+                "sums_match": false,
+                "mismatches": {
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "-76785.00"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ],
+                "emits_group_rows": true,
+                "non_ledger_rows": [
+                  "Opening Stock"
+                ]
+              }
+            },
+            "working_variable": "isledgerwise"
+          },
+          "spec_impact": "Rung 2 CAN compare at ledger level via {'ISLEDGERWISE': 'Yes'} — no need to stay at group level — and month-bisect gets cheaper (decision 11, R3); timing is re-measured on tier C. Caveat 1 — the response is not purely ledgers: 1 non-ledger row(s) come with it (Opening Stock), a synthetic TB row no ledger carries, so the consumer matches rows against the ledger list and skips the rest. Caveat 2 — EXPLODEALLLEVELS, EXPLODEFLAG, EXPLODEFLAG is NOT a ledger-level route (explodealllevels, explodeflag): it stops at the second group level, so ledgers under a custom sub-group never appear and its per-group sums are short by exactly those ledgers (explodealllevels: Current Liabilities; explodeflag: Current Liabilities). That hits any company with custom sub-groups.",
+          "fixtures": [
+            "p17_A_ledger_list.xml",
+            "p17_A_group_list.xml",
+            "p17_A_tb_exploded_explodeflag.xml",
+            "p17_A_tb_exploded_svexplodeflag.xml",
+            "p17_A_tb_exploded_isledgerwise.xml",
+            "p17_A_tb_exploded_ledgerwise.xml",
+            "p17_A_tb_exploded_explodealllevels.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-24T18:14:14+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "A",
+          "outcome": "DIFFERENT",
+          "summary": "Ledger rows come back (explodeflag, isledgerwise, explodealllevels) but their per-group sums don't equal the TB group rows",
+          "observations": {
+            "candidates": {
+              "explodeflag": {
+                "variables": {
+                  "EXPLODEFLAG": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 13,
+                "bytes": 5638,
+                "rows": 23,
+                "ledger_rows": 11,
+                "sums_match": false,
+                "mismatches": {
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ]
+              },
+              "svexplodeflag": {
+                "variables": {
+                  "SVEXPLODEFLAG": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 7,
+                "bytes": 1503,
+                "rows": 6,
+                "ledger_rows": 0,
+                "sums_match": false,
+                "mismatches": {
+                  "Capital Account": {
+                    "group_row": "750000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "0"
+                  },
+                  "Indirect Expenses": {
+                    "group_row": "-1343000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Purchase Accounts": {
+                    "group_row": "-2521300.00",
+                    "ledger_sum": "0"
+                  },
+                  "Sales Accounts": {
+                    "group_row": "2057650.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ]
+              },
+              "isledgerwise": {
+                "variables": {
+                  "ISLEDGERWISE": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 18,
+                "bytes": 7341,
+                "rows": 30,
+                "ledger_rows": 28,
+                "sums_match": false,
+                "mismatches": {
+                  "Capital Account": {
+                    "group_row": "750000.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ]
+              },
+              "ledgerwise": {
+                "variables": {
+                  "LEDGERWISE": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 10,
+                "bytes": 1503,
+                "rows": 6,
+                "ledger_rows": 0,
+                "sums_match": false,
+                "mismatches": {
+                  "Capital Account": {
+                    "group_row": "750000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "0"
+                  },
+                  "Indirect Expenses": {
+                    "group_row": "-1343000.00",
+                    "ledger_sum": "0"
+                  },
+                  "Purchase Accounts": {
+                    "group_row": "-2521300.00",
+                    "ledger_sum": "0"
+                  },
+                  "Sales Accounts": {
+                    "group_row": "2057650.00",
+                    "ledger_sum": "0"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ]
+              },
+              "explodealllevels": {
+                "variables": {
+                  "EXPLODEFLAG": "Yes",
+                  "EXPLODEALLLEVELS": "Yes"
+                },
+                "error": null,
+                "elapsed_ms": 16,
+                "bytes": 7305,
+                "rows": 30,
+                "ledger_rows": 18,
+                "sums_match": false,
+                "mismatches": {
+                  "Current Liabilities": {
+                    "group_row": "1757357.00",
+                    "ledger_sum": "-76785.00"
+                  }
+                },
+                "stock_bearing_skipped": [
+                  "Current Assets"
+                ]
+              }
+            },
+            "working_variable": null,
+            "run_mode": "auto"
+          },
+          "spec_impact": "The exploded TB's ledger rows don't sum to its groups: rung 2 stays group-level until the recorded mismatch is explained (decision 11, R3).",
+          "fixtures": [
+            "p17_A_ledger_list.xml",
+            "p17_A_group_list.xml",
+            "p17_A_tb_exploded_explodeflag.xml",
+            "p17_A_tb_exploded_svexplodeflag.xml",
+            "p17_A_tb_exploded_isledgerwise.xml",
+            "p17_A_tb_exploded_ledgerwise.xml",
+            "p17_A_tb_exploded_explodealllevels.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T11:12:34+05:30"
+        },
+        {
+          "part": "A",
           "outcome": "CONFIRMED",
           "summary": "'isledgerwise' returns 29 ledger rows whose per-group sums equal the TB group totals (14 ms, 7341 bytes under Wine)",
           "observations": {
@@ -1406,164 +1936,6 @@
           "manual_steps": [],
           "ran_at": "2026-09-23T12:10:33+05:30"
         }
-      },
-      "history": [
-        {
-          "part": "A",
-          "outcome": "DIFFERENT",
-          "summary": "Ledger rows come back (explodeflag, isledgerwise, explodealllevels) but their per-group sums don't equal the TB group rows",
-          "observations": {
-            "candidates": {
-              "explodeflag": {
-                "variables": {
-                  "EXPLODEFLAG": "Yes"
-                },
-                "error": null,
-                "elapsed_ms": 13,
-                "bytes": 5638,
-                "rows": 23,
-                "ledger_rows": 11,
-                "sums_match": false,
-                "mismatches": {
-                  "Current Liabilities": {
-                    "group_row": "1757357.00",
-                    "ledger_sum": "0"
-                  }
-                },
-                "stock_bearing_skipped": [
-                  "Current Assets"
-                ]
-              },
-              "svexplodeflag": {
-                "variables": {
-                  "SVEXPLODEFLAG": "Yes"
-                },
-                "error": null,
-                "elapsed_ms": 7,
-                "bytes": 1503,
-                "rows": 6,
-                "ledger_rows": 0,
-                "sums_match": false,
-                "mismatches": {
-                  "Capital Account": {
-                    "group_row": "750000.00",
-                    "ledger_sum": "0"
-                  },
-                  "Current Liabilities": {
-                    "group_row": "1757357.00",
-                    "ledger_sum": "0"
-                  },
-                  "Indirect Expenses": {
-                    "group_row": "-1343000.00",
-                    "ledger_sum": "0"
-                  },
-                  "Purchase Accounts": {
-                    "group_row": "-2521300.00",
-                    "ledger_sum": "0"
-                  },
-                  "Sales Accounts": {
-                    "group_row": "2057650.00",
-                    "ledger_sum": "0"
-                  }
-                },
-                "stock_bearing_skipped": [
-                  "Current Assets"
-                ]
-              },
-              "isledgerwise": {
-                "variables": {
-                  "ISLEDGERWISE": "Yes"
-                },
-                "error": null,
-                "elapsed_ms": 18,
-                "bytes": 7341,
-                "rows": 30,
-                "ledger_rows": 28,
-                "sums_match": false,
-                "mismatches": {
-                  "Capital Account": {
-                    "group_row": "750000.00",
-                    "ledger_sum": "0"
-                  }
-                },
-                "stock_bearing_skipped": [
-                  "Current Assets"
-                ]
-              },
-              "ledgerwise": {
-                "variables": {
-                  "LEDGERWISE": "Yes"
-                },
-                "error": null,
-                "elapsed_ms": 10,
-                "bytes": 1503,
-                "rows": 6,
-                "ledger_rows": 0,
-                "sums_match": false,
-                "mismatches": {
-                  "Capital Account": {
-                    "group_row": "750000.00",
-                    "ledger_sum": "0"
-                  },
-                  "Current Liabilities": {
-                    "group_row": "1757357.00",
-                    "ledger_sum": "0"
-                  },
-                  "Indirect Expenses": {
-                    "group_row": "-1343000.00",
-                    "ledger_sum": "0"
-                  },
-                  "Purchase Accounts": {
-                    "group_row": "-2521300.00",
-                    "ledger_sum": "0"
-                  },
-                  "Sales Accounts": {
-                    "group_row": "2057650.00",
-                    "ledger_sum": "0"
-                  }
-                },
-                "stock_bearing_skipped": [
-                  "Current Assets"
-                ]
-              },
-              "explodealllevels": {
-                "variables": {
-                  "EXPLODEFLAG": "Yes",
-                  "EXPLODEALLLEVELS": "Yes"
-                },
-                "error": null,
-                "elapsed_ms": 16,
-                "bytes": 7305,
-                "rows": 30,
-                "ledger_rows": 18,
-                "sums_match": false,
-                "mismatches": {
-                  "Current Liabilities": {
-                    "group_row": "1757357.00",
-                    "ledger_sum": "-76785.00"
-                  }
-                },
-                "stock_bearing_skipped": [
-                  "Current Assets"
-                ]
-              }
-            },
-            "working_variable": null,
-            "run_mode": "auto"
-          },
-          "spec_impact": "The exploded TB's ledger rows don't sum to its groups: rung 2 stays group-level until the recorded mismatch is explained (decision 11, R3).",
-          "fixtures": [
-            "p17_A_ledger_list.xml",
-            "p17_A_group_list.xml",
-            "p17_A_tb_exploded_explodeflag.xml",
-            "p17_A_tb_exploded_svexplodeflag.xml",
-            "p17_A_tb_exploded_isledgerwise.xml",
-            "p17_A_tb_exploded_ledgerwise.xml",
-            "p17_A_tb_exploded_explodealllevels.xml"
-          ],
-          "manual_steps": [],
-          "ran_at": "2026-09-23T11:12:34+05:30"
-        }
       ],
       "remaining": []
     },
@@ -1571,6 +1943,412 @@
       "outcome": "PARTIAL",
       "parts": {
         "A": {
+          "outcome": "CONFIRMED",
+          "summary": "TB as-on 31-10-2025, Bills and Stock Summary as-on 31-10-2025 equal what the vouchers give (stock values recorded, not compared) [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "tb_opening_stock_row": {
+              "present": true,
+              "closing_balance": "1855800.00",
+              "tb_rows": 14
+            },
+            "tb": {
+              "verdict": "CONFIRMED",
+              "groups": {
+                "Capital Account": {
+                  "tb": "750000.00",
+                  "computed": "750000.00",
+                  "match": true
+                },
+                "Current Liabilities": {
+                  "tb": "853150.00",
+                  "computed": "853150.00",
+                  "match": true
+                },
+                "Purchase Accounts": {
+                  "tb": "-1157000.00",
+                  "computed": "-1157000.00",
+                  "match": true
+                },
+                "Sales Accounts": {
+                  "tb": "544000.00",
+                  "computed": "544000.00",
+                  "match": true
+                }
+              },
+              "stock_bearing": {
+                "Current Assets": {
+                  "tb": "2315650.00",
+                  "computed": "459850.00",
+                  "match": false,
+                  "opening_stock": "1855800.00",
+                  "gap": "1855800.00",
+                  "reconciled": true
+                }
+              },
+              "mismatched": []
+            },
+            "bills": {
+              "receivable": {
+                "reported": {
+                  "Sunrise Electronics Mumbai|S002": "130390.00",
+                  "Global IT Solutions|S003": "153400.00",
+                  "Sharma & Sons Traders|S004": "33040.00",
+                  "Patel Enterprises|S005": "212400.00"
+                },
+                "expected": {
+                  "Sunrise Electronics Mumbai|S002": "130390.00",
+                  "Global IT Solutions|S003": "153400.00",
+                  "Sharma & Sons Traders|S004": "33040.00",
+                  "Patel Enterprises|S005": "212400.00"
+                },
+                "match": true,
+                "matches_full_period": false,
+                "full_period_bills": 6,
+                "weak": false
+              },
+              "payable": {
+                "reported": {
+                  "Samsung India Electronics|P001": "243100.00",
+                  "HP India Sales Pvt Ltd|P002": "722160.00"
+                },
+                "expected": {
+                  "Samsung India Electronics|P001": "243100.00",
+                  "HP India Sales Pvt Ltd|P002": "722160.00"
+                },
+                "match": true,
+                "matches_full_period": false,
+                "full_period_bills": 8,
+                "weak": false
+              }
+            },
+            "stock": {
+              "verdict": "CONFIRMED",
+              "compared": {
+                "Dell Desktop Optiplex": {
+                  "reported": "5",
+                  "expected": "5",
+                  "value": "-145000.00",
+                  "match": true
+                },
+                "HP Laptop 15s": {
+                  "reported": "23",
+                  "expected": "23",
+                  "value": "-174800.00",
+                  "match": true
+                },
+                "Lenovo Ideapad Slim 3": {
+                  "reported": "8",
+                  "expected": "8",
+                  "value": "-288000.00",
+                  "match": true
+                },
+                "Samsung 24 inch Monitor": {
+                  "reported": "40",
+                  "expected": "40",
+                  "value": "-48888.89",
+                  "match": true
+                },
+                "Samsung Galaxy Tab A8": {
+                  "reported": "32",
+                  "expected": "32",
+                  "value": "-61714.29",
+                  "match": true
+                },
+                "A4 Paper Ream 500 sheets": {
+                  "reported": "150",
+                  "expected": "150",
+                  "value": "-42000.00",
+                  "match": true
+                },
+                "Box File Pack of 10": {
+                  "reported": "20",
+                  "expected": "20",
+                  "value": "-8400.00",
+                  "match": true
+                },
+                "Pen Drive 32GB": {
+                  "reported": "80",
+                  "expected": "80",
+                  "value": "22400.00",
+                  "match": true
+                },
+                "Stapler Heavy Duty": {
+                  "reported": "30",
+                  "expected": "30",
+                  "value": "9600.00",
+                  "match": true
+                },
+                "Whiteboard Marker Set": {
+                  "reported": "50",
+                  "expected": "50",
+                  "value": "9000.00",
+                  "match": true
+                },
+                "HP DeskJet Printer 2723": {
+                  "reported": "20",
+                  "expected": "20",
+                  "value": null,
+                  "match": true
+                },
+                "Logitech Keyboard K380": {
+                  "reported": "50",
+                  "expected": "50",
+                  "value": "-90000.00",
+                  "match": true
+                },
+                "Logitech Wireless Mouse": {
+                  "reported": "95",
+                  "expected": "95",
+                  "value": "-52250.00",
+                  "match": true
+                },
+                "TP-Link WiFi Router AC750": {
+                  "reported": "25",
+                  "expected": "25",
+                  "value": "32500.00",
+                  "match": true
+                },
+                "USB-C Hub 7-in-1": {
+                  "reported": "32",
+                  "expected": "32",
+                  "value": "-30400.00",
+                  "match": true
+                }
+              },
+              "mismatches": [],
+              "item_rows": 15,
+              "direction_rule": "ISDEEMEDPOSITIVE=Yes is inward",
+              "matches_full_period": false
+            },
+            "sub_verdicts": {
+              "tb": "CONFIRMED",
+              "bills_stock": "CONFIRMED"
+            },
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "A Trial Balance as-on a past date IS history: Tally honours SVFROMDATE/SVTODATE on TYPE=Data reports, and every primary group reconciles to the vouchers once (a) the nominal ledger is taken from ALLLEDGERENTRIES.LIST only — adding the inventory ACCOUNTINGALLOCATIONS.LIST double-counts Sales/Purchase exactly 2x (reads.PROBE_POSTING_RULE) — and (b) the stock-bearing group's static `Opening Stock` row (₹18,55,800 for company A) is added to the ledger rollup. The as-on TB IS a valid parity anchor during the backfill; R30 needs no suspension on this ground (decision 11).",
+          "fixtures": [
+            "p18_A_tb_asof_2025-10-31.xml",
+            "p18_A_vouchers_fy.xml",
+            "p18_A_ledger_list.xml",
+            "p18_A_group_list.xml",
+            "p18_A_bills_receivable_asof_2025-10-31.xml",
+            "p18_A_bills_payable_asof_2025-10-31.xml",
+            "p18_A_stock_summary_asof_2025-10-31.xml",
+            "p18_A_stock_item_openings.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-24T18:14:14+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "A",
+          "outcome": "FAILED",
+          "summary": "TB as-on 31-10-2025 ≠ opening + lines for Purchase Accounts, Sales Accounts; as-on 30-09-2025: bills receivable; bills payable; stock (A4 Paper Ream 500 sheets, Box File Pack of 10, HP DeskJet Printer 2723, HP Laptop 15s, Lenovo Ideapad Slim 3, Logitech Keyboard K380, Logitech Wireless Mouse, Pen Drive 32GB, Samsung 24 inch Monitor, Samsung Galaxy Tab A8, Stapler Heavy Duty, TP-Link WiFi Router AC750, USB-C Hub 7-in-1, Whiteboard Marker Set) [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "tb": {
+              "verdict": "FAILED",
+              "groups": {
+                "Capital Account": {
+                  "tb": "750000.00",
+                  "computed": "750000.00",
+                  "match": true
+                },
+                "Current Liabilities": {
+                  "tb": "853150.00",
+                  "computed": "853150.00",
+                  "match": true
+                },
+                "Purchase Accounts": {
+                  "tb": "-1157000.00",
+                  "computed": "-2314000.00",
+                  "match": false
+                },
+                "Sales Accounts": {
+                  "tb": "544000.00",
+                  "computed": "1088000.00",
+                  "match": false
+                }
+              },
+              "stock_bearing": {
+                "Current Assets": {
+                  "tb": "2315650.00",
+                  "computed": "459850.00",
+                  "match": false
+                }
+              },
+              "mismatched": [
+                "Purchase Accounts",
+                "Sales Accounts"
+              ]
+            },
+            "bills": {
+              "receivable": {
+                "reported": {
+                  "Sunrise Electronics Mumbai|S010": "166380.00",
+                  "Sharma & Sons Traders|S011": "16365.00",
+                  "Rajesh Computers|S013": "164492.00",
+                  "Eastern Digital Hub|S014": "187620.00",
+                  "Apex Technologies Pvt Ltd|S015": "62800.00",
+                  "Global IT Solutions|S016": "372880.00"
+                },
+                "expected": {},
+                "match": false,
+                "weak": false
+              },
+              "payable": {
+                "reported": {
+                  "Samsung India Electronics|P001": "243100.00",
+                  "HP India Sales Pvt Ltd|P002": "222160.00",
+                  "Logitech India Pvt Ltd|P003": "117270.00",
+                  "Samsung India Electronics|P004": "498550.00",
+                  "HP India Sales Pvt Ltd|P005": "488048.00",
+                  "Local Stationery Mart|P006": "62464.00",
+                  "Logitech India Pvt Ltd|P007": "120950.00",
+                  "Bharat Paper Supplies|P008": "81600.00"
+                },
+                "expected": {
+                  "Samsung India Electronics|P001": "643100.00"
+                },
+                "match": false,
+                "weak": false
+              }
+            },
+            "stock": {
+              "verdict": "FAILED",
+              "compared": {
+                "HP Laptop 15s": {
+                  "reported": "25",
+                  "expected": "10",
+                  "value": "-407142.86",
+                  "match": false
+                },
+                "Lenovo Ideapad Slim 3": {
+                  "reported": "-1",
+                  "expected": "12",
+                  "value": "36000.00",
+                  "match": false
+                },
+                "Samsung 24 inch Monitor": {
+                  "reported": "42",
+                  "expected": "45",
+                  "value": "-177692.31",
+                  "match": false
+                },
+                "Samsung Galaxy Tab A8": {
+                  "reported": "38",
+                  "expected": "35",
+                  "value": "-205200.00",
+                  "match": false
+                },
+                "A4 Paper Ream 500 sheets": {
+                  "reported": "550",
+                  "expected": "200",
+                  "value": "-66000.00",
+                  "match": false
+                },
+                "Box File Pack of 10": {
+                  "reported": "80",
+                  "expected": "40",
+                  "value": "-6720.00",
+                  "match": false
+                },
+                "Pen Drive 32GB": {
+                  "reported": "10",
+                  "expected": "80",
+                  "value": "-2800.00",
+                  "match": false
+                },
+                "Stapler Heavy Duty": {
+                  "reported": "65",
+                  "expected": "30",
+                  "value": "-5200.00",
+                  "match": false
+                },
+                "Whiteboard Marker Set": {
+                  "reported": "120",
+                  "expected": "50",
+                  "value": "-7200.00",
+                  "match": false
+                },
+                "HP DeskJet Printer 2723": {
+                  "reported": "21",
+                  "expected": "10",
+                  "value": "-25200.00",
+                  "match": false
+                },
+                "Logitech Keyboard K380": {
+                  "reported": "115",
+                  "expected": "60",
+                  "value": "-29571.43",
+                  "match": false
+                },
+                "Logitech Wireless Mouse": {
+                  "reported": "295",
+                  "expected": "100",
+                  "value": "-69535.71",
+                  "match": false
+                },
+                "TP-Link WiFi Router AC750": {
+                  "reported": "12",
+                  "expected": "25",
+                  "value": "-15600.00",
+                  "match": false
+                },
+                "USB-C Hub 7-in-1": {
+                  "reported": "72",
+                  "expected": "40",
+                  "value": "-7600.00",
+                  "match": false
+                }
+              },
+              "mismatches": [
+                "A4 Paper Ream 500 sheets",
+                "Box File Pack of 10",
+                "HP DeskJet Printer 2723",
+                "HP Laptop 15s",
+                "Lenovo Ideapad Slim 3",
+                "Logitech Keyboard K380",
+                "Logitech Wireless Mouse",
+                "Pen Drive 32GB",
+                "Samsung 24 inch Monitor",
+                "Samsung Galaxy Tab A8",
+                "Stapler Heavy Duty",
+                "TP-Link WiFi Router AC750",
+                "USB-C Hub 7-in-1",
+                "Whiteboard Marker Set"
+              ],
+              "item_rows": 14,
+              "direction_rule": "ISDEEMEDPOSITIVE=Yes is inward"
+            },
+            "sub_verdicts": {
+              "tb": "FAILED",
+              "bills_stock": "FAILED"
+            },
+            "run_mode": "auto",
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "A TB as-on a past date isn't history: there is no valid parity anchor while the backfill is incomplete, so parity is suspended during the backfill (R30, decision 11). Bills Receivable / Payable or Stock Summary as-on a past date aren't history: those tiles lose their month-end comparison (Part 1 probe 18, Part 3).",
+          "fixtures": [
+            "p18_A_tb_asof_2025-10-31.xml",
+            "p18_A_vouchers_to_2025-10-31.xml",
+            "p18_A_ledger_list.xml",
+            "p18_A_group_list.xml",
+            "p18_A_bills_receivable_asof_2025-09-30.xml",
+            "p18_A_bills_payable_asof_2025-09-30.xml",
+            "p18_A_stock_summary_asof_2025-09-30.xml",
+            "p18_A_stock_item_openings.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-23T11:12:35+05:30"
+        },
+        {
+          "part": "A",
           "outcome": "DIFFERENT",
           "summary": "TB as-on 31-10-2025 is correct history; as-on 30-09-2025: bills receivable; bills payable; stock (A4 Paper Ream 500 sheets, Box File Pack of 10, HP DeskJet Printer 2723, HP Laptop 15s, Lenovo Ideapad Slim 3, Logitech Keyboard K380, Logitech Wireless Mouse, Pen Drive 32GB, Samsung 24 inch Monitor, Samsung Galaxy Tab A8, Stapler Heavy Duty, TP-Link WiFi Router AC750, USB-C Hub 7-in-1, Whiteboard Marker Set) — bills receivable, bills payable, stock match the FULL period (31-03-2026) instead, i.e. the report ignored the date it was given [Educational mode — confirm on a licensed Tally]",
           "observations": {
@@ -1781,211 +2559,6 @@
           ],
           "manual_steps": [],
           "ran_at": "2026-09-23T12:10:33+05:30"
-        }
-      },
-      "history": [
-        {
-          "part": "A",
-          "outcome": "FAILED",
-          "summary": "TB as-on 31-10-2025 ≠ opening + lines for Purchase Accounts, Sales Accounts; as-on 30-09-2025: bills receivable; bills payable; stock (A4 Paper Ream 500 sheets, Box File Pack of 10, HP DeskJet Printer 2723, HP Laptop 15s, Lenovo Ideapad Slim 3, Logitech Keyboard K380, Logitech Wireless Mouse, Pen Drive 32GB, Samsung 24 inch Monitor, Samsung Galaxy Tab A8, Stapler Heavy Duty, TP-Link WiFi Router AC750, USB-C Hub 7-in-1, Whiteboard Marker Set) [Educational mode — confirm on a licensed Tally]",
-          "observations": {
-            "tb": {
-              "verdict": "FAILED",
-              "groups": {
-                "Capital Account": {
-                  "tb": "750000.00",
-                  "computed": "750000.00",
-                  "match": true
-                },
-                "Current Liabilities": {
-                  "tb": "853150.00",
-                  "computed": "853150.00",
-                  "match": true
-                },
-                "Purchase Accounts": {
-                  "tb": "-1157000.00",
-                  "computed": "-2314000.00",
-                  "match": false
-                },
-                "Sales Accounts": {
-                  "tb": "544000.00",
-                  "computed": "1088000.00",
-                  "match": false
-                }
-              },
-              "stock_bearing": {
-                "Current Assets": {
-                  "tb": "2315650.00",
-                  "computed": "459850.00",
-                  "match": false
-                }
-              },
-              "mismatched": [
-                "Purchase Accounts",
-                "Sales Accounts"
-              ]
-            },
-            "bills": {
-              "receivable": {
-                "reported": {
-                  "Sunrise Electronics Mumbai|S010": "166380.00",
-                  "Sharma & Sons Traders|S011": "16365.00",
-                  "Rajesh Computers|S013": "164492.00",
-                  "Eastern Digital Hub|S014": "187620.00",
-                  "Apex Technologies Pvt Ltd|S015": "62800.00",
-                  "Global IT Solutions|S016": "372880.00"
-                },
-                "expected": {},
-                "match": false,
-                "weak": false
-              },
-              "payable": {
-                "reported": {
-                  "Samsung India Electronics|P001": "243100.00",
-                  "HP India Sales Pvt Ltd|P002": "222160.00",
-                  "Logitech India Pvt Ltd|P003": "117270.00",
-                  "Samsung India Electronics|P004": "498550.00",
-                  "HP India Sales Pvt Ltd|P005": "488048.00",
-                  "Local Stationery Mart|P006": "62464.00",
-                  "Logitech India Pvt Ltd|P007": "120950.00",
-                  "Bharat Paper Supplies|P008": "81600.00"
-                },
-                "expected": {
-                  "Samsung India Electronics|P001": "643100.00"
-                },
-                "match": false,
-                "weak": false
-              }
-            },
-            "stock": {
-              "verdict": "FAILED",
-              "compared": {
-                "HP Laptop 15s": {
-                  "reported": "25",
-                  "expected": "10",
-                  "value": "-407142.86",
-                  "match": false
-                },
-                "Lenovo Ideapad Slim 3": {
-                  "reported": "-1",
-                  "expected": "12",
-                  "value": "36000.00",
-                  "match": false
-                },
-                "Samsung 24 inch Monitor": {
-                  "reported": "42",
-                  "expected": "45",
-                  "value": "-177692.31",
-                  "match": false
-                },
-                "Samsung Galaxy Tab A8": {
-                  "reported": "38",
-                  "expected": "35",
-                  "value": "-205200.00",
-                  "match": false
-                },
-                "A4 Paper Ream 500 sheets": {
-                  "reported": "550",
-                  "expected": "200",
-                  "value": "-66000.00",
-                  "match": false
-                },
-                "Box File Pack of 10": {
-                  "reported": "80",
-                  "expected": "40",
-                  "value": "-6720.00",
-                  "match": false
-                },
-                "Pen Drive 32GB": {
-                  "reported": "10",
-                  "expected": "80",
-                  "value": "-2800.00",
-                  "match": false
-                },
-                "Stapler Heavy Duty": {
-                  "reported": "65",
-                  "expected": "30",
-                  "value": "-5200.00",
-                  "match": false
-                },
-                "Whiteboard Marker Set": {
-                  "reported": "120",
-                  "expected": "50",
-                  "value": "-7200.00",
-                  "match": false
-                },
-                "HP DeskJet Printer 2723": {
-                  "reported": "21",
-                  "expected": "10",
-                  "value": "-25200.00",
-                  "match": false
-                },
-                "Logitech Keyboard K380": {
-                  "reported": "115",
-                  "expected": "60",
-                  "value": "-29571.43",
-                  "match": false
-                },
-                "Logitech Wireless Mouse": {
-                  "reported": "295",
-                  "expected": "100",
-                  "value": "-69535.71",
-                  "match": false
-                },
-                "TP-Link WiFi Router AC750": {
-                  "reported": "12",
-                  "expected": "25",
-                  "value": "-15600.00",
-                  "match": false
-                },
-                "USB-C Hub 7-in-1": {
-                  "reported": "72",
-                  "expected": "40",
-                  "value": "-7600.00",
-                  "match": false
-                }
-              },
-              "mismatches": [
-                "A4 Paper Ream 500 sheets",
-                "Box File Pack of 10",
-                "HP DeskJet Printer 2723",
-                "HP Laptop 15s",
-                "Lenovo Ideapad Slim 3",
-                "Logitech Keyboard K380",
-                "Logitech Wireless Mouse",
-                "Pen Drive 32GB",
-                "Samsung 24 inch Monitor",
-                "Samsung Galaxy Tab A8",
-                "Stapler Heavy Duty",
-                "TP-Link WiFi Router AC750",
-                "USB-C Hub 7-in-1",
-                "Whiteboard Marker Set"
-              ],
-              "item_rows": 14,
-              "direction_rule": "ISDEEMEDPOSITIVE=Yes is inward"
-            },
-            "sub_verdicts": {
-              "tb": "FAILED",
-              "bills_stock": "FAILED"
-            },
-            "run_mode": "auto",
-            "tags": [
-              "Educational"
-            ]
-          },
-          "spec_impact": "A TB as-on a past date isn't history: there is no valid parity anchor while the backfill is incomplete, so parity is suspended during the backfill (R30, decision 11). Bills Receivable / Payable or Stock Summary as-on a past date aren't history: those tiles lose their month-end comparison (Part 1 probe 18, Part 3).",
-          "fixtures": [
-            "p18_A_tb_asof_2025-10-31.xml",
-            "p18_A_vouchers_to_2025-10-31.xml",
-            "p18_A_ledger_list.xml",
-            "p18_A_group_list.xml",
-            "p18_A_bills_receivable_asof_2025-09-30.xml",
-            "p18_A_bills_payable_asof_2025-09-30.xml",
-            "p18_A_stock_summary_asof_2025-09-30.xml",
-            "p18_A_stock_item_openings.xml"
-          ],
-          "manual_steps": [],
-          "ran_at": "2026-09-23T11:12:35+05:30"
         }
       ],
       "remaining": [
@@ -5110,6 +5683,24 @@
       "receivable": "970537.00",
       "payable": "1834142.00",
       "ran_at": "2026-09-23T13:15:44+05:30"
+    },
+    {
+      "when": "before_parity",
+      "label": "A",
+      "ok": true,
+      "problems": [],
+      "receivable": "970537.00",
+      "payable": "1834142.00",
+      "ran_at": "2026-09-24T18:13:46+05:30"
+    },
+    {
+      "when": "after_a_batch",
+      "label": "A",
+      "ok": true,
+      "problems": [],
+      "receivable": "970537.00",
+      "payable": "1834142.00",
+      "ran_at": "2026-09-24T18:14:33+05:30"
     }
   ]
 }

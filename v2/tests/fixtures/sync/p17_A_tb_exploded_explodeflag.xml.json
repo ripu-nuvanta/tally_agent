@@ -1,0 +1,18 @@
+{
+  "probe": 17,
+  "part": "A",
+  "step": "tb_exploded_explodeflag",
+  "company_name": "Bharat Traders Probe Copy",
+  "company_guid": "710de34a-3661-4a7b-8148-c2206c3b3e17",
+  "sent_at": "2026-09-24T18:14:13+05:30",
+  "elapsed_ms": 20,
+  "response_bytes": 5638,
+  "timing_note": "Wine — not representative",
+  "request_xml": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Data</TYPE>\n<ID>Trial Balance</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n<SVFROMDATE TYPE=\"Date\">01-04-2025</SVFROMDATE>\n<SVTODATE TYPE=\"Date\">31-03-2026</SVTODATE>\n<EXPLODEFLAG>Yes</EXPLODEFLAG>\n<SVCurrentCompany>Bharat Traders Probe Copy</SVCurrentCompany>\n</STATICVARIABLES>\n</DESC>\n</BODY>\n</ENVELOPE>",
+  "environment": {
+    "wine": "wine-11.0",
+    "tally_version": "TallyPrime 7.0 (release 7.0 from the XML response header)",
+    "edition": "Edit Log",
+    "licence": "educational"
+  }
+}
