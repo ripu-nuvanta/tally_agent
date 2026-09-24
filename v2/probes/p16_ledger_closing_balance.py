@@ -4,6 +4,7 @@ Feeds decision 11, R30 and Part 2 Rule 1 (Part 1 §6 rung 1). The B part is `run
 """
 from __future__ import annotations
 
+from datetime import date
 from decimal import Decimal
 
 from v2.agent.tally.envelopes import wrap_report
@@ -11,6 +12,8 @@ from v2.agent.tally.reports import parse_ledger_list
 from v2.probes.actions import Action
 from v2.probes.anchors import SEED_PAYABLE, SEED_RECEIVABLE
 from v2.probes.companies import THROWAWAY_DATE, THROWAWAY_DATE_TEXT, THROWAWAY_EXPENSE_LEDGER
+from v2.probes.company_b_view import (B_BOOKS_FROM_DATE, B_CURRENT_PERIOD, ledger_balances_at, ledger_openings_at,
+                                      loaded_licence)
 from v2.probes.context import ProbeContext
 from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
 from v2.probes.p01_company_counters import LAST_VOUCHER_DATE_BASELINE
@@ -420,13 +423,159 @@ async def run_a(ctx: ProbeContext) -> PartResult:
                       spec_impact=" ".join([*notes, rule, as_on_note]))
 
 
+B_LEDGERS = "S0P16BLedgers"
+B_FY2024_START = date(2024, 4, 1)
+B_FY2024_FROM, B_FY2024_TO = "01-04-2024", "31-03-2025"     # C43: days 1 and 31
+B_ASON_2023 = "31-03-2023"                                    # FY 2022-23, the closed first year
+SCOPE_IMPACT = {
+    "books": ("Ledger OpeningBalance is the books-start opening whatever the period (R5): S1 stores it once per ledger "
+              "as the books-start opening, and FY openings are computed from lines."),
+    "fy": ("Ledger OpeningBalance is the opening of the FY holding the read's period (R5): a per-FY opening anchor is "
+           "readable, the books-start one only with the period in the first FY."),
+}
+NEITHER_IMPACT = ("Ledger OpeningBalance is neither the books-start nor the FY opening: R5's opening anchor can't come "
+                  "from the Ledger collection; S1 takes openings from probe 17's ledger-level TB instead.")
+AS_ON_WRONG_IMPACT = ("A dated Ledger-collection read returns neither the as-on balance nor today's: the agent never "
+                      "sends a period variable on a master collection (LESSONS §15 rule 17 stands), and per-ledger "
+                      "anchors come from probe 17's ledger-level TB (decision 11).")
+AS_ON_WORKS_IMPACT = ("A typed SVTODATE on the Ledger collection gives true as-on closing balances on company B, in a "
+                      "closed year and in an older FY: per-ledger opening anchors exist during the backfill without "
+                      "probe 17 (decision 11, Part 1 §16).")
+
+
+def opening_scope(opening: dict[str, Decimal | None], books: dict[str, Decimal], fy: dict[str, Decimal]) -> dict:
+    """Books- or FY-scoped, judged on the ledgers whose books-start and FY openings differ ("telling"); a ledger whose
+    two openings agree must still match them."""
+    telling = sorted(n for n in opening if books[n] != fy[n])
+    as_books = [n for n in telling if _value(opening[n]) == books[n]]
+    as_fy = [n for n in telling if _value(opening[n]) == fy[n]]
+    same_bad = sorted(n for n in opening if books[n] == fy[n] and _value(opening[n]) != books[n])
+    if not telling:
+        verdict = "undecided"
+    elif len(as_books) == len(telling) and not same_bad:
+        verdict = "books"
+    elif len(as_fy) == len(telling) and not same_bad:
+        verdict = "fy"
+    else:
+        verdict = "neither"
+    mismatched = sorted(set(telling) - set(as_books) - set(as_fy)) + same_bad
+    return {"verdict": verdict, "telling": len(telling), "as_books": len(as_books), "as_fy": len(as_fy),
+            "mismatched": mismatched[:10]}
+
+
+def compare_closing(read: dict[str, dict], names: list[str], want: dict[str, Decimal]) -> dict:
+    bad = {n: {"tally": read.get(n, {}).get("closing_balance"), "dataset": want[n]}
+           for n in names if _value(read.get(n, {}).get("closing_balance")) != want[n]}
+    return {"compared": len(names), "mismatches": bad}
+
+
+def as_on_state(read: dict[str, dict], control: dict[str, dict], names: list[str], want: dict[str, Decimal]) -> dict:
+    """works = every balance-sheet closing equals the dataset as-on; ignored = nothing moved from the control read;
+    wrong = moved, but not to the as-on value."""
+    mismatches = compare_closing(read, names, want)["mismatches"]
+    moved = sum(1 for n in names if read.get(n, {}).get("closing_balance") != control[n]["closing_balance"])
+    state = "works" if not mismatches else ("ignored" if moved == 0 else "wrong")
+    return {"state": state, "compared": len(names), "moved": moved, "mismatches": dict(list(mismatches.items())[:10])}
+
+
+def judged_scope(fy2024: dict, fy2024_scope: dict, now_scope: dict) -> dict:
+    """Spec §7 probe 16 B (Ruling Q9): the scope is judged from the typed read INSIDE FY 2024-25 when Tally honoured
+    its period. The current-FY no-variable read is supporting evidence; it stands in only when the FY 2024-25 read's
+    period was not honoured (the spec's read is then impossible on this Tally, and the verdict says so)."""
+    if fy2024["state"] == "works":
+        judged = {**fy2024_scope, "source": "fy2024_read"}
+    else:
+        judged = {**now_scope, "source": "current_fy_read",
+                  "why": f"the FY 2024-25 read's period was not honoured (SVTODATE {fy2024['state']})"}
+    judged["supporting"] = {"fy2024_read": fy2024_scope["verdict"], "current_fy_read": now_scope["verdict"]}
+    judged["reads_agree"] = fy2024_scope["verdict"] == now_scope["verdict"]
+    return judged
+
+
+async def _b_read(ctx: ProbeContext, step: str, to_date: str) -> dict[str, dict]:
+    return _balances(await ctx.send(step, _ledgers_request(ctx.company_name, {"SVTODATE": to_date}, name=B_LEDGERS)))
+
+
+async def run_b(ctx: ProbeContext) -> PartResult:
+    """Spec §7 probe 16 B. The scope question is answered from the typed read with its period inside FY 2024-25
+    (SVTODATE 31-03-2025), against the dataset's FY 2024-25 and books-start openings (Ruling Q9: the spec's read). The
+    no-variable read (current FY 2025-26, not the books start, so books- and FY-scoped openings differ on every active
+    ledger) is kept as supporting evidence and stands in only when Tally ignored the FY 2024-25 period (`judged_scope`).
+    The as-on reads send a typed SVTODATE only (SVFROMDATE on a Ledger collection is opt-in, LESSONS §15 rule 17)."""
+    licence = loaded_licence(ctx.store.environment)
+    company = ctx.company_name
+    groups = parse_parents(await ctx.send("groups", master_request("S0P16BGroups", "Group", ["Name", "Parent"], company)))
+    control = _balances(await ctx.send("ledgers", _ledgers_request(company, name=B_LEDGERS)))
+    if not control:
+        return PartResult(Outcome.BLOCKED, "The Ledger collection came back empty — is company B open?")
+    books = ledger_openings_at(licence, B_BOOKS_FROM_DATE)
+    kinds = _kinds(control, groups)
+    drift = sorted({n for n, k in kinds.items() if k != "special"} ^ set(books))
+    if drift:
+        raise ProbeBlocked(f"Company B's ledgers differ from the dataset ({', '.join(drift[:5])}) — re-run `setup-b` "
+                           "verify or restore the backup before trusting this probe.")
+    bs = sorted(n for n, k in kinds.items() if k == "bs")
+    now_scope = opening_scope({n: control[n]["opening_balance"] for n in bs}, books,
+                              ledger_openings_at(licence, B_CURRENT_PERIOD[0]))
+    closing_now = compare_closing(control, bs, ledger_balances_at(licence, B_CURRENT_PERIOD[1]))
+    fy_read = await _b_read(ctx, "ledgers_fy2024", B_FY2024_TO)
+    fy2024 = as_on_state(fy_read, control, bs, ledger_balances_at(licence, dmy(B_FY2024_TO)))
+    fy2024_scope = opening_scope({n: fy_read.get(n, {}).get("opening_balance") for n in bs}, books,
+                                 ledger_openings_at(licence, B_FY2024_START))
+    scope = judged_scope(fy2024, fy2024_scope, now_scope)
+    y2023 = as_on_state(await _b_read(ctx, "ledgers_asof_2023-03-31", B_ASON_2023), control, bs,
+                        ledger_balances_at(licence, dmy(B_ASON_2023)))
+    ctx.observe("ledger_kinds", {k: sum(1 for v in kinds.values() if v == k) for k in ("bs", "pl", "special")})
+    ctx.observe("opening_scope", scope)
+    ctx.observe("closing_now", closing_now)
+    ctx.observe("as_on_fy2024", fy2024)
+    ctx.observe("as_on_2023", y2023)
+    svfromdate, rows = await _svfromdate_attempt(ctx, "ledgers_fy2024_svfromdate",
+                                                 {"SVFROMDATE": B_FY2024_FROM, "SVTODATE": B_FY2024_TO}, B_LEDGERS)
+    if rows:
+        svfromdate["opening_scope"] = opening_scope({n: rows.get(n, {}).get("opening_balance") for n in bs}, books,
+                                                    ledger_openings_at(licence, B_FY2024_START))
+    ctx.observe("as_on_svfromdate", svfromdate)
+    if svfromdate.get("wedged"):
+        return PartResult(Outcome.FAILED, WEDGE_SUMMARY, spec_impact=WEDGE_IMPACT)
+    if closing_now["mismatches"]:
+        return PartResult(Outcome.FAILED, f"ClosingBalance ≠ the dataset for {len(closing_now['mismatches'])} "
+                                          f"balance-sheet ledger(s) ({', '.join(sorted(closing_now['mismatches'])[:5])})",
+                          spec_impact=FAILED_IMPACT)
+    reads = (("31-03-2025", fy2024), (B_ASON_2023, y2023))
+    wrong = [day for day, state in reads if state["state"] == "wrong"]
+    if wrong:
+        return PartResult(Outcome.FAILED, f"SVTODATE {', '.join(wrong)} moved closing balances, but not to the as-on "
+                                          "values", spec_impact=AS_ON_WRONG_IMPACT)
+    differences, impacts = [], []
+    if scope["verdict"] in ("neither", "undecided"):
+        differences.append(f"OpeningBalance scope is {scope['verdict']} ({scope['mismatched'][:5]})")
+        impacts.append(NEITHER_IMPACT)
+    elif scope["source"] == "fy2024_read" and not scope["reads_agree"]:
+        differences.append(f"the OpeningBalance scope reads disagree (FY 2024-25 read: {fy2024_scope['verdict']}, "
+                           f"current-FY read: {now_scope['verdict']})")
+    ignored = [day for day, state in reads if state["state"] == "ignored"]
+    if ignored:
+        differences.append(f"a typed SVTODATE ({', '.join(ignored)}) is silently ignored on the Ledger collection")
+        impacts.append(AS_ON_IMPACT)
+    scope_note = SCOPE_IMPACT.get(scope["verdict"], "")
+    if differences:
+        return PartResult(Outcome.DIFFERENT, "; ".join(differences), spec_impact=" ".join([*impacts, scope_note]))
+    return PartResult(Outcome.CONFIRMED,
+                      f"OpeningBalance is {scope['verdict']}-scoped ({scope['telling']} telling ledgers, judged "
+                      f"inside FY 2024-25); a typed "
+                      f"SVTODATE gives the dataset's as-on closing for all {len(bs)} balance-sheet ledgers at "
+                      f"{B_FY2024_TO} and {B_ASON_2023}",
+                      spec_impact=f"{scope_note} {AS_ON_WORKS_IMPACT}")
+
+
 PROBE = Probe(
     id=16,
     name="ledger_closing_balance",
     question="Does LEDGER.ClosingBalance equal Tally's own balances (lines, TB, UI)? Nominal = 0? As-on? As-of date and "
              "post-dated vouchers?",
     feeds=("decision 11", "R30", "Part 2 Rule 1"),
-    parts={"A": run_a},
+    parts={"A": run_a, "B": run_b},
     planned_parts=("A", "B"),
     requires=(0, 1, 2),
     mutating=True,

@@ -120,7 +120,7 @@ def _io(on_action, answers=None):
 async def _run(tmp_path, fake, io, p01_last_voucher_date=None, allow_risky=False):
     client, store, capture = make_harness(tmp_path, fake)
     ready_store(store, p01_last_voucher_date=p01_last_voucher_date)
-    outcome = await run_probe(p16.PROBE, labels=None, client=client, store=store, capture=capture, io=io,
+    outcome = await run_probe(p16.PROBE, labels=["A"], client=client, store=store, capture=capture, io=io,
                               allow_risky=allow_risky)
     return outcome, store, store.probe_entry(16)["parts"]["A"]
 
