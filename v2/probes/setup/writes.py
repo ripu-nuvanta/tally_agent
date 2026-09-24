@@ -521,8 +521,14 @@ class TallyWriter:
             raise WriteFailed(f"Unit {name!r} not found on read-back")
 
     def create_stock_item(self, company: str, name: str, *, unit: str, hsn: str | None = None,
-                          opening_qty: Decimal | None = None, opening_rate: Decimal | None = None) -> None:
+                          opening_qty: Decimal | None = None, opening_rate: Decimal | None = None,
+                          qty_unit: str | None = None) -> None:
+        """`unit` is the item's BASEUNITS (for a compound, its full name, e.g. "Box of 10 Nos"). `qty_unit` is the
+        unit its opening quantity and rate are written in — for a compound its FIRST unit (C40, live 2026-09-24:
+        "15 Box of 10 Nos" answered created=1 and stored no opening; "15 Box" / "950.00/Box" stored it). Defaults
+        to `unit`, which is right for a simple unit."""
         check_writable(company)
+        qty_unit = qty_unit or unit
         if name in self.list_stock_items(company):
             self.say(f"{name} already exists — not re-created")
             return
@@ -531,8 +537,8 @@ class TallyWriter:
                f"<HSNDETAILS.LIST><HSNCODE>{esc(hsn)}</HSNCODE></HSNDETAILS.LIST>"
                if hsn else "\n  <GSTAPPLICABLE>Not Applicable</GSTAPPLICABLE>")
         opening = ("" if opening_qty is None else
-                   f"\n  <OPENINGBALANCE>{opening_qty} {esc(unit)}</OPENINGBALANCE>"
-                   f"\n  <OPENINGRATE>{opening_rate:.2f}/{esc(unit)}</OPENINGRATE>"
+                   f"\n  <OPENINGBALANCE>{opening_qty} {esc(qty_unit)}</OPENINGBALANCE>"
+                   f"\n  <OPENINGRATE>{opening_rate:.2f}/{esc(qty_unit)}</OPENINGRATE>"
                    # C39 (live 2026-09-24, logs/stock-opening-live-check-2026-09-24.log): OPENINGVALUE is read by its
                    # SIGN like a ledger opening (C30) — +10200 landed on the Cr side of Current Assets and the TB did
                    # not close; −10200 read back −10200 and it balanced. Opening stock is an asset: a debit, negative.

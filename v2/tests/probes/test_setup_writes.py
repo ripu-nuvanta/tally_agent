@@ -710,3 +710,19 @@ def test_create_b_voucher_runs_the_same_validation_before_sending():
                                 lines=[_SALE_LINES[0], ("Domestic Sales", Decimal("1000.00"), True), *_SALE_LINES[2:]],
                                 inventory=_SALE_ROW)
     assert _imports(books) == []
+
+
+# --- C40 (live 2026-09-24): a compound-unit item's quantities are in the compound's FIRST unit ------------------------
+def test_a_compound_unit_items_opening_is_sent_in_its_first_unit():
+    """Live: OPENINGBALANCE "15 Box of 10 Nos" / OPENINGRATE "950.00/Box of 10 Nos" answered created=1 and stored NO
+    opening; "15 Box" / "950.00/Box" read back " 15 Box 0 Nos", "950.00/Box", −14250.00. BASEUNITS stays the
+    compound's name."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_stock_item(B, "A4 Paper Ream", unit="Box of 10 Nos", qty_unit="Box", hsn="4802",
+                             opening_qty=Decimal("15"), opening_rate=Decimal("950.00"))
+    sent = _imports(books)[-1]
+    assert "<BASEUNITS>Box of 10 Nos</BASEUNITS>" in sent
+    assert "<OPENINGBALANCE>15 Box</OPENINGBALANCE>" in sent
+    assert "<OPENINGRATE>950.00/Box</OPENINGRATE>" in sent
+    assert "<OPENINGVALUE>-14250.00</OPENINGVALUE>" in sent

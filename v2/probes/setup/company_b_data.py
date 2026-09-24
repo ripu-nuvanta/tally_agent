@@ -151,6 +151,14 @@ def gstin(state_code: str, pan: str) -> str:
     return body + _GSTIN_CHARS[(36 - total % 36) % 36]
 
 
+def quantity_unit(units: tuple[UnitSpec, ...], unit_name: str) -> str:
+    """C40 (live 2026-09-24): the unit a QUANTITY or a rate's denominator is written in. For a compound unit that
+    is its FIRST unit — "15 Box", "950.00/Box" — because "15 Box of 10 Nos" was accepted (created=1) and silently
+    stored no opening at all. A simple (or unknown) unit is its own name."""
+    spec = next((u for u in units if u.name == unit_name), None)
+    return spec.first_unit if spec is not None and spec.first_unit else unit_name
+
+
 def _educational_days(year: int, month: int) -> tuple[int, ...]:
     """Educational Tally accepts the 1st, 2nd and 31st only (live 2026-09-22, see companies.py)."""
     return (1, 2, 31) if monthrange(year, month)[1] == 31 else (1, 2)

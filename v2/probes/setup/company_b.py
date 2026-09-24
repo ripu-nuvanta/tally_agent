@@ -70,6 +70,7 @@ from v2.probes.setup.company_b_data import (
     expected_figures,
     fy_label,
     generate,
+    quantity_unit,
 )
 from v2.probes.setup.writes import (
     B_READBACK_FROM,
@@ -197,7 +198,8 @@ def _load_masters(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
         if _create_or_pause(writer, io, report, "stock item", i.name,
                             lambda i=i: writer.create_stock_item(company, i.name, unit=i.unit, hsn=i.hsn,
                                                                  opening_qty=i.opening_qty,
-                                                                 opening_rate=i.opening_rate),
+                                                                 opening_rate=i.opening_rate,
+                                                                 qty_unit=quantity_unit(dataset.units, i.unit)),
                             lambda i=i: i.name in writer.list_stock_items(company)):
             report.created["items"] += 1
         else:
@@ -382,7 +384,10 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
     latest_complete = _latest_complete_fy(pre_by_fy, expected.voucher_count_by_fy)
     _flag_predated_drift(pre_by_fy, expected.voucher_count_by_fy, latest_complete, report)
 
-    unit_by_item = {i.name: i.unit for i in dataset.items}
+    # C40: the unit each inventory row's ACTUALQTY/BILLEDQTY/RATE is written in — a compound item's FIRST unit
+    # ("5 Box", "950.00/Box"). Live-verified for stock-item openings (2026-09-24); for voucher rows it is inferred
+    # from that and not yet live-verified (tag 2 is the first A4 Paper Ream sale).
+    unit_by_item = {i.name: quantity_unit(dataset.units, i.unit) for i in dataset.items}
     for v in sorted(dataset.vouchers, key=lambda v: (v.date, v.tag)):
         if v.skip_reason:                                                                                    # C36
             continue

@@ -349,8 +349,19 @@ class FakeBooks:
             return self._create_master(state, "items", element, request,
                                         lambda el: {"parent": el.findtext("PARENT", ""),
                                                     "base_units": el.findtext("BASEUNITS", ""),
-                                                    "opening_value": el.findtext("OPENINGVALUE") or "0.00"})
+                                                    **self._stock_opening(state, el)})
         return import_result(errors=1, line_error=f"fake: unsupported {element.tag}")
+
+    @staticmethod
+    def _stock_opening(state: dict, element: ET.Element) -> dict[str, str]:
+        """C40 (live 2026-09-24): an opening quantity written in a compound unit's FULL name ("15 Box of 10 Nos") is
+        accepted (created=1) but stores NO opening — quantity blank, value 0. Written in its first unit ("15 Box")
+        it is kept. C39: the value is kept with its wire sign."""
+        qty = (element.findtext("OPENINGBALANCE") or "").strip()
+        compounds = {name for name, unit in state["units"].items() if unit.get("additional")}
+        if any(qty.endswith(f" {name}") for name in compounds):
+            return {"opening_qty": "", "opening_value": "0.00"}
+        return {"opening_qty": qty, "opening_value": element.findtext("OPENINGVALUE") or "0.00"}
 
     def _create_master(self, state: dict, collection: str, element: ET.Element, request: httpx.Request,
                        fields: Callable[[ET.Element], dict]) -> str:

@@ -585,3 +585,22 @@ def test_after_a_full_load_the_trial_balance_nets_to_zero_with_opening_stock_on_
     writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     report = load_company_b(writer, io)
     assert any("Trial Balance Dr/Cr total observed: 0.00." in n for n in report.notes), report.notes
+
+
+# --- C40: compound-unit quantities go out in the compound's first unit, masters and vouchers alike ----------------------
+def test_a4_paper_is_created_and_sold_in_boxes_never_in_the_compound_units_full_name():
+    """Masters live-verified 2026-09-24; the voucher-row form ("<n> Box" on ACTUALQTY/BILLEDQTY, "/Box" on RATE) is
+    INFERRED from the master behaviour and not yet live-verified for vouchers (tag 2 will show it)."""
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    load_company_b(writer, io)
+    imports = [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r]
+    item = next(r for r in imports if 'STOCKITEM NAME="A4 Paper Ream"' in r)
+    assert "<OPENINGBALANCE>15 Box</OPENINGBALANCE>" in item and "<OPENINGRATE>950.00/Box</OPENINGRATE>" in item
+    a4_rows = re.findall(r"<STOCKITEMNAME>A4 Paper Ream</STOCKITEMNAME>.*?</ALLINVENTORYENTRIES.LIST>",
+                         "".join(imports), re.S)
+    assert a4_rows
+    for row in a4_rows:
+        assert re.search(r"<ACTUALQTY>\d+ Box</ACTUALQTY>", row) and re.search(r"<BILLEDQTY>\d+ Box</BILLEDQTY>", row)
+        assert re.search(r"<RATE>[\d.]+/Box</RATE>", row)
+    assert books.state["items"]["A4 Paper Ream"]["opening_value"] == "-14250.00"

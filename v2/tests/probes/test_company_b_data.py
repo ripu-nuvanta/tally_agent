@@ -365,3 +365,12 @@ def test_skipped_vouchers_are_left_out_of_the_expected_figures():
     assert exp.voucher_count_by_fy["2022-23"] == 238
     assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2
     assert all(value == 0 for (name, _), value in exp.ledger_month_end.items() if name == "Export Sales")
+
+
+# --- C40: quantities of a compound-unit item are written in the compound's FIRST unit ------------------------------
+def test_quantity_unit_resolves_a_compound_to_its_first_unit():
+    from v2.probes.setup.company_b_data import quantity_unit
+    ds = generate()
+    assert quantity_unit(ds.units, COMPOUND_UNIT) == BOX_UNIT
+    assert quantity_unit(ds.units, BASE_UNIT) == BASE_UNIT
+    assert quantity_unit(ds.units, "Unknown") == "Unknown"

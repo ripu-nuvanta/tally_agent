@@ -460,3 +460,35 @@ def test_a_negative_stock_opening_value_is_a_debit_in_current_assets():
     books.edit_state(lambda s: s["units"].update({"Nos": {"base": "Nos", "additional": None, "conversion": None}}))
     _post(books, _stock_item_with_value("-10200.00"))
     assert _current_assets(books) == Decimal("-10200.00")
+
+
+# --- C40 (live 2026-09-24): an opening quantity in a compound unit's full name is silently dropped ---------------------
+def _a4_paper(qty: str, rate: str) -> str:
+    return _create("STOCKITEM", "A4 Paper Ream",
+                   "<NAME.LIST><NAME>A4 Paper Ream</NAME></NAME.LIST><PARENT></PARENT>"
+                   f"<BASEUNITS>Box of 10 Nos</BASEUNITS><OPENINGBALANCE>{qty}</OPENINGBALANCE>"
+                   f"<OPENINGRATE>{rate}</OPENINGRATE><OPENINGVALUE>-14250.00</OPENINGVALUE>")
+
+
+def _with_box_units(books: FakeBooks) -> None:
+    books.edit_state(lambda s: s["units"].update({
+        "Nos": {"base": "Nos", "additional": None, "conversion": None},
+        "Box": {"base": "Box", "additional": None, "conversion": None},
+        "Box of 10 Nos": {"base": "Box", "additional": "Nos", "conversion": "10"}}))
+
+
+def test_an_opening_in_the_compound_units_full_name_is_accepted_but_stores_nothing():
+    books = FakeBooks(name=B)
+    _with_box_units(books)
+    result = ImportResult.parse(_post(books, _a4_paper("15 Box of 10 Nos", "950.00/Box of 10 Nos")))
+    assert result.created == 1                                    # live: created=1 ...
+    item = books.state["items"]["A4 Paper Ream"]
+    assert item["opening_qty"] == "" and Decimal(item["opening_value"]) == 0   # ... and no opening at all
+
+
+def test_an_opening_in_the_compound_units_first_unit_is_kept():
+    books = FakeBooks(name=B)
+    _with_box_units(books)
+    _post(books, _a4_paper("15 Box", "950.00/Box"))
+    item = books.state["items"]["A4 Paper Ream"]
+    assert item["opening_qty"] == "15 Box" and item["opening_value"] == "-14250.00"
