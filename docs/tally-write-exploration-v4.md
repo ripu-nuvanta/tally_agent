@@ -146,7 +146,13 @@ For a ledger with opening balance (e.g. Capital, Cash):
 
 **Gotchas**
 - `ISBILLWISEON=Yes` for debtors/creditors (otherwise voucher bill-allocation fails).
-- Sign of `OPENINGBALANCE` is inferred from the parent group's nature in Tally (positive value with Capital Account = credit; positive with Cash-in-Hand = debit).
+- ~~Sign of `OPENINGBALANCE` is inferred from the parent group's nature in Tally (positive value with Capital Account = credit; positive with Cash-in-Hand = debit).~~
+  **Changed 2026-09-24 (Ruling C30):** WRONG — never tested (this Op only checked that the Capital ledger existed;
+  `scripts/explore_tally_write_v4.py` L571–589). Tally reads the **sign**: negative = Dr, positive = Cr, whatever the
+  parent group. Evidence: `backend/tally_bridge/import_builder.py`'s `abs(opening_balance)` landed company A's HDFC
+  −5,00,000 and SBI −2,00,000 as **credits** (`docs/specs/2026-09-21-bi-part1-sync-design.md` "Settled 2026-09-23";
+  `v2/tests/fixtures/sync/p18_A_ledger_list.xml` shows them positive, like Capital Account). Send the signed value;
+  `v2/probes/setup/sign_check.py` is the one-ledger live confirmation.
 
 ## Op 6 — Sales voucher with stock + GST
 

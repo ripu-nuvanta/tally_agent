@@ -514,6 +514,9 @@ def build_create_ledger(
     Args:
         opening_balance: Positive value; sign inferred from parent group nature
             (Capital → credit; Cash-in-Hand → debit). Pass None or 0 to omit.
+            [Changed 2026-09-24 (Ruling C30): WRONG — Tally reads the sign (negative = Dr);
+            this abs() landed company A's bank openings as credits. See
+            docs/tally-write-exploration-v4.md Op 5.]
         is_billwise: Set True for Sundry Debtors/Creditors (otherwise voucher
             bill-allocation fails).
     """

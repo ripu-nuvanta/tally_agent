@@ -955,7 +955,7 @@ Today `OperatorConfig.company_numbers` is `{"A": "100003"}` and `auto.py:142-143
 
 ```python
 def test_company_b_has_a_configured_number(tmp_path):
-    assert tmp_config(tmp_path).company_numbers["B"] == "100004"
+    assert tmp_config(tmp_path).company_numbers["B"] == "100004"   # Superseded 2026-09-24: Tally assigned 100000
 
 
 def test_open_company_b_loads_it(tmp_path):
@@ -981,6 +981,9 @@ Expected: FAIL — `KeyError: 'B'`
 - [ ] **Step 3: Implement**
 
 `config.py`: `company_numbers` default becomes `{"A": "100003", "B": "100004"}`. **`100004` is the number Tally assigns the second company created in the `s0probe` data folder** — the operator must confirm it after creating B in the UI; a mismatch surfaces immediately as "wrong company loaded" from `wait_for_companies`.
+
+> **Superseded 2026-09-24:** Tally assigned **`100000`** (the lowest free number), not `100004` — config and test
+> were corrected in `907b9d1`; see the tracker (`docs/plans/2026-09-22-bi-part1-tracker.md`).
 
 `auto.py`: add `setup_company_b` mirroring `reset_company_a` exactly:
 ```python
