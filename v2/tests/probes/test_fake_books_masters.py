@@ -429,3 +429,34 @@ def test_an_on_account_receipt_opens_no_named_bill():
     books = FakeBooks(name=B)
     assert _import(books, _receipt_with_bill("On Account", "5000.00", bill_type="On Account")).created == 1
     assert books.state["bills"] == {}
+
+
+# --- C39 (live 2026-09-24, logs/stock-opening-live-check-2026-09-24.log): stock OPENINGVALUE is booked by its sign --
+from v2.probes.reads import exploded_tb_rows, primary_group_rows  # noqa: E402
+
+
+def _current_assets(books: FakeBooks) -> Decimal:
+    rows = primary_group_rows(exploded_tb_rows(_post(books, wrap_report("Trial Balance", "01-04-2022", "31-03-2026", B))))
+    return rows["Current Assets"]["closing_balance"]
+
+
+def _stock_item_with_value(value: str) -> str:
+    return _create("STOCKITEM", "USB Cable Type-C",
+                   "<NAME.LIST><NAME>USB Cable Type-C</NAME></NAME.LIST><PARENT></PARENT><BASEUNITS>Nos</BASEUNITS>"
+                   f"<OPENINGBALANCE>120 Nos</OPENINGBALANCE><OPENINGRATE>85.00/Nos</OPENINGRATE>"
+                   f"<OPENINGVALUE>{value}</OPENINGVALUE>")
+
+
+def test_a_positive_stock_opening_value_lands_on_the_credit_side_as_live():
+    """Live: OPENINGVALUE +10200.00 was stored +10200 and the TB put it on the Cr side of Current Assets."""
+    books = FakeBooks(name=B)
+    books.edit_state(lambda s: s["units"].update({"Nos": {"base": "Nos", "additional": None, "conversion": None}}))
+    assert ImportResult.parse(_post(books, _stock_item_with_value("10200.00"))).created == 1
+    assert _current_assets(books) == Decimal("10200.00")          # positive = Cr (tb_xml's DSPCLCRAMTA)
+
+
+def test_a_negative_stock_opening_value_is_a_debit_in_current_assets():
+    books = FakeBooks(name=B)
+    books.edit_state(lambda s: s["units"].update({"Nos": {"base": "Nos", "additional": None, "conversion": None}}))
+    _post(books, _stock_item_with_value("-10200.00"))
+    assert _current_assets(books) == Decimal("-10200.00")

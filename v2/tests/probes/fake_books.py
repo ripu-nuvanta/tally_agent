@@ -293,6 +293,11 @@ class FakeBooks:
             bucket = self._bucket_of(state, led["parent"])
             buckets[bucket] = buckets.get(bucket, Decimal("0.00")) + balances.get(name, Decimal("0.00"))
         primaries: dict[str, Decimal] = {}
+        # C39 (live 2026-09-24): an item's OPENINGVALUE sits in Current Assets by its WIRE sign — +10200 landed Cr,
+        # −10200 Dr and the TB closed. Stock movements from vouchers are not valued here (the fake keeps no stock).
+        stock = sum((Decimal(i.get("opening_value") or "0.00") for i in state["items"].values()), Decimal("0.00"))
+        if stock:
+            primaries["Current Assets"] = stock
         for bucket, value in buckets.items():
             primary = RESERVED_GROUP_PARENTS.get(bucket, bucket)
             primaries[primary] = primaries.get(primary, Decimal("0.00")) + value
@@ -343,7 +348,8 @@ class FakeBooks:
         if element.tag == "STOCKITEM" and action == "Create":
             return self._create_master(state, "items", element, request,
                                         lambda el: {"parent": el.findtext("PARENT", ""),
-                                                    "base_units": el.findtext("BASEUNITS", "")})
+                                                    "base_units": el.findtext("BASEUNITS", ""),
+                                                    "opening_value": el.findtext("OPENINGVALUE") or "0.00"})
         return import_result(errors=1, line_error=f"fake: unsupported {element.tag}")
 
     def _create_master(self, state: dict, collection: str, element: ET.Element, request: httpx.Request,

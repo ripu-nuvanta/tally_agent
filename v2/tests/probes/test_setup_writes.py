@@ -279,7 +279,8 @@ def test_a_stock_item_with_an_hsn_carries_both_the_top_level_and_the_nested_copy
 
 def test_a_stock_item_with_an_opening_balance_carries_qty_rate_and_value():
     """Op 3 shapes (docs/tally-write-exploration-v4.md:90-92): OPENINGBALANCE/OPENINGRATE carry the unit name;
-    the rate and value are money (2dp), the quantity is not."""
+    the rate and value are money (2dp), the quantity is not. C39 (live 2026-09-24): OPENINGVALUE is SIGNED like a
+    ledger opening (C30) — an asset's value is a debit, so it goes out NEGATIVE; +10200 landed on the Cr side."""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_stock_item(B, "Monitor 24in", unit="TstN",
@@ -287,7 +288,7 @@ def test_a_stock_item_with_an_opening_balance_carries_qty_rate_and_value():
     sent = _imports(books)[-1]
     assert "<OPENINGBALANCE>5 TstN</OPENINGBALANCE>" in sent
     assert "<OPENINGRATE>11000.00/TstN</OPENINGRATE>" in sent
-    assert "<OPENINGVALUE>55000.00</OPENINGVALUE>" in sent
+    assert "<OPENINGVALUE>-55000.00</OPENINGVALUE>" in sent
 
 
 def test_a_party_ledger_carries_bill_wise_and_a_valid_gstin():

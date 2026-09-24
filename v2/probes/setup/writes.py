@@ -18,7 +18,8 @@ and that is ALSO what Tally reads on the wire. Two places are signed on the wire
   `abs(opening)` landed company A's HDFC −5,00,000 and SBI −2,00,000 as CREDITS
   (docs/specs/2026-09-21-bi-part1-sync-design.md "Settled 2026-09-23"; v2/tests/fixtures/sync/p18_A_ledger_list.xml
   shows them positive, like Capital Account). Never re-introduce `abs(opening)`.
-A stock opening (`create_stock_item`'s `opening_qty`/`opening_rate`) is a quantity and a rate — never negative.
+A stock opening (`create_stock_item`'s `opening_qty`/`opening_rate`) is a quantity and a rate — never negative — but
+its OPENINGVALUE is signed on the wire like a ledger opening: the stock is a debit, so it goes out NEGATIVE (C39).
 """
 from __future__ import annotations
 
@@ -532,7 +533,10 @@ class TallyWriter:
         opening = ("" if opening_qty is None else
                    f"\n  <OPENINGBALANCE>{opening_qty} {esc(unit)}</OPENINGBALANCE>"
                    f"\n  <OPENINGRATE>{opening_rate:.2f}/{esc(unit)}</OPENINGRATE>"
-                   f"\n  <OPENINGVALUE>{(opening_qty * opening_rate):.2f}</OPENINGVALUE>")
+                   # C39 (live 2026-09-24, logs/stock-opening-live-check-2026-09-24.log): OPENINGVALUE is read by its
+                   # SIGN like a ledger opening (C30) — +10200 landed on the Cr side of Current Assets and the TB did
+                   # not close; −10200 read back −10200 and it balanced. Opening stock is an asset: a debit, negative.
+                   f"\n  <OPENINGVALUE>{-(opening_qty * opening_rate):.2f}</OPENINGVALUE>")
         inner = (f'<STOCKITEM NAME="{esc(name)}" ACTION="Create">\n  <NAME.LIST><NAME>{esc(name)}</NAME></NAME.LIST>\n'
                  f'  <BASEUNITS>{esc(unit)}</BASEUNITS>{gst}{opening}\n</STOCKITEM>')
         result = self.import_("All Masters", company, inner)

@@ -574,3 +574,14 @@ def test_the_whole_company_b_dataset_passes_pre_validation():
     from v2.probes.setup.company_b import validate_dataset
     for licence in ("licensed", "educational"):
         assert validate_dataset(generate(licence)) == []
+
+
+# --- C39: opening stock goes out as a debit, so the opening trial balance closes ---------------------------------------
+def test_after_a_full_load_the_trial_balance_nets_to_zero_with_opening_stock_on_the_debit_side():
+    """Live 2026-09-24: with USB Cable's OPENINGVALUE sent +10200 the TB put it on the Cr side and did not close;
+    re-sent −10200 (and A4 Paper −14250) it balanced exactly. The dataset's openings net to zero only with the
+    24,450 of opening stock as a debit (test_opening_balances_net_to_zero), and every voucher balances."""
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io)
+    assert any("Trial Balance Dr/Cr total observed: 0.00." in n for n in report.notes), report.notes
