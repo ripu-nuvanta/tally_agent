@@ -220,7 +220,8 @@ class TallyWriter:
 
         Op 6/7/8; live 2026-09-22): AMOUNT is signed as given per line, ISDEEMEDPOSITIVE is passed as given, and this
         method's own balance check is the only thing that proves the two agree. Nothing is sent to Tally until the
-        voucher is proven to balance. `BILLALLOCATIONS.LIST` nests only under the line whose ledger equals `party`.
+        voucher is proven to balance. `BILLALLOCATIONS.LIST` nests only under the line whose ledger equals `party`;
+        each bill amount is a MAGNITUDE and is sent with that party line's sign (C34).
         `ISCANCELLED` is never written here (cancelling is not reliably settable on import — Task 6 pause step).
 
         **Ordering contract for `lines` when `inventory` is non-empty:** the party line first, then the nominal
@@ -280,6 +281,28 @@ class TallyWriter:
                                  f"{allocated}, but its line says {nominal_amount} — Tally would not balance")
         sent_lines = [line for i, line in enumerate(lines) if not (inventory and i == nominal_index)]
 
+        # C34 (live UI 2026-09-24): Tally files a bill by the SIGN of its BILLALLOCATIONS AMOUNT — [S0-B:1] sent
+        # +9,861.74 under a −9,861.74 sales party line and Inv/1 landed in Bills PAYABLE. Like production
+        # _render_bill_allocations, `bills` carry magnitudes and each AMOUNT takes the sign of the party line it
+        # nests under (sale Dr −, purchase Cr +, receipt/payment Agst Ref mirror their party line too). The signed
+        # bills must add up to that line's amount, or the bill-wise split would not match the ledger.
+        signed_bills: list[tuple[str, str, Decimal, str | None]] = []
+        if bills:
+            for name, _, bill_amount, _ in bills:
+                if bill_amount < 0:
+                    raise ValueError(f"Voucher {narration!r}: bill {name!r} amount {bill_amount} must be a magnitude "
+                                     "— the sign is mirrored from the party line (C34)")
+            party_amounts = [amount for ledger, amount, _ in sent_lines if ledger == party]
+            if len(party_amounts) != 1:
+                raise ValueError(f"Voucher {narration!r}: bills need exactly one {party!r} line, got {len(party_amounts)}")
+            sign = Decimal("-1") if party_amounts[0] < 0 else Decimal("1")
+            signed_bills = [(name, bill_type, sign * bill_amount, credit_period)
+                            for name, bill_type, bill_amount, credit_period in bills]
+            bill_total = sum((amount for _, _, amount, _ in signed_bills), Decimal("0.00"))
+            if bill_total != party_amounts[0]:
+                raise ValueError(f"Voucher {narration!r}: bill allocations total {bill_total}, but the {party!r} "
+                                 f"line is {party_amounts[0]}")
+
         ledger_blocks = []
         for ledger, amount, deemed_positive in sent_lines:
             bill_xml = ""
@@ -289,7 +312,7 @@ class TallyWriter:
                     f"<BILLTYPE>{esc(bill_type)}</BILLTYPE>\n      <AMOUNT>{bill_amount:.2f}</AMOUNT>"
                     + (f"\n      <BILLCREDITPERIOD>{esc(credit_period)}</BILLCREDITPERIOD>" if credit_period else "")
                     + "\n    </BILLALLOCATIONS.LIST>"
-                    for name, bill_type, bill_amount, credit_period in bills)
+                    for name, bill_type, bill_amount, credit_period in signed_bills)
             party_flag = ("\n    <ISPARTYLEDGER>Yes</ISPARTYLEDGER>" if is_invoice_type and ledger == party else "")
             ledger_blocks.append(
                 f"""  <{ledger_tag}>

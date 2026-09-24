@@ -83,6 +83,7 @@ def seed_state(name: str = SEED_COMPANY) -> dict:
         },
         "stock_groups": ["Electronics"],
         "vouchers": {},
+        "bills": {},                          # C34: bill name -> {"party", "amount" (signed: − = Dr = receivable)}
         "groups": {},
         "units": {},
         "items": {},
@@ -258,7 +259,9 @@ class FakeBooks:
         if "<ID>Trial Balance</ID>" in body:
             return tb_xml(self._trial_balance_rows(state, as_on=period[1]))
         if "<ID>Bills Receivable</ID>" in body:
-            return bills_xml(state.get("bills_receivable", []))
+            return bills_xml(state.get("bills_receivable", []) + self._open_bills(state, receivable=True))
+        if "<ID>Bills Payable</ID>" in body:
+            return bills_xml(self._open_bills(state, receivable=False))
         return "<ENVELOPE></ENVELOPE>"
 
     def _bucket_of(self, state: dict, ledger_parent: str) -> str:
@@ -432,6 +435,29 @@ class FakeBooks:
                   for allocation in inv.findall("ACCOUNTINGALLOCATIONS.LIST")]
         return lines
 
+    @staticmethod
+    def _open_bills(state: dict, *, receivable: bool) -> list[tuple[str, str, str]]:
+        """C34 (live UI 2026-09-24): Tally files a bill by the SIGN of its amount, not by the voucher type or the
+        party's group — [S0-B:1]'s sales bill sent +9861.74 landed in Bills PAYABLE. Negative (Dr) = receivable,
+        positive (Cr) = payable; a settled bill (zero) is in neither. BILLCL keeps the sign, as live XML does."""
+        return [(name, bill["party"], bill["amount"]) for name, bill in state.get("bills", {}).items()
+                if Decimal(bill["amount"]) != 0 and (Decimal(bill["amount"]) < 0) == receivable]
+
+    @staticmethod
+    def _post_bills(state: dict, element: ET.Element) -> None:
+        """New Ref opens a bill with its signed amount; Agst Ref adds its signed amount to that bill (a receipt's
+        + knocks off a sale's −)."""
+        bills = state.setdefault("bills", {})
+        for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
+            for entry in element.findall(tag):
+                party = entry.findtext("LEDGERNAME", "")
+                for bill in entry.findall("BILLALLOCATIONS.LIST"):
+                    name, amount = bill.findtext("NAME", ""), Decimal(bill.findtext("AMOUNT") or "0.00")
+                    if bill.findtext("BILLTYPE") == "Agst Ref" and name in bills:
+                        bills[name]["amount"] = f"{Decimal(bills[name]['amount']) + amount:.2f}"
+                    else:
+                        bills[name] = {"party": party, "amount": f"{amount:.2f}"}
+
     def _voucher(self, state: dict, element: ET.Element, action: str) -> str:
         vouchers = state["vouchers"]
         if action == "Create":
@@ -456,6 +482,8 @@ class FakeBooks:
             vouchers[mid] = {"narration": element.findtext("NARRATION", ""), "date": date,
                              "post_dated": element.findtext("ISPOSTDATED") or "No",
                              "cancelled": cancelled, "optional": optional, "lines": lines}
+            if cancelled != "Yes":
+                self._post_bills(state, element)
             state["alt_vch"] += 1
             state["last_voucher_date"] = max(state["last_voucher_date"], date)
             self._save(state)

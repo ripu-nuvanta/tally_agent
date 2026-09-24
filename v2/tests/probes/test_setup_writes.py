@@ -404,7 +404,7 @@ def test_a_sales_voucher_uses_the_verified_sign_convention():
         lines=[("Pune Traders", Decimal("-11800.00"), True), ("Sales", Decimal("10000.00"), False),
                ("Output CGST", Decimal("900.00"), False), ("Output SGST", Decimal("900.00"), False)],
         inventory=[("A4 Paper", "Nos", Decimal("10"), Decimal("1000.00"), Decimal("10000.00"))],
-        bills=[("B/7", "New Ref", Decimal("-11800.00"), "30 Days")])
+        bills=[("B/7", "New Ref", Decimal("11800.00"), "30 Days")])
     sent = _imports(books)[-1]
     assert "<ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>" in sent          # party
     assert "<AMOUNT>-11800.00</AMOUNT>" in sent
@@ -573,3 +573,75 @@ def test_a_sale_without_inventory_still_emits_every_line():
         B, vch_type="Sales", date="20230601", narration="[S0-B:5] export", party="Global Tech LLC",
         lines=[("Global Tech LLC", Decimal("-5000.00"), True), ("Export Sales", Decimal("5000.00"), False)])
     assert _ledger_entry_names(_imports(books)[-1]) == ["Global Tech LLC", "Export Sales"]
+
+
+# --- C34: each BILLALLOCATIONS AMOUNT carries the sign of the party line it nests under ------------------------------
+def _bill_amounts(sent: str) -> list[tuple[str, str]]:
+    return [(b.findtext("NAME"), b.findtext("AMOUNT")) for b in ET.fromstring(sent).iter("BILLALLOCATIONS.LIST")]
+
+
+@pytest.mark.parametrize("vch_type,party_amount,other,bill,expected", [
+    # Op 6 sale: party Dr (Yes/−) → the bill is a receivable, −
+    ("Sales", Decimal("-1180.00"), ("Export Sales", Decimal("1180.00"), False), ("Inv/1", "New Ref"), "-1180.00"),
+    # Op 7 purchase: party Cr (No/+) → a payable, +
+    ("Purchase", Decimal("1180.00"), ("Local Purchases", Decimal("-1180.00"), True), ("Pur/2", "New Ref"), "1180.00"),
+    # Op 8 receipt: party Cr (No/+) → Agst Ref +, knocking off the − receivable
+    ("Receipt", Decimal("500.00"), ("Cash", Decimal("-500.00"), True), ("Inv/1", "Agst Ref"), "500.00"),
+    # payment: party Dr (Yes/−) → Agst Ref −, knocking off the + payable
+    ("Payment", Decimal("-500.00"), ("Cash", Decimal("500.00"), False), ("Pur/2", "Agst Ref"), "-500.00"),
+])
+def test_a_bill_allocation_mirrors_the_party_line_sign(vch_type, party_amount, other, bill, expected):
+    """C34 (live UI 2026-09-24): [S0-B:1]'s party line was −9,861.74 but its bill went +9,861.74 and Tally filed
+    Inv/1 under Bills PAYABLE. Production _render_bill_allocations mirrors the party sign; so does this now.
+    BillSpec amounts are magnitudes — the writer applies the sign."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(B, vch_type=vch_type, date="20230601", narration="[S0-B:9] x", party="Pune Traders",
+                            lines=[("Pune Traders", party_amount, party_amount < 0), other],
+                            bills=[(bill[0], bill[1], abs(party_amount), None)])
+    assert _bill_amounts(_imports(books)[-1]) == [(bill[0], expected)]
+
+
+def test_a_negative_bill_magnitude_is_refused_before_anything_is_sent():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="magnitude"):
+        writer.create_b_voucher(B, vch_type="Sales", date="20230601", narration="[S0-B:9] x", party="Pune Traders",
+                                lines=[("Pune Traders", Decimal("-100.00"), True), ("Export Sales", Decimal("100.00"), False)],
+                                bills=[("Inv/9", "New Ref", Decimal("-100.00"), None)])
+    assert _imports(books) == []
+
+
+def test_bills_that_do_not_add_up_to_the_party_line_are_refused():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="bill"):
+        writer.create_b_voucher(B, vch_type="Sales", date="20230601", narration="[S0-B:9] x", party="Pune Traders",
+                                lines=[("Pune Traders", Decimal("-100.00"), True), ("Export Sales", Decimal("100.00"), False)],
+                                bills=[("Inv/9", "New Ref", Decimal("60.00"), None), ("Inv/10", "New Ref", Decimal("30.00"), None)])
+    assert _imports(books) == []
+
+
+def test_split_bills_that_add_up_are_each_signed():
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(B, vch_type="Sales", date="20230601", narration="[S0-B:9] x", party="Pune Traders",
+                            lines=[("Pune Traders", Decimal("-100.00"), True), ("Export Sales", Decimal("100.00"), False)],
+                            bills=[("Inv/9", "New Ref", Decimal("60.00"), None), ("Inv/10", "New Ref", Decimal("40.00"), None)])
+    assert _bill_amounts(_imports(books)[-1]) == [("Inv/9", "-60.00"), ("Inv/10", "-40.00")]
+
+
+def test_dataset_voucher_1_files_its_bill_as_a_receivable():
+    """The live C34 voucher, [S0-B:1] of generate("educational"), end to end through the writer and the fake."""
+    from v2.probes.setup.company_b_data import generate
+    v = next(v for v in generate("educational").vouchers if v.tag == 1)
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    writer.create_b_voucher(B, vch_type=v.vch_type, date=v.date.strftime("%Y%m%d"), narration=v.narration,
+                            party=v.party, lines=[(l.ledger, l.amount, l.deemed_positive) for l in v.lines],
+                            inventory=[(i.item, "Nos", i.qty, i.rate, i.amount) for i in v.inventory],
+                            bills=[(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills])
+    party_amount = v.lines[0].amount
+    assert party_amount < 0
+    assert _bill_amounts(_imports(books)[-1]) == [("Inv/1", f"{party_amount:.2f}")]
+    assert books.state["bills"] == {"Inv/1": {"party": v.party, "amount": f"{party_amount:.2f}"}}

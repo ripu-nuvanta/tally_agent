@@ -234,3 +234,15 @@ def test_fy_openings_are_the_previous_month_end():
     ds = generate()
     exp = expected_figures(ds)
     assert exp.ledger_fy_opening[("Domestic Sales", date(2023, 4, 1))] == exp.ledger_month_end[("Domestic Sales", date(2023, 3, 31))]
+
+
+def test_every_bill_is_a_magnitude_matching_its_party_line():
+    """C34: BillSpec.amount is a magnitude — the writer applies the party line's sign. A signed bill here would be
+    refused by create_b_voucher, and a mismatch would split the bill-wise balance away from the ledger."""
+    from v2.probes.setup.company_b_data import generate
+    for v in generate("educational").vouchers + generate("licensed").vouchers:
+        if not v.bills:
+            continue
+        party_line = next(l for l in v.lines if l.ledger == v.party)
+        assert all(b.amount > 0 for b in v.bills), v.tag
+        assert sum(b.amount for b in v.bills) == abs(party_line.amount), v.tag

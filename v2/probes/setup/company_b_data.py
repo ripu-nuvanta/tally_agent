@@ -92,7 +92,7 @@ class InventorySpec:
 class BillSpec:
     name: str
     bill_type: str
-    amount: Decimal
+    amount: Decimal          # a MAGNITUDE: the writer signs it like the party line it nests under (C34)
     credit_period: str | None
 
 

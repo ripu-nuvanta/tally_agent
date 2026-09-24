@@ -321,3 +321,50 @@ def test_a_trial_balance_closes_as_on_the_typed_svtodate_only():
     untyped = _post(books, wrap_report("Trial Balance", "01-04-2021", "31-03-2022", B).replace(' TYPE="Date"', ""))
     assert "100.00" not in typed            # as on 31-03-2022 the 1-Apr-2022 receipt hasn't happened yet
     assert "100.00" in untyped              # untyped → current period (to 31-03-2026), which includes it
+
+
+# --- C34: the fake files a bill by the SIGN of its amount, as live Tally did -----------------------------------------
+from v2.agent.tally.reports import parse_bills  # noqa: E402
+
+
+def _sale_with_bill(bill_amount: str, tag: int = 1) -> str:
+    bill = (f"<BILLALLOCATIONS.LIST><NAME>Inv/{tag}</NAME><BILLTYPE>New Ref</BILLTYPE>"
+            f"<AMOUNT>{bill_amount}</AMOUNT></BILLALLOCATIONS.LIST>")
+    return ('<VOUCHER VCHTYPE="Sales" ACTION="Create"><DATE>20250601</DATE>'
+            f"<NARRATION>[S0-B:{tag}] Sale</NARRATION><VOUCHERTYPENAME>Sales</VOUCHERTYPENAME>"
+            "<LEDGERENTRIES.LIST><LEDGERNAME>Pune Traders</LEDGERNAME><ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>"
+            f"<AMOUNT>-9861.74</AMOUNT>{bill}</LEDGERENTRIES.LIST>"
+            + _invoice_entry("Export Sales", "No", "9861.74") + "</VOUCHER>")
+
+
+def _bills(books: FakeBooks, report: str) -> list[str]:
+    return [b.get("bill_number") for b in parse_bills(_post(books, wrap_report(report, "31-03-2026", "31-03-2026", B)))]
+
+
+def test_the_old_c34_shape_files_a_sales_bill_under_payables():
+    """C34 (live UI 2026-09-24): [S0-B:1] sent BILLALLOCATIONS +9861.74 under a −9861.74 party line; Tally
+    accepted it and filed Inv/1 under Bills PAYABLE (Bill collection ClosingBalance 9861.74)."""
+    books = FakeBooks(name=B)
+    assert ImportResult.parse(_post(books, wrap_import("Vouchers", B, _sale_with_bill("9861.74")))).created == 1
+    assert _bills(books, "Bills Payable") == ["Inv/1"]
+    assert _bills(books, "Bills Receivable") == []
+
+
+def test_a_negative_sales_bill_is_a_receivable():
+    books = FakeBooks(name=B)
+    _post(books, wrap_import("Vouchers", B, _sale_with_bill("-9861.74")))
+    assert _bills(books, "Bills Receivable") == ["Inv/1"]
+    assert _bills(books, "Bills Payable") == []
+
+
+def test_an_agst_ref_receipt_knocks_the_receivable_off():
+    books = FakeBooks(name=B)
+    _post(books, wrap_import("Vouchers", B, _sale_with_bill("-9861.74")))
+    receipt = ('<VOUCHER VCHTYPE="Receipt" ACTION="Create"><DATE>20250701</DATE>'
+               "<NARRATION>[S0-B:2] r</NARRATION><VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>"
+               + _entry("Cash", "Yes", "-9861.74")
+               + "<ALLLEDGERENTRIES.LIST><LEDGERNAME>Pune Traders</LEDGERNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+               "<AMOUNT>9861.74</AMOUNT><BILLALLOCATIONS.LIST><NAME>Inv/1</NAME><BILLTYPE>Agst Ref</BILLTYPE>"
+               "<AMOUNT>9861.74</AMOUNT></BILLALLOCATIONS.LIST></ALLLEDGERENTRIES.LIST></VOUCHER>")
+    assert ImportResult.parse(_post(books, wrap_import("Vouchers", B, receipt))).created == 1
+    assert _bills(books, "Bills Receivable") == [] and _bills(books, "Bills Payable") == []
