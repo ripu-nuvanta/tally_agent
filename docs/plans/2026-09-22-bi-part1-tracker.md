@@ -38,6 +38,16 @@ gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probe
 has touched a real Tally instance.**
 
 **Next steps, in order:**
+0g. **2026-09-24 — ✅ COMPANY B LOADED AND VERIFIED CLEAN; backed up. Next: S0 plan part 4 (probes 5 + 21).**
+   C42 `1391e67` (539 green): `_verify_balances` used its own replay that posted flagged vouchers, and
+   `expected_figures` posted optional ones; now both leave cancelled + optional out, with a test pinned to the
+   live run-4 figures. Verify-only `setup-b` (`logs/setup-b-live-2026-09-24-run5-verify.log`): created 0, skipped
+   2 groups / 3 units / 5 items / 25 ledgers / 958 vouchers, **no problems → "Company B loaded … is ready."** TB 0.00.
+   **Backup:** `~/.wine/drive_c/users/Public/TallyPrimeEditLog/s0probe-backups/100000-company-B-loaded-2026-09-24`
+   (file copy of `s0probe/100000` taken with Tally idle, `diff -rq` identical, 13 MB / 26 files). Restore = stop
+   Tally, copy back into `s0probe/100000`. Not in git (like company A's `100003-p13`).
+   **Probes 5 and 21 were never built** (registry lists 21; no module for 5, 11, 14, 15, 21, 22) → plan part 4
+   (`docs/plans/2026-09-24-bi-s0-probes-plan-part4.md`, probes 5 + 21 only) being written.
 0f. **2026-09-24 (evening) — COMPANY B IS LOADED in live Tally; loader verify has 3 expectation mismatches (C42 fixing).**
    C41 `17144b5` (533 green): all 240 purchases carry stock; live check tag 9 (40 Wireless Mouse from Chennai
    Components, 1-Apr-2022) `created=1`, mouse −12 → +28, `Pur/9` +23,996.48 (payable). Run 4
@@ -443,3 +453,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-24 | **C32–C34 live-verified; run 3 stopped; C35–C40 found.** Voucher 1 rewritten correctly (receivable bill). Opening bill written by XML ALTER after the UI entry failed to save. Review found every Agst Ref names a non-existent bill (Critical) — run stopped before any receipt. USD sales skipped by operator decision (probe 22 blocked). Stock opening sign + compound qty text found and fixed live on the two affected items; TB balances. Fix wave C35–C40 dispatched. |
 | 2026-09-24 | **C35–C40 committed (523 green) and live-verified**: +1.00 sign check proves C30; voucher 2 lands compound quantities as "10 Box 0 Nos". Operator chose stocked purchases before loading; C41 dispatched. |
 | 2026-09-24 | **Company B loaded live (run 4): 958/958 vouchers, 0 errors, TB 0.00.** C41 stocked purchases live-verified. 201/202 cancelled via API (`ACTION="Cancel"`), 301/302 optional on create. Verify's 3 group mismatches = exactly the 4 flagged vouchers (Tally excludes cancelled + optional from balances) → C42 fixing `expected_figures`. |
+| 2026-09-24 | **✅ Company B loaded and verified clean** (C42 `1391e67`, 539 green; verify-only run: 0 created, 958 vouchers skipped, no problems). Folder backed up to `s0probe-backups/100000-company-B-loaded-2026-09-24`. Found: probes 5/21 (and 11/14/15/22) have no code — plan part 4 started. |
