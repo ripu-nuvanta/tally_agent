@@ -271,3 +271,53 @@ def test_the_fake_rejects_an_unbalanced_accounting_voucher():
     result = ImportResult.parse(_post(books, wrap_import("Vouchers", B, _voucher_xml(
         _entry("Cash", "Yes", "-1000.00") + _entry("Pune Traders", "No", "900.00")))))
     assert result.exceptions == 1 and books.state["vouchers"] == {}
+
+
+# --- C33: the fake honours a period variable only when it is TYPE="Date", like live Tally ----------------------------
+from v2.agent.tally.envelopes import wrap_report
+from v2.tests.probes.fake_books import CURRENT_PERIOD, requested_period
+
+_OLD_RECEIPT = ('<VOUCHER VCHTYPE="Receipt" ACTION="Create"><DATE>20220401</DATE>'
+                "<NARRATION>[S0-B:1] old</NARRATION><VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>"
+                + _entry("Cash", "Yes", "-100.00") + _entry("Pune Traders", "No", "100.00") + "</VOUCHER>")
+
+
+def _vouchers_in(books: FakeBooks, static_vars: dict[str, str], *, untyped: bool = False) -> list[str]:
+    xml = wrap_collection("S0BVouchers", "Voucher", ["MasterId"], B, static_vars=static_vars)
+    if untyped:
+        xml = xml.replace(' TYPE="Date"', "")
+    return [r["MasterId"] for r in read_objects(_post(books, xml), "VOUCHER", ["MasterId"])]
+
+
+@pytest.mark.parametrize("from_text,to_text", [("01-04-2022", "31-03-2023"), ("20220401", "20230331"),
+                                               ("1-Apr-2022", "31-Mar-2023")])
+def test_a_typed_period_is_honoured_in_every_live_format(from_text, to_text):
+    books = FakeBooks(name=B)
+    assert ImportResult.parse(_post(books, wrap_import("Vouchers", B, _OLD_RECEIPT))).created == 1
+    assert _vouchers_in(books, {"SVFROMDATE": from_text, "SVTODATE": to_text}) == ["51"]
+
+
+def test_an_untyped_period_is_silently_replaced_by_the_current_period():
+    """C33 (live 2026-09-24): untyped SVFROMDATE/SVTODATE come back with a healthy answer for the company's
+    CURRENT period (1-Apr-2025..31-Mar-2026) — a 2022 voucher is simply not there."""
+    books = FakeBooks(name=B)
+    _post(books, wrap_import("Vouchers", B, _OLD_RECEIPT))
+    assert _vouchers_in(books, {"SVFROMDATE": "01-04-2022", "SVTODATE": "31-03-2023"}, untyped=True) == []
+    assert requested_period('<SVFROMDATE>01-04-2022</SVFROMDATE>') == CURRENT_PERIOD == ("20250401", "20260331")
+
+
+def test_the_current_period_is_configurable():
+    books = FakeBooks(name=B, current_period=("20220401", "20230331"))
+    _post(books, wrap_import("Vouchers", B, _OLD_RECEIPT))
+    assert _vouchers_in(books, {"SVFROMDATE": "01-04-2022", "SVTODATE": "31-03-2023"}, untyped=True) == ["51"]
+
+
+def test_a_trial_balance_closes_as_on_the_typed_svtodate_only():
+    books = FakeBooks(name=B)
+    books.edit_state(lambda s: s["ledgers"].update({"Pune Traders": {"parent": "Sundry Debtors", "email": "",
+                                                                      "alter_id": 1, "guid": "g"}}))
+    _post(books, wrap_import("Vouchers", B, _OLD_RECEIPT))
+    typed = _post(books, wrap_report("Trial Balance", "01-04-2021", "31-03-2022", B))
+    untyped = _post(books, wrap_report("Trial Balance", "01-04-2021", "31-03-2022", B).replace(' TYPE="Date"', ""))
+    assert "100.00" not in typed            # as on 31-03-2022 the 1-Apr-2022 receipt hasn't happened yet
+    assert "100.00" in untyped              # untyped → current period (to 31-03-2026), which includes it

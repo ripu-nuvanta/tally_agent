@@ -206,7 +206,7 @@ def test_master_request_refuses_period_variables(static_vars):
 def test_master_request_allows_period_variables_only_when_explicitly_allowed():
     xml = master_request("S0Test", "Ledger", ["Name"], "Co", static_vars={"SVFROMDATE": "01-10-2025"},
                          allow_period_vars=True)
-    assert "<SVFROMDATE>01-10-2025</SVFROMDATE>" in xml
+    assert '<SVFROMDATE TYPE="Date">01-10-2025</SVFROMDATE>' in xml
 
 
 def test_master_request_without_period_variables_is_unchanged():
@@ -216,6 +216,6 @@ def test_master_request_without_period_variables_is_unchanged():
 def test_voucher_request_and_wrap_report_still_send_both_period_variables():
     """Both are proven fine live and both legitimately need the variables — the guard must not touch them."""
     voucher = voucher_request("S0Test", ["Date"], "Co")
-    assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in voucher and "<SVTODATE>31-03-2026</SVTODATE>" in voucher
+    assert '<SVFROMDATE TYPE="Date">01-04-2025</SVFROMDATE>' in voucher and '<SVTODATE TYPE="Date">31-03-2026</SVTODATE>' in voucher
     report = wrap_report("Trial Balance", "01-04-2025", "31-10-2025", "Co")
-    assert "<SVFROMDATE>01-04-2025</SVFROMDATE>" in report and "<SVTODATE>31-10-2025</SVTODATE>" in report
+    assert '<SVFROMDATE TYPE="Date">01-04-2025</SVFROMDATE>' in report and '<SVTODATE TYPE="Date">31-10-2025</SVTODATE>' in report

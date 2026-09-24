@@ -1,7 +1,8 @@
 # Copied from: backend/tally_bridge/request_builder.py @ c04d7d2
 # Changes: the company name is always XML-escaped (the source leaves it raw in _wrap_voucher_collection,
 # _wrap_report_envelope and build_ledger_vouchers — Part 1 R13); the collection wrapper also takes static
-# variables, filters and extra TDL; only the wrappers and build_company_list are copied.
+# variables, filters and extra TDL; only the wrappers and build_company_list are copied; SV*DATE static variables
+# carry TYPE="Date" (C33 — the source sends them untyped and Tally then ignores them).
 """Pure XML envelope builders for Tally export requests. No I/O."""
 from __future__ import annotations
 
@@ -10,6 +11,10 @@ from xml.sax.saxutils import escape as _xml_escape
 
 COMPANY_PLACEHOLDER = "__COMPANY__"
 _VAR_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9]*$")
+# C33 (live 2026-09-24): Tally honours a period variable ONLY with TYPE="Date". Untyped, `<SVFROMDATE>01-04-2022`
+# (and 20220401, 1-Apr-2022) is silently replaced by the company's current period — a healthy answer for the
+# wrong window. Typed, all three formats are honoured. Every SV*DATE variable is typed here, and nothing else.
+_DATE_VAR = re.compile(r"^SV[A-Z0-9]*DATE$", re.IGNORECASE)
 
 
 def esc(value: str) -> str:
@@ -29,7 +34,8 @@ def _static_vars(company: str | None, static_vars: dict[str, str] | None) -> str
     for name, value in (static_vars or {}).items():
         if not _VAR_NAME.match(name):
             raise ValueError(f"Invalid static variable name: {name!r}")
-        lines.append(f"<{name}>{esc(value)}</{name}>")
+        type_attr = ' TYPE="Date"' if _DATE_VAR.match(name) else ""
+        lines.append(f"<{name}{type_attr}>{esc(value)}</{name}>")
     if company:
         lines.append(f"<SVCurrentCompany>{esc(company)}</SVCurrentCompany>")
     return "\n".join(lines)

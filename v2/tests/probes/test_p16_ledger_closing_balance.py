@@ -76,13 +76,13 @@ def _fake(**overrides):
         "LastVoucherDate": state["last_voucher_date"], "AlterID": "266"}]))
 
     def ledgers(body):
-        if "<SVFROMDATE>" in body:                       # the opt-in dangerous read
+        if "<SVFROMDATE" in body:                       # the opt-in dangerous read
             state["svfromdate_sent"] = True
             if state["svfromdate"] == "wedge":
                 state["wedged"] = True
                 return httpx.ReadTimeout
             return objects_xml("LEDGER", FROM)
-        if state["as_on"] and "<SVTODATE>31-10-2025</SVTODATE>" in body:
+        if state["as_on"] and '<SVTODATE TYPE="Date">31-10-2025</SVTODATE>' in body:
             return objects_xml("LEDGER", ASOF)
         return objects_xml("LEDGER", _fy_ledgers(state))
 
@@ -207,8 +207,8 @@ async def test_a_default_run_never_sends_svfromdate_on_a_ledger_collection(tmp_p
     _, _, part = await _run(tmp_path, fake, _io(on_action))
     assert part["outcome"] == "CONFIRMED", part["summary"]
     ledger_reads = [r for r in fake.probe_requests() if "S0P16Ledgers" in r]
-    assert ledger_reads and not any("<SVFROMDATE>" in r for r in ledger_reads)
-    assert [r for r in ledger_reads if "<SVTODATE>31-10-2025</SVTODATE>" in r]     # the safe half still runs
+    assert ledger_reads and not any("<SVFROMDATE" in r for r in ledger_reads)
+    assert [r for r in ledger_reads if '<SVTODATE TYPE="Date">31-10-2025</SVTODATE>' in r]     # the safe half still runs
     assert part["observations"]["as_on_svfromdate"] == {"attempted": False, "note": p16.SVFROMDATE_SKIPPED}
     assert "p16_A_ledgers_svfromdate_2025-10-01.xml" not in part["fixtures"]
 
@@ -233,7 +233,7 @@ async def test_the_svfromdate_read_is_opt_in_and_a_wedge_is_reported_not_crashed
     company list, the probe records the wedge, tells the operator to restart Tally, and keeps every earlier check."""
     fake, on_action = _fake(svfromdate="wedge")
     _, _, part = await _run(tmp_path, fake, _io(on_action), allow_risky=True)
-    assert any("<SVFROMDATE>01-10-2025</SVFROMDATE>" in r for r in fake.probe_requests() if "S0P16Ledgers" in r)
+    assert any('<SVFROMDATE TYPE="Date">01-10-2025</SVFROMDATE>' in r for r in fake.probe_requests() if "S0P16Ledgers" in r)
     assert part["outcome"] == "FAILED"
     assert "restart Tally before anything else" in part["summary"]
     attempt = part["observations"]["as_on_svfromdate"]

@@ -39,6 +39,34 @@ def _dr_cr(value: Decimal) -> tuple[str, str]:
     positive under DSPCLCRAMTA (tests/fixtures/tally_samples/trial_balance_live.xml)."""
     return (f"{value:.2f}", "") if value < 0 else ("", f"{value:.2f}")
 
+# C33 (live 2026-09-24): Tally honours SVFROMDATE/SVTODATE only with TYPE="Date" (formats 01-04-2022, 20220401 and
+# 1-Apr-2022 all work typed). Untyped, it silently answers for the company's CURRENT period — live that was
+# 1-Apr-2025..31-Mar-2026, the fake's default. A period variable the fake can't read also falls back to it.
+CURRENT_PERIOD = ("20250401", "20260331")
+_TYPED_DATE_VAR = r'<{name}\s+TYPE="Date">([^<]*)</{name}>'
+
+
+def _yyyymmdd(text: str) -> str | None:
+    from datetime import datetime
+    for fmt in ("%d-%m-%Y", "%Y%m%d", "%d-%b-%Y", "%d-%b-%y"):
+        try:
+            return datetime.strptime(text.strip(), fmt).strftime("%Y%m%d")
+        except ValueError:
+            continue
+    return None
+
+
+def requested_period(body: str, current: tuple[str, str] = CURRENT_PERIOD) -> tuple[str, str]:
+    """The (from, to) window Tally would use for a request: the typed SVFROMDATE/SVTODATE, each falling back to
+    the current period when absent or UNTYPED (C33) — exactly the silent substitution live Tally makes."""
+    period = []
+    for name, fallback in (("SVFROMDATE", current[0]), ("SVTODATE", current[1])):
+        match = re.search(_TYPED_DATE_VAR.format(name=name), body)
+        parsed = _yyyymmdd(html.unescape(match.group(1))) if match else None
+        period.append(parsed or fallback)
+    return period[0], period[1]
+
+
 GUID = "710de34a-3661-4a7b-8148-c2206c3b3e17"
 STATE_FILE = "fake_company.json"
 COMPANY_LIST_MARKER = "<ID>List of Companies</ID>"
@@ -96,8 +124,10 @@ class FakeBooks:
 
     def __init__(self, folder: Path | None = None, *, name: str = SEED_COMPANY, running: bool = True,
                  loaded: bool = True, educational: bool = True, click_polls_on_load: int = 0,
-                 busy_polls_on_load: int = 0, drop_flags: bool = False, fail_imports: bool = False):
+                 busy_polls_on_load: int = 0, drop_flags: bool = False, fail_imports: bool = False,
+                 current_period: tuple[str, str] = CURRENT_PERIOD):
         self.folder = folder
+        self.current_period = current_period  # C33: what an untyped (ignored) period variable reads instead
         self._memory = seed_state(name)
         self.running = running
         self.loaded = loaded
@@ -193,9 +223,12 @@ class FakeBooks:
                 "Name": state["name"], "GUID": state["guid"], "AltVchId": str(state["alt_vch"]),
                 "AltMstId": str(state["alt_mst"]), "BooksFrom": "20250401",
                 "LastVoucherDate": state["last_voucher_date"], "AlterID": str(state["alt_mst"])}])
+        period = requested_period(body, self.current_period)
+        in_period = {mid: v for mid, v in state["vouchers"].items()
+                     if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1]}
         if "S0OpVouchers" in body:
             return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
-                                            "IsPostDated": v["post_dated"]} for mid, v in state["vouchers"].items()])
+                                            "IsPostDated": v["post_dated"]} for mid, v in in_period.items()])
         if "S0LedgerList" in body:
             return objects_xml("LEDGER", [{"Name": n, "Parent": led["parent"]} for n, led in state["ledgers"].items()])
         if "S0OpLedger" in body or "S0OneLedger" in body or "S0SignCheckOpening" in body:
@@ -219,11 +252,11 @@ class FakeBooks:
         if "S0BVouchers" in body:
             return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
                                             "IsPostDated": v["post_dated"], "IsCancelled": v["cancelled"],
-                                            "IsOptional": v["optional"]} for mid, v in state["vouchers"].items()])
+                                            "IsOptional": v["optional"]} for mid, v in in_period.items()])
         if "S0BVoucherTypes" in body:
             return objects_xml("VOUCHERTYPE", [{"Name": n} for n in state["voucherTypes"]])
         if "<ID>Trial Balance</ID>" in body:
-            return tb_xml(self._trial_balance_rows(state))
+            return tb_xml(self._trial_balance_rows(state, as_on=period[1]))
         if "<ID>Bills Receivable</ID>" in body:
             return bills_xml(state.get("bills_receivable", []))
         return "<ENVELOPE></ENVELOPE>"
@@ -234,7 +267,7 @@ class FakeBooks:
         group = state["groups"].get(ledger_parent)
         return group["parent"] if group else ledger_parent
 
-    def _trial_balance_rows(self, state: dict) -> list[tuple[str, str, str]]:
+    def _trial_balance_rows(self, state: dict, as_on: str = "99991231") -> list[tuple[str, str, str]]:
         """An exploded-to-two-levels Trial Balance (EXPLODEFLAG=Yes shape, probe 17), computed from whatever
         ledgers/groups/vouchers this fake actually has on record — not from any dataset's idea of what should
         be there. Real Tally XML signs a debit-natured closing balance negative and a credit-natured one
@@ -247,6 +280,8 @@ class FakeBooks:
         """
         balances = {name: Decimal(led.get("opening", "0.00")) for name, led in state["ledgers"].items()}
         for voucher in state["vouchers"].values():
+            if (_yyyymmdd(voucher["date"]) or voucher["date"]) > as_on:                # C33: closing as on the (typed, or current-period) SVTODATE
+                continue
             for line in voucher.get("lines", []):
                 name = line["ledger"]
                 balances[name] = balances.get(name, Decimal("0.00")) + Decimal(line["amount"] or "0.00")

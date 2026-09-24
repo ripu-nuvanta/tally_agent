@@ -57,3 +57,31 @@ def test_esc_and_formula_string():
     assert formula_string("Bank Charges") == '"Bank Charges"'
     with pytest.raises(ValueError):
         formula_string('say "hi"')
+
+
+# --- C33 (live 2026-09-24): Tally honours a period variable ONLY when it is typed ------------------------------------
+# Untyped <SVFROMDATE>01-04-2022</SVFROMDATE> (also 20220401, 1-Apr-2022) is silently replaced by the company's
+# current period; with TYPE="Date" all three formats are honoured. The one renderer (_static_vars) types every
+# SV*DATE variable and nothing else.
+def _typed(root: ET.Element) -> dict[str, str | None]:
+    return {child.tag: child.get("TYPE") for child in root.find(".//STATICVARIABLES")}
+
+
+def test_report_period_variables_are_typed_as_dates_and_nothing_else_is():
+    root = ET.fromstring(wrap_report("Trial Balance", "01-04-2022", "31-03-2026", "Co", extra_vars={"EXPLODEFLAG": "Yes"}))
+    assert _typed(root) == {"SVEXPORTFORMAT": None, "SVFROMDATE": "Date", "SVTODATE": "Date", "EXPLODEFLAG": None,
+                            "SVCurrentCompany": None}
+    assert root.find(".//SVFROMDATE").text == "01-04-2022"
+
+
+def test_collection_period_variables_are_typed_as_dates():
+    root = ET.fromstring(wrap_collection("C2", "Voucher", ["Date"], "Co", static_vars={
+        "SVFROMDATE": "01-04-2022", "SVTODATE": "31-03-2026", "SVCURRENTDATE": "31-03-2026", "SVOTHER": "x"}))
+    assert _typed(root) == {"SVEXPORTFORMAT": None, "SVFROMDATE": "Date", "SVTODATE": "Date",
+                            "SVCURRENTDATE": "Date", "SVOTHER": None, "SVCurrentCompany": None}
+
+
+def test_the_typed_wire_text_is_exact():
+    xml = wrap_report("Trial Balance", "01-04-2022", "31-03-2026")
+    assert '<SVFROMDATE TYPE="Date">01-04-2022</SVFROMDATE>' in xml
+    assert '<SVTODATE TYPE="Date">31-03-2026</SVTODATE>' in xml
