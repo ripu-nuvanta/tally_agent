@@ -38,6 +38,18 @@ gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probe
 has touched a real Tally instance.**
 
 **Next steps, in order:**
+0f. **2026-09-24 (evening) — COMPANY B IS LOADED in live Tally; loader verify has 3 expectation mismatches (C42 fixing).**
+   C41 `17144b5` (533 green): all 240 purchases carry stock; live check tag 9 (40 Wireless Mouse from Chennai
+   Components, 1-Apr-2022) `created=1`, mouse −12 → +28, `Pur/9` +23,996.48 (payable). Run 4
+   (`logs/setup-b-live-2026-09-24-run4.log`): **955 vouchers created in ~1 min, 0 errors, 3 skipped (tags 1, 2, 9
+   already present); 958/958 tagged vouchers read back, no duplicates; TB Dr/Cr total 0.00.** Optional flags on
+   301/302 stuck on create. ISCANCELLED on 201/202 did not → cancelled via the production-verified
+   `ACTION="Cancel"` + `TAGNAME="Master ID"` (keeping the narration/tag) → `ALTERED=1`, read-back IsCancelled=Yes
+   (`logs/cancel-201-202-2026-09-24.log`) — no UI step needed. `_verify_balances` then flagged Sundry Debtors /
+   Sales Accounts / Duties & Taxes short by 69,283.24 / 58,714.62 / 10,568.62 — **exactly the four flagged sales
+   (201+202 cancelled, 301+302 optional)**. Live fact: Tally leaves cancelled AND optional vouchers out of
+   balances; `expected_figures` counts them. C42 dispatched. Next: verify C42 → re-run `setup-b` (verify-only,
+   expect "Company B loaded") → back up `s0probe/100000` → Batch 5, probe 21 first.
 0e. **2026-09-24 (late afternoon) — C35–C40 landed and live-verified; C41 in flight; load not yet resumed.**
    C35 `8565146`, C36 `710d354`, C37 `7273838`, C38 `107d435`, C39 `1f5cd93`, C40 `c866d74` — **523 green**.
    Live (`logs/live-checks-c38-c40-2026-09-24.log`): **C38 settles C30 for good** — +1.00 under Sundry Debtors reads
@@ -430,3 +442,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-24 | **setup-b run 2: masters ✅, vouchers blocked — C32 + C33 found live.** All 31 masters created cleanly; signed openings confirmed in the UI. Voucher 1 `EXCEPTIONS=1`: root cause C32 = nominal ledger emitted twice in invoice mode (fixed by hand for voucher 1 only, `CREATED=1`). Then the loader's own read-back saw 0 vouchers: root cause C33 = period variables need `TYPE="Date"`, otherwise Tally silently uses the current period — **probes 16/17/18 conclusions suspect**. Run stopped cleanly; code fixes next. Logs: `logs/setup-b-live-2026-09-24-run2.log`, `logs/debug-vch1-*.log`. |
 | 2026-09-24 | **C32–C34 live-verified; run 3 stopped; C35–C40 found.** Voucher 1 rewritten correctly (receivable bill). Opening bill written by XML ALTER after the UI entry failed to save. Review found every Agst Ref names a non-existent bill (Critical) — run stopped before any receipt. USD sales skipped by operator decision (probe 22 blocked). Stock opening sign + compound qty text found and fixed live on the two affected items; TB balances. Fix wave C35–C40 dispatched. |
 | 2026-09-24 | **C35–C40 committed (523 green) and live-verified**: +1.00 sign check proves C30; voucher 2 lands compound quantities as "10 Box 0 Nos". Operator chose stocked purchases before loading; C41 dispatched. |
+| 2026-09-24 | **Company B loaded live (run 4): 958/958 vouchers, 0 errors, TB 0.00.** C41 stocked purchases live-verified. 201/202 cancelled via API (`ACTION="Cancel"`), 301/302 optional on create. Verify's 3 group mismatches = exactly the 4 flagged vouchers (Tally excludes cancelled + optional from balances) → C42 fixing `expected_figures`. |
