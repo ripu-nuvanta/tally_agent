@@ -11,12 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 from v2.agent.tally.envelopes import COMPANY_PLACEHOLDER, wrap_report
-from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_TO, compare_tags, expect_window, loaded_licence,
-                                      voucher_rows)
+from v2.probes.company_b_view import B_BOOKS_FROM, B_BOOKS_TO, drift_message, fetch_window, loaded_licence
 from v2.probes.context import ProbeContext
-from v2.probes.core import Outcome, PartResult, Probe
-from v2.probes.reads import (FROM_PLACEHOLDER, TO_PLACEHOLDER, VOUCHER_MONTH_FIELDS, dmy, exploded_tb_rows,
-                             fill_month_request, primary_group_rows, untyped_period_vars, voucher_request)
+from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
+from v2.probes.reads import (FROM_PLACEHOLDER, TO_PLACEHOLDER, VOUCHER_MONTH_FIELDS, exploded_tb_rows,
+                             primary_group_rows, untyped_period_vars, voucher_request)
 
 MONTH_FROM, MONTH_TO = "01-06-2023", "30-06-2023"   # FY 2023-24: outside the current period; no flagged voucher
 DAY = "01-06-2023"
@@ -49,13 +48,6 @@ def formula_template() -> str:
                            to_date=B_BOOKS_TO, filters=[(FORMULA_FILTER, FORMULA_CANDIDATE)])
 
 
-async def _window(ctx: ProbeContext, step: str, template: str, licence: str, start: str, end: str, *,
-                  untyped: bool = False) -> dict[str, Any]:
-    xml = fill_month_request(template, ctx.company_name, start, end)
-    text = await ctx.send(step, untyped_period_vars(xml) if untyped else xml)
-    return compare_tags(voucher_rows(text), expect_window(licence, dmy(start), dmy(end)), dmy(start), dmy(end))
-
-
 def _group_rows(text: str) -> dict[str, str]:
     return {name: str(row["closing_balance"]) for name, row in primary_group_rows(exploded_tb_rows(text)).items()}
 
@@ -80,22 +72,29 @@ def _untyped_evidence(untyped: dict[str, Any], reproduced: bool) -> str:
 async def run_b(ctx: ProbeContext) -> PartResult:
     licence = loaded_licence(ctx.store.environment)
     typed_template = svdates_template()
-    typed = await _window(ctx, "month_svdates", typed_template, licence, MONTH_FROM, MONTH_TO)
-    untyped = await _window(ctx, "month_svdates_untyped", typed_template, licence, MONTH_FROM, MONTH_TO, untyped=True)
-    reproduced = typed["match"] and not untyped["match"]
+    typed, _ = await fetch_window(ctx, "month_svdates", typed_template, licence, MONTH_FROM, MONTH_TO)
     ctx.observe("month_typed", typed)
+    # I1: a bounded, complete window that also holds an untagged/extra/duplicate row is books drift, not a request
+    # failure — never try the formula fallback for it, and never let it read as FAILED/FAILED_IMPACT.
+    if typed["drifted"]:
+        raise ProbeBlocked(drift_message("month_svdates", typed))
+    untyped, _ = await fetch_window(ctx, "month_svdates_untyped", typed_template, licence, MONTH_FROM, MONTH_TO,
+                                    untyped=True)
+    reproduced = typed["match"] and not untyped["match"]
     ctx.observe("month_untyped", untyped)
     ctx.observe("c33_reproduced", reproduced)
 
-    form, template = ("svdates_typed", typed_template) if typed["match"] else (None, None)
+    form, template = ("svdates_typed", typed_template) if typed["reach_ok"] else (None, None)
     if form is None:
-        formula = await _window(ctx, "month_formula", formula_template(), licence, MONTH_FROM, MONTH_TO)
+        formula, _ = await fetch_window(ctx, "month_formula", formula_template(), licence, MONTH_FROM, MONTH_TO)
         ctx.observe("month_formula", formula)
-        if formula["match"]:
+        if formula["drifted"]:
+            raise ProbeBlocked(drift_message("month_formula", formula))
+        if formula["reach_ok"]:
             form, template = "formula", formula_template()
     day = None
     if form is not None:
-        day = await _window(ctx, "day_svdates", template, licence, DAY, DAY)
+        day, _ = await fetch_window(ctx, "day_svdates", template, licence, DAY, DAY)
         ctx.observe("day", day)
     ctx.observe("report_period_vars", await _report_pair(ctx))
 

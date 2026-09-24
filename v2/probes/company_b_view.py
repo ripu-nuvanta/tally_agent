@@ -13,18 +13,26 @@ back is recorded, never judged: probe 3's B part owns the flags (S0-D7).
 from __future__ import annotations
 
 import re
+from calendar import monthrange
 from dataclasses import dataclass
 from datetime import date
 from functools import lru_cache
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from v2.probes.core import ProbeBlocked
-from v2.probes.reads import parse_vouchers, tally_date
-from v2.probes.setup.company_b_data import COMPANY_B_BOOKS_FROM, TAG_PREFIX, Dataset, VoucherSpec, generate
+from v2.probes.reads import dmy, fill_month_request, parse_vouchers, tally_date, untyped_period_vars
+from v2.probes.setup.company_b_data import (COMPANY_B_BOOKS_FROM, COMPANY_B_LAST_MONTH, TAG_PREFIX, Dataset,
+                                            VoucherSpec, generate)
+
+if TYPE_CHECKING:
+    from v2.probes.context import ProbeContext
 
 B_BOOKS_FROM_DATE = COMPANY_B_BOOKS_FROM
 B_BOOKS_FROM = COMPANY_B_BOOKS_FROM.strftime("%d-%m-%Y")        # "01-04-2022"
-B_BOOKS_TO = "31-03-2026"                                       # the dataset's last month (COMPANY_B_LAST_MONTH)
+# The dataset's last month (COMPANY_B_LAST_MONTH), end-of-month — was hard-coded "31-03-2026" (review M2/P8b).
+_B_BOOKS_TO_DATE = date(COMPANY_B_LAST_MONTH.year, COMPANY_B_LAST_MONTH.month,
+                        monthrange(COMPANY_B_LAST_MONTH.year, COMPANY_B_LAST_MONTH.month)[1])
+B_BOOKS_TO = _B_BOOKS_TO_DATE.strftime("%d-%m-%Y")
 _TAG = re.compile(rf"^\[{re.escape(TAG_PREFIX)}:(\d+)\]")
 
 
@@ -88,9 +96,45 @@ def compare_tags(rows: list[dict[str, Any]], expected: WindowExpectation, start:
         "flagged_returned": sorted(expected.flagged & got),
         "flagged_missing": sorted(expected.flagged - got),
     }
-    result["match"] = (result["bounded"] and not result["untagged"] and not result["missing"]
-                       and not result["extra"] and not result["duplicates"])
+    # I1: split "the request doesn't bound the window" (reach_ok False — a real request/reach failure) from "the
+    # request bounded and returned every expected tag, but the books hold something the dataset doesn't" (drifted —
+    # company B no longer matches its generated dataset; never a request failure). `match` keeps its original,
+    # stricter meaning (reach_ok and not drifted) so every existing exactness check is unchanged.
+    result["reach_ok"] = result["bounded"] and not result["missing"]
+    result["drifted"] = result["reach_ok"] and bool(result["untagged"] or result["extra"] or result["duplicates"])
+    result["match"] = result["reach_ok"] and not result["drifted"]
     return result
+
+
+def drift_message(step: str, result: dict[str, Any]) -> str:
+    """I1: the window bounded and every expected tag came back, but something extra came with it — an untagged
+    row, an unexpected tag, or a duplicate. That means company B has drifted from its generated dataset (a hand
+    edit, a partial reseed, …), not that the request under test failed to bound or fetch the window."""
+    bits = []
+    if result["untagged"]:
+        bits.append(f"untagged {result['untagged']}")
+    if result["extra"]:
+        bits.append(f"extra {result['extra']}")
+    if result["duplicates"]:
+        bits.append(f"duplicates {result['duplicates']}")
+    return (f"Company B differs from the dataset in {step}: {', '.join(bits)} — re-run `setup-b` verify or "
+            "restore the backup before trusting this probe again.")
+
+
+async def fetch_window(ctx: "ProbeContext", step: str, template: str, licence: str, start: str, end: str, *,
+                       untyped: bool = False) -> tuple[dict[str, Any], str]:
+    """Fetch and decode one Voucher-collection month/day window through the ONE shared path probe 5 and probe 21
+    both call (review M2/P8b — they used to decode the same kind of response two different ways: probe 5 read
+    `ctx.send`'s sanitized text, probe 21 separately re-decoded `ctx.last_response.raw`). `start`/`end` are
+    DD-MM-YYYY. Returns (compare_tags result, the raw response text) — `parse_vouchers` sanitizes internally, so
+    the same raw text is safe both for tag comparison (`voucher_rows`) and for probe 21's byte-accurate size
+    measurement (`voucher_blocks`), which is why this hands back the raw text rather than `ctx.send`'s return value.
+    """
+    xml = fill_month_request(template, ctx.company_name, start, end)
+    await ctx.send(step, untyped_period_vars(xml) if untyped else xml)
+    raw_text = ctx.last_response.raw.decode("utf-8")
+    result = compare_tags(voucher_rows(raw_text), expect_window(licence, dmy(start), dmy(end)), dmy(start), dmy(end))
+    return result, raw_text
 
 
 def loaded_licence(environment: dict[str, Any]) -> str:

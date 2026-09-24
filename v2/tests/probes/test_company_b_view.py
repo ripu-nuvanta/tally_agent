@@ -3,12 +3,22 @@ from datetime import date
 
 import pytest
 
+from v2.agent.tally.client import TallyClient
+from v2.agent.tally.envelopes import COMPANY_PLACEHOLDER
+from v2.probes.capture import Capture
+from v2.probes.companies import COMPANIES
 from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, B_BOOKS_TO, compare_tags, dataset,
-                                      expect_window, kind_label, loaded_licence, tag_of, voucher_rows)
-from v2.probes.core import ProbeBlocked
-from v2.tests.probes.fakes import vch, vouchers_xml
+                                      drift_message, expect_window, fetch_window, kind_label, loaded_licence, tag_of,
+                                      voucher_rows)
+from v2.probes.context import ProbeContext
+from v2.probes.core import Probe, ProbeBlocked
+from v2.probes.p21_full_history_reach import voucher_blocks
+from v2.probes.reads import FROM_PLACEHOLDER, TO_PLACEHOLDER, parse_vouchers, tally_date, voucher_request
+from v2.probes.results import ResultsStore
+from v2.tests.probes.fakes import FakeTally, ScriptedIO, ready_store, vch, vouchers_xml
 
 JUNE = (date(2023, 6, 1), date(2023, 6, 30))
+B = COMPANIES["B"]
 
 
 def _rows(tags_and_days):
@@ -96,3 +106,80 @@ def test_loaded_licence_needs_a_clean_setup_b_and_a_recorded_licence():
     with pytest.raises(ProbeBlocked, match="probe 0"):
         loaded_licence({"company_b_loaded_at": "2026-09-24T13:02:33+05:30"})
     assert loaded_licence({"licence": "educational", "company_b_loaded_at": "x"}) == "educational"
+
+
+def test_compare_tags_separates_a_request_failure_from_books_drift():
+    """I1: reach_ok tracks whether THIS request bounded and returned every expected tag — the real "did the
+    request work" question. drifted tracks a fully-bounded, fully-complete window that also carries an
+    untagged/extra/duplicate row — company B no longer matches its dataset, never a request failure. `match`
+    keeps its original, stricter meaning (reach_ok and not drifted)."""
+    june = expect_window("educational", *JUNE)
+    exact = compare_tags(_rows((t, v.date) for t, v in june.written.items()), june, *JUNE)
+    assert exact["reach_ok"] and not exact["drifted"] and exact["match"]
+
+    tags = sorted(june.written)
+    missing_one = compare_tags(_rows((t, june.written[t].date) for t in tags[1:]), june, *JUNE)
+    assert not missing_one["reach_ok"] and not missing_one["drifted"] and not missing_one["match"]
+
+    unbounded = compare_tags(_rows([(t, v.date) for t, v in june.written.items()] + [(301, date(2023, 7, 1))]),
+                             june, *JUNE)
+    assert not unbounded["reach_ok"] and not unbounded["drifted"] and not unbounded["match"]
+
+    with_untagged = compare_tags(_rows([(t, v.date) for t, v in june.written.items()]
+                                       + [(None, date(2023, 6, 1))]), june, *JUNE)
+    assert with_untagged["reach_ok"] and with_untagged["drifted"] and not with_untagged["match"]
+
+    with_extra = compare_tags(_rows([(t, v.date) for t, v in june.written.items()] + [(101, date(2023, 6, 1))]),
+                              june, *JUNE)
+    assert with_extra["reach_ok"] and with_extra["drifted"] and not with_extra["match"]
+
+    with_duplicate = compare_tags(_rows([(t, v.date) for t, v in june.written.items()]
+                                        + [(tags[0], june.written[tags[0]].date)]), june, *JUNE)
+    assert with_duplicate["reach_ok"] and with_duplicate["drifted"] and not with_duplicate["match"]
+
+
+def test_drift_message_names_the_offending_rows():
+    june = expect_window("educational", *JUNE)
+    tags = sorted(june.written)
+    drifted = compare_tags(_rows([(t, v.date) for t, v in june.written.items()]
+                                 + [(101, date(2023, 6, 1)), (None, date(2023, 6, 2)),
+                                    (tags[0], june.written[tags[0]].date)]), june, *JUNE)
+    message = drift_message("month_svdates", drifted)
+    assert "month_svdates" in message and "extra [101]" in message and "untagged 1" in message
+    assert f"duplicates [{tags[0]}]" in message
+    assert "setup-b" in message
+
+
+async def test_fetch_window_gives_both_consumption_paths_the_same_tag_set(tmp_path):
+    """P8b (review M2): probe 5's path (compare_tags via voucher_rows) and probe 21's path (voucher_blocks + tag_of,
+    for size measurement) used to decode the response two different ways. Feeding the same raw month response
+    through the one shared `fetch_window` and then independently re-parsing its returned raw text through BOTH
+    consumption paths must give identical tag sets and dates."""
+    june = expect_window("educational", *JUNE)
+    response = vouchers_xml([vch({"DATE": v.date.strftime("%Y%m%d"), "VOUCHERTYPENAME": v.vch_type,
+                                  "NARRATION": v.narration}) for v in june.written.values()])
+    fake = FakeTally([B])
+    fake.route("S0Test", lambda body: response)
+    template = voucher_request("S0Test", ["Date"], COMPANY_PLACEHOLDER, from_date=FROM_PLACEHOLDER,
+                               to_date=TO_PLACEHOLDER)
+    store = ResultsStore(tmp_path / "results.json")
+    ready_store(store, licence="educational")
+    probe = Probe(id=999, name="test", question="", feeds=(), parts={})
+    ctx = ProbeContext(probe=probe, part="B", company_name=B, client=TallyClient(transport=fake.transport()),
+                       store=store, capture=Capture(tmp_path / "fixtures"), io=ScriptedIO())
+
+    result, raw_text = await fetch_window(ctx, "window", template, "educational", "01-06-2023", "30-06-2023")
+
+    # Probe 5's path: compare_tags built from voucher_rows(raw_text).
+    p05_rows = voucher_rows(raw_text)
+    p05_tags = {row["tag"] for row in p05_rows}
+    p05_dates = {row["date"] for row in p05_rows}
+    # Probe 21's path: voucher_blocks(raw_text) + tag_of/parse_vouchers, independently, on the SAME raw_text.
+    p21_blocks = [parse_vouchers(block)[0] for block in voucher_blocks(raw_text)]
+    p21_tags = {tag_of(v["header"].get("NARRATION", "")) for v in p21_blocks}
+    p21_dates = {tally_date(v["header"].get("DATE", "")) for v in p21_blocks}
+
+    expected_tags, expected_dates = set(june.written), {v.date for v in june.written.values()}
+    assert p05_tags == p21_tags == expected_tags
+    assert p05_dates == p21_dates == expected_dates
+    assert result["match"] and result["returned"] == len(june.written)

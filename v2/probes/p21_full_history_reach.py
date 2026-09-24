@@ -21,11 +21,11 @@ from typing import Any
 
 from v2.agent.tally.xml_utils import sanitize_xml
 from v2.probes.capture import TIMING_NOTE
-from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, compare_tags, expect_window, kind_label,
-                                      loaded_licence, tag_of, voucher_rows)
+from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, drift_message, expect_window, fetch_window,
+                                      kind_label, loaded_licence, tag_of)
 from v2.probes.context import ProbeContext
 from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
-from v2.probes.reads import fill_month_request, parse_vouchers, primary_lines, tally_date
+from v2.probes.reads import parse_vouchers, primary_lines, tally_date
 
 PG_ROW_OVERHEAD_BYTES = 28      # PostgreSQL heap tuple header (23 B, aligned to 24) + 4-byte line pointer
 VOLUMES = (10_000, 50_000, 200_000)
@@ -213,10 +213,11 @@ def _labels(licence: str, start: date, end: date) -> dict[int, str]:
 
 async def _month(ctx: ProbeContext, template: str, licence: str, step: str, start: date,
                  end: date) -> tuple[dict[str, Any], dict[int, str]]:
-    text = await ctx.send(step, fill_month_request(template, ctx.company_name, _dmy(start), _dmy(end)))
-    result = compare_tags(voucher_rows(text), expect_window(licence, start, end), start, end)
+    # M2/P8b: goes through company_b_view.fetch_window, the SAME decode path probe 5 uses — not a second copy that
+    # can drift from probe 5's own compare (the raw text it hands back is also what `_blocks_by_tag` measures).
+    result, raw_text = await fetch_window(ctx, step, template, licence, _dmy(start), _dmy(end))
     result["bytes"] = ctx.last_response.response_bytes
-    return result, _blocks_by_tag(ctx.last_response.raw.decode("utf-8"))
+    return result, _blocks_by_tag(raw_text)
 
 
 async def _period_lock(ctx: ProbeContext, template: str, licence: str, unlocked: dict[str, Any]) -> dict[str, Any]:
@@ -267,6 +268,13 @@ async def run_b(ctx: ProbeContext) -> PartResult:
         blocks.update(found)
     ctx.observe("months", months)
 
+    # I1: a month that bounded and returned every expected tag, but also holds an untagged/extra/duplicate row, is
+    # books drift (company B no longer matches its generated dataset) — never a reach failure of the request under
+    # test. Check every month before anything else, and block on drift rather than reporting FAILED/REACH_IMPACT.
+    drifted_steps = [step for step, result in months.items() if result["drifted"]]
+    if drifted_steps:
+        raise ProbeBlocked("; ".join(drift_message(step, months[step]) for step in drifted_steps))
+
     labels = _labels(licence, *FY2022)
     stats = measure(blocks, labels)
     sized = [block for tag, block in blocks.items() if tag in labels]
@@ -288,7 +296,7 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     lock = await _period_lock(ctx, template, licence, months["fy2022_month_04"])
     ctx.observe("period_lock", lock)
 
-    inexact = [step for step, result in months.items() if not result["match"]]
+    inexact = [step for step, result in months.items() if not result["reach_ok"]]
     if inexact:
         return PartResult(Outcome.FAILED, f"FY 2022-23 not reached exactly: {', '.join(inexact)} differ from the "
                                           f"dataset (see observations.months). {TIMING_TAIL}", spec_impact=REACH_IMPACT)

@@ -158,14 +158,49 @@ async def test_fy2022_is_reached_month_by_month_and_sizes_are_measured(tmp_path)
     assert "p21_B_fy2022_month_03.xml" in part["fixtures"] and "p21_B_fy2025_month_03.xml" in part["fixtures"]
 
 
-async def test_a_hand_entered_voucher_makes_its_month_inexact_and_fails(tmp_path):
+async def test_a_hand_entered_voucher_makes_its_month_drift_and_blocks(tmp_path):
+    """I1: a hand-entered voucher inside a bounded, otherwise-complete FY2022 month is books drift (company B no
+    longer matches its generated dataset) — not a request/reach failure, so it must never read FAILED/REACH_IMPACT."""
     books = _books()
     books.edit_state(lambda s: s["vouchers"].__setitem__("99999", {
         "narration": "typed in by hand", "date": "20220815", "post_dated": "No", "cancelled": "No",
         "optional": "No", "vch_type": "Journal", "lines": [], "inventory": [], "bills": []}))
     part, _ = await _run(tmp_path, books)
-    assert part["outcome"] == "FAILED"
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    assert part["observations"]["months"]["fy2022_month_08"]["drifted"] is True
     assert part["observations"]["months"]["fy2022_month_08"]["untagged"] == 1
+    assert "fy2022_month_08" in part["summary"] and "untagged 1" in part["summary"]
+
+
+async def test_a_duplicate_tagged_voucher_in_fy2022_drifts_and_blocks(tmp_path):
+    books = _books()
+
+    def duplicate_one(s: dict) -> None:
+        mid, v = next((m, v) for m, v in s["vouchers"].items() if v["date"].startswith("202208"))
+        s["vouchers"]["99999"] = dict(v)
+
+    books.edit_state(duplicate_one)
+    part, _ = await _run(tmp_path, books)
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    assert part["observations"]["months"]["fy2022_month_08"]["drifted"] is True
+    assert part["observations"]["months"]["fy2022_month_08"]["duplicates"]
+    assert "fy2022_month_08" in part["summary"] and "duplicates" in part["summary"]
+
+
+async def test_a_missing_tag_inside_a_bounded_month_is_still_a_reach_failure(tmp_path):
+    """I1's other half: a tag the dataset expects but that never comes back (not merely extra baggage) is a real
+    reach failure of the request under test, and stays FAILED with REACH_IMPACT."""
+    books = _books()
+
+    def drop_one(s: dict) -> None:
+        mid = next(m for m, v in s["vouchers"].items() if v["date"].startswith("202208"))
+        del s["vouchers"][mid]
+
+    books.edit_state(drop_one)
+    part, _ = await _run(tmp_path, books)
+    assert part["outcome"] == "FAILED"
+    assert part["observations"]["months"]["fy2022_month_08"]["missing"]
+    assert not part["observations"]["months"]["fy2022_month_08"]["drifted"]
     assert "fy2022_month_08" in part["summary"] and "Decision 7b" in part["spec_impact"]
 
 

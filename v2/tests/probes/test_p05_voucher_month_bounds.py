@@ -136,3 +136,34 @@ async def test_an_untyped_answer_that_is_also_bounded_is_flagged_not_trusted(tmp
 def test_ordered_runs_put_probe_5_right_before_probe_21():
     for order in (ALL_ORDER, FIRST_ORDER):
         assert order.index((5, "B")) == order.index((21, "B")) - 1
+
+
+UNTAGGED_JUNE_ROW = vch({"DATE": "20230615", "VOUCHERTYPENAME": "Journal", "NARRATION": "typed by hand"})
+
+
+async def test_a_bounded_window_with_an_untagged_row_is_books_drift_blocked(tmp_path):
+    """I1: the window bounds and every expected tag comes back, but an extra untagged row shows company B has
+    drifted from the dataset — never a request failure, and the formula fallback must never be tried for it."""
+    fake = _b_tally(lambda body: _vouchers(JUNE, extra=[UNTAGGED_JUNE_ROW]))
+    store, part = await _run_fake(tmp_path, fake)
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    assert part["observations"]["month_typed"]["bounded"] is True
+    assert part["observations"]["month_typed"]["drifted"] is True
+    assert "month_svdates" in part["summary"] and "untagged 1" in part["summary"]
+    assert store.confirmed("voucher_month") is None
+    assert not any("S0P05MonthFormula" in body for body in fake.requests)
+
+
+async def test_a_bounded_window_with_a_duplicate_tag_is_books_drift_blocked(tmp_path):
+    june = expect_window("educational", *JUNE)
+    dup = next(iter(june.written.values()))
+    duplicate_row = vch({"DATE": dup.date.strftime("%Y%m%d"), "VOUCHERTYPENAME": dup.vch_type,
+                         "NARRATION": dup.narration})
+    fake = _b_tally(lambda body: _vouchers(JUNE, extra=[duplicate_row]))
+    store, part = await _run_fake(tmp_path, fake)
+    assert part["outcome"] == "BLOCKED", part["summary"]
+    assert part["observations"]["month_typed"]["bounded"] is True
+    assert part["observations"]["month_typed"]["drifted"] is True
+    assert f"duplicates [{dup.tag}]" in part["summary"]
+    assert store.confirmed("voucher_month") is None
+    assert not any("S0P05MonthFormula" in body for body in fake.requests)
