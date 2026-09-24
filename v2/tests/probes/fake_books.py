@@ -41,14 +41,40 @@ PRIMARY_GROUPS = ("Capital Account", "Loans (Liability)", "Current Liabilities",
 RESERVED_GROUPS = {**{g: "" for g in PRIMARY_GROUPS}, **RESERVED_GROUP_PARENTS, "Stock-in-Hand": "Current Assets"}
 NOMINAL_PRIMARIES = frozenset({"Sales Accounts", "Purchase Accounts", "Direct Incomes", "Direct Expenses",
                                "Indirect Incomes", "Indirect Expenses"})
-# Collection-name prefixes answered by the generic company-B master routes below (probes 11, 14, 15, 16 B, 18 B).
-B_PROBE_COLLECTIONS = ("S0P11", "S0P14", "S0P15", "S0P16B", "S0P18B")
 # The fake's answer to request XML that isn't well-formed (probe 14's deliberately unescaped `&`). The live shape is
 # what probe 14 records; this is only a Tally-style LINEERROR so `detect_error` sees a failure.
 MALFORMED_ANSWER = ("<ENVELOPE><HEADER><VERSION>1</VERSION><STATUS>0</STATUS></HEADER><BODY><DATA>"
                     "<LINEERROR>fake: request XML is not well-formed</LINEERROR></DATA></BODY></ENVELOPE>")
 _BARE_AMP = re.compile(r"&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);)")
 _COMPANY_VAR = re.compile(r"<SVCurrentCompany>([^<]*)</SVCurrentCompany>")
+# Collection-name prefixes answered by the generic probe master routes below (probes 3 B, 11, 14, 15, 16 B, 18 B, 24,
+# 25 B).
+B_PROBE_COLLECTIONS = ("S0P03B", "S0P11", "S0P14", "S0P15", "S0P16B", "S0P18B", "S0P24", "S0P25B")
+# The fake keeps no stock valuation: a current-period opening (C46 knob) is priced at this placeholder rate. Probe 11
+# records, never judges, the rate/value of a current-period opening.
+FAKE_STOCK_RATE = Decimal("100.00")
+_CREDIT_DAYS = re.compile(r"^\s*(\d+)\s*Days?\s*$", re.IGNORECASE)
+
+
+def _short_date(day) -> str:
+    """Tally's report date text: 1-Feb-23."""
+    return f"{day.day}-{day:%b}-{day:%y}"
+
+
+def _bill_row(ref: str, party: str, amount: str, bill_date: str = "1-Apr-25", due: str = "1-Apr-25",
+              overdue: str = "10") -> str:
+    """One Bills Receivable/Payable row — byte-identical to fakes.bills_xml when no date is known."""
+    return (f"<BILLFIXED><BILLDATE>{bill_date}</BILLDATE><BILLREF>{esc(ref)}</BILLREF><BILLPARTY>{esc(party)}"
+            f"</BILLPARTY></BILLFIXED><BILLCL>{amount}</BILLCL><BILLDUE>{due}</BILLDUE><BILLOVERDUE>{overdue}"
+            "</BILLOVERDUE>")
+
+
+def _voucher_header(state: dict, mid: str, v: dict) -> dict[str, str]:
+    lines = [] if v.get("cancelled") == "Yes" else v.get("lines", [])     # Ruling S2: live has an empty party name
+    return {"DATE": v["date"], "GUID": f"{state['guid']}-{int(mid):08x}", "MASTERID": mid, "ALTERID": mid,
+            "VOUCHERTYPENAME": v.get("vch_type", ""), "VOUCHERNUMBER": mid, "REFERENCE": "",
+            "PARTYLEDGERNAME": lines[0]["ledger"] if lines else "", "NARRATION": v["narration"],
+            "ISCANCELLED": v["cancelled"], "ISOPTIONAL": v["optional"], "ISPOSTDATED": v["post_dated"]}
 
 
 def _amount_text(value: Decimal) -> str:
@@ -176,20 +202,30 @@ def _effective_bills(state: dict) -> dict[str, dict[str, str]]:
     return bills
 
 
-def _export_voucher(state: dict, mid: str, v: dict) -> str:
+def _export_voucher(state: dict, mid: str, v: dict, *, credit_periods: bool = True) -> str:
     """One stored voucher the way probe 5's month request gets it back: header, ledger lines (the voucher's bill
     postings on its first line, the party line), and inventory rows. It is shaped for the probes' parsers (reads.
-    parse_vouchers), not a byte-for-byte copy of live Tally. Probe 21's live byte counts come from live Tally only."""
-    lines = v.get("lines", [])
-    header = {"DATE": v["date"], "GUID": f"{state['guid']}-{int(mid):08x}", "MASTERID": mid, "ALTERID": mid,
-              "VOUCHERTYPENAME": v.get("vch_type", ""), "VOUCHERNUMBER": mid, "REFERENCE": "",
-              "PARTYLEDGERNAME": lines[0]["ledger"] if lines else "", "NARRATION": v["narration"],
-              "ISCANCELLED": v["cancelled"], "ISOPTIONAL": v["optional"], "ISPOSTDATED": v["post_dated"]}
+    parse_vouchers), not a byte-for-byte copy of live Tally. Probe 21's live byte counts come from live Tally only.
+    A posting that knows its bill date / credit period (seed_company_b(bills=True)) exports them as BILLDATE and
+    BILLCREDITPERIOD (live shape: p21_B_fy2022_month_02.xml); without them the bytes are exactly as before.
+    A cancelled voucher exports the recorded live shape (Ruling S2, p21_B_fy2022_month_02.xml 201/202): header only,
+    an empty PARTYLEDGERNAME and empty placeholder lists -- no ledger or inventory lines, no amounts."""
+    header = _voucher_header(state, mid, v)
     body = "".join(f"<{k}>{esc(str(value))}</{k}>" for k, value in header.items())
+    if v.get("cancelled") == "Yes":
+        body += ("<ALLINVENTORYENTRIES.LIST>      </ALLINVENTORYENTRIES.LIST><LEDGERENTRIES.LIST>      "
+                 "</LEDGERENTRIES.LIST><ALLLEDGERENTRIES.LIST>      </ALLLEDGERENTRIES.LIST>")
+        return f'<VOUCHER VCHTYPE="{esc(header["VOUCHERTYPENAME"])}">{body}</VOUCHER>'
+    lines = v.get("lines", [])
     for i, line in enumerate(lines):
-        bills = "".join(f"<BILLALLOCATIONS.LIST><NAME>{esc(b['name'])}</NAME><BILLTYPE>{esc(b['type'])}</BILLTYPE>"
-                        f"<AMOUNT>{b['amount']}</AMOUNT></BILLALLOCATIONS.LIST>"
-                        for b in (v.get("bills", []) if i == 0 else []))
+        bills = "".join(
+            "<BILLALLOCATIONS.LIST>"
+            + (f"<BILLDATE>{b['date']}</BILLDATE>" if b.get("date") else "")
+            + f"<NAME>{esc(b['name'])}</NAME>"
+            + (f"<BILLCREDITPERIOD>{esc(b['credit_period'])}</BILLCREDITPERIOD>"
+               if credit_periods and b.get("credit_period") else "")
+            + f"<BILLTYPE>{esc(b['type'])}</BILLTYPE><AMOUNT>{b['amount']}</AMOUNT></BILLALLOCATIONS.LIST>"
+            for b in (v.get("bills", []) if i == 0 else []))
         body += (f"<ALLLEDGERENTRIES.LIST><LEDGERNAME>{esc(line['ledger'])}</LEDGERNAME>"
                  f"<ISDEEMEDPOSITIVE>{line['deemed_positive']}</ISDEEMEDPOSITIVE><AMOUNT>{line['amount']}</AMOUNT>"
                  f"{bills or '<BILLALLOCATIONS.LIST>  </BILLALLOCATIONS.LIST>'}</ALLLEDGERENTRIES.LIST>")
@@ -201,16 +237,26 @@ def _export_voucher(state: dict, mid: str, v: dict) -> str:
     return f'<VOUCHER VCHTYPE="{esc(header["VOUCHERTYPENAME"])}">{body}</VOUCHER>'
 
 
-def seed_company_b(books: "FakeBooks", licence: str = "educational", *, masters: bool = False) -> None:
+def seed_company_b(books: "FakeBooks", licence="educational", *, masters=False, bills=False) -> None:
     """Company B as a clean `setup-b` leaves it: every written voucher on record with its flags, BooksFrom
     1-Apr-2022. It goes straight into state, NOT through the loader (read-probe tests only; the loader has its own
     tests). Skipped vouchers (C36) are absent. A cancelled voucher keeps no bill postings, as `_voucher` does.
     With `masters=True` it also puts company B's masters in state the way the loader leaves
     them: custom groups, units, stock items with signed opening values (C39) in their first unit (C40), ledgers with
     signed openings (C30), the opening bill Op/2022-001, and Tally's own Profit & Loss A/c. Company A's seed ledgers
-    are replaced."""
-    from v2.probes.setup.company_b_data import OPENING_BILL_DATE, generate, quantity_unit
+    are replaced.
+    With `bills=True` (probe 23 B) every bill is on record the way Tally
+     keeps it: each New Ref opened by a written, unflagged voucher with its signed amount (the party line's sign;
+     C34: − = receivable), its bill date and credit period; each Agst Ref added to its bill; the opening bill. The
+     vouchers' postings then carry the bill date and credit period too."""
+    from v2.probes.setup.company_b_data import OPENING_BILL_DATE, SALES_GST_VOUCHER_TYPE, generate, quantity_unit
     data = generate(licence)
+
+    def posting(v, b) -> dict[str, str]:
+        entry = {"name": b.name, "type": b.bill_type, "amount": f"{b.amount:.2f}"}
+        if bills and b.credit_period:
+            entry.update(date=v.date.strftime("%Y%m%d"), credit_period=b.credit_period)
+        return entry
 
     def fill(state: dict) -> None:
         state["books_from"] = "20220401"
@@ -227,8 +273,7 @@ def seed_company_b(books: "FakeBooks", licence: str = "educational", *, masters:
                            "deemed_positive": "Yes" if l.deemed_positive else "No"} for l in v.lines],
                 "inventory": [{"item": i.item, "qty": f"{i.qty if v.kind == 'purchase' else -i.qty}"}
                               for i in v.inventory],
-                "bills": [] if v.cancelled else [{"name": b.name, "type": b.bill_type, "amount": f"{b.amount:.2f}"}
-                                                 for b in v.bills]}
+                "bills": [] if v.cancelled else [posting(v, b) for b in v.bills]}
         if masters:
             state["groups"] = {g.name: {"parent": g.parent} for g in data.groups}
             state["units"] = {u.name: {"base": u.first_unit, "additional": u.second_unit,
@@ -252,6 +297,53 @@ def seed_company_b(books: "FakeBooks", licence: str = "educational", *, masters:
                     state.setdefault("bills", {})[led.opening_bill] = {
                         "party": led.name, "amount": f"{led.opening:.2f}", "opening": True,
                         "date": OPENING_BILL_DATE.strftime("%Y%m%d")}
+            if SALES_GST_VOUCHER_TYPE not in state["voucherTypes"]:
+                state["voucherTypes"].append(SALES_GST_VOUCHER_TYPE)
+            state["voucher_type_parents"] = {SALES_GST_VOUCHER_TYPE: "Sales"}
+        if bills:
+            book = state.setdefault("bills", {})
+            for led in data.ledgers:
+                if led.opening_bill and led.opening is not None:
+                    book.setdefault(led.opening_bill, {"party": led.name, "amount": f"{led.opening:.2f}",
+                                                       "opening": True,
+                                                       "date": OPENING_BILL_DATE.strftime("%Y%m%d")})
+            for v in sorted(data.vouchers, key=lambda v: (v.date, v.tag)):
+                if v.skip_reason or v.cancelled or v.optional:           # C42: flagged vouchers post no bill
+                    continue
+                party = next((line for line in v.lines if line.ledger == v.party), None)
+                sign = Decimal("1") if party is None or party.amount > 0 else Decimal("-1")
+                for b in v.bills:
+                    if b.bill_type == "New Ref":
+                        book[b.name] = {"party": v.party, "amount": f"{sign * b.amount:.2f}",
+                                        "date": v.date.strftime("%Y%m%d"), "credit_period": b.credit_period or ""}
+                    elif b.bill_type == "Agst Ref":
+                        target = book.setdefault(b.name, {"party": v.party, "amount": "0.00"})
+                        target["amount"] = f"{Decimal(target['amount']) + sign * b.amount:.2f}"
+    books.edit_state(fill)
+
+
+def seed_company_c(books: "FakeBooks") -> None:
+    """Company C as `setup-c` leaves it (plan part 6): Tally's own Cash and Profit & Loss A/c, the one expense
+    ledger and the one Payment voucher, books from 1-Apr-2025. Straight into state (read-probe tests only)."""
+    from v2.probes.companies import (COMPANY_C_LEDGER, COMPANY_C_LEDGER_PARENT, COMPANY_C_VOUCHER_AMOUNT,
+                                     COMPANY_C_VOUCHER_DATE, COMPANY_C_VOUCHER_NARRATION)
+
+    def fill(state: dict) -> None:
+        guid = state["guid"]
+        state["books_from"] = COMPANY_C_VOUCHER_DATE
+        state["last_voucher_date"] = COMPANY_C_VOUCHER_DATE
+        state["ledgers"] = {
+            "Cash": {"parent": "Cash-in-Hand", "email": "", "alter_id": 10, "guid": f"{guid}-c000000a", "opening": "0.00"},
+            "Profit & Loss A/c": {"parent": "Primary", "email": "", "alter_id": 11, "guid": f"{guid}-c000000b",
+                                  "opening": "0.00"},
+            COMPANY_C_LEDGER: {"parent": COMPANY_C_LEDGER_PARENT, "email": "", "alter_id": 12,
+                               "guid": f"{guid}-c000000c", "opening": "0.00"}}
+        state["vouchers"] = {"1": {
+            "narration": COMPANY_C_VOUCHER_NARRATION, "date": COMPANY_C_VOUCHER_DATE, "post_dated": "No",
+            "cancelled": "No", "optional": "No", "vch_type": "Payment",
+            "lines": [{"ledger": COMPANY_C_LEDGER, "amount": f"-{COMPANY_C_VOUCHER_AMOUNT}", "deemed_positive": "Yes"},
+                      {"ledger": "Cash", "amount": COMPANY_C_VOUCHER_AMOUNT, "deemed_positive": "No"}],
+            "inventory": []}}
     books.edit_state(fill)
 
 
@@ -265,8 +357,22 @@ class FakeBooks:
                  ledger_opening_scope: str = "books", ledger_svfromdate_wedges: bool = True,
                  ledger_opening_bills_exported: bool = True, opening_stock_row: bool = False,
                  honour_company_var: bool = False, tolerate_raw_ampersand: bool = False,
-                 hindi_ledger_filter_matches: bool = True):
+                 hindi_ledger_filter_matches: bool = True,
+                 cancelled_vouchers_listed: bool = True, optional_vouchers_listed: bool = True,
+                 bill_credit_period_exported: bool = True, bill_due_from_credit_period: bool = True,
+                 voucher_type_parent_exported: bool = True, stock_opening_scope: str = "books"):
         self.folder = folder
+        # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
+        # BILLCREDITPERIOD (p21_B_fy2022_month_02.xml). Hypotheses measured live by probes 3 B / 23 B / 25 B:
+        # optional vouchers listed, BILLDUE = bill date + credit period, a custom voucher type exports its Parent.
+        self.cancelled_vouchers_listed = cancelled_vouchers_listed
+        self.optional_vouchers_listed = optional_vouchers_listed
+        self.bill_credit_period_exported = bill_credit_period_exported
+        self.bill_due_from_credit_period = bill_due_from_credit_period
+        self.voucher_type_parent_exported = voucher_type_parent_exported
+        # probe 11 / C46 (live 2026-09-24): "current" = StockItem opening fields are the current period's opening.
+        self.stock_opening_scope = stock_opening_scope
+
         # probe 16: the 2026-09-23 untyped evidence; the typed form is re-measured live
         self.ledger_svtodate_honoured = ledger_svtodate_honoured
         self.ledger_opening_scope = ledger_opening_scope              # probe 16 B
@@ -387,6 +493,9 @@ class FakeBooks:
                 "Name": state["name"], "GUID": state["guid"], "AltVchId": str(state["alt_vch"]),
                 "AltMstId": str(state["alt_mst"]), "BooksFrom": state.get("books_from", "20250401"),
                 "LastVoucherDate": state["last_voucher_date"], "AlterID": str(state["alt_mst"])}])
+        if "S0ActiveCompany" in body:
+            # Probe 2's confirmed active-company read (candidate a): Company collection filtered to ##SVCurrentCompany.
+            return objects_xml("COMPANY", [{"Name": state["name"], "GUID": state["guid"]}])
         period = requested_period(body, self.current_period, educational=self.educational)
         in_period = {mid: v for mid, v in state["vouchers"].items()
                      if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1]}
@@ -394,8 +503,9 @@ class FakeBooks:
             # Probe 5's month request and its formula candidate: full exports, bounded ONLY by the typed period
             # (C33: an untyped one reads current_period). The fake does not evaluate the formula; typed dates always
             # bound here, so probe 5 never needs it against FakeBooks (its formula path is tested with FakeTally).
-            return vouchers_xml([_export_voucher(state, mid, v)
-                                 for mid, v in sorted(in_period.items(), key=lambda kv: int(kv[0]))])
+            return vouchers_xml([_export_voucher(state, mid, v, credit_periods=self.bill_credit_period_exported)
+                                 for mid, v in sorted(in_period.items(), key=lambda kv: int(kv[0]))
+                                 if self._listed(v)])
         if "S0OpVouchers" in body:
             return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
                                             "IsPostDated": v["post_dated"]} for mid, v in in_period.items()])
@@ -428,9 +538,9 @@ class FakeBooks:
         if "<ID>Trial Balance</ID>" in body:
             return tb_xml(self._trial_balance_rows(state, as_on=period[1]))
         if "<ID>Bills Receivable</ID>" in body:
-            return bills_xml(state.get("bills_receivable", []) + self._open_bills(state, receivable=True))
+            return self._bills_report(state, receivable=True, as_on=period[1])
         if "<ID>Bills Payable</ID>" in body:
-            return bills_xml(self._open_bills(state, receivable=False))
+            return self._bills_report(state, receivable=False, as_on=period[1])
         if "<ID>Stock Summary</ID>" in body:
             return self._stock_summary(state, period[1])
         generic = self._b_collection(state, body, period, request)
@@ -517,6 +627,21 @@ class FakeBooks:
         fields = {f.lower() for f in re.findall(r"<NATIVEMETHOD>([^<]+)</NATIVEMETHOD>", body)}
         match = re.search(r'\$Name = "([^"]*)"', body)
         wanted = html.unescape(match.group(1)) if match else None
+        if kind == "Voucher":                              # probe 3 B: header fields only, typed period, knobs
+            rows = [_voucher_header(state, mid, v)
+                    for mid, v in sorted(state["vouchers"].items(), key=lambda kv: int(kv[0]))
+                    if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1] and self._listed(v)]
+            return objects_xml("VOUCHER", rows)
+        if kind == "VoucherType":                          # probe 25 B
+            parents = state.get("voucher_type_parents", {})
+            rows = []
+            for vtype in state["voucherTypes"]:
+                if vtype in parents:                       # a custom type: Parent = its base type, no ReservedName
+                    rows.append({"Name": vtype, "Parent": parents[vtype] if self.voucher_type_parent_exported else "",
+                                 "ReservedName": ""})
+                else:                                      # live p25 A: a reserved type is its own Parent and ReservedName
+                    rows.append({"Name": vtype, "Parent": vtype, "ReservedName": vtype})
+            return objects_xml("VOUCHERTYPE", rows)
         if kind == "Ledger":
             if self.ledger_svfromdate_wedges and "<SVFROMDATE" in body:
                 self.popup = True                     # LESSONS §15 rule 17 (measured untyped, 2026-09-23)
@@ -525,11 +650,19 @@ class FakeBooks:
         if kind == "Group":
             return objects_xml("GROUP", [{"Name": n, "Parent": p} for n, p in self._all_groups(state).items()])
         if kind == "StockItem":
-            return objects_xml("STOCKITEM", [
-                {"Name": n, "Parent": i.get("parent", ""), "BaseUnits": i.get("base_units", ""),
-                 "OpeningBalance": i.get("opening_qty", ""), "OpeningRate": i.get("opening_rate", ""),
-                 "OpeningValue": i.get("opening_value", "")}
-                for n, i in state["items"].items() if wanted in (None, n)])
+            rows = []
+            for n, i in state["items"].items():
+                if wanted not in (None, n):
+                    continue
+                row = {"Name": n, "Parent": i.get("parent", ""), "BaseUnits": i.get("base_units", ""),
+                       "OpeningBalance": i.get("opening_qty", ""), "OpeningRate": i.get("opening_rate", ""),
+                       "OpeningValue": i.get("opening_value", "")}
+                if self.stock_opening_scope == "current":          # C46: the current period's opening
+                    qty, unit = self._stock_level(state, n, before=self.current_period[0]), i.get("qty_unit", "")
+                    row.update(OpeningBalance=f"{qty} {unit}".strip(), OpeningRate=f"{FAKE_STOCK_RATE:.2f}/{unit}",
+                               OpeningValue=f"{-(qty * FAKE_STOCK_RATE):.2f}")
+                rows.append(row)
+            return objects_xml("STOCKITEM", rows)
         return "<ENVELOPE></ENVELOPE>"
 
     def _ledger_export(self, state: dict, fields: set[str], period: tuple[str, str], wanted: str | None) -> str:
@@ -562,7 +695,50 @@ class FakeBooks:
                                      f"</BILLDATE><OPENINGBALANCE>{bill['amount']}</OPENINGBALANCE>"
                                      "</BILLALLOCATIONS.LIST>")
             out.append(f'<LEDGER NAME="{esc(name)}">{"".join(parts)}</LEDGER>')
+        for dup in state.get("duplicate_ledgers", []):     # probe 25 B / R9: a second ledger with the same name
+            if wanted is None or dup["name"] == wanted:
+                parent = f"<PARENT>{esc(dup['parent'])}</PARENT>" if "parent" in fields else ""
+                out.append(f'<LEDGER NAME="{esc(dup["name"])}"><NAME>{esc(dup["name"])}</NAME>{parent}</LEDGER>')
         return f"<ENVELOPE><BODY><DATA><COLLECTION>{''.join(out)}</COLLECTION></DATA></BODY></ENVELOPE>"
+
+    def _listed(self, v: dict) -> bool:
+        if v.get("cancelled") == "Yes" and not self.cancelled_vouchers_listed:
+            return False
+        return not (v.get("optional") == "Yes" and not self.optional_vouchers_listed)
+
+    @staticmethod
+    def _stock_level(state: dict, name: str, *, before: str) -> Decimal:
+        """Opening quantity + unflagged inventory moves dated before `before` (YYYYMMDD). C42: flagged move nothing."""
+        words = (state["items"][name].get("opening_qty") or "").split()
+        qty = Decimal(words[0]) if words else Decimal("0")
+        for v in state["vouchers"].values():
+            if _flagged(v) or (_yyyymmdd(v["date"]) or v["date"]) >= before:
+                continue
+            qty += sum((Decimal(i["qty"]) for i in v.get("inventory", []) if i["item"] == name), Decimal("0"))
+        return qty
+
+    def _bills_report(self, state: dict, *, receivable: bool, as_on: str) -> str:
+        """Bills Receivable/Payable (C34: the bill's sign files it). A bill that knows its date shows it; BILLDUE is
+        date + credit period when `bill_due_from_credit_period`, else the bill date. Rows of bills without a date are
+        byte-identical to the old fakes.bills_xml output."""
+        from datetime import datetime, timedelta
+        rows = [_bill_row(ref, party, amount) for ref, party, amount in
+                (state.get("bills_receivable", []) if receivable else [])]
+        as_on_day = datetime.strptime(as_on, "%Y%m%d").date()
+        for name, bill in _effective_bills(state).items():
+            amount = Decimal(bill["amount"])
+            if amount == 0 or (amount < 0) != receivable:
+                continue
+            if not bill.get("date"):
+                rows.append(_bill_row(name, bill["party"], bill["amount"]))
+                continue
+            start = datetime.strptime(bill["date"], "%Y%m%d").date()
+            match = _CREDIT_DAYS.match(bill.get("credit_period") or "")
+            days = int(match.group(1)) if match and self.bill_due_from_credit_period else 0
+            due = start + timedelta(days=days)
+            rows.append(_bill_row(name, bill["party"], bill["amount"], _short_date(start), _short_date(due),
+                                  str(max((as_on_day - due).days, 0))))
+        return "<ENVELOPE>" + "".join(rows) + "</ENVELOPE>"
 
     @staticmethod
     def _stock_summary(state: dict, as_on: str) -> str:
