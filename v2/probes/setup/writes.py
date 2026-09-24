@@ -30,7 +30,7 @@ from v2.agent.tally.envelopes import build_company_list, formula_string, wrap_co
 from v2.agent.tally.xml_utils import parse_company_list, read_objects, sanitize_xml
 from v2.probes.companies import COMPANIES, SEED_COMPANY, THROWAWAY_DATE, THROWAWAY_DATE_TEXT
 from v2.probes.licence import LICENCE_REQUEST, LicenceInfo, parse_licence_info
-from v2.probes.reads import TB_EXPLODE_VARS
+from v2.probes.reads import PRIMARY_NATURE, TB_EXPLODE_VARS
 from v2.probes.safety import check_request
 from v2.probes.setup.import_xml import ImportResult, esc, wrap_import
 
@@ -43,6 +43,43 @@ GROUP_FIELDS = ["Name", "Parent"]
 UNIT_FIELDS = ["Name", "BaseUnits", "Conversion"]
 ITEM_FIELDS = ["Name", "BaseUnits", "Parent"]
 VOUCHER_TYPE_FIELDS = ["Name", "Parent"]
+
+
+# M1: the side Tally gives an unsigned OPENINGBALANCE under each group it reserves (Op 5: positive with Capital
+# Account = credit, positive with Cash-in-Hand = debit). Primary groups come from reads.PRIMARY_NATURE; the reserved
+# sub-groups map to the primary they sit under. A custom group (e.g. "Local Creditors") is deliberately absent: its
+# nature is its root's, which only a Tally read can tell, so an opening under one is refused rather than guessed.
+_RESERVED_SUBGROUP_PRIMARY: dict[str, str] = {
+    "Bank Accounts": "Current Assets", "Cash-in-Hand": "Current Assets", "Deposits (Asset)": "Current Assets",
+    "Loans & Advances (Asset)": "Current Assets", "Stock-in-Hand": "Current Assets",
+    "Sundry Debtors": "Current Assets",
+    "Duties & Taxes": "Current Liabilities", "Provisions": "Current Liabilities",
+    "Sundry Creditors": "Current Liabilities",
+    "Bank OD A/c": "Loans (Liability)", "Secured Loans": "Loans (Liability)", "Unsecured Loans": "Loans (Liability)",
+    "Reserves & Surplus": "Capital Account",
+}
+_DEBIT_NATURES = frozenset({"assets", "expenses"})
+
+
+def check_opening_side(name: str, parent: str, opening: Decimal) -> None:
+    """Raise ValueError if `opening` (debit negative — Rulings C19/C21/C22) opposes `parent`'s nature.
+
+    `create_party_ledger` sends abs(opening) and Tally infers the side from the parent group, so a contra-natural
+    opening — a bank overdraft under Bank Accounts, a debtor in credit, drawings under Capital Account — would land
+    on the WRONG side with no error. There is no verified wire shape for a contra-natural opening, so it is refused.
+    A zero opening has no side and always passes."""
+    if opening == 0:
+        return
+    primary = _RESERVED_SUBGROUP_PRIMARY.get(parent, parent)
+    nature = PRIMARY_NATURE.get(primary)
+    if nature is None:
+        raise ValueError(f"Ledger {name!r}: cannot send an opening under {parent!r} — its nature is unknown here "
+                         "(a custom group), and abs(opening) would let Tally pick the side")
+    debit_group = nature in _DEBIT_NATURES
+    if (opening < 0) != debit_group:
+        side, natural = ("debit", "credit") if opening < 0 else ("credit", "debit")
+        raise ValueError(f"Ledger {name!r}: a {side} opening of {opening} under {parent!r} (a {natural}-nature group) "
+                         "is contra-natural — abs(opening) on the wire would land it on the wrong side")
 
 
 class WriteRefused(Exception):
@@ -419,8 +456,12 @@ class TallyWriter:
         company_b_data.py's `expected_figures` arithmetic) — but the WIRE value must not be: per
         docs/tally-write-exploration-v4.md Op 5, Tally infers OPENINGBALANCE's side from the parent group's
         own nature (positive with Capital Account = credit; positive with Cash-in-Hand = debit), so the sign
-        this method sends is never the caller's to choose. Always `abs(opening)` on the wire."""
+        this method sends is never the caller's to choose. Always `abs(opening)` on the wire — which is only
+        correct when the opening's sign matches the parent's nature, so `check_opening_side` refuses anything
+        else (M1) before a single request is sent."""
         check_writable(company)
+        if opening is not None:
+            check_opening_side(name, parent, opening)
         if self.ledger(company, name) is not None:
             self.say(f"{name} already exists — not re-created")
             return

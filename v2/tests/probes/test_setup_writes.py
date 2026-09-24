@@ -283,6 +283,34 @@ def test_a_negative_dataset_opening_emits_a_positive_openingbalance_on_the_wire(
     assert "-45000.00" not in sent
 
 
+@pytest.mark.parametrize("name, parent, opening", [
+    ("HDFC OD A/c", "Bank Accounts", Decimal("25000.00")),          # an overdraft: a CREDIT under a debit group
+    ("Advance from Kolhapur", "Sundry Debtors", Decimal("1000.00")),  # a debtor in credit
+    ("Drawings", "Capital Account", Decimal("-5000.00")),           # a DEBIT under a credit group
+    ("Pune Traders", "Local Creditors", Decimal("-1.00")),          # custom sub-group: nature unknown here
+])
+def test_a_contra_natural_or_unclassifiable_opening_is_refused_before_anything_is_sent(name, parent, opening):
+    """M1: the wire value is abs(opening) and Tally infers the side from the parent group (Op 5), so an opening
+    whose sign (debit negative, Rulings C19/C21/C22) opposes the group's nature would silently land on the wrong
+    side. Refuse it — and refuse an opening under a group whose nature this module cannot name — before any
+    request reaches Tally."""
+    books = FakeBooks(name=B)
+    writer, _ = _writer(books)
+    with pytest.raises(ValueError, match="opening"):
+        writer.create_party_ledger(B, name, parent=parent, bill_wise=False, opening=opening)
+    assert books.requests == []
+
+
+def test_every_company_b_opening_matches_its_parent_groups_nature():
+    """M1: the loader's own dataset must never trip the contra-natural refusal."""
+    from v2.probes.setup.company_b_data import generate
+    from v2.probes.setup.writes import check_opening_side
+
+    for ledger in generate().ledgers:
+        if ledger.opening is not None:
+            check_opening_side(ledger.name, ledger.parent, ledger.opening)
+
+
 def test_the_non_billwise_debtor_is_written_bill_wise_off():
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
