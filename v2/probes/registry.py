@@ -37,7 +37,7 @@ PROBES: tuple[ProbeInfo, ...] = (
     ProbeInfo(12, "current_snapshots", "A", "B", module="v2.probes.p12_current_snapshots"),
     ProbeInfo(13, "backup_restore", "A", "B", module="v2.probes.p13_backup_restore"),
     ProbeInfo(14, "special_char_company", "B", "B", module="v2.probes.p14_special_char_company"),
-    ProbeInfo(15, "unicode_compound_units", "B", "B"),
+    ProbeInfo(15, "unicode_compound_units", "B", "B", module="v2.probes.p15_unicode_compound_units"),
     ProbeInfo(16, "ledger_closing_balance", "A+B", "B", module="v2.probes.p16_ledger_closing_balance"),
     ProbeInfo(17, "ledger_level_tb", "A", "B", module="v2.probes.p17_ledger_level_tb"),
     ProbeInfo(18, "historical_reports", "A+B", "B", module="v2.probes.p18_historical_reports"),

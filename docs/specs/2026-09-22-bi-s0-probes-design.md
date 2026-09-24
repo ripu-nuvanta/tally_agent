@@ -34,6 +34,9 @@
 > **Changed 2026-09-24 (plan part 5, Ruling Q6):** §6 batch 5 runs **probe 14 last** in company B (after 15, 22, 23,
 > 25): it deliberately sends an unescaped, malformed request that may leave Tally behind a popup, so no other B probe
 > runs after it. `registry.ALL_ORDER` matches.
+> **Changed 2026-09-24 (plan part 5, Ruling Q8):** §7 probe 15's "byte-exact" means the characters survive: the verdict
+> is code-point equality of the **parsed** text with the dataset; the transport form (UTF-8 bytes or numeric character
+> references) is recorded, not judged. The raw response bytes are kept in the fixture, so it can be re-judged.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -462,6 +465,8 @@ saves its fixture per §5.6.
 **Probe 15 — Unicode and compound units** · B · feeds R14, R15
 - The Hindi ledger, a Hindi narration, the compound-unit item, a voucher using it, and a Stock Summary including
   it. Text byte-exact against the dataset; the unit string recorded; no crash, and Tally answers a cheap read after.
+  Changed 2026-09-24 (plan part 5, Ruling Q8): "byte-exact" is judged on the parsed text (code-point equality); whether
+  the response carried it as UTF-8 bytes or as character references is recorded, not judged.
 
 **Probe 22 — Forex** · B · feeds decision 15 · **BLOCKED 2026-09-24 (C36)** — `setup-b` skips the 2 USD export
 sales until a forex write shape is live-verified; see the header's "Changed 2026-09-24 (Ruling C36)".
