@@ -190,6 +190,29 @@ def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
     assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers)
     assert exp.voucher_count_by_fy["2022-23"] == 240
 
+    # M4 — the balance half. Recompute every month-end independently from openings + NON-cancelled lines only.
+    cancelled = [v for v in ds.vouchers if v.cancelled]
+    assert len(cancelled) == 2 and all(any(l.amount for l in v.lines) for v in cancelled)   # not vacuous
+    touched = {l.ledger for v in cancelled for l in v.lines}
+    last_month = max((v.date.year, v.date.month) for v in ds.vouchers)
+    y, m = last_month
+    fy_end = date(y, m, monthrange(y, m)[1])
+    for name in touched:
+        opening = next((l.opening or Decimal("0.00")) for l in ds.ledgers if l.name == name)
+        live = opening + sum((l.amount for v in ds.vouchers if not v.cancelled for l in v.lines if l.ledger == name),
+                             Decimal("0.00"))
+        with_cancelled = live + sum((l.amount for v in cancelled for l in v.lines if l.ledger == name),
+                                    Decimal("0.00"))
+        assert live != with_cancelled, f"{name}: a cancelled line must be non-zero for this check to bite"
+        assert exp.ledger_month_end[(name, fy_end)] == live, name
+        # and at the cancelled vouchers' own month-end, not just at the very end
+        for cv in cancelled:
+            cy, cm = cv.date.year, cv.date.month
+            month_end = date(cy, cm, monthrange(cy, cm)[1])
+            upto = opening + sum((l.amount for v in ds.vouchers if not v.cancelled and v.date <= month_end
+                                  for l in v.lines if l.ledger == name), Decimal("0.00"))
+            assert exp.ledger_month_end[(name, month_end)] == upto, (name, month_end)
+
 
 def test_fy_openings_are_the_previous_month_end():
     ds = generate()
