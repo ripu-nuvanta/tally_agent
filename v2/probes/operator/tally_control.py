@@ -5,6 +5,7 @@ recognise as its own — started with /DATA:…s0probe, or spawned by this opera
 """
 from __future__ import annotations
 
+import re
 import shutil
 import subprocess
 import time
@@ -24,6 +25,14 @@ CLICK_NEEDED = "CLICK NEEDED: in TallyPrime click 'T: Continue In Educational Mo
 BUSY_REPEAT_S = 30.0
 CLICK_REPEAT_S = 60.0
 WRONG_COMPANY_LIMIT = 5
+
+# C44: this machine's tally.ini has `Default Companies=Yes` + a `Load=<number>` line, so Tally opens BOTH the ini's
+# Load= company AND whatever /LOAD:<n> asks for. Rewriting Load= to the wanted company before every labelled start
+# is the fix. Line-anchored, case-insensitive (Tally's own installer casing is "Load=" but don't assume callers'
+# files always match it); captures only the key prefix so the existing line ending (CRLF on this machine) is left
+# untouched — nothing else in the file is even inside the match.
+_LOAD_LINE = re.compile(rb'^([ \t]*Load[ \t]*=)[^\r\n]*', re.IGNORECASE | re.MULTILINE)
+_DEFAULT_COMPANIES_LINE = re.compile(rb'^([ \t]*Default Companies[ \t]*=[^\r\n]*)(\r\n|\r|\n)?', re.IGNORECASE | re.MULTILINE)
 
 
 class OperatorError(ProbeBlocked):
@@ -163,6 +172,8 @@ class TallyControl:
         if self.runner.list_tally():
             raise OperatorError("TallyPrime is already running; stop it first")
         self._backup_ini_once()
+        if load_label is not None:
+            self._set_ini_load(load_label)
         argv = [str(self.config.wine_bin), "tally.exe", f"/DATA:{self.config.data_dir_windows}"]
         if load_label is not None:
             argv.append(f"/LOAD:{self.config.company_numbers[load_label]}")
@@ -254,3 +265,39 @@ class TallyControl:
             except OSError as exc:
                 raise OperatorError(f"Can't back up tally.ini: {exc}") from exc
             self.say(f"backed up {ini.name} → {backup.name} (the operator never edits tally.ini)")
+
+    def _set_ini_load(self, load_label: str) -> None:
+        """C44: rewrite tally.ini's `Load=` line to exactly `load_label`'s company number, so a labelled start
+        opens ONLY that company — not that plus whatever the ini already had loaded — byte-identical otherwise
+        (same line endings, same every other line). No-op if there's no ini yet (nothing to clash with; Tally
+        will write its own on first run). `_backup_ini_once` in `start()` has already run by the time this is
+        called, so the pre-S0 ini is preserved before this ever touches it."""
+        ini = self.config.tally_dir / "tally.ini"
+        if not ini.exists():
+            return
+        number = self.config.company_numbers[load_label].encode("ascii")
+        original = ini.read_bytes()
+
+        content, replaced = _LOAD_LINE.subn(lambda m: m.group(1) + number, original, count=1)
+        if not replaced:
+            match = _DEFAULT_COMPANIES_LINE.search(original)
+            if match is None:
+                raise OperatorError(f"{ini} has neither a 'Load=' nor a 'Default Companies=' line — can't set "
+                                    "which company opens; add a 'Load=' line by hand")
+            eol = match.group(2) or b"\r\n"   # Default Companies= was the file's last line: fall back to this
+                                               # machine's own CRLF rather than guessing from elsewhere in the file
+            insert_at = match.end()
+            content = original[:insert_at] + b"Load=" + number + eol + original[insert_at:]
+
+        if content == original:
+            return   # already set to the wanted company — nothing to write, nothing to verify
+        ini.write_bytes(content)
+
+        readback = ini.read_bytes()
+        if readback != content:
+            raise OperatorError(f"{ini} didn't read back as written after setting Load={number.decode()}")
+        check = _LOAD_LINE.search(readback)
+        value = check.group(0)[len(check.group(1)):] if check else None
+        if value != number:
+            raise OperatorError(f"{ini} still doesn't show Load={number.decode()} after the rewrite")
+        self.say(f"tally.ini: Load={number.decode()} (company {load_label}, so only it opens)")
