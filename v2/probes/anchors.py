@@ -14,7 +14,7 @@ from v2.agent.tally.envelopes import build_company_list, wrap_report
 from v2.agent.tally.reports import parse_bills, parse_trial_balance
 from v2.agent.tally.xml_utils import parse_company_list, sanitize_xml
 from v2.probes.context import ProbeContext
-from v2.probes.safety import check_company, check_request
+from v2.probes.safety import check_company, check_educational_dates, check_request
 
 SEED_RECEIVABLE = Decimal("970537.00")
 SEED_PAYABLE = Decimal("1834142.00")
@@ -70,19 +70,24 @@ async def check_anchors(ctx: ProbeContext, step_prefix: str, tb_baseline: dict[s
     return _evaluate(receivable_text, payable_text, tb_text, tb_baseline)
 
 
-async def _post(client: TallyClient, xml: str) -> str:
+async def _post(client: TallyClient, xml: str, licence: str | None) -> str:
     check_request(xml)
+    check_educational_dates(xml, licence)              # C43: the same guard as every ProbeContext send (Ruling Q5)
     return sanitize_xml((await client.post_xml(xml)).text)
 
 
-async def check_anchors_direct(client: TallyClient, company: str, tb_baseline: dict[str, str]) -> AnchorResult:
-    """The same check, uncaptured, after the company guard (S0 spec §4.2, §6 anchors steps).
+async def check_anchors_direct(client: TallyClient, company: str, tb_baseline: dict[str, str],
+                               licence: str | None = None) -> AnchorResult:
+    """The same check, uncaptured, after the company guard (S0 spec §4.2, §6 anchors steps). `licence` is probe 0's
+    recorded one; every request passes the C43 guard before it is sent, all three before the first report goes out.
 
     Raises GuardError, TallyConnectionError or TallyResponseError; the runner records them as a failed check.
     """
-    check_company(parse_company_list(await _post(client, build_company_list())), company, mutating=False)
     receivable_xml, payable_xml, tb_xml = _requests(company)
-    receivable_text = await _post(client, receivable_xml)
-    payable_text = await _post(client, payable_xml)
-    tb_text = await _post(client, tb_xml)
+    for xml in (receivable_xml, payable_xml, tb_xml):
+        check_educational_dates(xml, licence)
+    check_company(parse_company_list(await _post(client, build_company_list(), licence)), company, mutating=False)
+    receivable_text = await _post(client, receivable_xml, licence)
+    payable_text = await _post(client, payable_xml, licence)
+    tb_text = await _post(client, tb_xml, licence)
     return _evaluate(receivable_text, payable_text, tb_text, tb_baseline)

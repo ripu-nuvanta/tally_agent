@@ -14,7 +14,7 @@ from v2.probes.console import ProbeIO
 from v2.probes.core import Probe, ProbeBlocked
 from v2.probes.results import ResultsStore
 from v2.probes.safety import check_company as _check_company
-from v2.probes.safety import check_request
+from v2.probes.safety import check_educational_dates, check_request
 
 POPUP_HINT = "Check Tally for an open popup or modal and dismiss it (LESSONS §15 rule 10)."
 ENVIRONMENT_SIDECAR_KEYS = ("wine", "tally_version", "edition", "licence")
@@ -78,6 +78,7 @@ class ProbeContext:
             raise ValueError(f"Duplicate step name in this part: {step!r}")
         self._used_steps.add(step)
         check_request(xml)
+        check_educational_dates(xml, self.store.environment.get("licence"))
         env = self.store.environment
         common = dict(probe_id=self.probe.id, part=self.part, step=step, company_name=self.company_name,
                       company_guid=self.company_guid, request_xml=xml, sent_at=datetime.now().astimezone(),
@@ -112,6 +113,7 @@ class ProbeContext:
 
     async def _post_uncaptured(self, xml: str, what: str) -> str:
         check_request(xml)
+        check_educational_dates(xml, self.store.environment.get("licence"))
         try:
             response = await self.client.post_xml(xml)
         except TallyTimeoutError as exc:

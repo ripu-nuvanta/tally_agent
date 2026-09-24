@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 from v2.probes.core import ProbeBlocked
 from v2.probes.reads import dmy, fill_month_request, parse_vouchers, tally_date, untyped_period_vars
+from v2.probes.safety import EDUCATIONAL_DATE_VAR_DAYS, check_educational_date_values
 from v2.probes.setup.company_b_data import (COMPANY_B_BOOKS_FROM, COMPANY_B_LAST_MONTH, TAG_PREFIX, Dataset,
                                             VoucherSpec, _educational_days, generate)
 
@@ -38,7 +39,7 @@ B_BOOKS_TO = _B_BOOKS_TO_DATE.strftime("%d-%m-%Y")
 B_CURRENT_PERIOD = (date(_B_BOOKS_TO_DATE.year - (1 if _B_BOOKS_TO_DATE.month < 4 else 0), 4, 1), _B_BOOKS_TO_DATE)
 # C43 (live 2026-09-24): Educational TallyPrime silently ignores a date static variable (SVFROMDATE/SVTODATE, typed)
 # whose day is not one of these — the same rule it applies to voucher dates — and falls back to the current period.
-EDUCATIONAL_DATE_VAR_DAYS = (1, 2, 31)
+# The constant and the check live in `safety` (Ruling Q4: one C43 implementation); this module re-exports them.
 _TAG = re.compile(rf"^\[{re.escape(TAG_PREFIX)}:(\d+)\]")
 
 
@@ -88,14 +89,10 @@ def month_window(year: int, month: int, licence: str) -> tuple[date, date]:
 
 
 def check_date_vars(licence: str, *dates: str) -> None:
-    """Refuse a DD-MM-YYYY request date an educational Tally would silently ignore (C43): sending it reads as a
-    healthy answer for the wrong period, which is worse than not asking."""
-    if licence != "educational":
-        return
-    bad = [d for d in dates if dmy(d).day not in EDUCATIONAL_DATE_VAR_DAYS]
-    if bad:
-        raise ValueError(f"C43: educational Tally ignores date variables off day 1/2/31 and answers for the current "
-                         f"period instead — {', '.join(bad)} would be silently replaced; use month_window().")
+    """Refuse a request date an educational Tally would silently ignore (C43): sending it reads as a healthy answer
+    for the wrong period, which is worse than not asking. Raises safety.GuardError — the same check, exception and
+    date parser as the request-level guard in ProbeContext (Ruling Q4)."""
+    check_educational_date_values(licence, *dates)
 
 
 def expect_window(licence: str, start: date, end: date) -> WindowExpectation:

@@ -295,3 +295,11 @@ def test_allow_risky_is_opt_in_on_the_run_command():
     assert parser.parse_args(["run", "16"]).allow_risky is False
     assert parser.parse_args(["run", "--all"]).allow_risky is False
     assert parser.parse_args(["run", "16", "--allow-risky"]).allow_risky is True
+
+
+def test_anchors_command_without_a_baseline_fails_and_is_recorded(tmp_path):
+    io = ScriptedIO()
+    results = tmp_path / "r.json"
+    assert main(["--results", str(results), "anchors"], transport=FakeTally([COMPANIES["A"]]).transport(), io=io) == 1
+    assert any("anchors check (before_parity) company A: FAILED" in s and "No TB baseline" in s for s in io.said)
+    assert ResultsStore(results).anchor_checks[-1]["when"] == "before_parity"

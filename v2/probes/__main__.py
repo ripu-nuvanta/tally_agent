@@ -1,4 +1,4 @@
-"""Runner CLI: python -m v2.probes {list,run,report,reset-a,setup-b} (S0 spec §5.3, §5.8)."""
+"""Runner CLI: python -m v2.probes {list,run,report,reset-a,setup-b,anchors} (S0 spec §5.3, §5.8)."""
 from __future__ import annotations
 
 import argparse
@@ -18,10 +18,10 @@ from v2.probes.console import ConsoleIO, ProbeIO
 from v2.probes.core import Outcome, ProbeBlocked
 from v2.probes.operator.auto import AUTO_RUN_MODE, AutoOperator, build_auto_operator
 from v2.probes.operator.tally_control import OperatorError
-from v2.probes.registry import ALL_ORDER, FIRST_ORDER, PROBES, load_probe
+from v2.probes.registry import ALL_ORDER, ANCHORS_AFTER_A, ANCHORS_BEFORE_PARITY, FIRST_ORDER, PROBES, load_probe
 from v2.probes.report import render_report
 from v2.probes.results import ResultsStore
-from v2.probes.runner import run_order, run_probe
+from v2.probes.runner import run_anchor_check, run_order, run_probe
 
 V2_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_PATH = V2_ROOT / "probes" / "results" / "results.json"
@@ -62,6 +62,9 @@ def build_parser() -> argparse.ArgumentParser:
     setup_b.add_argument("--stop-any-tally", action="store_true")
     setup_b.add_argument("--licence", choices=["licensed", "educational"], default=None,
                          help="default: whatever probe 0 recorded in results.json")
+    anchors = sub.add_parser("anchors",
+                             help="is company A intact? (S0 spec §4.2) — read-only, recorded in results.json")
+    anchors.add_argument("--when", choices=["before_parity", "after_a_batch"], default="before_parity")
     return parser
 
 
@@ -175,6 +178,16 @@ def _setup_b(args, store: ResultsStore, operator: AutoOperator | None) -> int:
     return 0
 
 
+async def _anchors(args, store: ResultsStore, transport: httpx.AsyncBaseTransport | None, io: ProbeIO) -> int:
+    """Spec §4.2's anchors check on its own, for single `run` sessions (ordered runs already include it)."""
+    step = ANCHORS_BEFORE_PARITY if args.when == "before_parity" else ANCHORS_AFTER_A
+    client = TallyClient(args.host, args.port, transport=transport)
+    try:
+        return 0 if await run_anchor_check(step, "A", client=client, store=store, io=io) else 1
+    finally:
+        await client.close()
+
+
 def main(argv: list[str] | None = None, *, transport: httpx.AsyncBaseTransport | None = None,
          io: ProbeIO | None = None, operator: AutoOperator | None = None) -> int:
     parser = build_parser()
@@ -195,6 +208,8 @@ def main(argv: list[str] | None = None, *, transport: httpx.AsyncBaseTransport |
         return _reset_a(args, store, operator)
     if args.command == "setup-b":
         return _setup_b(args, store, operator)
+    if args.command == "anchors":
+        return asyncio.run(_anchors(args, store, transport, io or ConsoleIO(interactive=not args.non_interactive)))
     if args.auto:
         auto = operator or build_auto_operator(host=args.host, port=args.port, log_path=_auto_log(),
                                                stop_any_tally=args.stop_any_tally)

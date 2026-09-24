@@ -242,10 +242,11 @@ async def test_c33_is_not_reproduced_when_the_untyped_answer_is_empty(tmp_path):
 
 async def test_the_educational_fake_reproduces_live_run_1_with_the_old_30th_window(tmp_path, monkeypatch):
     """Item 4 end to end: with the pre-C43 window (to 30-06-2023) the educational fake gives live run 1's FAILED
-    shape — the typed month runs to the current FY's end. The guard is bypassed here on purpose."""
-    from v2.probes import company_b_view
+    shape — the typed month runs to the current FY's end. The C43 rule is switched off here on purpose, once, for
+    both call sites (fetch_window and the request-level guard share one implementation — Ruling Q4)."""
+    from v2.probes import safety
     monkeypatch.setattr(p05, "month_window", lambda y, m, licence: (date(2023, 6, 1), date(2023, 6, 30)))
-    monkeypatch.setattr(company_b_view, "check_date_vars", lambda licence, *dates: None)
+    monkeypatch.setattr(safety, "EDUCATIONAL_DATE_VAR_DAYS", tuple(range(1, 32)))
     _, part = await _run_books(tmp_path, _books())
     obs = part["observations"]
     assert part["outcome"] == "FAILED"

@@ -15,6 +15,7 @@ from v2.probes.core import Probe, ProbeBlocked
 from v2.probes.p21_full_history_reach import voucher_blocks
 from v2.probes.reads import FROM_PLACEHOLDER, TO_PLACEHOLDER, parse_vouchers, tally_date, voucher_request
 from v2.probes.results import ResultsStore
+from v2.probes.safety import GuardError
 from v2.tests.probes.fakes import FakeTally, ScriptedIO, ready_store, vch, vouchers_xml
 
 JUNE = (date(2023, 6, 1), date(2023, 6, 30))
@@ -232,8 +233,9 @@ async def test_fetch_window_refuses_an_educational_date_tally_would_silently_ign
     ctx = ProbeContext(probe=Probe(id=999, name="test", question="", feeds=(), parts={}), part="B", company_name=B,
                        client=TallyClient(transport=fake.transport()), store=store,
                        capture=Capture(tmp_path / "fixtures"), io=ScriptedIO())
-    with pytest.raises(ValueError, match="C43"):
+    with pytest.raises(GuardError, match="C43"):            # Ruling Q4: the one C43 check raises GuardError
         await fetch_window(ctx, "window", template, "educational", start, end)
     assert not any("S0Test" in body for body in fake.requests)
+    store.update_environment(licence="licensed")      # the request-level C43 guard reads the store's licence (Task 2)
     result, _ = await fetch_window(ctx, "window", template, "licensed", start, end)   # licensed: any date is fine
     assert result["returned"] == 0

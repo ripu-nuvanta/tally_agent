@@ -100,7 +100,7 @@ async def run_anchor_check(step: str, label: str, *, client: TallyClient, store:
         problems = ["No TB baseline yet: run probe 0 first."]
     else:
         try:
-            result = await check_anchors_direct(client, COMPANIES[label], baseline)
+            result = await check_anchors_direct(client, COMPANIES[label], baseline, store.environment.get("licence"))
         except Exception as exc:  # noqa: BLE001 - a failed check is recorded, never a crash
             problems = [f"{type(exc).__name__}: {exc}"]
         else:
