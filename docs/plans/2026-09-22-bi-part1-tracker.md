@@ -19,7 +19,7 @@ A change outside `v2/` and `docs/` is a bug in the work, not progress.
 
 ---
 
-## ▶ Resume here (updated 2026-09-23)
+## ▶ Resume here (updated 2026-09-24)
 
 **Where we are:** S0 plan part 2 is **built, reviewed, fix-waved and run live**. Every company-A probe is ✅
 (0, 1, 2, 3, 4, 6, 7, 8, 10, 12, 13, 16, 17, 18, 19, 23, 25); 3, 16, 18, 23 and 25 are A-done with their **B parts
@@ -38,11 +38,14 @@ gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probe
 has touched a real Tally instance.**
 
 **Next steps, in order:**
-1. **Create company B in the Tally UI** (spec §4.3, can't be scripted): name exactly
+0. **2026-09-24 — company B shell created in the UI** (name, 1-Apr-22 books, Maharashtra, GST Yes, bill-wise Yes,
+   inventory Yes). **Tally assigned it number `100000`, not `100004`** (it takes the lowest free number) — config +
+   test updated in `907b9d1`, suite 435 green. Still open in the UI: voucher type `Sales - GST`, F2 = 31-03-2026.
+1. ~~**Create company B in the Tally UI**~~ (shell ✅ 2026-09-24, see step 0) (spec §4.3, can't be scripted): name exactly
    `Sharma & Sons' Probe Traders` (the `&` and `'` are what probe 14 tests), books from **01-04-2022**, Maharashtra,
    GST enabled like the seed company, **F2 ≥ 31-03-2026**, and one custom voucher type **`Sales - GST`** under Sales
-   created in the UI (voucher-type config via XML is unreliable — LESSONS §11 / §15 rule 4). **Confirm its company
-   number is 100004** — `OperatorConfig.company_numbers["B"]` assumes it. Since 2026-09-23 a mismatch really does
+   created in the UI (voucher-type config via XML is unreliable — LESSONS §11 / §15 rule 4). **Its company
+   number is 100000** (confirmed 2026-09-24; was wrongly assumed 100004) — `OperatorConfig.company_numbers["B"]` holds it. Since 2026-09-23 a mismatch really does
    stop the run before anything is written: `setup_company_b` now does `ensure_running()` → `_open_company("B")`
    → `check_company(..., mutating=True)` first, so a wrong number opens (or fails to open) the wrong company and
    `TallyControl` fails fast with "Tally has […] open, not […]". Before that fix `company_numbers["B"]` was never
@@ -145,7 +148,7 @@ because its Bank/Cash rows carry the known-corrupt seed sign. Replaced by `Sundr
 **Pending — operator, before anything runs live:**
 1. Create company B in the Tally UI: exactly `Sharma & Sons' Probe Traders`, books from 01-04-2022, Maharashtra,
    GST enabled, F2 ≥ 31-03-2026, and the custom voucher type `Sales - GST` created **in the UI** (LESSONS §15 rule 4).
-2. Confirm its company number is **100004** (`OperatorConfig.company_numbers["B"]`).
+2. ✅ Company number confirmed **100000** on 2026-09-24 (not 100004 as assumed) — `OperatorConfig.company_numbers["B"]` fixed in `907b9d1`.
 3. Run `uv run --project v2 python -m v2.probes setup-b` **with a person at the machine** — the F2, flag-settle,
    failed-create and opening-bill pauses are action-less by design and prompt for a human.
 4. Then batch 5, **probe 21 first** (it gates Q22/Q23 and therefore S1's schema).
@@ -361,3 +364,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-23 | **S0 plan part 3 (company-B loader) built via 9 TDD tasks, commits `6f1c882..18f98b5` (17 commits)**: `v2/probes/setup/company_b_data.py` (deterministic dataset + `expected_figures`, independent of Tally) and `v2/probes/setup/company_b.py` (idempotent loader: list-before-create, read-back, pauses on flags that won't stick) are new; `TallyWriter` (`v2/probes/setup/writes.py`) gained master and voucher writers; `setup-b` is wired through the CLI and the auto-operator (`company_numbers["B"]` + `setup_company_b()`). Suite went **351 → 429 tests**, all green (`uv run --project v2 pytest v2/tests`). Built and unit-tested only, **entirely offline against `FakeBooks`** — not run against live Tally. Spec §14's GSTIN question formally answered in the spec (dated "Changed 2026-09-23" line). Next: create company B in the Tally UI, confirm company number 100004, run `setup-b` live with a person present, then batch 5 (probe 21 first). |
 | 2026-09-23 | **Company-B loader code review + fix wave (in progress).** Whole-branch review of `6bcb6f4..4e56ca8` (24 mutations run): **ready with fixes** — 11 of 12 behaviour-removing mutations were killed by the test named for that behaviour. Found **1 Critical**: `setup_company_b` wrote ~1,000 objects without checking which company Tally had OPEN (`check_writable` inspects the string literal `COMPANIES["B"]`, not the loaded company; company A's name also contains "Probe", and the realistic sequence is "run the A probes, then load B") — fixed in `3d1b4e6`, which now calls `ensure_running` + `_open_company` + `check_company` first. Also found the **5th and 6th false-passing tests** of this plan: the Op 6/7 convention test excluded the USD export sale and had no Op 8/9 arm, leaving `_build_usd_sale`/`_build_receipt`/`_build_payment` (**290 of 960 vouchers**) replaceable by the `EXCEPTIONS=1` permutation with the suite green (fixed `e4903ce`, mutation-verified by the controller); and the purchase-subtype inventory test asserted only tag presence while emitting the rejected permutation (fixed `22df890`). Landed so far: C1 `3d1b4e6`, I2 `e4903ce`, I1 `22df890`, I4 `5f12217` (duplicate vouchers were invisible to every count — everything keyed by tag), I5 `027a9ca` (the fake now stores `ISDEEMEDPOSITIVE` and enforces the Op 6/7/8 rule instead of echoing). **Still open in the wave:** I3 (polarity test is anchored to a fixture whose own SOURCE.md forbids that use, and asserts a sign the project's live captures contradict), M2 (line-ordering bare `assert` crashes mid-load instead of pausing — the only surviving behavioural mutation), delete dead `voucher_by_tag`, and minors M3/M4/M5/M1/M6/M7/M9. |
 | 2026-09-23 | **Session end — fix wave 10/15, tree clean and green at `0b1a6b7` (435 tests).** Landed since the previous row: I3 `cf271e3` (the polarity test was anchored to a fixture whose own SOURCE.md says "parser tests only, never seed-parity anchors", and asserted a sign this project's live captures contradict — now re-anchored to `p16_A_tb_fy_end.xml`/`p17_A_tb_exploded_explodealllevels.xml` and asserting the second-level buckets `_verify_balances` actually compares); M2 + dead-code deletion + M3 `0b1a6b7` (the party-first line-ordering bare `assert` now raises `CompanyBLoadError` so a violation pauses instead of crashing mid-load — it was the only surviving behavioural mutation in the suite; dead `TallyWriter.voucher_by_tag` deleted with its test; two receipt fixtures flipped off the mirror of Op 8). **Five minors not started: M1, M4, M6, M7, M9** — see "Resume here". Stopped deliberately at a committed green tree rather than mid-edit. |
+| 2026-09-24 | **Company B shell created in the Tally UI** by the operator: `Sharma & Sons' Probe Traders`, FY/books from 1-Apr-22, Maharashtra, GST Yes (no company GST details), bill-wise Yes, inventory integrated. **Contradicted expectation:** Tally assigned company number **`100000`** (folder `s0probe/100000`), not `100004` — it picks the lowest free number, not "next after A". `company_numbers["B"]` + `test_auto_operator.py` updated, `907b9d1`, 435 green. Remaining UI steps: voucher type `Sales - GST`, F2 = 31-03-2026; then `setup-b` live. |
