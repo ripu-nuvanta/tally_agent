@@ -1,0 +1,18 @@
+{
+  "probe": 14,
+  "part": "B",
+  "step": "unescaped_request",
+  "company_name": "Sharma & Sons' Probe Traders",
+  "company_guid": "138b7373-753c-4dbe-aa63-b802035f0ba9",
+  "sent_at": "2026-09-24T18:18:52+05:30",
+  "elapsed_ms": 1,
+  "response_bytes": 59,
+  "timing_note": "Wine — not representative",
+  "request_xml": "<ENVELOPE>\n<HEADER>\n<VERSION>1</VERSION>\n<TALLYREQUEST>Export</TALLYREQUEST>\n<TYPE>Collection</TYPE>\n<ID>S0P14Ledgers</ID>\n</HEADER>\n<BODY>\n<DESC>\n<STATICVARIABLES>\n<SVEXPORTFORMAT>$$SysName:XML</SVEXPORTFORMAT>\n<SVCurrentCompany>Sharma & Sons' Probe Traders</SVCurrentCompany>\n</STATICVARIABLES>\n<TDL>\n<TDLMESSAGE>\n<COLLECTION NAME=\"S0P14Ledgers\" ISMODIFY=\"No\">\n<TYPE>Ledger</TYPE>\n\n<NATIVEMETHOD>Name</NATIVEMETHOD>\n<NATIVEMETHOD>Parent</NATIVEMETHOD>\n\n</COLLECTION>\n\n\n</TDLMESSAGE>\n</TDL>\n</DESC>\n</BODY>\n</ENVELOPE>",
+  "environment": {
+    "wine": "wine-11.0",
+    "tally_version": "TallyPrime 7.0 (release 7.0 from the XML response header)",
+    "edition": "Edit Log",
+    "licence": "educational"
+  }
+}
