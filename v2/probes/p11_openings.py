@@ -4,6 +4,9 @@ All three are checked against what setup-b wrote (the dataset, via company_b_vie
 Ledger OpeningBalance is judged against the books-start opening; if it instead equals the current FY's opening, that
 is recorded as DIFFERENT and the scope question is left to probe 16 B (S0-D7). The opening-bill candidate is the ledger
 master's own BillAllocations; the fallback is Bills Receivable as-on the books start (01-04-2022, day 1, C43).
+C46 (live 2026-09-24): StockItem opening fields are the current period's opening. The stock half judges that scope the
+way the ledger half judges OpeningBalance's, and every half is named in the summary (the 2026-09-24 run's FAILED stock
+half hid a DIFFERENT ledger half).
 """
 from __future__ import annotations
 
@@ -14,9 +17,9 @@ from v2.agent.tally.envelopes import formula_string, wrap_report
 from v2.agent.tally.reports import parse_bills, parse_ledger_list
 from v2.agent.tally.xml_utils import read_objects, sanitize_xml
 from v2.probes.company_b_view import (B_BOOKS_FROM, B_CURRENT_PERIOD, item_specs, ledger_openings_at, ledger_specs,
-                                      loaded_licence, qty_unit)
+                                      loaded_licence, qty_unit, stock_opening_at)
 from v2.probes.context import ProbeContext
-from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
+from v2.probes.core import PartResult, Probe, ProbeBlocked, judge_halves
 from v2.probes.reads import ZERO, amount, master_request, qty_number
 
 LEDGER_FIELDS = ["Name", "Parent", "OpeningBalance"]
@@ -38,6 +41,12 @@ STOCK_FAILED_IMPACT = ("Stock openings don't export setup's quantity / rate / va
                        "Stock Summary snapshot, not an opening anchor (R5).")
 STOCK_SIGN_IMPACT = ("StockItem OpeningValue exports positive for a debit: S1 negates it on ingest to keep debit "
                      "negative (Part 1 §6).")
+STOCK_CURRENT_IMPACT = ("C46: StockItem OpeningBalance / OpeningRate / OpeningValue are the CURRENT period's opening, "
+                        "not the books-start one — S1 may use them only as the current FY's stock opening; a "
+                        "books-start stock opening comes from a Stock Summary as-on the books start (probe 18's route), "
+                        "never the StockItem master (R5).")
+STOCK_UNDECIDED_IMPACT = ("No stock item moved before the current period, so books-start and current-period openings "
+                          "can't be told apart here: the StockItem opening's scope stays unmeasured (R5).")
 
 
 def ledger_opening_check(rows: dict[str, dict], specs: dict, current_fy: dict[str, Decimal]) -> dict:
@@ -77,7 +86,8 @@ def bill_check(found: list[dict], name: str, want: Decimal) -> dict:
             "sign": None if value is None else ("negative" if value < 0 else "positive"), "bills_seen": len(found)}
 
 
-def stock_check(rows: list[dict[str, str]], specs: dict, units: dict[str, str]) -> dict[str, dict]:
+def stock_check(rows: list[dict[str, str]], specs: dict, units: dict[str, str],
+                current_qty: dict[str, Decimal]) -> dict[str, dict]:
     by_name = {row["Name"]: row for row in rows}
     out: dict[str, dict] = {}
     for name, spec in specs.items():
@@ -92,10 +102,69 @@ def stock_check(rows: list[dict[str, str]], specs: dict, units: dict[str, str]) 
         value = amount(row["OpeningValue"])
         out[name] = {"present": True, "qty_text": row["OpeningBalance"], "rate_text": row["OpeningRate"],
                      "value": value, "base_units": row["BaseUnits"], "qty_unit": units[name],
-                     "qty_ok": qty == want_qty, "rate_ok": (rate or ZERO) == want_rate,
-                     "value_ok": (value or ZERO) == want_value,
+                     "books_qty": want_qty, "current_period_qty": current_qty[name],
+                     "qty_ok": qty == want_qty, "qty_current_ok": qty == current_qty[name],
+                     "rate_ok": (rate or ZERO) == want_rate, "value_ok": (value or ZERO) == want_value,
                      "value_sign_flipped": want_value != ZERO and value == -want_value}
     return out
+
+
+def stock_scope(stock: dict[str, dict]) -> dict:
+    """Which opening StockItem exports, judged on the items whose books-start and current-period openings differ."""
+    telling = sorted(n for n, e in stock.items() if e["books_qty"] != e["current_period_qty"])
+    as_books = [n for n in telling if stock[n]["qty_ok"]]
+    as_current = [n for n in telling if stock[n]["qty_current_ok"]]
+    neither = sorted(n for n, e in stock.items() if not e["qty_ok"] and not e["qty_current_ok"])
+    if neither:
+        scope = "neither"
+    elif not telling:
+        scope = "undecided"
+    elif len(as_books) == len(telling):
+        scope = "books"
+    elif len(as_current) == len(telling):
+        scope = "current_period"
+    else:
+        scope = "mixed"
+    return {"scope": scope, "telling": len(telling), "as_books": as_books, "as_current_period": as_current,
+            "neither": neither}
+
+
+def _ledger_half(ledgers: dict) -> tuple[str, str, str]:
+    if not ledgers["mismatched"]:
+        return "CONFIRMED", f"{ledgers['compared']} openings equal setup's books-start openings", ""
+    if set(ledgers["as_current_fy"]) == set(ledgers["mismatched"]):
+        return ("DIFFERENT", f"OpeningBalance equals the current FY's opening for {len(ledgers['mismatched'])} "
+                             "ledger(s)", LEDGER_FY_IMPACT)
+    return "FAILED", f"OpeningBalance ≠ setup for {', '.join(sorted(ledgers['mismatched'])[:5])}", LEDGER_FAILED_IMPACT
+
+
+def _bill_half(opening_bill: dict) -> tuple[str, str, str]:
+    bill = opening_bill["bill"]
+    if opening_bill["candidate"]["magnitude_match"]:
+        return "CONFIRMED", f"{bill!r} (₹{abs(opening_bill['expected'])}) on the ledger master", ""
+    if opening_bill.get("report", {}).get("magnitude_match"):
+        return "DIFFERENT", f"{bill!r} only in Bills Receivable as-on {OPENING_BILLS_AS_ON}", BILL_REPORT_IMPACT
+    return "FAILED", f"{bill!r} found neither on the ledger nor in Bills Receivable", BILL_FAILED_IMPACT
+
+
+def _stock_half(stock: dict[str, dict], scope: dict) -> tuple[str, str, str]:
+    if scope["scope"] == "books":
+        bad = sorted(n for n, e in stock.items() if not (e["rate_ok"] and (e["value_ok"] or e["value_sign_flipped"])))
+        flipped = sorted(n for n, e in stock.items() if e["value_sign_flipped"] and not e["value_ok"])
+        if bad:
+            return "FAILED", f"openings ≠ setup's rate/value for {', '.join(bad)}", STOCK_FAILED_IMPACT
+        if flipped:
+            return "DIFFERENT", f"OpeningValue exported positive for {', '.join(flipped)}", STOCK_SIGN_IMPACT
+        return "CONFIRMED", f"{len(stock)} openings equal what setup-b wrote", ""
+    if scope["scope"] == "current_period":
+        return ("DIFFERENT", f"openings are the current period's (as at {B_CURRENT_PERIOD[0]}) for "
+                             f"{len(scope['as_current_period'])} item(s), not the books-start ones (C46)",
+                STOCK_CURRENT_IMPACT)
+    if scope["scope"] == "undecided":
+        return "DIFFERENT", "books-start and current-period openings are equal on every item", STOCK_UNDECIDED_IMPACT
+    names = scope["neither"] or sorted(scope["as_books"] + scope["as_current_period"])
+    return ("FAILED", f"openings ≠ setup for {', '.join(names)}" if scope["neither"]
+            else f"openings mix books-start and current-period values ({', '.join(names)})", STOCK_FAILED_IMPACT)
 
 
 async def run_b(ctx: ProbeContext) -> PartResult:
@@ -127,43 +196,20 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     items = read_objects(await ctx.send("stock_openings", master_request("S0P11Stock", "StockItem", STOCK_FIELDS,
                                                                          company)), "STOCKITEM", STOCK_FIELDS)
     item_names = item_specs(licence)
-    stock = stock_check(items, item_names, {n: qty_unit(licence, n) for n in item_names})
+    current = {n: stock_opening_at(licence, n, B_CURRENT_PERIOD[0]) for n in item_names}
+    stock = stock_check(items, item_names, {n: qty_unit(licence, n) for n in item_names}, current)
     ctx.observe("stock", stock)
     absent = sorted(n for n, e in stock.items() if not e["present"])
     if absent:
         raise ProbeBlocked(f"Company B is missing stock item(s) {absent} — re-run `setup-b` verify or restore the backup.")
+    scope = stock_scope(stock)
+    ctx.observe("stock_scope", scope)
 
-    failures, differences, impacts = [], [], []
-    stock_bad = sorted(n for n, e in stock.items()
-                       if not (e["qty_ok"] and e["rate_ok"] and (e["value_ok"] or e["value_sign_flipped"])))
-    if stock_bad:
-        failures.append(f"stock openings ≠ setup for {', '.join(stock_bad)}")
-        impacts.append(STOCK_FAILED_IMPACT)
-    if ledgers["mismatched"] and set(ledgers["as_current_fy"]) != set(ledgers["mismatched"]):
-        failures.append(f"OpeningBalance ≠ setup for {', '.join(sorted(ledgers['mismatched'])[:5])}")
-        impacts.append(LEDGER_FAILED_IMPACT)
-    bill_ok = opening_bill["candidate"]["magnitude_match"]
-    bill_in_report = opening_bill.get("report", {}).get("magnitude_match", False)
-    if not bill_ok and not bill_in_report:
-        failures.append(f"opening bill {bill!r} found neither on the ledger nor in Bills Receivable")
-        impacts.append(BILL_FAILED_IMPACT)
-    if failures:
-        return PartResult(Outcome.FAILED, "; ".join(failures), spec_impact=" ".join(impacts))
-    if ledgers["mismatched"]:
-        differences.append(f"OpeningBalance equals the current FY's opening for {len(ledgers['mismatched'])} ledger(s)")
-        impacts.append(LEDGER_FY_IMPACT)
-    if not bill_ok:
-        differences.append(f"opening bill {bill!r} only in Bills Receivable as-on {OPENING_BILLS_AS_ON}")
-        impacts.append(BILL_REPORT_IMPACT)
-    flipped = sorted(n for n, e in stock.items() if e["value_sign_flipped"] and not e["value_ok"])
-    if flipped:
-        differences.append(f"stock OpeningValue exported positive for {', '.join(flipped)}")
-        impacts.append(STOCK_SIGN_IMPACT)
-    if differences:
-        return PartResult(Outcome.DIFFERENT, "; ".join(differences), spec_impact=" ".join(impacts))
-    return PartResult(Outcome.CONFIRMED, f"{ledgers['compared']} ledger openings, opening bill {bill!r} "
-                                         f"(₹{abs(want)}) and {len(stock)} stock openings equal what setup-b wrote",
-                      spec_impact=CONFIRMED_IMPACT)
+    halves = {"ledgers": _ledger_half(ledgers), "opening_bill": _bill_half(opening_bill),
+              "stock": _stock_half(stock, scope)}
+    ctx.observe("sub_verdicts", {k: v[0] for k, v in halves.items()})
+    outcome, summary, impacts = judge_halves(halves)
+    return PartResult(outcome, summary, spec_impact=" ".join(impacts) or CONFIRMED_IMPACT)
 
 
 PROBE = Probe(

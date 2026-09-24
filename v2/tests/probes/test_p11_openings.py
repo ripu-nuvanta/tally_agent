@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from v2.agent.tally.client import TallyClient
 from v2.probes import p11_openings as p11
 from v2.probes.capture import Capture
@@ -5,7 +7,7 @@ from v2.probes.companies import COMPANIES
 from v2.probes.results import ResultsStore
 from v2.probes.runner import run_probe
 from v2.tests.probes.fake_books import FakeBooks, seed_company_b
-from v2.tests.probes.fakes import ScriptedIO, ready_store
+from v2.tests.probes.fakes import FakeTally, ScriptedIO, objects_xml, ready_store
 
 B = COMPANIES["B"]
 
@@ -70,3 +72,51 @@ async def test_a_missing_ledger_blocks_as_drift(tmp_path):
     books.edit_state(lambda s: s["ledgers"].pop("Satara Packaging Co"))
     part = await _run(tmp_path, books)
     assert part["outcome"] == "BLOCKED" and "Satara Packaging Co" in part["summary"]
+
+
+SNAPSHOT = Path(__file__).resolve().parents[1] / "fixtures" / "sync" / "c46_p11_live_2026-09-24"
+
+
+async def test_stock_openings_of_the_current_period_are_different_under_c46(tmp_path):
+    part = await _run(tmp_path, _books(stock_opening_scope="current"))
+    assert part["outcome"] == "DIFFERENT", part["summary"]
+    obs = part["observations"]
+    assert obs["stock_scope"]["scope"] == "current_period" and obs["sub_verdicts"]["stock"] == "DIFFERENT"
+    assert obs["sub_verdicts"]["ledgers"] == "CONFIRMED" and "C46" in part["spec_impact"]
+
+
+async def test_every_half_is_named_in_the_summary(tmp_path):
+    part = await _run(tmp_path, _books(ledger_opening_scope="fy", stock_opening_scope="current"))
+    assert part["outcome"] == "DIFFERENT"
+    assert all(label in part["summary"] for label in ("ledgers:", "opening bill:", "stock:"))
+    assert "probe 16 B" in part["spec_impact"] and "C46" in part["spec_impact"]
+
+
+async def test_a_mixed_stock_scope_fails(tmp_path):
+    books = _books()
+    books.edit_state(lambda s: s["items"]["USB Cable Type-C"].__setitem__("opening_qty", "11 Nos"))  # its 31-03-2025 qty
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "FAILED" and part["observations"]["stock_scope"]["scope"] == "mixed"
+
+
+async def test_the_2026_09_24_live_capture_relabels_to_different_under_c46(tmp_path):
+    """Plan part 6 re-run rule: the new rule on the exact bytes the old rule judged FAILED (stock only)."""
+    fake = FakeTally([B])
+    fake.route("S0CompanyCounters", lambda body: objects_xml("COMPANY", [{
+        "Name": B, "GUID": "g-b", "AltVchId": "1", "AltMstId": "1", "BooksFrom": "20220401",
+        "LastVoucherDate": "20260331", "AlterID": "1"}]))
+    for marker, name in (("S0P11PartyBills", "p11_B_opening_bills.xml"), ("S0P11Ledgers", "p11_B_ledger_openings.xml"),
+                         ("S0P11Stock", "p11_B_stock_openings.xml")):
+        data = (SNAPSHOT / name).read_bytes()
+        fake.route(marker, lambda body, data=data: data)
+    store = ResultsStore(tmp_path / "results.json")
+    ready_store(store, licence="educational")
+    store.update_environment(company_b_loaded_at="2026-09-24T13:02:33+05:30")
+    await run_probe(p11.PROBE, labels=None, client=TallyClient(transport=fake.transport()), store=store,
+                    capture=Capture(tmp_path / "fixtures"), io=ScriptedIO())
+    part = store.probe_entry(11)["parts"]["B"]
+    assert part["outcome"] == "DIFFERENT", part["summary"]
+    obs = part["observations"]
+    assert obs["sub_verdicts"] == {"ledgers": "DIFFERENT", "opening_bill": "CONFIRMED", "stock": "DIFFERENT"}
+    assert len(obs["ledgers"]["as_current_fy"]) == 14
+    assert obs["stock_scope"]["scope"] == "current_period" and len(obs["stock_scope"]["as_current_period"]) == 5
