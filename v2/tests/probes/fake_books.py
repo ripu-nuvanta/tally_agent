@@ -120,6 +120,27 @@ def sync_client(transport: httpx.BaseTransport) -> httpx.Client:
     return httpx.Client(base_url="http://localhost:9000", transport=transport, trust_env=False)
 
 
+def _flagged(voucher: dict) -> bool:
+    """C42 (live run 4, 2026-09-24): a cancelled or optional voucher moves no balance, stock or bill in Tally —
+    whether the flag came over the wire or the operator set it by hand in the UI after the create."""
+    return voucher.get("cancelled") == "Yes" or voucher.get("optional") == "Yes"
+
+
+def _effective_bills(state: dict) -> dict[str, dict[str, str]]:
+    """The bills as Tally shows them: `state["bills"]` holds every posting ever made (and any bill a test or the
+    operator entered by hand); each flagged voucher's own postings are backed out of it here (C42)."""
+    bills = {name: dict(bill) for name, bill in state.get("bills", {}).items()}
+    for v in state["vouchers"].values():
+        if not _flagged(v):
+            continue
+        for posted in v.get("bills", []):
+            if posted["type"] == "Agst Ref":
+                bills[posted["name"]]["amount"] = f"{Decimal(bills[posted['name']]['amount']) - Decimal(posted['amount']):.2f}"
+            else:
+                bills.pop(posted["name"], None)
+    return bills
+
+
 class FakeBooks:
     """Tally running or not, a loaded company, a licence box (`click_polls`), a busy load (`busy_polls`), a modal."""
 
@@ -283,6 +304,8 @@ class FakeBooks:
         """
         balances = {name: Decimal(led.get("opening", "0.00")) for name, led in state["ledgers"].items()}
         for voucher in state["vouchers"].values():
+            if _flagged(voucher):                                                      # C42: posts nothing
+                continue
             if (_yyyymmdd(voucher["date"]) or voucher["date"]) > as_on:                # C33: closing as on the (typed, or current-period) SVTODATE
                 continue
             for line in voucher.get("lines", []):
@@ -463,6 +486,10 @@ class FakeBooks:
             moves.append({"item": inv.findtext("STOCKITEMNAME", ""), "qty": f"{qty if inward else -qty}"})
         return moves
 
+    def posted_bills(self) -> dict[str, dict[str, str]]:
+        """C42: every bill as Tally shows it — a flagged (cancelled/optional) voucher's postings backed out."""
+        return _effective_bills(self.state)
+
     def stock_day_closes(self) -> list[tuple[str, dict[str, Decimal]]]:
         """C41: every item's quantity at the close of each voucher day (YYYYMMDD), from the items' opening quantities
         plus every inventory row on record. Cancelled/optional vouchers move no stock, as in Tally."""
@@ -471,7 +498,7 @@ class FakeBooks:
                  for name, item in state["items"].items()}
         by_day: dict[str, list[dict]] = {}
         for v in state["vouchers"].values():
-            if v.get("cancelled") == "Yes" or v.get("optional") == "Yes":
+            if _flagged(v):
                 continue
             by_day.setdefault(v["date"], []).append(v)
         closes = []
@@ -487,7 +514,7 @@ class FakeBooks:
         """C34 (live UI 2026-09-24): Tally files a bill by the SIGN of its amount, not by the voucher type or the
         party's group — [S0-B:1]'s sales bill sent +9861.74 landed in Bills PAYABLE. Negative (Dr) = receivable,
         positive (Cr) = payable; a settled bill (zero) is in neither. BILLCL keeps the sign, as live XML does."""
-        return [(name, bill["party"], bill["amount"]) for name, bill in state.get("bills", {}).items()
+        return [(name, bill["party"], bill["amount"]) for name, bill in _effective_bills(state).items()
                 if Decimal(bill["amount"]) != 0 and (Decimal(bill["amount"]) < 0) == receivable]
 
     @staticmethod
@@ -500,7 +527,7 @@ class FakeBooks:
         - an Agst Ref to a bill that was never opened (Tally would open a fresh bill on the wrong side, or refuse);
         - an Agst Ref to another party's bill;
         - an Agst Ref that pushes its bill past zero (over-settles it)."""
-        bills = state.get("bills", {})
+        bills = _effective_bills(state)
         for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
             for entry in element.findall(tag):
                 allocations = entry.findall("BILLALLOCATIONS.LIST")
@@ -525,11 +552,12 @@ class FakeBooks:
         return False
 
     @staticmethod
-    def _post_bills(state: dict, element: ET.Element) -> None:
+    def _post_bills(state: dict, element: ET.Element) -> list[dict[str, str]]:
         """New Ref opens a bill with its signed amount; Agst Ref adds its signed amount to that bill (a receipt's
         + knocks off a sale's −). On Account names no bill, so nothing is opened (C35). Refusals happen first,
-        in `_bills_refused`."""
+        in `_bills_refused`. Returns what was posted, kept on the voucher so a later flag can back it out (C42)."""
         bills = state.setdefault("bills", {})
+        posted: list[dict[str, str]] = []
         for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
             for entry in element.findall(tag):
                 party = entry.findtext("LEDGERNAME", "")
@@ -542,6 +570,8 @@ class FakeBooks:
                         bills[name]["amount"] = f"{Decimal(bills[name]['amount']) + amount:.2f}"
                     else:
                         bills[name] = {"party": party, "amount": f"{amount:.2f}"}
+                    posted.append({"name": name, "type": bill_type or "New Ref", "amount": f"{amount:.2f}"})
+        return posted
 
     def _voucher(self, state: dict, element: ET.Element, action: str) -> str:
         vouchers = state["vouchers"]
@@ -571,7 +601,7 @@ class FakeBooks:
                              "cancelled": cancelled, "optional": optional, "lines": lines,
                              "inventory": self._stock_moves(element)}
             if cancelled != "Yes":
-                self._post_bills(state, element)
+                vouchers[mid]["bills"] = self._post_bills(state, element)
             state["alt_vch"] += 1
             state["last_voucher_date"] = max(state["last_voucher_date"], date)
             self._save(state)

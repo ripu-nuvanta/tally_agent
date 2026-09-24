@@ -594,12 +594,12 @@ def expected_figures(dataset: Dataset) -> Expected:
                 continue
             by_month[(year, month)] = by_month.get((year, month), 0) + 1
             by_fy[fy_label(v.date)] = by_fy.get(fy_label(v.date), 0) + 1
-            if v.cancelled:                      # counted, but moves nothing
+            # Counted, but moves nothing. C42 (live run 4, 2026-09-24): Tally leaves an OPTIONAL voucher out of
+            # every balance too, not just out of bills/stock — the optional check used to sit below the ledger lines.
+            if v.cancelled or v.optional:
                 continue
             for line in v.lines:
                 running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
-            if v.optional:                       # an optional voucher posts nothing, bills included
-                continue
             for inv in v.inventory:              # C41: purchases bring stock in, sales take it out
                 stock[inv.item] += inv.qty if v.kind == "purchase" else -inv.qty
             for b in v.bills:

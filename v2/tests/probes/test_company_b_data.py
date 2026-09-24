@@ -196,7 +196,7 @@ def test_month_end_balances_equal_openings_plus_the_running_sum():
             if name != ledger:
                 continue
             opening = next((l.opening or Decimal("0.00") for l in ds.ledgers if l.name == name), Decimal("0.00"))
-            moved = sum((line.amount for v in ds.vouchers if v.date <= day and not v.cancelled
+            moved = sum((line.amount for v in ds.vouchers if v.date <= day and not (v.cancelled or v.optional)
                          and not v.skip_reason for line in v.lines if line.ledger == name), Decimal("0.00"))
             assert value == opening + moved
 
@@ -207,7 +207,8 @@ def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
     assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2           # C36: 101/102 skipped
     assert exp.voucher_count_by_fy["2022-23"] == 238
 
-    # M4 — the balance half. Recompute every month-end independently from openings + NON-cancelled lines only.
+    # M4 — the balance half. Recompute every month-end independently from openings + NON-flagged lines only (C42:
+    # optional vouchers post nothing either — see the optional test below).
     cancelled = [v for v in ds.vouchers if v.cancelled]
     assert len(cancelled) == 2 and all(any(l.amount for l in v.lines) for v in cancelled)   # not vacuous
     touched = {l.ledger for v in cancelled for l in v.lines}
@@ -216,7 +217,7 @@ def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
     fy_end = date(y, m, monthrange(y, m)[1])
     for name in touched:
         opening = next((l.opening or Decimal("0.00")) for l in ds.ledgers if l.name == name)
-        live = opening + sum((l.amount for v in ds.vouchers if not v.cancelled and not v.skip_reason
+        live = opening + sum((l.amount for v in ds.vouchers if not (v.cancelled or v.optional) and not v.skip_reason
                               for l in v.lines if l.ledger == name),
                              Decimal("0.00"))
         with_cancelled = live + sum((l.amount for v in cancelled for l in v.lines if l.ledger == name),
@@ -227,10 +228,30 @@ def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
         for cv in cancelled:
             cy, cm = cv.date.year, cv.date.month
             month_end = date(cy, cm, monthrange(cy, cm)[1])
-            upto = opening + sum((l.amount for v in ds.vouchers if not v.cancelled and not v.skip_reason
+            upto = opening + sum((l.amount for v in ds.vouchers if not (v.cancelled or v.optional) and not v.skip_reason
                                   and v.date <= month_end
                                   for l in v.lines if l.ledger == name), Decimal("0.00"))
             assert exp.ledger_month_end[(name, month_end)] == upto, (name, month_end)
+
+
+def test_optional_vouchers_do_not_move_a_balance_but_are_still_counted():
+    """C42 (live 2026-09-24, run 4): Tally leaves an optional voucher out of every balance, exactly like a cancelled
+    one — Sundry Debtors fell short of the everything-posts figure by the party amounts of 201/202 AND 301/302."""
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        exp = expected_figures(ds)
+        optional = [v for v in ds.vouchers if v.optional]
+        assert len(optional) == 2 and all(any(l.amount for l in v.lines) for v in optional)     # not vacuous
+        assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2                  # still counted
+        posting = [v for v in ds.vouchers if not (v.cancelled or v.optional or v.skip_reason)]
+        for ov in optional:
+            month_end = date(ov.date.year, ov.date.month, monthrange(ov.date.year, ov.date.month)[1])
+            for name in {l.ledger for l in ov.lines}:
+                opening = next((l.opening or Decimal("0.00")) for l in ds.ledgers if l.name == name)
+                for day in (month_end, date(2026, 3, 31)):
+                    upto = opening + sum((l.amount for v in posting if v.date <= day
+                                          for l in v.lines if l.ledger == name), Decimal("0.00"))
+                    assert exp.ledger_month_end[(name, day)] == upto, (licence, name, day)
 
 
 def test_fy_openings_are_the_previous_month_end():

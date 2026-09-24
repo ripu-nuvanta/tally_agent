@@ -468,8 +468,9 @@ def _settle_flags(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
 def _verify(writer: TallyWriter, company: str, dataset: Dataset, report: LoadReport) -> None:
     """Per-FY voucher counts, and (C3) group-level balances, compared against the dataset. Never raises (I7:
     every read is wrapped) — the operator must see the whole picture in one run."""
-    # M7: `expected.ledger_month_end` / `ledger_fy_opening` exist for probes 16/18, not for the loader — this
-    # function deliberately never consumes them (Ruling C16 / S0-D7: don't guess figures a probe must confirm).
+    # M7: `expected.ledger_month_end` / `ledger_fy_opening` exist for probes 16/18 — the loader never compares a
+    # single LEDGER against them (Ruling C16 / S0-D7). C42: `_verify_balances` does sum the final month-end into
+    # GROUP buckets, so expected balances have exactly one source.
     expected = expected_figures(dataset)
     try:
         rows = _read_vouchers(writer, company, _VOUCHER_LIST_FIELDS)
@@ -505,23 +506,23 @@ def _primary_bucket(ledger_parent: str, group_parents: dict[str, str]) -> str:
     return group_parents.get(ledger_parent, ledger_parent)
 
 
-def _posted_group_balances(dataset: Dataset) -> dict[str, Decimal]:
-    """Ledger closing balances as Tally will actually show them: opening balance plus every voucher line,
-    INCLUDING the two cancelled-tag vouchers' lines — `create_b_voucher` never writes ISCANCELLED (module
-    docstring), so those post normally regardless of the dataset's `cancelled` flag. Unlike `expected_figures`
-    (the canonical dataset truth used by probes 16/17/18), this deliberately includes that known gap — it's
-    "what Tally will actually show", not "what the dataset says should happen if everything worked"."""
-    running: dict[str, Decimal] = {l.name: (l.opening or Decimal("0.00")) for l in dataset.ledgers}
-    for v in dataset.vouchers:
-        if v.skip_reason:                        # C36: never written, so never in Tally's balances
-            continue
-        for line in v.lines:
-            running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
+def _expected_group_balances(dataset: Dataset) -> dict[str, Decimal]:
+    """Each group bucket's closing balance as on the last day of the dataset, summed from `expected_figures`'
+    ledger month-ends — the one source of expected balances (C42).
+
+    C42 (live run 4, 2026-09-24, logs/setup-b-live-2026-09-24-run4.log): this used to be a second, independent
+    replay (`_posted_group_balances`) that added EVERY non-skipped voucher's lines, cancelled and optional ones
+    included, on the belief that `create_b_voucher` never writes ISCANCELLED so the cancelled ones "post normally".
+    But the flag pause makes the operator set ISCANCELLED by hand, and Tally leaves optional vouchers out of
+    balances too — live, Sundry Debtors fell short by exactly the party amounts of 201/202/301/302. The fake's Trial
+    Balance counted flagged vouchers as well, so the two agreed with each other and the offline suite stayed green."""
+    expected = expected_figures(dataset)
+    last = max(day for _, day in expected.ledger_month_end)
     group_parents = {g.name: g.parent for g in dataset.groups}
     buckets: dict[str, Decimal] = {}
     for l in dataset.ledgers:
         bucket = _primary_bucket(l.parent, group_parents)
-        buckets[bucket] = buckets.get(bucket, Decimal("0.00")) + running.get(l.name, Decimal("0.00"))
+        buckets[bucket] = buckets.get(bucket, Decimal("0.00")) + expected.ledger_month_end[(l.name, last)]
     return buckets
 
 
@@ -541,7 +542,7 @@ def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report
     resolves. The statement's observed Dr/Cr total is recorded as `report.notes` — informational, not a
     `problems` line — precisely because asserting it must equal any particular figure would be that guess.
     """
-    expected_buckets = _posted_group_balances(dataset)
+    expected_buckets = _expected_group_balances(dataset)
     try:
         raw = writer.b_trial_balance(company, B_READBACK_FROM, B_READBACK_TO)
     except (WriteFailed, WriteTimeout) as exc:                                                              # I7

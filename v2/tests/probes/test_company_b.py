@@ -9,7 +9,7 @@ import pytest
 from v2.probes.companies import COMPANIES
 from v2.probes.reads import exploded_tb_rows, primary_group_rows
 from v2.probes.setup.company_b import (
-    CompanyBLoadError, LoadReport, _load_masters, _load_vouchers, _verify, load_company_b,
+    CompanyBLoadError, LoadReport, _expected_group_balances, _load_masters, _load_vouchers, _verify, load_company_b,
 )
 from v2.probes.setup.company_b_data import (
     BillSpec, Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, expected_figures, generate,
@@ -99,12 +99,10 @@ def test_a_full_load_leaves_exactly_the_bills_the_dataset_expects_open():
     assert report.problems == []
     ds = generate()
     expected = expected_figures(ds)
-    # Cancelled (set by the operator in the UI after the create) and optional vouchers post no bills in Tally; the
-    # fake keeps whatever the create posted, so their own New Refs are left out here. Nothing ever settles them.
-    flagged = {v.tag for v in ds.vouchers if v.optional or v.cancelled}
-    flagged_bills = {b.name for v in ds.vouchers if v.tag in flagged for b in v.bills}
-    actual = {(b["party"], name): abs(Decimal(b["amount"])) for name, b in books.state["bills"].items()
-              if Decimal(b["amount"]) != 0 and name not in flagged_bills}
+    # C42: cancelled (set by the operator in the UI after the create) and optional vouchers post no bills in Tally,
+    # and the fake now models that itself — no hand-exclusion of their New Refs here any more.
+    actual = {(b["party"], name): abs(Decimal(b["amount"])) for name, b in books.posted_bills().items()
+              if Decimal(b["amount"]) != 0}
     assert actual == expected.bills_outstanding
     assert any(name.startswith("Inv/") for _, name in actual) and any(name.startswith("Pur/") for _, name in actual)
 
@@ -351,9 +349,11 @@ def test_verify_reports_a_whole_missing_fy():
 def test_verify_passes_when_nothing_was_doctored():
     """The negative case C2 asked for: `_verify` doesn't touch flags at all (that's `_settle_flags`'s job), so
     with F9's opening-balance fix this is a genuine `problems == []` — not a default, not a whitelist. The other
-    two `_verify`-direct tests above prove it can find something real; this proves it doesn't cry wolf."""
+    two `_verify`-direct tests above prove it can find something real; this proves it doesn't cry wolf.
+    C42: "nothing doctored" includes the operator honouring the flag pauses — until 201/202 are cancelled by hand
+    they post, in Tally and in the fake, and the balances rightly disagree with the expected figures."""
     books = _empty_b()
-    writer, io, _ = _loader(books)
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     load_company_b(writer, io)
     ds = generate()
     report = LoadReport()
@@ -641,3 +641,25 @@ def test_a_full_load_never_takes_an_item_negative_and_the_trial_balance_still_cl
     expected = expected_figures(generate(licence))
     assert closes[-1][1] == {item: qty for (item, day), qty in expected.stock_month_end.items()
                              if day == date(2026, 3, 31)}
+
+
+# --- C42 (live 2026-09-24, logs/setup-b-live-2026-09-24-run4.log): the live figures are ground truth -----------------
+# Run 4 landed all 958 vouchers of the EDUCATIONAL dataset, the operator set ISCANCELLED on 201/202 by hand, 301/302
+# went in optional — and Tally's Trial Balance showed these three buckets (magnitudes; the other buckets matched).
+LIVE_RUN4_EDUCATIONAL = {"Sundry Debtors": Decimal("2457218.56"), "Sales Accounts": Decimal("4185668.83"),
+                         "Duties & Taxes": Decimal("353626.24")}
+
+
+def test_expected_group_balances_for_educational_equal_the_live_run4_figures():
+    expected = _expected_group_balances(generate("educational"))
+    assert {b: abs(expected[b]) for b in LIVE_RUN4_EDUCATIONAL} == LIVE_RUN4_EDUCATIONAL
+
+
+def test_an_educational_load_through_the_fake_lands_the_live_run4_figures_and_verifies_clean():
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io, licence="educational")
+    assert report.problems == []
+    rows = exploded_tb_rows(writer.b_trial_balance(B, B_READBACK_FROM, B_READBACK_TO))
+    actual = {r["account_name"]: abs(r["closing_balance"]) for r in rows if r["account_name"] in LIVE_RUN4_EDUCATIONAL}
+    assert actual == LIVE_RUN4_EDUCATIONAL

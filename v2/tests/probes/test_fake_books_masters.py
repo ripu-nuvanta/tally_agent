@@ -492,3 +492,41 @@ def test_an_opening_in_the_compound_units_first_unit_is_kept():
     _post(books, _a4_paper("15 Box", "950.00/Box"))
     item = books.state["items"]["A4 Paper Ream"]
     assert item["opening_qty"] == "15 Box" and item["opening_value"] == "-14250.00"
+
+
+# --- C42 (live 2026-09-24, logs/setup-b-live-2026-09-24-run4.log): flagged vouchers post nothing ---------------------
+def _debtors(books: FakeBooks) -> Decimal:
+    rows = exploded_tb_rows(_post(books, wrap_report("Trial Balance", "01-04-2022", "31-03-2026", B)))
+    return next((r["closing_balance"] for r in rows if r["account_name"] == "Sundry Debtors"), Decimal("0.00"))
+
+
+def _books_with_pune_traders() -> FakeBooks:
+    books = FakeBooks(name=B)
+    books.edit_state(lambda s: s["ledgers"].update({"Pune Traders": {"parent": "Sundry Debtors", "email": "",
+                                                                      "alter_id": 1, "guid": "g"}}))
+    return books
+
+
+@pytest.mark.parametrize("field", ["cancelled", "optional"])
+def test_a_voucher_the_operator_flags_after_its_create_moves_no_balance_and_opens_no_bill(field):
+    """Live run 4: Sundry Debtors fell short of the everything-posts figure by EXACTLY the party amounts of the
+    two cancelled (flagged by hand in the UI after the create) and two optional sales — Tally leaves both out of
+    balances, and a flagged voucher's bill is in neither bills report."""
+    books = _books_with_pune_traders()
+    _import(books, _sale_with_bill("-9861.74"))
+    assert _debtors(books) == Decimal("-9861.74") and _bills(books, "Bills Receivable") == ["Inv/1"]
+
+    def flag(s):
+        for v in s["vouchers"].values():
+            v[field] = "Yes"
+    books.edit_state(flag)
+    assert _debtors(books) == Decimal("0.00")
+    assert _bills(books, "Bills Receivable") == [] and _bills(books, "Bills Payable") == []
+    assert books.posted_bills() == {}
+
+
+def test_an_optional_voucher_sent_with_isoptional_posts_nothing():
+    books = _books_with_pune_traders()
+    assert _import(books, _sale_with_bill("-9861.74").replace(
+        "<VOUCHERTYPENAME>", "<ISOPTIONAL>Yes</ISOPTIONAL><VOUCHERTYPENAME>")).created == 1
+    assert _debtors(books) == Decimal("0.00") and _bills(books, "Bills Receivable") == []
