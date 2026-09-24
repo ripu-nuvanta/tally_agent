@@ -1,7 +1,7 @@
 """Probe 18 — do TB, Bills and Stock Summary as-on a past date return correct history? (S0 spec §7 "Probe 18", A part)
 
 Feeds decision 11, R30 and Parts 2 + 3. Two sub-verdicts (spec §5.1): TB, and bills/stock; the part outcome is the
-worse of the two. The B part (TB as-on 31-03-2023 vs the dataset) comes in plan part 3.
+worse of the two. The B part is `run_b` (plan part 5).
 
 Changed 2026-09-24 (plan part 5): dates audited against C33/C43 — bills/stock as-on moved 30-09-2025 → 31-10-2025;
 vouchers read for the whole FY.
@@ -15,7 +15,8 @@ from v2.agent.tally.envelopes import wrap_report
 from v2.agent.tally.reports import parse_bills, parse_ledger_list
 from v2.agent.tally.xml_utils import read_objects
 from v2.probes.context import ProbeContext
-from v2.probes.core import Outcome, PartResult, Probe
+from v2.probes.company_b_view import B_BOOKS_FROM, ledger_balances_at, loaded_licence
+from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
 from v2.probes.reads import (A_FY_FROM, A_FY_TO, TB_EXPLODE_VARS, ZERO, amount, ancestors,
                              dmy, exploded_tb_rows, is_countable, ledger_movements, master_request, opening_stock_row,
                              parse_parents, parse_vouchers, primary_group_rows, primary_lines, qty_number,
@@ -53,21 +54,10 @@ BILLS_STOCK_WRONG_IMPACT = (
     "probe 18, Part 3).")
 
 
-def tb_verdict(tb_rows: dict[str, Decimal | None], ledgers: dict[str, dict], groups: dict[str, str],
-               vouchers: list[dict], as_on: date, opening_stock: Decimal | None = None) -> dict:
-    """Every primary group's as-on TB row vs opening + the vouchers up to that date.
-
-    The stock-bearing group is reported separately (no ledger carries stock), and reconciled against the TB's own
-    `Opening Stock` row when this response carries one — the same rule probe 16 uses at the period end.
-    """
-    moves = ledger_movements(vouchers, up_to=as_on)
-    computed: dict[str, Decimal] = {}
-    for name, row in ledgers.items():
-        parent = row["parent_group"]
-        if parent in ("", "Primary"):
-            continue
-        top = top_group(parent, groups)
-        computed[top] = computed.get(top, ZERO) + (row["opening_balance"] or ZERO) + moves.get(name, ZERO)
+def compare_group_rows(tb_rows: dict[str, Decimal | None], computed: dict[str, Decimal], groups: dict[str, str],
+                       opening_stock: Decimal | None = None) -> dict:
+    """Each primary group's TB row vs `computed`; the stock-bearing group reconciled against the TB's own `Opening
+    Stock` row (LESSONS §15 rule 19) and reported separately."""
     stock_groups = stock_bearing_groups(groups)
     compared: dict[str, dict] = {}
     stock_side: dict[str, dict] = {}
@@ -84,6 +74,24 @@ def tb_verdict(tb_rows: dict[str, Decimal | None], ledgers: dict[str, dict], gro
     mismatched = sorted(group for group, entry in compared.items() if not entry["match"])
     return {"verdict": "FAILED" if mismatched or not compared else "CONFIRMED", "groups": compared,
             "stock_bearing": stock_side, "mismatched": mismatched}
+
+
+def tb_verdict(tb_rows: dict[str, Decimal | None], ledgers: dict[str, dict], groups: dict[str, str],
+               vouchers: list[dict], as_on: date, opening_stock: Decimal | None = None) -> dict:
+    """Every primary group's as-on TB row vs opening + the vouchers up to that date.
+
+    The stock-bearing group is reported separately (no ledger carries stock), and reconciled against the TB's own
+    `Opening Stock` row when this response carries one — the same rule probe 16 uses at the period end.
+    """
+    moves = ledger_movements(vouchers, up_to=as_on)
+    computed: dict[str, Decimal] = {}
+    for name, row in ledgers.items():
+        parent = row["parent_group"]
+        if parent in ("", "Primary"):
+            continue
+        top = top_group(parent, groups)
+        computed[top] = computed.get(top, ZERO) + (row["opening_balance"] or ZERO) + moves.get(name, ZERO)
+    return compare_group_rows(tb_rows, computed, groups, opening_stock)
 
 
 def pending_bills(vouchers: list[dict], ledgers: dict[str, dict], groups: dict[str, str], as_on: date,
@@ -230,12 +238,69 @@ async def run_a(ctx: ProbeContext) -> PartResult:
                       spec_impact=TB_OK_IMPACT)
 
 
+B_TB_AS_ON = "31-03-2023"            # FY 2022-23's end — a closed year three FYs back; day 31 (C43)
+B_TB_OK_IMPACT = ("A TB as-on a closed year's end is history on company B too — every primary group equals the "
+                  "dataset, the stock-bearing one via its own `Opening Stock` row: parity has a valid anchor during "
+                  "the backfill, and R30 needs no suspension (decision 11).")
+
+
+def dataset_rollup(ledger_parents: dict[str, str], groups: dict[str, str],
+                   balances: dict[str, Decimal]) -> tuple[dict[str, Decimal], list[str]]:
+    """Per-primary-group sums of the dataset's balances, keyed by Tally's own ledger → group tree; ledgers the dataset
+    doesn't know are returned, not summed (drift)."""
+    computed: dict[str, Decimal] = {}
+    unknown: list[str] = []
+    for name, parent in ledger_parents.items():
+        if parent in ("", "Primary"):
+            continue
+        if name not in balances:
+            unknown.append(name)
+            continue
+        top = top_group(parent, groups)
+        computed[top] = computed.get(top, ZERO) + balances[name]
+    return computed, sorted(unknown)
+
+
+async def run_b(ctx: ProbeContext) -> PartResult:
+    licence = loaded_licence(ctx.store.environment)
+    company = ctx.company_name
+    tb_all = exploded_tb_rows(await ctx.send("tb_asof_2023-03-31", wrap_report(
+        "Trial Balance", B_BOOKS_FROM, B_TB_AS_ON, company, extra_vars=TB_EXPLODE_VARS)))
+    tb_rows = {name: row["closing_balance"] for name, row in primary_group_rows(tb_all).items()}
+    stock_row = opening_stock_row(tb_all)
+    opening_stock = stock_row["closing_balance"] if stock_row else None
+    ledger_parents = parse_parents(await ctx.send(
+        "ledger_list", master_request("S0P18BLedgers", "Ledger", ["Name", "Parent"], company)), "LEDGER")
+    groups = parse_parents(await ctx.send("group_list",
+                                          master_request("S0P18BGroups", "Group", ["Name", "Parent"], company)))
+    balances = ledger_balances_at(licence, dmy(B_TB_AS_ON))
+    computed, unknown = dataset_rollup(ledger_parents, groups, balances)
+    missing = sorted(set(balances) - set(ledger_parents))
+    if unknown or missing:
+        raise ProbeBlocked(f"Company B's ledgers differ from the dataset (unknown {unknown[:5]}, missing "
+                           f"{missing[:5]}) — re-run `setup-b` verify or restore the backup before trusting this probe.")
+    tb = compare_group_rows(tb_rows, computed, groups, opening_stock)
+    unreconciled_stock = sorted(g for g, entry in tb["stock_bearing"].items() if not entry["reconciled"])
+    ctx.observe("tb", tb)
+    ctx.observe("tb_opening_stock_row", {"present": stock_row is not None, "closing_balance": opening_stock,
+                                         "tb_rows": len(tb_all)})
+    bad = tb["mismatched"] + unreconciled_stock
+    ctx.observe("sub_verdicts", {"tb": "FAILED" if bad or not tb["groups"] else "CONFIRMED"})
+    if bad or not tb["groups"]:
+        return PartResult(Outcome.FAILED, f"TB as-on {B_TB_AS_ON} ≠ the dataset for {', '.join(bad) or 'every group'}",
+                          spec_impact=TB_IMPACT)
+    return PartResult(Outcome.CONFIRMED, f"TB as-on {B_TB_AS_ON} equals the dataset for all {len(tb['groups'])} "
+                                         "primary groups, and the stock-bearing group reconciles via its Opening "
+                                         "Stock row",
+                      spec_impact=B_TB_OK_IMPACT)
+
+
 PROBE = Probe(
     id=18,
     name="historical_reports",
     question="Do TB, Bills Receivable/Payable and Stock Summary as-on a past date return correct history?",
     feeds=("decision 11", "R30", "Parts 2 + 3"),
-    parts={"A": run_a},
+    parts={"A": run_a, "B": run_b},
     planned_parts=("A", "B"),
     requires=(0, 1),
     educational_sensitive=True,

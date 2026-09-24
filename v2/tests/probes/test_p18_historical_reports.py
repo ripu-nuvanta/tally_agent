@@ -85,7 +85,7 @@ def _fake(tb=None, monitor_qty=AS_ON_MONITOR, payable=None):
 async def _run(tmp_path, fake):
     client, store, capture = make_harness(tmp_path, fake)
     ready_store(store)
-    outcome = await run_probe(p18.PROBE, labels=None, client=client, store=store, capture=capture, io=ScriptedIO())
+    outcome = await run_probe(p18.PROBE, labels=["A"], client=client, store=store, capture=capture, io=ScriptedIO())
     return outcome, store.probe_entry(18)["parts"]["A"]
 
 
