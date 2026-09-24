@@ -360,7 +360,8 @@ class FakeBooks:
                  hindi_ledger_filter_matches: bool = True,
                  cancelled_vouchers_listed: bool = True, optional_vouchers_listed: bool = True,
                  bill_credit_period_exported: bool = True, bill_due_from_credit_period: bool = True,
-                 voucher_type_parent_exported: bool = True, stock_opening_scope: str = "books"):
+                 voucher_type_parent_exported: bool = True, stock_opening_scope: str = "books",
+                 bill_due_offset_days: int = 0):
         self.folder = folder
         # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
         # BILLCREDITPERIOD (p21_B_fy2022_month_02.xml). Hypotheses measured live by probes 3 B / 23 B / 25 B:
@@ -369,6 +370,8 @@ class FakeBooks:
         self.optional_vouchers_listed = optional_vouchers_listed
         self.bill_credit_period_exported = bill_credit_period_exported
         self.bill_due_from_credit_period = bill_due_from_credit_period
+        # probe 23 B / Ruling S4: a due rule other than bill date + credit days (e.g. -1 = one day short).
+        self.bill_due_offset_days = bill_due_offset_days
         self.voucher_type_parent_exported = voucher_type_parent_exported
         # probe 11 / C46 (live 2026-09-24): "current" = StockItem opening fields are the current period's opening.
         self.stock_opening_scope = stock_opening_scope
@@ -734,7 +737,7 @@ class FakeBooks:
                 continue
             start = datetime.strptime(bill["date"], "%Y%m%d").date()
             match = _CREDIT_DAYS.match(bill.get("credit_period") or "")
-            days = int(match.group(1)) if match and self.bill_due_from_credit_period else 0
+            days = int(match.group(1)) + self.bill_due_offset_days if match and self.bill_due_from_credit_period else 0
             due = start + timedelta(days=days)
             rows.append(_bill_row(name, bill["party"], bill["amount"], _short_date(start), _short_date(due),
                                   str(max((as_on_day - due).days, 0))))
