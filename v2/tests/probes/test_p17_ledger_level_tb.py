@@ -162,3 +162,15 @@ async def test_the_live_candidates_make_probe17_confirmed_on_isledgerwise(tmp_pa
     assert "Caveat 1" in impact and "Opening Stock" in impact
     assert "Caveat 2" in impact and "EXPLODEFLAG" in impact and "second group level" in impact
     assert "custom sub-group" in impact
+
+
+async def test_every_date_p17_sends_is_honoured_and_the_confirmed_template_is_typed(tmp_path):
+    from v2.probes.safety import educational_ignored_dates
+    fake = _fake(_explode_on_flag())
+    client, store, capture = make_harness(tmp_path, fake)
+    ready_store(store, baseline=BASELINE, licence="educational")
+    await run_probe(p17.PROBE, labels=None, client=client, store=store, capture=capture, io=ScriptedIO())
+    assert store.probe_entry(17)["parts"]["A"]["outcome"] == "CONFIRMED"
+    assert all(educational_ignored_dates(body) == [] for body in fake.probe_requests())
+    template = store.confirmed("ledger_level_tb")["xml_template"]
+    assert '<SVFROMDATE TYPE="Date">01-04-2025</SVFROMDATE>' in template

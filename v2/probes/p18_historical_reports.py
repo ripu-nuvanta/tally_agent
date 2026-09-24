@@ -2,6 +2,9 @@
 
 Feeds decision 11, R30 and Parts 2 + 3. Two sub-verdicts (spec §5.1): TB, and bills/stock; the part outcome is the
 worse of the two. The B part (TB as-on 31-03-2023 vs the dataset) comes in plan part 3.
+
+Changed 2026-09-24 (plan part 5): dates audited against C33/C43 — bills/stock as-on moved 30-09-2025 → 31-10-2025;
+vouchers read for the whole FY.
 """
 from __future__ import annotations
 
@@ -19,7 +22,11 @@ from v2.probes.reads import (A_FY_FROM, A_FY_TO, TB_EXPLODE_VARS, ZERO, amount, 
                              stock_bearing_groups, stock_rows_any_depth, tally_date, top_group, voucher_request)
 
 TB_AS_ON = "31-10-2025"
-BILLS_AS_ON = "30-09-2025"
+# C43 (LESSONS §15 rule 22): this was 30-09-2025 — a day Educational Tally silently ignores, answering for the current
+# period's end instead. That is exactly what the 2026-09-23 run recorded as "Bills/Stock ignore the as-on date"
+# (snapshot: v2/tests/fixtures/sync/c33_untyped_2026-09-23/). 31-10-2025 is honoured under either licence and still
+# splits company A's year (its vouchers run to 01-03-2026), so bills and stock still differ from the full period.
+BILLS_AS_ON = "31-10-2025"
 VOUCHER_FIELDS = ["Date", "VoucherTypeName", "MasterId", "IsCancelled", "IsOptional", "IsPostDated",
                   "AllLedgerEntries", "LedgerEntries", "AllInventoryEntries"]
 STOCK_FIELDS = ["Name", "Parent", "BaseUnits", "OpeningBalance"]
@@ -38,6 +45,12 @@ BILLS_STOCK_IMPACT = (
     "bills dated after the as-on date still appear and the totals equal the period-end anchors, and stock quantities "
     "equal opening plus the FULL period's movements. Those tiles have no month-end comparison and must be computed "
     "from vouchers, not from a dated report (Part 1 probe 18, Part 3).")
+# D3 / Ruling Q3: a dated report that matches NEITHER the as-on nor the full-period position is not evidence that the
+# date was ignored — the verdict says only what the evidence shows.
+BILLS_STOCK_WRONG_IMPACT = (
+    "A dated Bills Receivable / Payable or Stock Summary returned neither the as-on nor the full-period position: "
+    "those tiles have no month-end comparison and must be computed from vouchers, not from a dated report (Part 1 "
+    "probe 18, Part 3).")
 
 
 def tb_verdict(tb_rows: dict[str, Decimal | None], ledgers: dict[str, dict], groups: dict[str, str],
@@ -152,8 +165,9 @@ async def run_a(ctx: ProbeContext) -> PartResult:
     tb_rows = {name: row["closing_balance"] for name, row in primary_group_rows(tb_all_rows).items()}
     stock_row = opening_stock_row(tb_all_rows)
     opening_stock = stock_row["closing_balance"] if stock_row else None
-    vouchers = parse_vouchers(await ctx.send("vouchers_to_2025-10-31",
-                                             voucher_request("S0P18Vouchers", VOUCHER_FIELDS, company, to_date=TB_AS_ON)))
+    # C33: the as-on figures filter these in Python (ledger_movements / pending_bills / stock_verdict take `as_on`);
+    # the FULL-period comparison needs the whole FY, which the old untyped `vouchers_to_…` read only got by accident.
+    vouchers = parse_vouchers(await ctx.send("vouchers_fy", voucher_request("S0P18Vouchers", VOUCHER_FIELDS, company)))
     ledgers = {row["name"]: row for row in parse_ledger_list(await ctx.send(
         "ledger_list", master_request("S0P18Ledgers", "Ledger", ["Name", "Parent", "OpeningBalance"], company)))}
     groups = parse_parents(await ctx.send("group_list", master_request("S0P18Groups", "Group", ["Name", "Parent"], company)))
@@ -161,13 +175,14 @@ async def run_a(ctx: ProbeContext) -> PartResult:
     ctx.observe("tb_opening_stock_row", {"present": stock_row is not None, "closing_balance": opening_stock,
                                          "tb_rows": len(tb_all_rows)})
 
-    receivable = await ctx.send("bills_receivable_asof_2025-09-30",
+    receivable = await ctx.send("bills_receivable_asof_2025-10-31",
                                 wrap_report("Bills Receivable", BILLS_AS_ON, BILLS_AS_ON, company))
-    payable = await ctx.send("bills_payable_asof_2025-09-30", wrap_report("Bills Payable", BILLS_AS_ON, BILLS_AS_ON, company))
+    payable = await ctx.send("bills_payable_asof_2025-10-31",
+                             wrap_report("Bills Payable", BILLS_AS_ON, BILLS_AS_ON, company))
     bills = {side: _bills_side(text, pending_bills(vouchers, ledgers, groups, bills_date, side),
                                pending_bills(vouchers, ledgers, groups, period_end, side))
              for side, text in (("receivable", receivable), ("payable", payable))}
-    stock_text = await ctx.send("stock_summary_asof_2025-09-30",
+    stock_text = await ctx.send("stock_summary_asof_2025-10-31",
                                 wrap_report("Stock Summary", A_FY_FROM, BILLS_AS_ON, company,
                                             extra_vars=STOCK_EXPLODE_CANDIDATE))
     items = read_objects(await ctx.send("stock_item_openings",
@@ -187,22 +202,26 @@ async def run_a(ctx: ProbeContext) -> PartResult:
     ctx.observe("stock", stock)
     ctx.observe("sub_verdicts", sub)
 
+    wrong = [side for side in ("receivable", "payable") if not bills[side]["match"]]
+    stock_wrong = stock["verdict"] != "CONFIRMED"
+    what = [f"bills {side}" for side in wrong] + ([f"stock ({', '.join(stock['mismatches']) or 'nothing comparable'})"]
+                                                  if stock_wrong else [])
+    full = [name for name, ok in [*((f"bills {side}", bills[side]["matches_full_period"]) for side in wrong),
+                                  ("stock", stock_wrong and stock["matches_full_period"])] if ok]
+    # "Ignored the date" only where the report equals the FULL period; anything else is just wrong (D3, Ruling Q3).
+    bills_stock_impacts = (([BILLS_STOCK_IMPACT] if full else [])
+                           + ([BILLS_STOCK_WRONG_IMPACT] if len(full) < len(what) else []))
+
     if sub["tb"] == "FAILED":
         problem = f"TB as-on {TB_AS_ON} ≠ opening + lines for {', '.join(tb['mismatched']) or 'every group'}"
-        impacts = [TB_IMPACT] + ([BILLS_STOCK_IMPACT] if sub["bills_stock"] == "DIFFERENT" else [])
-        return PartResult(Outcome.FAILED, problem, spec_impact=" ".join(impacts))
+        return PartResult(Outcome.FAILED, problem, spec_impact=" ".join([TB_IMPACT, *bills_stock_impacts]))
 
     if sub["bills_stock"] == "DIFFERENT":
-        wrong = [side for side in ("receivable", "payable") if not bills[side]["match"]]
-        what = [f"bills {side}" for side in wrong] + ([f"stock ({', '.join(stock['mismatches']) or 'nothing comparable'})"]
-                                                      if stock["verdict"] != "CONFIRMED" else [])
-        full = [name for name, ok in [*((f"bills {side}", bills[side]["matches_full_period"]) for side in wrong),
-                                      ("stock", stock["matches_full_period"])] if ok]
         evidence = (f" — {', '.join(full)} match the FULL period ({A_FY_TO}) instead, i.e. the report ignored the date "
                     f"it was given") if full else ""
         return PartResult(Outcome.DIFFERENT,
                           f"TB as-on {TB_AS_ON} is correct history; as-on {BILLS_AS_ON}: {'; '.join(what)}{evidence}",
-                          spec_impact=f"{TB_OK_IMPACT} {BILLS_STOCK_IMPACT}")
+                          spec_impact=" ".join([TB_OK_IMPACT, *bills_stock_impacts]))
 
     vacuous_note = " (Bills Receivable check is vacuous: nothing pending on either side)" \
         if bills["receivable"]["weak"] else ""

@@ -391,3 +391,21 @@ def test_the_live_company_a_reconciles_every_tb_group_via_the_opening_stock_row(
     assert all(entry["reconciled"] for entry in compare.values()), compare
     assert {g for g, e in compare.items() if e["match"]} == {"Capital Account", "Current Liabilities"}
     assert compare["Current Assets"]["stock_gap"] != Decimal("-989462.31")   # NOT the Stock Summary closing total
+
+
+async def test_every_date_p16_sends_is_one_educational_tally_honours(tmp_path):
+    from v2.probes.safety import educational_ignored_dates
+    fake, on_action = _fake()
+    client, store, capture = make_harness(tmp_path, fake)
+    ready_store(store, licence="educational")
+    await run_probe(p16.PROBE, labels=["A"], client=client, store=store, capture=capture, io=_io(on_action),
+                    allow_risky=True)
+    assert store.probe_entry(16)["parts"]["A"]["outcome"] != "BLOCKED"
+    assert all(educational_ignored_dates(body) == [] for body in fake.probe_requests())
+
+
+async def test_the_skipped_svfromdate_note_says_the_wedge_was_measured_untyped(tmp_path):
+    fake, on_action = _fake()
+    _, _, part = await _run(tmp_path, fake, _io(on_action))
+    note = part["observations"]["as_on_svfromdate"]["note"]
+    assert "untyped" in note and "not been re-measured" in note

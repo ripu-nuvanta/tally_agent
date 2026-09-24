@@ -2,6 +2,9 @@
 
 Feeds decision 11 and R3 (Part 1 §6 rung 2). Each candidate static variable is sent once with a 60 s timeout; after a
 failed one Tally must still answer a cheap read, or the probe stops (Tally may be stuck computing).
+
+Its dates are company A's current period, so C33 didn't change the window it measured. It is re-run in plan part 5
+only so that the stored `ledger_level_tb` template is the typed form (the 2026-09-23 one predates `7f32848`).
 """
 from __future__ import annotations
 

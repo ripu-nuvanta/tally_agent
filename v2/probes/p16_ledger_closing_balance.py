@@ -1,7 +1,6 @@
 """Probe 16 — does LEDGER.ClosingBalance hold Tally's own ledger balance? (S0 spec §7 "Probe 16", A part)
 
-Feeds decision 11, R30 and Part 2 Rule 1 (Part 1 §6 rung 1). The B part (OpeningBalance scope, as-on 31-03-2023)
-comes in plan part 3, so the probe stays PARTIAL until then.
+Feeds decision 11, R30 and Part 2 Rule 1 (Part 1 §6 rung 1). The B part is `run_b` (plan part 5).
 """
 from __future__ import annotations
 
@@ -31,16 +30,17 @@ SVFROMDATE_STEP = "ledgers_svfromdate_2025-10-01"
 SVFROMDATE_TIMEOUT_S = 20.0
 RISKY_HINT = "`run 16 --company A --rerun --allow-risky`"
 SVFROMDATE_SKIPPED = ("not sent: SVFROMDATE on a Ledger collection froze Tally's XML server behind a modal (live "
-                      f"2026-09-23, twice) and needed a Tally restart. Opt in with {RISKY_HINT}.")
+                      "2026-09-23, twice — sent untyped, before C33 was known; the typed form has not been "
+                      f"re-measured) and needed a Tally restart. Opt in with {RISKY_HINT}.")
 WEDGE_SUMMARY = ("the opt-in SVFROMDATE ledger read left Tally unresponsive — restart Tally before anything else "
                  "(this reproduces the 2026-09-23 wedge; it is the finding, not a harness fault)")
 WEDGE_IMPACT = ("SVFROMDATE on a Ledger collection freezes Tally's XML server: the agent never sends a period "
                 "variable on a master collection, and per-ledger opening anchors during the backfill depend on "
                 "probe 17's exploded ledger-level TB (decision 11, Part 1 §16).")
-AS_ON_IMPACT = ("Per-ledger as-on balances are unobtainable from the Ledger collection (SVFROMDATE hangs Tally, "
-                "SVTODATE is silently ignored), so rung 1's per-ledger opening anchor during the backfill depends "
-                "on probe 17's exploded ledger-level TB (decision 11) — that route is impossible, not merely "
-                "unattractive. Reports (TYPE=Data) are unaffected.")
+AS_ON_IMPACT = ("Per-ledger as-on balances are unobtainable from the Ledger collection (a typed SVTODATE is silently "
+                "ignored; SVFROMDATE froze Tally when sent untyped on 2026-09-23), so rung 1's per-ledger opening "
+                "anchor during the backfill depends on probe 17's exploded ledger-level TB (decision 11) — that route "
+                "is impossible, not merely unattractive. Reports (TYPE=Data) are unaffected.")
 CASH = "Cash"
 FUTURE_REF, POST_DATED_REF = "p16-future", "p16-post-dated"
 FUTURE_NARRATION = "S0-throwaway 16 future"
@@ -56,10 +56,10 @@ FAILED_IMPACT = ("LEDGER.ClosingBalance isn't Tally's ledger balance: rung 1 col
                  "(decision 11, Part 1 §16).")
 
 
-def _ledgers_request(company: str, static_vars: dict[str, str] | None = None) -> str:
+def _ledgers_request(company: str, static_vars: dict[str, str] | None = None, *, name: str = "S0P16Ledgers") -> str:
     """The Ledger collection. Probe 16 is the one deliberate exception to the master-collection period-variable guard
     in reads.master_request: it is the probe that measures what those variables do (reads.MASTER_PERIOD_VARS_ERROR)."""
-    return master_request("S0P16Ledgers", "Ledger", LEDGER_FIELDS, company, static_vars=static_vars,
+    return master_request(name, "Ledger", LEDGER_FIELDS, company, static_vars=static_vars,
                           allow_period_vars=static_vars is not None)
 
 
@@ -194,8 +194,10 @@ async def _as_on(ctx: ProbeContext, ledgers: dict[str, dict], kinds: dict[str, s
             "closing_changed_ledgers": changed[:10]}
 
 
-async def _svfromdate_attempt(ctx: ProbeContext) -> dict:
-    """The dangerous half: SVFROMDATE on a Ledger collection. OFF unless the operator passed --allow-risky.
+async def _svfromdate_attempt(ctx: ProbeContext, step: str = SVFROMDATE_STEP,
+                              static_vars: dict[str, str] | None = None,
+                              collection: str = "S0P16Ledgers") -> tuple[dict, dict[str, dict]]:
+    """(record, parsed ledgers) — the dangerous half: SVFROMDATE on a Ledger collection, OFF unless --allow-risky.
 
     Live 2026-09-23 (twice) this wedged Tally: the read timed out and an unrelated counters read then timed out too,
     i.e. the whole XML server was blocked behind a modal until Tally was restarted. So it runs last (everything else
@@ -203,18 +205,19 @@ async def _svfromdate_attempt(ctx: ProbeContext) -> dict:
     uses for its exploded-TB candidates.
     """
     if not ctx.allow_risky:
-        return {"attempted": False, "note": SVFROMDATE_SKIPPED}
-    text, error = await ctx.try_send(
-        SVFROMDATE_STEP, _ledgers_request(ctx.company_name, {"SVFROMDATE": AS_ON_FROM, "SVTODATE": AS_ON_TO}),
-        timeout=SVFROMDATE_TIMEOUT_S)
+        return {"attempted": False, "note": SVFROMDATE_SKIPPED}, {}
+    variables = static_vars or {"SVFROMDATE": AS_ON_FROM, "SVTODATE": AS_ON_TO}
+    text, error = await ctx.try_send(step, _ledgers_request(ctx.company_name, variables, name=collection),
+                                     timeout=SVFROMDATE_TIMEOUT_S)
     if error is None:
-        return {"attempted": True, "error": None, "wedged": False, "ledgers": len(_balances(text)),
-                "elapsed_ms": ctx.last_response.elapsed_ms, "tally_after": "answered (the read didn't hang)"}
+        rows = _balances(text)
+        return ({"attempted": True, "error": None, "wedged": False, "ledgers": len(rows),
+                 "elapsed_ms": ctx.last_response.elapsed_ms, "tally_after": "answered (the read didn't hang)"}, rows)
     try:
         names = await ctx.company_names()
     except ProbeBlocked as exc:
-        return {"attempted": True, "error": error, "wedged": True, "tally_after": f"no answer: {exc}"}
-    return {"attempted": True, "error": error, "wedged": False, "tally_after": f"answered: {names}"}
+        return {"attempted": True, "error": error, "wedged": True, "tally_after": f"no answer: {exc}"}, {}
+    return {"attempted": True, "error": error, "wedged": False, "tally_after": f"answered: {names}"}, {}
 
 
 def _as_on_note(as_on: dict, svfromdate: dict) -> str:
@@ -361,7 +364,7 @@ async def run_a(ctx: ProbeContext) -> PartResult:
     verdict, as_of = as_of_verdict(future, reach)
     ctx.observe("as_of_basis", {"verdict": verdict, "books_reach_before_run": reach["value"],
                                 "available": reach["available"], "source": reach["source"]})
-    svfromdate = await _svfromdate_attempt(ctx)          # last: a wedge can't cost the checks already recorded
+    svfromdate, _ = await _svfromdate_attempt(ctx)       # last: a wedge can't cost the checks already recorded
     ctx.observe("as_on_svfromdate", svfromdate)
     rule, as_on_note = _rule(future, post_dated, as_of), _as_on_note(as_on, svfromdate)
     if svfromdate.get("wedged"):

@@ -37,6 +37,13 @@ VOUCHERS = vouchers_xml([
     vch({"DATE": "20251020", "VOUCHERTYPENAME": "Receipt"},
         lines=[line("Cash", "-110920.00"),
                line("Apex", "110920.00", bills=[{"NAME": "S001", "BILLTYPE": "Agst Ref", "AMOUNT": "110920.00"}])]),
+    # Ruling Q3: a voucher AFTER the as-on date (31-10-2025), so the as-on position and the full-period position
+    # differ in this fake too — without it "the report ignored the date" can't be told apart from a correct report.
+    vch({"DATE": "20251115", "VOUCHERTYPENAME": "Purchase"},
+        lines=[line("Samsung India Electronics", "110000.00",
+                    bills=[{"NAME": "P002", "BILLTYPE": "New Ref", "AMOUNT": "110000.00"}]),
+               line("Purchases", "-110000.00")],
+        inventory=[{"STOCKITEMNAME": MONITOR, "ISDEEMEDPOSITIVE": "Yes", "ACTUALQTY": "10 Nos", "AMOUNT": "-110000.00"}]),
 ])
 STOCK_ITEMS = [
     {"Name": MONITOR, "Parent": "Electronics", "BaseUnits": "Nos", "OpeningBalance": "20 Nos"},
@@ -54,7 +61,13 @@ def _tb(capital="1000.00", current_assets="-111920.00", opening_stock=None):
     return tb_xml(rows + [("Sales Accounts", "", "110920.00"), ("Purchase Accounts", "-643100.00", "")])
 
 
-def _fake(tb=None, monitor_qty="45 Nos"):
+# Monitor as-on 31-10-2025: 20 opening + 25 bought 28-09 - 5 sold 01-10 = 40; the FULL period adds 10 bought 15-11 = 50.
+AS_ON_MONITOR, FULL_PERIOD_MONITOR = "40 Nos", "50 Nos"
+PAYABLE_AS_ON = [("P001", "Samsung India Electronics", "643100.00")]
+PAYABLE_FULL_PERIOD = PAYABLE_AS_ON + [("P002", "Samsung India Electronics", "110000.00")]
+
+
+def _fake(tb=None, monitor_qty=AS_ON_MONITOR, payable=None):
     fake, _ = a_tally()
     fake.route("S0P18Ledgers", lambda body: objects_xml("LEDGER", LEDGERS))
     fake.route("S0P18Groups", lambda body: objects_xml("GROUP", GROUPS))
@@ -62,10 +75,10 @@ def _fake(tb=None, monitor_qty="45 Nos"):
     fake.route("S0P18Stock", lambda body: objects_xml("STOCKITEM", STOCK_ITEMS))
     fake.route("<ID>Trial Balance</ID>", lambda body: tb or _tb())
     fake.route("<ID>Bills Receivable</ID>", lambda body: "<ENVELOPE></ENVELOPE>")
-    fake.route("<ID>Bills Payable</ID>", lambda body: bills_xml([("P001", "Samsung India Electronics", "643100.00")]))
+    fake.route("<ID>Bills Payable</ID>", lambda body: bills_xml(payable or PAYABLE_AS_ON))
     fake.route("<ID>Stock Summary</ID>", lambda body: stock_summary_xml([
-        ("Electronics", "60 Nos", "", "697500.00"), (MONITOR, monitor_qty, "11000.00/Nos", "495000.00"),
-        (TAB, "15 Nos", "13500.00/Nos", "202500.00")]))
+        ("Electronics", f"{15 + int(monitor_qty.split()[0])} Nos", "", "697500.00"),
+        (MONITOR, monitor_qty, "11000.00/Nos", "495000.00"), (TAB, "15 Nos", "13500.00/Nos", "202500.00")]))
     return fake
 
 
@@ -83,13 +96,13 @@ async def test_history_reads_match_the_lines(tmp_path):
     assert part["observations"]["sub_verdicts"] == {"tb": "CONFIRMED", "bills_stock": "CONFIRMED"}
     assert part["observations"]["bills"]["receivable"]["weak"] is True
     assert part["observations"]["stock"]["item_rows"] == 2
-    assert "p18_A_stock_summary_asof_2025-09-30.xml" in part["fixtures"]
+    assert "p18_A_stock_summary_asof_2025-10-31.xml" in part["fixtures"]
     assert "Bills Receivable check is vacuous" in part["summary"]   # M12
 
 
 async def test_tb_right_but_stock_wrong_is_different_not_failed(tmp_path):
     """Two independent sub-verdicts: a correct as-on TB must not be dragged down by reports that ignore the date."""
-    _, part = await _run(tmp_path, _fake(monitor_qty="40 Nos"))
+    _, part = await _run(tmp_path, _fake(monitor_qty=FULL_PERIOD_MONITOR))
     assert part["outcome"] == "DIFFERENT"
     assert part["observations"]["sub_verdicts"] == {"tb": "CONFIRMED", "bills_stock": "DIFFERENT"}
     assert part["summary"].startswith("TB as-on 31-10-2025 is correct history;")
@@ -97,6 +110,30 @@ async def test_tb_right_but_stock_wrong_is_different_not_failed(tmp_path):
     assert "IS history" in part["spec_impact"] and "R30 needs no suspension" in part["spec_impact"]
     assert "isn't history" not in part["spec_impact"]
     assert "IGNORE the as-on date" in part["spec_impact"]
+
+
+async def test_a_stock_summary_at_the_full_period_position_is_evidence_the_date_was_ignored(tmp_path):
+    """Ruling Q3: the 'report ignored the date' branch, exercised — the fake holds a voucher after the as-on date."""
+    _, part = await _run(tmp_path, _fake(monitor_qty=FULL_PERIOD_MONITOR))
+    assert part["observations"]["stock"]["matches_full_period"] is True
+    assert "stock match the FULL period (31-03-2026) instead, i.e. the report ignored the date" in part["summary"]
+
+
+async def test_bills_at_the_full_period_position_are_evidence_the_date_was_ignored(tmp_path):
+    _, part = await _run(tmp_path, _fake(payable=PAYABLE_FULL_PERIOD))
+    payable = part["observations"]["bills"]["payable"]
+    assert part["outcome"] == "DIFFERENT" and payable["match"] is False and payable["matches_full_period"] is True
+    assert "bills payable match the FULL period" in part["summary"] and "IGNORE the as-on date" in part["spec_impact"]
+
+
+async def test_a_stock_summary_that_is_neither_as_on_nor_full_period_is_not_called_ignored(tmp_path):
+    """45 Nos is neither 40 (as-on) nor 50 (full period): DIFFERENT, but the evidence doesn't say the date was ignored,
+    so the verdict must not claim it did."""
+    _, part = await _run(tmp_path, _fake(monitor_qty="45 Nos"))
+    assert part["outcome"] == "DIFFERENT"
+    assert part["observations"]["stock"]["matches_full_period"] is False
+    assert "ignored the date" not in part["summary"] and "IGNORE the as-on date" not in part["spec_impact"]
+    assert "neither the as-on nor the full-period position" in part["spec_impact"]
 
 
 async def test_tb_history_wrong_fails_with_r30(tmp_path):
@@ -161,6 +198,7 @@ SNAPSHOT_AS_ON = p18.dmy("30-09-2025")
 
 
 def test_the_live_bills_and_stock_reports_ignore_the_as_on_date_and_return_the_current_position():
+    """2026-09-23 capture — 30-09-2025 was a C43-ignored date, so this pins what that run SAW, not a Tally rule."""
     vouchers = p18.parse_vouchers(_live("p18_A_vouchers_to_2025-10-31.xml"))
     ledgers = {row["name"]: row for row in parse_ledger_list(_live("p18_A_ledger_list.xml"))}
     groups = p18.parse_parents(_live("p18_A_group_list.xml"))
@@ -177,3 +215,27 @@ def test_the_live_bills_and_stock_reports_ignore_the_as_on_date_and_return_the_c
     assert p18.stock_verdict(rows, items, vouchers, as_on)["verdict"] == "DIFFERENT"
     full = p18.stock_verdict(rows, items, vouchers, period_end)
     assert full["verdict"] == "CONFIRMED" and len(full["compared"]) == 14
+
+
+async def test_every_date_p18_sends_is_one_educational_tally_honours(tmp_path):
+    """C43: 30-09-2025 (the 2026-09-23 bills/stock date) is ignored by an Educational Tally; the guard would block."""
+    from v2.probes.safety import educational_ignored_dates
+    fake = _fake()
+    client, store, capture = make_harness(tmp_path, fake)
+    ready_store(store, licence="educational")
+    await run_probe(p18.PROBE, labels=["A"], client=client, store=store, capture=capture, io=ScriptedIO())
+    part = store.probe_entry(18)["parts"]["A"]
+    assert part["outcome"] != "BLOCKED", part["summary"]
+    assert all(educational_ignored_dates(body) == [] for body in fake.probe_requests())
+    assert "p18_A_bills_receivable_asof_2025-10-31.xml" in part["fixtures"]
+
+
+async def test_vouchers_are_read_for_the_whole_fy_typed_and_filtered_in_python(tmp_path):
+    """C33: the old `vouchers_to_2025-10-31` read only reached the full FY because Tally ignored its untyped to-date;
+    typed, it would stop at October and the 'matches the FULL period' evidence would be computed from October."""
+    fake = _fake()
+    _, part = await _run(tmp_path, fake)
+    body = next(r for r in fake.probe_requests() if "S0P18Vouchers" in r)
+    assert '<SVFROMDATE TYPE="Date">01-04-2025</SVFROMDATE>' in body
+    assert '<SVTODATE TYPE="Date">31-03-2026</SVTODATE>' in body
+    assert "p18_A_vouchers_fy.xml" in part["fixtures"]
