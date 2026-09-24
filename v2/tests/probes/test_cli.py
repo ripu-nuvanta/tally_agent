@@ -303,3 +303,16 @@ def test_anchors_command_without_a_baseline_fails_and_is_recorded(tmp_path):
     assert main(["--results", str(results), "anchors"], transport=FakeTally([COMPANIES["A"]]).transport(), io=io) == 1
     assert any("anchors check (before_parity) company A: FAILED" in s and "No TB baseline" in s for s in io.said)
     assert ResultsStore(results).anchor_checks[-1]["when"] == "before_parity"
+
+
+def test_setup_c_loads_company_c(tmp_path, capsys):
+    books = FakeBooks(name=COMPANIES["C"], educational=True)
+    assert main(["--results", str(tmp_path / "r.json"), "setup-c"], transport=books.transport()) == 0
+    assert "Company C loaded" in capsys.readouterr().out
+    assert ResultsStore(tmp_path / "r.json").environment["company_c_loaded_at"]
+
+
+def test_setup_c_refuses_when_another_company_is_open(tmp_path, capsys):
+    books = FakeBooks(name=COMPANIES["B"])
+    assert main(["--results", str(tmp_path / "r.json"), "setup-c"], transport=books.transport()) == 1
+    assert "setup-c failed" in capsys.readouterr().out

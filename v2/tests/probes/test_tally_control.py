@@ -315,3 +315,15 @@ def test_start_translates_a_tally_ini_backup_failure_into_an_operator_error(tmp_
     with pytest.raises(OperatorError, match="Can't back up tally.ini"):
         control.start(None)
     assert runner.spawned == []
+
+
+def test_restart_refuses_a_company_with_no_number_before_stopping_tally(tmp_path):
+    books = FakeBooks(name=A)
+    control, runner, _ = _control(tmp_path, books, [TallyProcess(7, OWN_COMMAND)])
+    ini = tmp_config(tmp_path).tally_dir / "tally.ini"
+    ini.parent.mkdir(parents=True, exist_ok=True)
+    ini.write_bytes(b"Default Companies=Yes\r\nLoad=100000\r\n")
+    with pytest.raises(OperatorError, match="opened by hand only"):
+        control.restart("C", [COMPANIES["C"]])
+    assert runner.terminated == [] and runner.spawned == [] and books.running
+    assert ini.read_bytes() == b"Default Companies=Yes\r\nLoad=100000\r\n"

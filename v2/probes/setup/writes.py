@@ -224,14 +224,15 @@ class TallyWriter:
     def company_names(self) -> list[str]:
         return parse_company_list(self.post(build_company_list(), timeout=10.0))
 
-    def voucher(self, company: str, master_id: str) -> dict[str, str] | None:
+    def list_vouchers(self, company: str) -> list[dict[str, str]]:
+        """Every voucher in the read-back window (READBACK_FROM..READBACK_TO, typed — C33), header fields only."""
         xml = wrap_collection("S0OpVouchers", "Voucher", VOUCHER_FIELDS, company,
                               static_vars={"SVFROMDATE": READBACK_FROM, "SVTODATE": READBACK_TO},
                               extra_collection_xml="<CHILDOF>$$VchTypeAllVouchers</CHILDOF>")
-        for row in read_objects(self.post(xml), "VOUCHER", VOUCHER_FIELDS):
-            if row["MasterId"] == master_id:
-                return row
-        return None
+        return read_objects(self.post(xml), "VOUCHER", VOUCHER_FIELDS)
+
+    def voucher(self, company: str, master_id: str) -> dict[str, str] | None:
+        return next((row for row in self.list_vouchers(company) if row["MasterId"] == master_id), None)
 
     def ledger(self, company: str, name: str) -> dict[str, str] | None:
         xml = wrap_collection("S0OpLedger", "Ledger", LEDGER_FIELDS, company,

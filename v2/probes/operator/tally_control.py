@@ -168,7 +168,14 @@ class TallyControl:
                 raise OperatorError("TallyPrime didn't stop, even after kill -9")
         self._own_pids.clear()
 
+    def _require_number(self, load_label: str | None) -> None:
+        if load_label is not None and load_label not in self.config.company_numbers:
+            raise OperatorError(f"No company number configured for company {load_label}: it is opened by hand only "
+                                "(company C — a security login or TallyVault prompt would block an unattended start; "
+                                "S0 plan part 6).")
+
     def start(self, load_label: str | None) -> None:
+        self._require_number(load_label)
         if self.runner.list_tally():
             raise OperatorError("TallyPrime is already running; stop it first")
         self._backup_ini_once()
@@ -231,6 +238,7 @@ class TallyControl:
             self.runner.sleep(self.config.poll_s)
 
     def restart(self, load_label: str | None, expected: list[str]) -> list[str]:
+        self._require_number(load_label)
         self.stop()
         self.start(load_label)
         return self.wait_for_companies(expected, click=load_label is not None)

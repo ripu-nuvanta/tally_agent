@@ -1,4 +1,4 @@
-"""Runner CLI: python -m v2.probes {list,run,report,reset-a,setup-b,anchors} (S0 spec §5.3, §5.8)."""
+"""Runner CLI: python -m v2.probes {list,run,report,reset-a,setup-b,setup-c,anchors} (S0 spec §5.3, §5.8)."""
 from __future__ import annotations
 
 import argparse
@@ -62,6 +62,7 @@ def build_parser() -> argparse.ArgumentParser:
     setup_b.add_argument("--stop-any-tally", action="store_true")
     setup_b.add_argument("--licence", choices=["licensed", "educational"], default=None,
                          help="default: whatever probe 0 recorded in results.json")
+    sub.add_parser("setup-c", help="company C's one ledger + one voucher (S0 spec §4.4) — open only company C first")
     anchors = sub.add_parser("anchors",
                              help="is company A intact? (S0 spec §4.2) — read-only, recorded in results.json")
     anchors.add_argument("--when", choices=["before_parity", "after_a_batch"], default="before_parity")
@@ -178,6 +179,24 @@ def _setup_b(args, store: ResultsStore, operator: AutoOperator | None) -> int:
     return 0
 
 
+def _setup_c(args, store: ResultsStore, transport) -> int:
+    from v2.probes.safety import GuardError
+    from v2.probes.setup.company_c import CompanyCLoadError, load_company_c
+    from v2.probes.setup.writes import TallyWriter, WriteFailed, WriteRefused
+    http = httpx.Client(base_url=f"http://{args.host}:{args.port}", transport=transport, trust_env=False)
+    try:
+        report = load_company_c(TallyWriter(http, say=print))
+    except (CompanyCLoadError, WriteFailed, WriteRefused, GuardError) as exc:
+        print(f"setup-c failed: {exc}")
+        return 1
+    finally:
+        http.close()
+    print(f"Created: {', '.join(report.created) or 'nothing'}; already there: {', '.join(report.skipped) or 'nothing'}")
+    store.update_environment(company_c_loaded_at=datetime.now().astimezone().isoformat(timespec="seconds"))
+    print(f"Company C loaded: {COMPANIES['C']!r} is ready.")
+    return 0
+
+
 async def _anchors(args, store: ResultsStore, transport: httpx.AsyncBaseTransport | None, io: ProbeIO) -> int:
     """Spec §4.2's anchors check on its own, for single `run` sessions (ordered runs already include it)."""
     step = ANCHORS_BEFORE_PARITY if args.when == "before_parity" else ANCHORS_AFTER_A
@@ -208,6 +227,8 @@ def main(argv: list[str] | None = None, *, transport: httpx.AsyncBaseTransport |
         return _reset_a(args, store, operator)
     if args.command == "setup-b":
         return _setup_b(args, store, operator)
+    if args.command == "setup-c":
+        return _setup_c(args, store, transport)
     if args.command == "anchors":
         return asyncio.run(_anchors(args, store, transport, io or ConsoleIO(interactive=not args.non_interactive)))
     if args.auto:
