@@ -38,6 +38,25 @@ gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probe
 has touched a real Tally instance.**
 
 **Next steps, in order:**
+0c. **2026-09-24 — setup-b run 2 stopped at voucher 1; two more root causes found live (not yet fixed in code).**
+   Run 2 created all 31 masters (units incl. `Box of 10 Nos`, stock items, ledgers with **signed openings confirmed in
+   the UI**: Pune Digital Solutions 62,500 Dr). Operator entered opening bill `Op/2022-001` and set F2 = 31-03-2026.
+   Voucher `[S0-B:1]` then failed `EXCEPTIONS=1` with no LINEERROR. Debugged live (`logs/debug-vch1-*.log`):
+   - **C32 (root cause, voucher write):** in invoice mode `create_b_voucher` emits the nominal Sales/Purchase ledger
+     BOTH as a `LEDGERENTRIES.LIST` line AND inside each inventory row's `ACCOUNTINGALLOCATIONS.LIST` → Tally sees the
+     goods amount twice (imbalance). Production `build_create_sales_voucher` never emits the nominal line. Refuted
+     first: bill-amount sign, voucher date. Removing only the nominal line → `CREATED=1`; voucher `[S0-B:1]` now
+     exists in company B (Day Book: 1-Apr-22, Sales No. 1, Dr 9,861.74).
+   - **C33 (root cause, every dated read):** Tally honours `SVFROMDATE`/`SVTODATE` **only with `TYPE="Date"`** (format
+     irrelevant: `01-04-2022`, `20220401`, `1-Apr-2022` all work typed; all return 0 untyped). Untyped, Tally silently
+     uses the company's current period (1-Apr-25..31-Mar-26) — so every v2 dated read so far read the *current
+     period*, not the requested window. Company A looked right only because its data sits in that period.
+     **⚠ Probes 16/17/18 measured period behaviour with untyped variables — their recorded conclusions are suspect
+     and must be re-run after the fix.** Nothing in `v2/` or `backend/` emits `TYPE="Date"` (production
+     `backend/tally_bridge/request_builder.py` included — flagged, out of scope for v2).
+   - Open: bill sign. `Inv/1` (sent `+9861.74` under a −9,861.74 party line) reads back `ClosingBalance 9861.74`;
+     production mirrors the party sign (−). The UI-entered opening bill `Op/2022-001` does not appear in the `Bill`
+     collection, so there is no known-Dr bill to compare against yet.
 0b. **2026-09-24 — setup-b run 1 stopped at the unit stage (before any ledger), two loader bugs fixed, run 2 in
    flight** (`logs/setup-b-live-2026-09-24-run2.log`). (1) **C30 overturns C21:** Tally reads the OPENINGBALANCE
    *sign* (negative = Dr), it does NOT infer the side from the parent group — `abs()` would have landed B's three
@@ -383,3 +402,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-24 | **Company B shell created in the Tally UI** by the operator: `Sharma & Sons' Probe Traders`, FY/books from 1-Apr-22, Maharashtra, GST Yes (no company GST details), bill-wise Yes, inventory integrated. **Contradicted expectation:** Tally assigned company number **`100000`** (folder `s0probe/100000`), not `100004` — it picks the lowest free number, not "next after A". `company_numbers["B"]` + `test_auto_operator.py` updated, `907b9d1`, 435 green. Remaining UI steps: voucher type `Sales - GST`, F2 = 31-03-2026; then `setup-b` live. |
 | 2026-09-24 | **Five minors done** (M1 `928b638`, M4 `06eb2c4`, M6 `9f41d67`, M7 `c3761c9`, M9 `fae0a13`), suite **440 green**. M1 went one step past the brief: it also refuses openings under custom groups whose nature it can't classify (company B has none). UI prep finished (voucher type `Sales - GST` read back via API, current date 31-Mar-2026). **Contradicted expectation:** starting Tally with `/LOAD:100000` also preloads company A because `tally.ini` has `Default Companies=Yes`/`Load=100003` — the harness guard refused (no writes); operator shut A by hand. Harness fix pending. |
 | 2026-09-24 | **setup-b live run 1 → stopped deliberately; C30 + C31.** Run 1 created 2 custom groups + `Nos`, then paused on `Box of 10 Nos` (our XML sent `Nos` as both units). Meanwhile review of the minors (`docs/code-review-bi-s0-company-b-minors-2026-09-24.md`) found a **Critical**: the `abs(opening)` wire (Ruling C21/F11, reaffirmed by M1) contradicts company A's live evidence (HDFC/SBI debits stored as credits). Run killed at the unit pause — **no ledger had been written** (read-back: only `Cash`, `Profit & Loss A/c`). Fixed: signed wire `67a67a3` (live-verified −1.00 → −1.00), compound unit `47cf175`, docs `d2b05c1`, sign check `4f81b1d`. 451 green. Run 2 started. |
+| 2026-09-24 | **setup-b run 2: masters ✅, vouchers blocked — C32 + C33 found live.** All 31 masters created cleanly; signed openings confirmed in the UI. Voucher 1 `EXCEPTIONS=1`: root cause C32 = nominal ledger emitted twice in invoice mode (fixed by hand for voucher 1 only, `CREATED=1`). Then the loader's own read-back saw 0 vouchers: root cause C33 = period variables need `TYPE="Date"`, otherwise Tally silently uses the current period — **probes 16/17/18 conclusions suspect**. Run stopped cleanly; code fixes next. Logs: `logs/setup-b-live-2026-09-24-run2.log`, `logs/debug-vch1-*.log`. |
