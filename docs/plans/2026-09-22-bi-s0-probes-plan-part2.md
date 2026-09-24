@@ -1,5 +1,13 @@
 # S0 Probes — Part 2 of 3: automated operator + company-A probes — Implementation Plan
 
+> **Superseded fixture names (2026-09-24, plan part 5):** probe 18 A's bills/stock as-on date moved
+> 30-09-2025 → 31-10-2025 (Ruling C43), and the untyped `vouchers_to_2025-10-31` read was replaced by an explicit
+> whole-FY `vouchers_fy` fetch (Ruling C33/Q3). Every `p18_A_*_asof_2025-09-30.*` and `p18_A_vouchers_to_2025-10-31.*`
+> name below is historical (this plan's own build-time record) — the byte-identical captures now live at
+> [`v2/tests/fixtures/sync/c33_untyped_2026-09-23/`](../../v2/tests/fixtures/sync/c33_untyped_2026-09-23/), and the
+> current fixture names are in `docs/specs/2026-09-22-bi-s0-probes-design.md` §11.5. This plan's task text is left
+> as written (it records what was built at the time), not edited to match.
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or
 > superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 > **Tick each box in this file as soon as that step is verified** — not at the end (tracker rules).

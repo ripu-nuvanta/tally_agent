@@ -37,6 +37,47 @@
 > **Changed 2026-09-24 (plan part 5, Ruling Q8):** §7 probe 15's "byte-exact" means the characters survive: the verdict
 > is code-point equality of the **parsed** text with the dataset; the transport form (UTF-8 bytes or numeric character
 > references) is recorded, not judged. The raw response bytes are kept in the fixture, so it can be re-judged.
+> **Changed 2026-09-24 (plan part 5, live run — Task 10a/10b):** probes 16/17/18 A re-run **typed**; 11/14/15 built
+> and run live on B; 18 B built and run live. Outcomes: 17 **CONFIRMED**, 18 (A + B) **CONFIRMED**, 14 **CONFIRMED**,
+> 15 **CONFIRMED**, 16 **FAILED** (A part DIFFERENT, B part FAILED), 11 **FAILED** (stock only).
+> (a) §7 probe 18 A: bills/stock as-on moved **30-09-2025 → 31-10-2025** (Ruling C43 — 30-09-2025 is an
+> Educational-ignored day) and vouchers are now read for the **whole FY** (`vouchers_fy`, reproducing C33
+> explicitly rather than relying on it) and filtered in Python for the as-on figures. Live: Bills + Stock as-on
+> 31-10-2025 **match that date exactly (CONFIRMED)** — the 2026-09-23 "Bills/Stock ignore the as-on date" finding
+> is **superseded**: it was a C43 artefact (an ignored 30-09-2025 silently answering with the period-end position),
+> not a Tally behaviour. LESSONS rule 20's second half is overturned; see LESSONS.md §15.
+> (b) §7 probe 16 A: a **typed** SVTODATE on a Ledger collection, **inside the current period**, IS honoured
+> (`closing_follows_svtodate=true`; SVTODATE moved 19 of 22 balance-sheet ledgers to match the as-on lines). This
+> **overturns** the 2026-09-23 untyped finding and LESSONS rule 17's SVTODATE half — that finding was measured
+> **untyped**. Typed SVFROMDATE-on-a-master-collection was **not** re-measured live (risk > value; a wedge costs a
+> Tally restart); the freeze guard stays (§4.5). §7 probe 16 B (**new finding, Ruling C45**): a typed SVTODATE
+> **earlier than the current period's start** silently **clamps to the current period's first day** — 31-03-2025
+> and 31-03-2023 both answered with balances as of 01-04-2025, on all 10 balance-sheet ledgers checked — **FAILED**.
+> So the Ledger-collection as-on route works only **inside** the current period; for a date in a past period, the
+> as-on route is the TB report (probe 18 B), not a Ledger collection.
+> (c) §7 probe 18 B: TB as-on 31-03-2023 **CONFIRMED** — matches the dataset for all 5 primary groups, the
+> stock-bearing group via its own `Opening Stock` row (resolution 10).
+> (d) §7 probe 11: **CONFIRMED** for ledger openings and the debtor's opening bill; **FAILED for stock only** —
+> **new finding, Ruling C46**: `StockItem.OpeningBalance`/`OpeningRate`/`OpeningValue` are the **current period's**
+> opening, not books-start — live, all 5 items' "opening" equalled the dataset's stock **at 31-03-2025**, not
+> 01-04-2022. The stock-openings verdict rule (resolution 11) predates C46 and is recorded as measured, not
+> re-run to relabel; a follow-up should teach the rule about C46 (tracker "Resume here").
+> Probe 14: **CONFIRMED** — the escaped request works (26 ledgers incl. the Hindi one); an `unknown_company_request`
+> control and the unescaped request both fail as expected; Tally answers a cheap read afterwards (resolution 14).
+> Probe 15: **CONFIRMED** — the Hindi ledger and narration (tag 7) round-trip exact (UTF-8 bytes); the compound-unit
+> item reads "10 Box 0 Nos" on its voucher and "20 Box" in Stock Summary; Tally answers a cheap read after.
+> (e) §4.5 gains a **C43 send-time guard**: `ProbeContext` refuses (BLOCKED, nothing sent) any request whose typed
+> date static variable's day is not 1, 2 or 31 under the Educational licence — one implementation (`v2/probes/safety.py`),
+> shared by `send`/`try_send`, `_post_uncaptured`, the `anchors` command, and `company_b_view.check_date_vars`.
+> (f) §11.5 gains steps: probe 11 `opening_bills_report` (the Bills Receivable fallback); probe 14
+> `unknown_company_request`; probe 16 B `groups`, `ledgers`, `ledgers_fy2024`, `ledgers_fy2024_svfromdate` (opt-in);
+> probe 18 A `…_asof_2025-10-31` (bills/stock/TB) + `vouchers_fy`; probe 18 B `ledger_list`, `group_list`,
+> `tb_asof_2023-03-31` — see the updated §11.5 table below.
+> (g) Every 2026-09-23 conclusion this overturns is marked **superseded**, not deleted; its untyped evidence is kept
+> byte-for-byte at [`v2/tests/fixtures/sync/c33_untyped_2026-09-23/`](../../v2/tests/fixtures/sync/c33_untyped_2026-09-23/)
+> (`git mv`, 50 files, byte-identical) — see LESSONS.md §15 and the tracker's change log.
+> Full detail: `.superpowers/sdd/2026-09-24-bi-s0-probes-plan-part5/progress.md`, `docs/bi-s0-probe-results-2026-09-24.md`,
+> `docs/code-review-bi-s0-part5-2026-09-24.md`.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -192,6 +233,12 @@ TallyVault, with throwaway passwords recorded in the results (the company holds 
   value (LESSONS §5) or containing `$$InDateRange` (LESSONS §3).
 - **One request at a time, no automatic retries.** A timeout stops the probe as BLOCKED with the hint "check Tally
   for an open popup or modal" (LESSONS §15 rule 10).
+- **C43 date guard (added plan part 5, 2026-09-24).** Before sending, `ProbeContext` refuses — BLOCKED, nothing
+  sent — any request whose typed date static variable's day is not 1, 2 or 31, when the licence is Educational
+  (LESSONS §15 rule 22). One implementation (`v2/probes/safety.py`), one exception type (`GuardError`), one date
+  parser (`reads.tally_date`); shared by `send`/`try_send`, `_post_uncaptured`, the read-only `anchors` command,
+  and `company_b_view.check_date_vars` (so the company-B setup dataset's own date reads can't silently clamp
+  either). A placeholder like `__FROM__` (not yet a real date) passes through untouched.
 
 ### 4.6 Licence mode
 Probe 0 records licensed vs Educational. In Educational mode, setup-b uses only the voucher dates Educational
@@ -456,6 +503,14 @@ saves its fixture per §5.6.
 **Probe 11 — Openings** · B · feeds R5
 - Ledger OpeningBalance, the debtor's opening bill (*candidate* opening-bills field, else Bills Receivable as-on
   books start), stock OpeningBalance / OpeningRate / OpeningValue — all against setup's values.
+- **Changed 2026-09-24 (plan part 5, live run):** **FAILED (stock only).** Ledger OpeningBalance and the debtor's
+  opening bill (via `BillAllocations` on the Ledger collection, filtered to the party) **CONFIRMED** against
+  setup's books-start values. Stock OpeningBalance / OpeningRate / OpeningValue for all 5 items **FAILED** — **new
+  finding, Ruling C46**: `StockItem.OpeningBalance` is the **current period's** opening, not the books-start one;
+  live, all 5 items' exported "opening" equalled the dataset's stock **at 31-03-2025** (the current FY's start),
+  not 01-04-2022. `spec_impact`: stock tiles must start from the first Stock Summary snapshot, not an opening
+  anchor (R5); a books-start stock opening has to come from a historical report (probe 18's route), not the
+  StockItem master. Fixtures: `p11_B_ledger_openings.xml`, `p11_B_opening_bills.xml`, `p11_B_stock_openings.xml`.
 
 **Probe 12 — Current report snapshots** · A · feeds R5, the S1 snapshot fixtures
 - TB, BS, full-FY P&L 2025-26, Stock Summary, Bills Receivable, Bills Payable at today's date. Bills totals equal
@@ -467,6 +522,11 @@ saves its fixture per §5.6.
   it. Text byte-exact against the dataset; the unit string recorded; no crash, and Tally answers a cheap read after.
   Changed 2026-09-24 (plan part 5, Ruling Q8): "byte-exact" is judged on the parsed text (code-point equality); whether
   the response carried it as UTF-8 bytes or as character references is recorded, not judged.
+- **Changed 2026-09-24 (plan part 5, live run):** **CONFIRMED.** The Hindi debtor ledger and its narration (tag 7)
+  round-trip exact (UTF-8 bytes, code-point equality); the compound-unit item (A4 Paper Ream, "Box of 10 Nos")
+  reads back `10 Box 0 Nos` on its voucher and `20 Box` in the Stock Summary; Tally answered a cheap read after.
+  Fixtures: `p15_B_hindi_ledger.xml`, `p15_B_hindi_narration.xml`, `p15_B_compound_unit_item.xml`,
+  `p15_B_compound_unit_voucher.xml`, `p15_B_stock_summary.xml`.
 
 **Probe 22 — Forex** · B · feeds decision 15 · **BLOCKED 2026-09-24 (C36)** — `setup-b` skips the 2 USD export
 sales until a forex write shape is live-verified; see the header's "Changed 2026-09-24 (Ruling C36)".
@@ -539,12 +599,39 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
   - ClosingBalance ≠ TB / UI → **FAILED**: rung 1 collapses to group level.
   - As-on works → per-ledger opening anchors exist during the backfill without probe 17.
   - The post-dated rule and the as-of date are written into Part 1 §6 "Rung 1".
+- **Changed 2026-09-24 (plan part 5, live run):** as built, bills/stock dates in the A part moved to 31-10-2025
+  (Ruling C43, see header); the B part sends only a **typed** SVTODATE (01/02/31-only days: 31-03-2025 and
+  31-03-2023), SVFROMDATE opt-in only under `--allow-risky`. **Outcome: FAILED** (worse of A DIFFERENT + B FAILED).
+  **A part: DIFFERENT.** 10 nominal ledgers still have a non-zero ClosingBalance (rung 1 must pick balance-sheet
+  ledgers by group nature, never by "ClosingBalance = 0"); the throwaway post-dated voucher was counted in
+  ClosingBalance and exported `IsPostDated=Yes` (Tally's own current date had not yet reached the FY end). But
+  **as-on closing DOES follow a typed SVTODATE inside the current period** — 19 of 22 balance-sheet ledgers moved to
+  match the as-on lines — so per-ledger anchors are available this way **for dates inside the current period**.
+  SVFROMDATE on the Ledger collection was **not** re-sent (the untyped form wedged Tally twice on 2026-09-23; the
+  typed form is an open, opt-in check). **B part: FAILED — new finding, Ruling C45.** A typed SVTODATE **earlier
+  than the current period's start** silently **clamps to the current period's first day**: 31-03-2025 and
+  31-03-2023 both answered with the 01-04-2025 balances, on all 10 balance-sheet ledgers checked. So a dated
+  Ledger-collection read never returns the as-on balance nor today's for a date before the current period — the
+  agent must never send a period variable on a master collection for such a date (LESSONS rule 17 stands, now for
+  the typed case too); per-ledger anchors for a past period come from probe 17's ledger-level TB (rung 2/decision
+  11), or from a TB read per date the way probe 18 B does it. Fixtures: `p16_A_ledgers.xml`, `p16_A_groups.xml`,
+  `p16_A_vouchers_fy.xml`, `p16_A_tb_fy_end.xml`, `p16_A_ledgers_asof_2025-10-31.xml`, `p16_A_future_voucher.xml`,
+  `p16_A_ledgers_with_future_voucher.xml`, `p16_A_post_dated_voucher.xml`, `p16_A_ledgers_with_post_dated.xml`,
+  `p16_B_groups.xml`, `p16_B_ledgers.xml`, `p16_B_ledgers_fy2024.xml`, `p16_B_ledgers_asof_2023-03-31.xml`. Debug
+  log: `logs/p16B-debug-asof-2026-09-24.log`.
 
 **Probe 17 — Ledger-level TB** · A · feeds decision 11, R3
 - TB `TYPE=Data` with *candidate* explode / ledger-wise static variables (EXPLODEFLAG and others the plan lists).
   Ledger rows present? Their per-group sums equal the group rows? It completes within the timeout, and Tally
   answers a cheap read after? Record which variable works.
 - **CONFIRMED** → rung 2 works at ledger level and month-bisect gets cheaper.
+- **Changed 2026-09-24 (plan part 5, live run):** **CONFIRMED**, on the now-typed `ledger_level_tb` request
+  template (no date change; probe 17's dates were never wrong, re-run so the stored template is the typed one S2
+  will reuse). `isledgerwise` returns 29 ledger rows whose per-group sums equal the TB group totals; one non-ledger
+  row (`Opening Stock`) rides along; `EXPLODEFLAG`/`EXPLODEALLLEVELS` stop at the second group level and miss
+  ledgers under a custom sub-group. Fixtures: `p17_A_ledger_list.xml`, `p17_A_group_list.xml`,
+  `p17_A_tb_exploded_explodeflag.xml`, `p17_A_tb_exploded_svexplodeflag.xml`, `p17_A_tb_exploded_isledgerwise.xml`,
+  `p17_A_tb_exploded_ledgerwise.xml`, `p17_A_tb_exploded_explodealllevels.xml`.
 
 **Probe 18 — Historical reports** · A + B · feeds decision 11, R30, Parts 2 + 3
 - A:
@@ -556,6 +643,17 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
 - Two sub-results:
   - TB part FAILED → **parity is suspended during the backfill** (R30).
   - Bills / stock part FAILED → those tiles lose their month-end comparison.
+- **Changed 2026-09-24 (plan part 5, live run):** **CONFIRMED, both A and B.** A's bills/stock date moved to
+  31-10-2025 (Ruling C43; a C43-valid day), and vouchers are read for the whole FY (`vouchers_fy`) instead of
+  relying on an untyped to-date request (C33). **A: TB as-on 31-10-2025, Bills Receivable/Payable, and Stock
+  Summary all as-on 31-10-2025 match that date exactly** — the 2026-09-23 "Bills/Stock ignore the as-on date"
+  finding is **superseded**: 30-09-2025 was an Educational-ignored day (C43), and the report silently fell back
+  to the FY-end position, which is exactly what looked like "ignoring the date". LESSONS rule 20's second half is
+  overturned. **B: TB as-on 31-03-2023 equals the dataset for all 5 primary groups**, the stock-bearing group via
+  its own `Opening Stock` TB row (resolution 10). Fixtures: `p18_A_tb_asof_2025-10-31.xml`, `p18_A_vouchers_fy.xml`,
+  `p18_A_ledger_list.xml`, `p18_A_group_list.xml`, `p18_A_bills_receivable_asof_2025-10-31.xml`,
+  `p18_A_bills_payable_asof_2025-10-31.xml`, `p18_A_stock_summary_asof_2025-10-31.xml`,
+  `p18_A_stock_item_openings.xml`, `p18_B_tb_asof_2023-03-31.xml`, `p18_B_ledger_list.xml`, `p18_B_group_list.xml`.
 
 ### Reach and robustness
 
@@ -596,6 +694,14 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
 **Probe 14 — Special characters in the company name** · B · feeds R13
 - The v2 envelope (escaped) with SVCURRENTCOMPANY = "Sharma & Sons' Probe Traders" → works. A deliberately
   unescaped copy of the same request → fails; record the error shape.
+- **Changed 2026-09-24 (plan part 5, live run):** **CONFIRMED.** As built (resolution 14), an `unknown_company_request`
+  control (naming a company that isn't loaded) is sent first: it "answered" rather than erroring — one company
+  loaded, so the variable's own selectivity is unmeasured, but the request still gets a well-formed answer. The
+  **escaped** request then returns 26 ledgers including the Hindi one; the **unescaped** request fails as recorded
+  (kept 10 s and last in the B session, per resolution 14 / Ruling Q6); Tally answers a cheap read afterwards.
+  `spec_impact`: the v2 envelope's escaping is what makes `Sharma & Sons' Probe Traders` reachable; the unescaped
+  form fails as recorded (R13 holds). Fixtures: `p14_B_escaped_request.xml`, `p14_B_unknown_company_request.xml`,
+  `p14_B_unescaped_request.xml`.
 
 **Probe 24 — Secured companies** · C · feeds R2, R26
 - Baseline export. Pause: enable security (username / password), reopen and log in → export. Pause: enable
@@ -723,14 +829,14 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 | 7 | `throwaway_created`, `after_delete`, `second_throwaway` |
 | 8 | `rename_before`, `rename_after`, `rename_restored` |
 | 10 | `no_company_collection`, `no_company_report`, `popup_read` (sidecar only if timeout), `after_popup`, `tally_quit` (sidecar only) |
-| 11 | `ledger_openings`, `opening_bills`, `stock_openings` |
+| 11 | `ledger_openings`, `opening_bills`, `stock_openings` (as built, adds `opening_bills_report`, the Bills Receivable books-start fallback) |
 | 12 | `tb_today`, `bs_today`, `pl_fy2025`, `stock_summary_today`, `bills_receivable_today`, `bills_payable_today` |
 | 13 | `before_backup`, `after_throwaway`, `after_restore` |
-| 14 | `escaped_request`, `unescaped_request` |
+| 14 | `escaped_request`, `unescaped_request` (as built, adds `unknown_company_request`, the SVCurrentCompany control, sent first) |
 | 15 | `hindi_ledger`, `hindi_narration`, `compound_unit_item`, `compound_unit_voucher`, `stock_summary` |
-| 16 | `A_ledgers`, `A_ledgers_asof_2025-10-31`, `A_ledgers_from_2025-10-01`, `A_post_dated_voucher`, `A_ledgers_with_post_dated`, `B_ledgers_fy2024`, `B_ledgers_asof_2023-03-31` |
+| 16 | `A_ledgers`, `A_ledgers_asof_2025-10-31`, `A_ledgers_from_2025-10-01`, `A_post_dated_voucher`, `A_ledgers_with_post_dated`, `B_ledgers_fy2024`, `B_ledgers_asof_2023-03-31` (as built: `A_groups`, `A_vouchers_fy`, `A_tb_fy_end`, `A_future_voucher`, `A_ledgers_with_future_voucher` also captured; B part uses only typed SVTODATE steps — `B_groups`, `B_ledgers`, `B_ledgers_fy2024`, `B_ledgers_asof_2023-03-31`, plus opt-in `B_ledgers_fy2024_svfromdate`) |
 | 17 | `tb_exploded_{variable}` (one per candidate) |
-| 18 | `A_tb_asof_2025-10-31`, `A_bills_receivable_asof_2025-09-30`, `A_bills_payable_asof_2025-09-30`, `A_stock_summary_asof_2025-09-30`, `A_vouchers_to_2025-10-31`, `B_tb_asof_2023-03-31` |
+| 18 | `A_tb_asof_2025-10-31`, `A_bills_receivable_asof_2025-09-30`, `A_bills_payable_asof_2025-09-30`, `A_stock_summary_asof_2025-09-30`, `A_vouchers_to_2025-10-31`, `B_tb_asof_2023-03-31` — **as built (plan part 5, C43/C33):** the 30-09-2025 bills/stock dates moved to **31-10-2025** and the untyped `vouchers_to_2025-10-31` read is replaced by an explicit `A_vouchers_fy` (whole-FY) fetch: `A_tb_asof_2025-10-31`, `A_bills_receivable_asof_2025-10-31`, `A_bills_payable_asof_2025-10-31`, `A_stock_summary_asof_2025-10-31`, `A_stock_item_openings`, `A_vouchers_fy`, `A_ledger_list`, `A_group_list`; B adds `B_ledger_list`, `B_group_list` alongside `B_tb_asof_2023-03-31`. The superseded 2025-09-30 / untyped `vouchers_to_2025-10-31` captures are kept byte-for-byte at [`v2/tests/fixtures/sync/c33_untyped_2026-09-23/`](../../v2/tests/fixtures/sync/c33_untyped_2026-09-23/), not deleted. |
 | 19 | `capture_quiet_{1,2,3}_{counters_start,ledgers,tb,counters_end}`, `after_ui_view`, `capture_moving_*` |
 | 21 | `books_from`, `fy2022_month_{04..03}`, `fy2025_month_03` (current-FY sample, sizes only), `period_locked_read` (if lockable) |
 | 22 | `forex_sales` |

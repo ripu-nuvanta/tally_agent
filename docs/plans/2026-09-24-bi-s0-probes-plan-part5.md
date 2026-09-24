@@ -1117,7 +1117,7 @@ New methods on `FakeBooks`:
 - [ ] **Step 5: Run both new test files, then the whole suite** (also `-W error`). Expected: BASE + 23. If the
   `ET.fromstring` check turns up an existing test that sends a malformed Export, that test was already broken
   against a real Tally. Record it as a ruling. Only then restrict the check to `B_PROBE_COLLECTIONS` requests.
-- [ ] **Step 6: Commit** (`v2/tests/probes/fake_books.py v2/probes/company_b_view.py
+- [x] **Step 6: Commit** (`v2/tests/probes/fake_books.py v2/probes/company_b_view.py
   v2/tests/probes/test_company_b_view.py v2/tests/probes/test_fake_books_company_b_masters.py`):
   `test(bi/v2): FakeBooks company-B masters + read routes; company_b_view dataset accessors`.
 
@@ -2414,7 +2414,7 @@ step 3 passes.
 **Files:** `docs/specs/2026-09-22-bi-s0-probes-design.md`, `docs/specs/2026-09-21-bi-part1-sync-design.md`,
 `docs/plans/2026-09-22-bi-part1-tracker.md`, `docs/roadmap.md`, `LESSONS.md`, and this plan (tick the boxes).
 
-- [ ] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 5):**` covering:
+- [x] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 5):**` covering:
   (a) §7 probe 18 A: bills/stock as-on moved 30-09-2025 → 31-10-2025 (C43); vouchers read for the whole FY (C33).
   (b) §7 probe 16 B as built: scope decided from the current-period read; typed SVTODATE-only as-on reads; SVFROMDATE
   opt-in.
@@ -2428,7 +2428,7 @@ step 3 passes.
   (g) Every superseded 2026-09-23 conclusion, named as superseded (not deleted), with where its evidence now lives
   (`v2/tests/fixtures/sync/c33_untyped_2026-09-23/`).
   Update the header status line.
-- [ ] **Step 2: Tracker.**
+- [x] **Step 2: Tracker.**
   - Rows 16, 17, 18: the re-run outcome and proof (summary, fixtures, `results.json` keys, logs). Put the old result
     in the row as "superseded (untyped, C33 / C43)". Rows 16 and 18 become ✅ when both parts are run.
   - Rows 11, 14, 15: ✅ with proof, or the real outcome.
@@ -2438,14 +2438,14 @@ step 3 passes.
     step 3.
   - Rewrite "Resume here" to the state actually left behind.
   - Add a dated change-log row with every contradicted expectation.
-- [ ] **Step 3: LESSONS.md §15.** Rule 17: qualify it by what step 5 (and optional step 9) showed about the *typed*
+- [x] **Step 3: LESSONS.md §15.** Rule 17: qualify it by what step 5 (and optional step 9) showed about the *typed*
   forms. Rule 20: keep the TB half. The Bills/Stock half is either overturned ("was C43: 30-09-2025 is an ignored day")
   or re-confirmed on a valid day. Rule 22: add that the v2 probes now refuse off-day dates at send time. Keep each
   rule's scope caveat.
-- [ ] **Step 4: Part 1 spec.** One dated "Changed" line. Decision 11 / §6 rung 1 / §16: the per-ledger opening anchor
+- [x] **Step 4: Part 1 spec.** One dated "Changed" line. Decision 11 / §6 rung 1 / §16: the per-ledger opening anchor
   route per probes 16 A/B. R30: probe 18 B. R5: probe 11. R13: probe 14. R14/R15: probe 15.
-- [ ] **Step 5: Roadmap.** Set C S0 row: one line — part 5 done, and what remains (part 6: 3/23/25 B, company C).
-- [ ] **Step 6: Commit** docs only: `docs(bi/v2): plan part 5 results into specs, tracker, LESSONS, roadmap`.
+- [x] **Step 5: Roadmap.** Set C S0 row: one line — part 5 done, and what remains (part 6: 3/23/25 B, company C).
+- [x] **Step 6: Commit** docs only: `docs(bi/v2): plan part 5 results into specs, tracker, LESSONS, roadmap`.
 
 ---
 
