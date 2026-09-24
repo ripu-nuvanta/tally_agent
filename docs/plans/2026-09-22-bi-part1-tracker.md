@@ -38,6 +38,15 @@ gained master and voucher writers. `setup-b` is wired through the CLI (`v2/probe
 has touched a real Tally instance.**
 
 **Next steps, in order:**
+0b. **2026-09-24 — setup-b run 1 stopped at the unit stage (before any ledger), two loader bugs fixed, run 2 in
+   flight** (`logs/setup-b-live-2026-09-24-run2.log`). (1) **C30 overturns C21:** Tally reads the OPENINGBALANCE
+   *sign* (negative = Dr), it does NOT infer the side from the parent group — `abs()` would have landed B's three
+   debit openings as credits (company A's HDFC/SBI already did). Wire now signed (`67a67a3`); **live-verified**:
+   sent `-1.00` under Sundry Debtors, read back `-1.00`, ledger deleted (`logs/sign-check-live-2026-09-24.log`,
+   `v2/probes/setup/sign_check.py` `4f81b1d`). (2) **C31:** compound unit XML sent `Nos`/`Nos` → Tally
+   "Next Unit already contains the First unit!" (`logs/setup-b-live-2026-09-24.log`); now simple `Box` + compound
+   Box×10=Nos (`47cf175`). Docs `d2b05c1`. Suite **451 green**. Watch in run 2: `A4 Paper Ream` quantities are
+   sent as "<n> Box of 10 Nos" — Tally may want "<n> Box".
 0a. **2026-09-24 — all UI prep done**: voucher type `Sales - GST` confirmed via API read; current date 31-Mar-2026;
    company A shut by hand so only B is open. Five minors ✅ (440 green). **New harness bug found:** `tally.ini` has
    `Default Companies=Yes` + `Load=100003`, so `TallyControl.start("B")` (`/LOAD:100000`) opens **A and B** and
@@ -131,7 +140,7 @@ the one test the in-flight fix is currently editing. **Nothing has run against l
 (polarity test re-anchored to this project's own live company-A captures) · M2 + dead-code deletion + M3 `0b1a6b7`
 · M5 (verified present in the tree).
 
-*✅ All five done 2026-09-24 (440 tests green); review: `docs/code-review-bi-s0-company-b-minors-2026-09-24.md` (in progress):*
+*✅ All five done 2026-09-24 (440 tests green); review: `docs/code-review-bi-s0-company-b-minors-2026-09-24.md` — **changes requested, 1 Critical (opening sign), fixed `67a67a3`**:*
 | ID | What | Where |
 |---|---|---|
 | M1 ✅ 928b638 (`check_opening_side`, raises on contra-natural or unclassifiable-group openings; `test_a_contra_natural_or_unclassifiable_opening_is_refused_before_anything_is_sent`) | `create_party_ledger` sends `abs(opening)` unconditionally — correct for company B, silently wrong for a contra-natural opening (a bank overdraft in `Bank Accounts`). Document the constraint on `LedgerSpec` or raise on violation | `writes.py`, `company_b_data.py` |
@@ -373,3 +382,4 @@ Part 1 spec; Q22/Q23 answerable from probe 21's numbers.
 | 2026-09-23 | **Session end — fix wave 10/15, tree clean and green at `0b1a6b7` (435 tests).** Landed since the previous row: I3 `cf271e3` (the polarity test was anchored to a fixture whose own SOURCE.md says "parser tests only, never seed-parity anchors", and asserted a sign this project's live captures contradict — now re-anchored to `p16_A_tb_fy_end.xml`/`p17_A_tb_exploded_explodealllevels.xml` and asserting the second-level buckets `_verify_balances` actually compares); M2 + dead-code deletion + M3 `0b1a6b7` (the party-first line-ordering bare `assert` now raises `CompanyBLoadError` so a violation pauses instead of crashing mid-load — it was the only surviving behavioural mutation in the suite; dead `TallyWriter.voucher_by_tag` deleted with its test; two receipt fixtures flipped off the mirror of Op 8). **Five minors not started: M1, M4, M6, M7, M9** — see "Resume here". Stopped deliberately at a committed green tree rather than mid-edit. |
 | 2026-09-24 | **Company B shell created in the Tally UI** by the operator: `Sharma & Sons' Probe Traders`, FY/books from 1-Apr-22, Maharashtra, GST Yes (no company GST details), bill-wise Yes, inventory integrated. **Contradicted expectation:** Tally assigned company number **`100000`** (folder `s0probe/100000`), not `100004` — it picks the lowest free number, not "next after A". `company_numbers["B"]` + `test_auto_operator.py` updated, `907b9d1`, 435 green. Remaining UI steps: voucher type `Sales - GST`, F2 = 31-03-2026; then `setup-b` live. |
 | 2026-09-24 | **Five minors done** (M1 `928b638`, M4 `06eb2c4`, M6 `9f41d67`, M7 `c3761c9`, M9 `fae0a13`), suite **440 green**. M1 went one step past the brief: it also refuses openings under custom groups whose nature it can't classify (company B has none). UI prep finished (voucher type `Sales - GST` read back via API, current date 31-Mar-2026). **Contradicted expectation:** starting Tally with `/LOAD:100000` also preloads company A because `tally.ini` has `Default Companies=Yes`/`Load=100003` — the harness guard refused (no writes); operator shut A by hand. Harness fix pending. |
+| 2026-09-24 | **setup-b live run 1 → stopped deliberately; C30 + C31.** Run 1 created 2 custom groups + `Nos`, then paused on `Box of 10 Nos` (our XML sent `Nos` as both units). Meanwhile review of the minors (`docs/code-review-bi-s0-company-b-minors-2026-09-24.md`) found a **Critical**: the `abs(opening)` wire (Ruling C21/F11, reaffirmed by M1) contradicts company A's live evidence (HDFC/SBI debits stored as credits). Run killed at the unit pause — **no ledger had been written** (read-back: only `Cash`, `Profit & Loss A/c`). Fixed: signed wire `67a67a3` (live-verified −1.00 → −1.00), compound unit `47cf175`, docs `d2b05c1`, sign check `4f81b1d`. 451 green. Run 2 started. |
