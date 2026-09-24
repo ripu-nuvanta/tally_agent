@@ -102,3 +102,119 @@ def test_mean_block_bytes_ignores_empty_placeholders():
     assert p21.mean_block_bytes(blocks, "BILLALLOCATIONS.LIST") == len(bill.encode("utf-8"))
     assert p21.mean_block_bytes([], "BILLALLOCATIONS.LIST") == 0
 
+
+import pytest
+
+from v2.agent.tally.client import TallyClient
+from v2.probes import p05_voucher_month_bounds as p05
+from v2.probes.capture import TIMING_NOTE, Capture
+from v2.probes.companies import COMPANIES
+from v2.probes.results import ResultsStore
+from v2.probes.runner import run_probe
+from v2.tests.probes.fake_books import FakeBooks, seed_company_b
+from v2.tests.probes.fakes import ScriptedIO, ready_store
+
+B = COMPANIES["B"]
+KINDS = {"sales+inventory+bills", "purchase+inventory+bills", "receipt+bills", "payment+bills", "sales+inventory",
+         "payment", "receipt"}
+
+
+def _books() -> FakeBooks:
+    books = FakeBooks(name=B)
+    seed_company_b(books, "educational")
+    return books
+
+
+async def _run(tmp_path, books, io=None, *, with_probe_5=True):
+    store = ResultsStore(tmp_path / "results.json")
+    ready_store(store, licence="educational")
+    store.update_environment(company_b_loaded_at="2026-09-24T13:02:33+05:30")
+    client, capture = TallyClient(transport=books.transport()), Capture(tmp_path / "fixtures")
+    if with_probe_5:
+        await run_probe(p05.PROBE, labels=None, client=client, store=store, capture=capture, io=ScriptedIO())
+    io = io or ScriptedIO(answers=[""])
+    await run_probe(p21.PROBE, labels=None, client=client, store=store, capture=capture, io=io)
+    return store.probe_entry(21)["parts"]["B"], io
+
+
+async def test_fy2022_is_reached_month_by_month_and_sizes_are_measured(tmp_path):
+    part, _ = await _run(tmp_path, _books())
+    assert part["outcome"] == "CONFIRMED", part["summary"]
+    obs = part["observations"]
+    assert obs["books_from"] == {"exported": "20220401", "expected": "01-04-2022", "match": True}
+    assert len(obs["months"]) == 12 and all(m["match"] for m in obs["months"].values())
+    assert obs["months"]["fy2022_month_09"]["expected_written"] == 18                     # 101/102 never written
+    assert obs["months"]["fy2022_month_02"]["flagged_returned"] == [201, 202]
+    assert set(obs["kinds"]) == KINDS
+    assert sum(k["count"] for k in obs["kinds"].values()) == 236                          # 238 minus the cancelled pair
+    assert set(obs["block_bytes"]) == {"ALLLEDGERENTRIES.LIST", "ALLINVENTORYENTRIES.LIST", "BILLALLOCATIONS.LIST"}
+    assert len(obs["storage"]["table"]) == 9 and obs["storage"]["mix_vouchers"] == 236
+    assert set(obs["storage"]["q22"]) == {"raw_share_pct", "per_fy_mb", "saving_if_raw_dropped_beyond_2_fy_mb"}
+    assert obs["timings_ms"]["note"] == TIMING_NOTE and "fy2022_month_04" in obs["timings_ms"]
+    assert obs["current_fy_sample"]["month"]["match"]
+    assert obs["period_lock"] == {"status": "not attempted", "answer": ""}
+    assert "⏭" in part["summary"] and "Q22" in part["spec_impact"]
+    assert part["fixtures"][:2] == ["p21_B_books_from.xml", "p21_B_fy2022_month_04.xml"]
+    assert "p21_B_fy2022_month_03.xml" in part["fixtures"] and "p21_B_fy2025_month_03.xml" in part["fixtures"]
+
+
+async def test_a_hand_entered_voucher_makes_its_month_inexact_and_fails(tmp_path):
+    books = _books()
+    books.edit_state(lambda s: s["vouchers"].__setitem__("99999", {
+        "narration": "typed in by hand", "date": "20220815", "post_dated": "No", "cancelled": "No",
+        "optional": "No", "vch_type": "Journal", "lines": [], "inventory": [], "bills": []}))
+    part, _ = await _run(tmp_path, books)
+    assert part["outcome"] == "FAILED"
+    assert part["observations"]["months"]["fy2022_month_08"]["untagged"] == 1
+    assert "fy2022_month_08" in part["summary"] and "Decision 7b" in part["spec_impact"]
+
+
+async def test_books_from_other_than_2022_is_different(tmp_path):
+    books = _books()
+    books.edit_state(lambda s: s.update(books_from="20230401"))
+    part, _ = await _run(tmp_path, books)
+    assert part["outcome"] == "DIFFERENT"
+    assert "BooksFrom" in part["summary"] and "books-beginning" in part["spec_impact"]
+
+
+async def test_a_timeout_mid_year_blocks_with_the_popup_hint_and_is_not_retried(tmp_path):
+    books = _books()
+    books.before_request = lambda body: setattr(books, "popup", True) if ">01-10-2022<" in body else None
+    part, _ = await _run(tmp_path, books)
+    assert part["outcome"] == "BLOCKED" and "popup" in part["summary"]
+    assert "p21_B_fy2022_month_09.xml" in part["fixtures"]
+    assert "p21_B_fy2022_month_10.xml.json" in part["fixtures"]
+    assert sum(">01-10-2022<" in body for body in books.requests) == 1
+
+
+async def test_a_locked_period_is_read_again_and_then_unlocked(tmp_path):
+    part, io = await _run(tmp_path, _books(), ScriptedIO(answers=["locked"]))
+    lock = part["observations"]["period_lock"]
+    assert lock["status"] == "locked" and lock["read"]["match"] and lock["same_as_unlocked"]
+    assert "p21_B_period_locked_read.xml" in part["fixtures"]
+    assert any("Unlock" in w for w in io.waits)
+    assert "cleanup_needed" not in part["observations"]
+
+
+async def test_an_edition_without_a_period_lock_is_recorded(tmp_path):
+    part, _ = await _run(tmp_path, _books(), ScriptedIO(answers=["none"]))
+    assert part["observations"]["period_lock"] == {"status": "no period lock in this edition"}
+    assert part["outcome"] == "CONFIRMED"
+
+
+@pytest.mark.parametrize("io, status", [
+    (ScriptedIO(interactive=False), "not attempted (non-interactive)"),
+    (ScriptedIO(run_mode="auto"), "not attempted (auto mode: a person must lock the period in the Tally UI)"),
+])
+async def test_period_lock_is_not_attempted_without_a_person(tmp_path, io, status):
+    part, used = await _run(tmp_path, _books(), io)
+    assert part["outcome"] == "CONFIRMED", part["summary"]
+    assert part["observations"]["period_lock"] == {"status": status}
+    assert used.asks == []
+
+
+async def test_probe_21_blocks_until_probe_5_has_confirmed_the_month_request(tmp_path):
+    books = _books()
+    part, _ = await _run(tmp_path, books, with_probe_5=False)
+    assert part["outcome"] == "BLOCKED" and "probe(s) 5" in part["summary"]
+    assert not any("<TYPE>Voucher</TYPE>" in body for body in books.requests)

@@ -14,11 +14,18 @@ from __future__ import annotations
 import json
 import re
 import xml.etree.ElementTree as ET
+from calendar import monthrange
+from datetime import date
 from decimal import ROUND_CEILING, ROUND_HALF_UP, Decimal
 from typing import Any
 
 from v2.agent.tally.xml_utils import sanitize_xml
-from v2.probes.reads import parse_vouchers, primary_lines
+from v2.probes.capture import TIMING_NOTE
+from v2.probes.company_b_view import (B_BOOKS_FROM, B_BOOKS_FROM_DATE, compare_tags, expect_window, kind_label,
+                                      loaded_licence, tag_of, voucher_rows)
+from v2.probes.context import ProbeContext
+from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked
+from v2.probes.reads import fill_month_request, parse_vouchers, primary_lines, tally_date
 
 PG_ROW_OVERHEAD_BYTES = 28      # PostgreSQL heap tuple header (23 B, aligned to 24) + 4-byte line pointer
 VOLUMES = (10_000, 50_000, 200_000)
@@ -163,3 +170,150 @@ def storage_table(stats: dict[str, dict[str, Any]]) -> dict[str, Any]:
                 "caveats": ["indexes excluded", "JSONB stored size ≈ text JSON (not modelled)",
                             "company B's mix: one stock line per invoice — scale with block_bytes"]},
     }
+
+
+FY2022_MONTHS = [(2022, m) for m in range(4, 13)] + [(2023, m) for m in range(1, 4)]
+FY2022 = (date(2022, 4, 1), date(2023, 3, 31))
+CURRENT_FY_SAMPLE = (2026, 3)             # one month of the current FY: "do closed years behave differently?"
+LOCK_FROM, LOCK_TO = "01-04-2022", "31-03-2023"
+LOCK_PROMPT = ("Probe 21 step 4, period lock: if this TallyPrime can lock a period for company B, lock "
+               f"{LOCK_FROM} to {LOCK_TO} now and type 'locked'. Type 'none' if it has no period lock, or just press "
+               "Enter to skip.")
+LOCK_NOTE = "Company B: unlock FY 2022-23 again (probe 21 locked it)."
+REACH_IMPACT = ("Decision 7b: probe 5's month request can't fetch FY 2022-23 exactly, so the backfill can't walk back "
+                "to books_from with it; the extractor needs another route before S1 (R27, R29).")
+BOOKS_FROM_IMPACT = ("The Company collection's BooksFrom isn't the books-beginning date, so the backfill's floor "
+                     "(decision 7b, Part 1 §4 'Where history starts') needs another source before S2.")
+LOCK_IMPACT = ("A locked period doesn't read back the same: the backfill must treat locked years as unreadable and "
+               "say so on the History card (decision 7b, R29).")
+TIMING_TAIL = f"Timings recorded ({TIMING_NOTE}); the tier-C timing half stays ⏭ (Q29)."
+
+
+def month_window(year: int, month: int) -> tuple[date, date]:
+    return date(year, month, 1), date(year, month, monthrange(year, month)[1])
+
+
+def _dmy(day: date) -> str:
+    return day.strftime("%d-%m-%Y")
+
+
+def _blocks_by_tag(raw_text: str) -> dict[int, str]:
+    out: dict[int, str] = {}
+    for block in voucher_blocks(raw_text):
+        tag = tag_of(parse_vouchers(block)[0]["header"].get("NARRATION", ""))
+        if tag is not None:
+            out[tag] = block
+    return out
+
+
+def _labels(licence: str, start: date, end: date) -> dict[int, str]:
+    window = expect_window(licence, start, end)
+    return {tag: kind_label(v) for tag, v in window.written.items() if tag not in window.flagged}
+
+
+async def _month(ctx: ProbeContext, template: str, licence: str, step: str, start: date,
+                 end: date) -> tuple[dict[str, Any], dict[int, str]]:
+    text = await ctx.send(step, fill_month_request(template, ctx.company_name, _dmy(start), _dmy(end)))
+    result = compare_tags(voucher_rows(text), expect_window(licence, start, end), start, end)
+    result["bytes"] = ctx.last_response.response_bytes
+    return result, _blocks_by_tag(ctx.last_response.raw.decode("utf-8"))
+
+
+async def _period_lock(ctx: ProbeContext, template: str, licence: str, unlocked: dict[str, Any]) -> dict[str, Any]:
+    if not ctx.io.interactive:
+        return {"status": "not attempted (non-interactive)"}
+    if ctx.run_mode == "auto":
+        return {"status": "not attempted (auto mode: a person must lock the period in the Tally UI)"}
+    answer = ctx.ask(LOCK_PROMPT).strip().lower()
+    if answer == "none":
+        return {"status": "no period lock in this edition"}
+    if answer != "locked":
+        return {"status": "not attempted", "answer": answer}
+    ctx.on_abort(LOCK_NOTE)
+    read, _ = await _month(ctx, template, licence, "period_locked_read", *month_window(2022, 4))
+    ctx.pause(f"Unlock {LOCK_FROM} to {LOCK_TO} for company B again, then press Enter.")
+    ctx.resolve_abort(LOCK_NOTE)
+    return {"status": "locked", "read": read,
+            "same_as_unlocked": read["match"] and read["returned"] == unlocked["returned"]}
+
+
+def _headline(storage: dict[str, Any]) -> str:
+    row = next(r for r in storage["table"] if (r["vouchers_per_year"], r["years"]) == (200_000, 10))
+    per = storage["per_voucher_bytes"]
+    return (f"Q22/Q23 inputs (company B's mix, sizes under Wine): {per['columns']} B/voucher without raw, raw JSON "
+            f"{per['raw']} B more ({storage['q22']['raw_share_pct']}% of the total); 200k vouchers/yr × 10 yr = "
+            f"{row['with_raw_mb']} MB with raw, {row['without_raw_mb']} MB without, {row['raw_recent_2_fy_only_mb']} MB "
+            "keeping raw for the recent 2 FYs only (indexes excluded). S1 decides Q22/Q23 on these.")
+
+
+async def run_b(ctx: ProbeContext) -> PartResult:
+    licence = loaded_licence(ctx.store.environment)
+    confirmed = ctx.store.confirmed("voucher_month")
+    if confirmed is None:
+        raise ProbeBlocked("No confirmed month request: run probe 5 first.")
+    template = confirmed["xml_template"]
+
+    exported = (await ctx.counters("books_from")).get("BooksFrom", "")
+    books_from_ok = tally_date(exported) == B_BOOKS_FROM_DATE
+    ctx.observe("books_from", {"exported": exported, "expected": B_BOOKS_FROM, "match": books_from_ok})
+
+    months: dict[str, dict[str, Any]] = {}
+    timings: dict[str, Any] = {"note": TIMING_NOTE}
+    blocks: dict[int, str] = {}
+    for year, month in FY2022_MONTHS:
+        step = f"fy2022_month_{month:02d}"
+        months[step], found = await _month(ctx, template, licence, step, *month_window(year, month))
+        timings[step] = ctx.last_response.elapsed_ms
+        blocks.update(found)
+    ctx.observe("months", months)
+
+    labels = _labels(licence, *FY2022)
+    stats = measure(blocks, labels)
+    sized = [block for tag, block in blocks.items() if tag in labels]
+    ctx.observe("kinds", stats)
+    ctx.observe("block_bytes", {tag: mean_block_bytes(sized, tag) for tag in BLOCK_TAGS})
+    storage = storage_table(stats) if stats else None
+    ctx.observe("storage", storage)
+
+    sample_window = month_window(*CURRENT_FY_SAMPLE)
+    sample, sample_blocks = await _month(ctx, template, licence, "fy2025_month_03", *sample_window)
+    timings["fy2025_month_03"] = ctx.last_response.elapsed_ms
+    ctx.observe("current_fy_sample", {
+        "month": sample,
+        "kinds": {label: {"xml_per_voucher": s["xml_per_voucher"], "json_per_voucher": s["json_per_voucher"]}
+                  for label, s in measure(sample_blocks, _labels(licence, *sample_window)).items()},
+        "note": "Part 1 probe 21's 'do closed years behave differently?': compare with `kinds`; no verdict."})
+    ctx.observe("timings_ms", timings)
+
+    lock = await _period_lock(ctx, template, licence, months["fy2022_month_04"])
+    ctx.observe("period_lock", lock)
+
+    inexact = [step for step, result in months.items() if not result["match"]]
+    if inexact:
+        return PartResult(Outcome.FAILED, f"FY 2022-23 not reached exactly: {', '.join(inexact)} differ from the "
+                                          f"dataset (see observations.months). {TIMING_TAIL}", spec_impact=REACH_IMPACT)
+    notes, impacts = [], []
+    if not books_from_ok:
+        notes.append(f"BooksFrom exported {exported!r}, not {B_BOOKS_FROM}")
+        impacts.append(BOOKS_FROM_IMPACT)
+    if lock["status"] == "locked" and not lock["same_as_unlocked"]:
+        notes.append("the locked FY 2022-23 no longer reads back the same")
+        impacts.append(LOCK_IMPACT)
+    if notes:
+        return PartResult(Outcome.DIFFERENT, "; ".join(notes) + f". {TIMING_TAIL}", spec_impact=" ".join(impacts))
+    total = sum(result["returned"] for result in months.values())
+    return PartResult(Outcome.CONFIRMED, f"FY 2022-23 reached month by month: 12/12 months exact ({total} vouchers; "
+                                         f"the cancelled pair reported, not judged); BooksFrom {B_BOOKS_FROM}; sizes "
+                                         f"for {len(stats)} voucher kinds. {TIMING_TAIL}",
+                      spec_impact=_headline(storage))
+
+
+PROBE = Probe(
+    id=21,
+    name="full_history_reach",
+    question="Can every month of an FY three years back be fetched exactly, and what do vouchers cost to store "
+             "over 2/5/10 years with and without raw?",
+    feeds=("decision 7b", "Q22", "Q23", "R27"),
+    parts={"B": run_b},
+    requires=(0, 1, 5),
+)
