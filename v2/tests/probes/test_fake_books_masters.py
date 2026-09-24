@@ -358,6 +358,9 @@ def test_a_negative_sales_bill_is_a_receivable():
 
 
 def test_an_agst_ref_receipt_knocks_the_receivable_off():
+    """The fake's knock-off mechanics on hand-built XML only. Whether the DATASET's receipts actually settle its
+    receivables (review #5: none did) is test_company_b.py::test_a_full_load_leaves_exactly_the_bills_the_dataset_
+    expects_open, which the fake can now fail (C35 refusals)."""
     books = FakeBooks(name=B)
     _post(books, wrap_import("Vouchers", B, _sale_with_bill("-9861.74")))
     receipt = ('<VOUCHER VCHTYPE="Receipt" ACTION="Create"><DATE>20250701</DATE>'
@@ -368,3 +371,61 @@ def test_an_agst_ref_receipt_knocks_the_receivable_off():
                "<AMOUNT>9861.74</AMOUNT></BILLALLOCATIONS.LIST></ALLLEDGERENTRIES.LIST></VOUCHER>")
     assert ImportResult.parse(_post(books, wrap_import("Vouchers", B, receipt))).created == 1
     assert _bills(books, "Bills Receivable") == [] and _bills(books, "Bills Payable") == []
+
+
+# --- C35 (review #1/#5): the fake refuses a bill shape Tally would reject or mis-book, instead of opening a bill -----
+def _receipt_with_bill(name: str, amount: str, *, bill_type: str = "Agst Ref", bill_amount: str | None = None) -> str:
+    return ('<VOUCHER VCHTYPE="Receipt" ACTION="Create"><DATE>20250701</DATE>'
+            "<NARRATION>[S0-B:2] r</NARRATION><VOUCHERTYPENAME>Receipt</VOUCHERTYPENAME>"
+            + _entry("Cash", "Yes", f"-{amount}")
+            + "<ALLLEDGERENTRIES.LIST><LEDGERNAME>Pune Traders</LEDGERNAME><ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>"
+            f"<AMOUNT>{amount}</AMOUNT><BILLALLOCATIONS.LIST><NAME>{name}</NAME><BILLTYPE>{bill_type}</BILLTYPE>"
+            f"<AMOUNT>{bill_amount or amount}</AMOUNT></BILLALLOCATIONS.LIST></ALLLEDGERENTRIES.LIST></VOUCHER>")
+
+
+def _import(books: FakeBooks, voucher: str) -> ImportResult:
+    return ImportResult.parse(_post(books, wrap_import("Vouchers", B, voucher)))
+
+
+def test_the_fake_refuses_an_agst_ref_to_a_bill_that_was_never_opened():
+    """Review #1: 288 of 288 dataset Agst Refs named a bill no voucher opened, and the fake silently opened a
+    fresh (wrong-side) bill for each — so nothing offline could notice."""
+    books = FakeBooks(name=B)
+    result = _import(books, _receipt_with_bill("Inv/14", "5000.00"))
+    assert result.exceptions == 1 and result.created == 0
+    assert books.state["vouchers"] == {} and books.state["bills"] == {}
+
+
+def test_the_fake_refuses_an_agst_ref_that_would_over_settle_its_bill():
+    books = FakeBooks(name=B)
+    _import(books, _sale_with_bill("-9861.74"))
+    result = _import(books, _receipt_with_bill("Inv/1", "9861.75"))
+    assert result.exceptions == 1 and result.created == 0
+    assert books.state["bills"]["Inv/1"]["amount"] == "-9861.74"          # untouched
+
+
+def test_the_fake_refuses_an_agst_ref_to_another_partys_bill():
+    books = FakeBooks(name=B)
+    _import(books, _sale_with_bill("-9861.74"))
+    other = _receipt_with_bill("Inv/1", "100.00").replace("Pune Traders", "Nagpur Traders")
+    assert _import(books, other).exceptions == 1
+
+
+def test_the_fake_refuses_bills_that_do_not_add_up_to_the_party_line():
+    books = FakeBooks(name=B)
+    result = _import(books, _sale_with_bill("-9000.00"))                  # party line is -9861.74
+    assert result.exceptions == 1 and books.state["bills"] == {}
+
+
+def test_a_part_payment_leaves_the_rest_of_the_bill_open():
+    books = FakeBooks(name=B)
+    _import(books, _sale_with_bill("-9861.74"))
+    assert _import(books, _receipt_with_bill("Inv/1", "4000.00")).created == 1
+    assert books.state["bills"]["Inv/1"]["amount"] == "-5861.74"
+    assert _bills(books, "Bills Receivable") == ["Inv/1"]
+
+
+def test_an_on_account_receipt_opens_no_named_bill():
+    books = FakeBooks(name=B)
+    assert _import(books, _receipt_with_bill("On Account", "5000.00", bill_type="On Account")).created == 1
+    assert books.state["bills"] == {}

@@ -238,11 +238,109 @@ def test_fy_openings_are_the_previous_month_end():
 
 def test_every_bill_is_a_magnitude_matching_its_party_line():
     """C34: BillSpec.amount is a magnitude — the writer applies the party line's sign. A signed bill here would be
-    refused by create_b_voucher, and a mismatch would split the bill-wise balance away from the ledger."""
-    from v2.probes.setup.company_b_data import generate
+    refused by create_b_voucher, and a mismatch would split the bill-wise balance away from the ledger.
+
+    C35 (review #5): this used to pass with 288/288 Agst Refs naming a bill that was never opened — it checked
+    sign and total, never the name. It now also requires every bill to resolve (see `_settlement_walk`)."""
+    for licence in ("educational", "licensed"):
+        assert _settlement_walk(generate(licence))[1] == [], licence
     for v in generate("educational").vouchers + generate("licensed").vouchers:
         if not v.bills:
             continue
         party_line = next(l for l in v.lines if l.ledger == v.party)
         assert all(b.amount > 0 for b in v.bills), v.tag
         assert sum(b.amount for b in v.bills) == abs(party_line.amount), v.tag
+
+
+# --- live-state pin: [S0-B:1] is already in company B (2026-09-24); the loader skips it by tag -----------------
+def test_tag_1_is_pinned_to_exactly_what_live_company_b_already_holds():
+    """[S0-B:1] was written live on 2026-09-24. The loader skips an existing tag, so if the dataset drifted the
+    live voucher and the dataset would silently disagree forever. Pinned field by field, both licences (only the
+    date differs: licensed day 2, educational day 1)."""
+    from v2.probes.setup.company_b_data import BillSpec, InventorySpec, LineSpec
+    for licence, day in (("licensed", 2), ("educational", 1)):
+        v = next(v for v in generate(licence).vouchers if v.tag == 1)
+        assert (v.kind, v.vch_type, v.date, v.party) == ("sales", "Sales", date(2022, 4, day), USD_DEBTOR)
+        assert v.narration == f"[S0-B:1] Sale to {USD_DEBTOR}"
+        assert v.lines == (
+            LineSpec(USD_DEBTOR, Decimal("-9861.74"), True),
+            LineSpec("Domestic Sales", Decimal("8357.40"), False),
+            LineSpec("Output CGST", Decimal("752.17"), False),
+            LineSpec("Output SGST", Decimal("752.17"), False),
+        )
+        assert v.inventory == (InventorySpec("Wireless Mouse", Decimal("12"), Decimal("696.45"), Decimal("8357.40")),)
+        assert v.bills == (BillSpec("Inv/1", "New Ref", Decimal("9861.74"), "30 Days"),)
+        assert (v.cancelled, v.optional) == (False, False)
+
+
+# --- C35: every Agst Ref settles a real, earlier, open bill of the same party --------------------------------------
+def _settlement_walk(ds):
+    """Replay the dataset's bills in date order: returns (open New Refs by name, list of problems)."""
+    from v2.probes.setup.company_b_data import OPENING_BILL_DATE
+    open_bills: dict[str, dict] = {}
+    for l in ds.ledgers:
+        if l.opening_bill:
+            open_bills[l.opening_bill] = {"party": l.name, "date": OPENING_BILL_DATE, "left": abs(l.opening)}
+    problems: list[str] = []
+    for v in sorted(ds.vouchers, key=lambda v: (v.date, v.tag)):
+        if v.cancelled or v.optional:
+            continue
+        for b in v.bills:
+            if b.bill_type == "New Ref":
+                open_bills[b.name] = {"party": v.party, "date": v.date, "left": b.amount}
+            elif b.bill_type == "Agst Ref":
+                target = open_bills.get(b.name)
+                if target is None:
+                    problems.append(f"[{v.tag}] {b.name} was never opened")
+                elif target["party"] != v.party:
+                    problems.append(f"[{v.tag}] {b.name} belongs to {target['party']}, not {v.party}")
+                elif not target["date"] < v.date:
+                    problems.append(f"[{v.tag}] {b.name} dated {target['date']} is not before {v.date}")
+                elif b.amount > target["left"]:
+                    problems.append(f"[{v.tag}] {b.name} over-settled: {b.amount} > {target['left']}")
+                else:
+                    target["left"] -= b.amount
+            elif b.bill_type != "On Account":
+                problems.append(f"[{v.tag}] unknown bill type {b.bill_type!r}")
+    return open_bills, problems
+
+
+def test_every_agst_ref_settles_an_earlier_open_bill_of_the_same_party_without_over_settling():
+    for licence in ("licensed", "educational"):
+        open_bills, problems = _settlement_walk(generate(licence))
+        assert problems == [], (licence, problems[:5])
+        assert all(b["left"] >= 0 for b in open_bills.values())
+
+
+def test_receipts_and_payments_mix_full_and_part_settlements():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        open_bills, _ = _settlement_walk(ds)
+        agst = [b for v in ds.vouchers if v.kind in ("receipt", "payment") for b in v.bills if b.bill_type == "Agst Ref"]
+        assert agst, licence
+        fully = [n for n, b in open_bills.items() if b["left"] == 0]
+        partly = {b.name for b in agst} - set(fully)
+        assert fully and partly, licence                          # both full and part settlements exist
+        receipts = [v for v in ds.vouchers if v.kind == "receipt" and v.bills]
+        payments = [v for v in ds.vouchers if v.kind == "payment" and v.bills]
+        assert any(b.bill_type == "Agst Ref" for v in receipts for b in v.bills)
+        assert any(b.bill_type == "Agst Ref" for v in payments for b in v.bills)
+
+
+def test_the_opening_bill_is_settled_by_a_later_receipt():
+    ds = generate()
+    hits = [v for v in ds.vouchers if v.kind == "receipt" for b in v.bills if b.name == "Op/2022-001"]
+    assert hits and all(v.party == "Pune Digital Solutions" for v in hits)
+
+
+def test_receipts_from_the_non_billwise_debtor_carry_no_bills():
+    receipts = [v for v in generate().vouchers if v.kind == "receipt" and v.party == NON_BILLWISE_DEBTOR]
+    assert receipts and all(v.bills == () for v in receipts)
+
+
+def test_expected_bills_outstanding_are_the_residual_of_every_open_bill():
+    for licence in ("licensed", "educational"):
+        ds = generate(licence)
+        open_bills, _ = _settlement_walk(ds)
+        want = {(b["party"], name): b["left"] for name, b in open_bills.items() if b["left"] != 0}
+        assert expected_figures(ds).bills_outstanding == want

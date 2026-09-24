@@ -26,6 +26,8 @@ BOX_UNIT = "Box"
 # C31: Tally NAMES a compound unit "<first unit> of <conversion> <second unit>" — here Box x 10 = Nos.
 COMPOUND_UNIT = f"{BOX_UNIT} of 10 {BASE_UNIT}"
 SALES_GST_VOUCHER_TYPE = "Sales - GST"           # created in the Tally UI, never by the loader
+# The opening bill (e.g. Op/2022-001) is dated the day before the books begin (entered in the UI, 31-3-2022).
+OPENING_BILL_DATE = date(2022, 3, 31)
 
 _GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
@@ -129,6 +131,8 @@ class Expected:
     ledger_fy_opening: dict[tuple[str, date], Decimal]  # (ledger, 1 April) -> balance
     voucher_count_by_month: dict[tuple[int, int], int]
     voucher_count_by_fy: dict[str, int]                 # "2022-23" -> n
+    # C35: (party, bill name) -> outstanding MAGNITUDE after every voucher, for bills not fully settled
+    bills_outstanding: dict[tuple[str, str], Decimal]
 
 
 def gstin(state_code: str, pan: str) -> str:
@@ -316,9 +320,34 @@ def _build_purchase(rng: random.Random, tag: int, d: date, party: str,
                         lines=lines, inventory=(), bills=bills)
 
 
-def _build_receipt(rng: random.Random, tag: int, d: date, party: str,
-                    bill_wise: dict[str, bool]) -> VoucherSpec:
-    amount = Decimal(rng.randint(500000, 5000000)) / 100
+@dataclass
+class _OpenBill:
+    """A New Ref bill (or the opening bill) still carrying an outstanding magnitude — C35's settlement pool."""
+    name: str
+    day: date
+    left: Decimal
+
+
+def _settle(party: str, d: date, drawn: Decimal, bill_wise: dict[str, bool],
+            open_bills: dict[str, list[_OpenBill]]) -> tuple[Decimal, tuple[BillSpec, ...]]:
+    """C35 (review 2026-09-24 #1): a receipt/payment settles a REAL open bill of the same party. The oldest bill
+    dated strictly before `d` with anything outstanding is picked (FIFO); the amount is the drawn figure capped at
+    what that bill still owes — so a large draw pays it off in full and a small one pays part of it. A bill-wise
+    party with nothing open is paid On Account (no bill named). A non-bill-wise party carries no bills at all
+    (LESSONS §15 r16). The pool itself is only updated by the caller, once the voucher is known to post."""
+    if not bill_wise.get(party, False):
+        return drawn, ()
+    target = next((b for b in open_bills.get(party, []) if b.day < d and b.left > 0), None)
+    if target is None:
+        return drawn, (BillSpec(name="On Account", bill_type="On Account", amount=drawn, credit_period=None),)
+    amount = min(drawn, target.left)
+    return amount, (BillSpec(name=target.name, bill_type="Agst Ref", amount=amount, credit_period=None),)
+
+
+def _build_receipt(rng: random.Random, tag: int, d: date, party: str, bill_wise: dict[str, bool],
+                   open_bills: dict[str, list[_OpenBill]]) -> VoucherSpec:
+    drawn = Decimal(rng.randint(500000, 5000000)) / 100      # one draw, as before C35: the sales stream is unmoved
+    amount, bills = _settle(party, d, drawn, bill_wise, open_bills)
     bank_or_cash = "HDFC Bank Current A/c" if tag % 3 else "Cash"
     # F12: Op 8 — cash/bank debit ISDEEMEDPOSITIVE=Yes AMOUNT=NEGATIVE, party credit ISDEEMEDPOSITIVE=No
     # AMOUNT=POSITIVE ("Cash debit (Yes/−), party credit (No/+)", docs/tally-write-exploration-v4.md Op 8).
@@ -326,16 +355,15 @@ def _build_receipt(rng: random.Random, tag: int, d: date, party: str,
         LineSpec(ledger=bank_or_cash, amount=-amount, deemed_positive=True),
         LineSpec(ledger=party, amount=amount, deemed_positive=False),
     )
-    bills = (BillSpec(name=f"Inv/{tag}", bill_type="Agst Ref", amount=amount,
-                       credit_period=None),) if bill_wise.get(party, False) else ()
     narration = f"[{TAG_PREFIX}:{tag}] Receipt from {party}"
     return VoucherSpec(tag=tag, kind="receipt", vch_type="Receipt", date=d, party=party, narration=narration,
                         lines=lines, inventory=(), bills=bills)
 
 
-def _build_payment(rng: random.Random, tag: int, d: date, party: str,
-                    bill_wise: dict[str, bool]) -> VoucherSpec:
-    amount = Decimal(rng.randint(500000, 4000000)) / 100
+def _build_payment(rng: random.Random, tag: int, d: date, party: str, bill_wise: dict[str, bool],
+                   open_bills: dict[str, list[_OpenBill]]) -> VoucherSpec:
+    drawn = Decimal(rng.randint(500000, 4000000)) / 100      # one draw, as before C35
+    amount, bills = _settle(party, d, drawn, bill_wise, open_bills)
     bank_or_cash = "HDFC Bank Current A/c" if tag % 2 else "Cash"
     # F12: Op 8/9 family — the ledger being paid ISDEEMEDPOSITIVE=Yes AMOUNT=NEGATIVE, cash/bank
     # ISDEEMEDPOSITIVE=No AMOUNT=POSITIVE (matches `create_payment`'s own live-verified convention).
@@ -343,8 +371,6 @@ def _build_payment(rng: random.Random, tag: int, d: date, party: str,
         LineSpec(ledger=party, amount=-amount, deemed_positive=True),
         LineSpec(ledger=bank_or_cash, amount=amount, deemed_positive=False),
     )
-    bills = (BillSpec(name=f"Pur/{tag}", bill_type="Agst Ref", amount=amount,
-                       credit_period=None),) if bill_wise.get(party, False) else ()
     narration = f"[{TAG_PREFIX}:{tag}] Payment to {party}"
     return VoucherSpec(tag=tag, kind="payment", vch_type="Payment", date=d, party=party, narration=narration,
                         lines=lines, inventory=(), bills=bills)
@@ -370,9 +396,15 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
     item_names = [i.name for i in items]
     item_rate_hint = {i.name: (5000, 200000) for i in items}  # 50.00-2000.00 rupees, in paise
 
+    # C35: the settlement pool, seeded with each ledger's opening bill (its opening balance's magnitude).
+    open_bills: dict[str, list[_OpenBill]] = {
+        l.name: [_OpenBill(l.opening_bill, OPENING_BILL_DATE, abs(l.opening))]
+        for l in ledgers if l.opening_bill and l.opening is not None}
+
     vouchers: list[VoucherSpec] = []
     tag = 0
     sales_counter = 0
+    receipt_counter = 0
     for (y, m) in _months():
         for i in range(VOUCHERS_PER_MONTH):
             tag += 1
@@ -394,11 +426,15 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
                 party = creditor_names[(tag + i) % len(creditor_names)]
                 v = _build_purchase(rng, tag, d, party, bill_wise)
             elif i < 17:
-                party = debtor_names[(tag + i) % len(debtor_names)]
-                v = _build_receipt(rng, tag, d, party, bill_wise)
+                # C35: `(tag + i) % 6` is always odd here, so receipts only ever reached 3 of the 6 debtors — never
+                # Pune Digital Solutions (whose opening bill then could never be settled) nor the non-bill-wise
+                # debtor. A plain rotation reaches all six; it draws nothing from `rng`, so no sale moves.
+                receipt_counter += 1
+                party = debtor_names[receipt_counter % len(debtor_names)]
+                v = _build_receipt(rng, tag, d, party, bill_wise, open_bills)
             elif i < 19:
                 party = creditor_names[(tag + i) % len(creditor_names)]
-                v = _build_payment(rng, tag, d, party, bill_wise)
+                v = _build_payment(rng, tag, d, party, bill_wise, open_bills)
             else:
                 v = _build_expense_payment(rng, tag, d)
 
@@ -407,8 +443,21 @@ def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
             elif tag in _OPTIONAL_TAGS:
                 v = replace(v, optional=True)
 
+            if not (v.cancelled or v.optional):
+                _post_to_pool(v, open_bills)
             vouchers.append(v)
     return tuple(vouchers)
+
+
+def _post_to_pool(v: VoucherSpec, open_bills: dict[str, list[_OpenBill]]) -> None:
+    """A New Ref opens a bill; an Agst Ref reduces the one it names. Cancelled/optional vouchers never get here —
+    neither posts to the books, so neither opens nor settles anything."""
+    for b in v.bills:
+        if b.bill_type == "New Ref":
+            open_bills.setdefault(v.party, []).append(_OpenBill(b.name, v.date, b.amount))
+        elif b.bill_type == "Agst Ref":
+            target = next(o for o in open_bills[v.party] if o.name == b.name)
+            target.left -= b.amount
 
 
 def fy_label(day: date) -> str:
@@ -423,6 +472,8 @@ def expected_figures(dataset: Dataset) -> Expected:
     fy_opening: dict[tuple[str, date], Decimal] = {}
     by_month: dict[tuple[int, int], int] = {}
     by_fy: dict[str, int] = {}
+    bills: dict[tuple[str, str], Decimal] = {(l.name, l.opening_bill): abs(l.opening)
+                                             for l in dataset.ledgers if l.opening_bill and l.opening is not None}
     for (year, month) in _months():
         last = date(year, month, monthrange(year, month)[1])
         if month == 4:
@@ -437,9 +488,17 @@ def expected_figures(dataset: Dataset) -> Expected:
                 continue
             for line in v.lines:
                 running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
+            if v.optional:                       # an optional voucher posts nothing, bills included
+                continue
+            for b in v.bills:
+                if b.bill_type == "New Ref":
+                    bills[(v.party, b.name)] = b.amount
+                elif b.bill_type == "Agst Ref":
+                    bills[(v.party, b.name)] -= b.amount
         for name, value in running.items():
             month_end[(name, last)] = value
-    return Expected(month_end, fy_opening, by_month, by_fy)
+    outstanding = {key: left for key, left in bills.items() if left != 0}
+    return Expected(month_end, fy_opening, by_month, by_fy, outstanding)
 
 
 def generate(licence: str = "licensed") -> Dataset:

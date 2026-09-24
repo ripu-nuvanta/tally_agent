@@ -11,7 +11,7 @@ from v2.probes.setup.company_b import (
     CompanyBLoadError, LoadReport, _load_masters, _load_vouchers, _verify, load_company_b,
 )
 from v2.probes.setup.company_b_data import (
-    Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, generate,
+    Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, expected_figures, generate,
 )
 from v2.probes.setup.writes import B_READBACK_FROM, B_READBACK_TO, TallyWriter, WriteRefused
 from v2.tests.probes.fake_books import FakeBooks, sync_client
@@ -26,6 +26,7 @@ _FLAG_PAUSE_RE = re.compile(r"^\[S0-B:(\d+)\].*?(ISCANCELLED|ISOPTIONAL) did not
 
 
 def _loader(books, **io_kwargs):
+    io_kwargs.setdefault("on_wait", _operator_who_enters_the_opening_bill(books))
     said: list[str] = []
     writer = TallyWriter(sync_client(books.transport()), said.append)
     return writer, ScriptedIO(**io_kwargs), said
@@ -37,13 +38,28 @@ def _empty_b():
     return books
 
 
+OPENING_BILL = {"Op/2022-001": {"party": "Pune Digital Solutions", "amount": "-62500.00"}}   # Dr = receivable
+
+
+def _operator_who_enters_the_opening_bill(books: FakeBooks):
+    """C35: receipts now settle the opening bill Op/2022-001, so a fake without it refuses them (an Agst Ref to an
+    unknown bill). Live, the operator enters it in the UI at the opening-bill pause; this does the same."""
+    def on_wait(instruction: str) -> None:
+        if "Opening bill 'Op/2022-001'" in instruction:
+            books.edit_state(lambda s: s.setdefault("bills", {}).update(OPENING_BILL))
+    return on_wait
+
+
 def _operator_who_honours_flag_pauses(books: FakeBooks):
     """F10: the fake never simulates the Tally UI, so a flag pause's re-read fails forever by construction —
     that's an artefact of the fake, not the design. In reality the operator honours the pause and sets the flag
     by hand, and the re-read then sees it (LESSONS/spec §4.3). Mirrors test_p08_ledger_rename.py's
     `on_action`-simulates-the-operator pattern, but for `io.wait` (our pauses carry no `Action` — see the
     module docstring's F2/flag-pause ruling) rather than `io.ask`."""
+    enters_opening_bill = _operator_who_enters_the_opening_bill(books)
+
     def on_wait(instruction: str) -> None:
+        enters_opening_bill(instruction)
         match = _FLAG_PAUSE_RE.match(instruction)
         if not match:
             return
@@ -70,6 +86,26 @@ def test_a_first_load_lists_before_creating_and_reads_back_every_write():
     # the first request for each type is a read, not an import
     first = books.requests[0]
     assert "<TALLYREQUEST>Import Data</TALLYREQUEST>" not in first
+
+
+def test_a_full_load_leaves_exactly_the_bills_the_dataset_expects_open():
+    """C35 / review #5: `test_an_agst_ref_receipt_knocks_the_receivable_off` proved knock-off only on hand-built XML;
+    no dataset voucher reached that branch. This drives the whole dataset through the writer into the fake (which
+    refuses an Agst Ref to an unknown/other party's bill and any over-settlement) and compares every open bill."""
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io)
+    assert report.problems == []
+    ds = generate()
+    expected = expected_figures(ds)
+    # Cancelled (set by the operator in the UI after the create) and optional vouchers post no bills in Tally; the
+    # fake keeps whatever the create posted, so their own New Refs are left out here. Nothing ever settles them.
+    flagged = {v.tag for v in ds.vouchers if v.optional or v.cancelled}
+    flagged_bills = {b.name for v in ds.vouchers if v.tag in flagged for b in v.bills}
+    actual = {(b["party"], name): abs(Decimal(b["amount"])) for name, b in books.state["bills"].items()
+              if Decimal(b["amount"]) != 0 and name not in flagged_bills}
+    assert actual == expected.bills_outstanding
+    assert any(name.startswith("Inv/") for _, name in actual) and any(name.startswith("Pur/") for _, name in actual)
 
 
 def test_a_second_load_sends_zero_creates():
@@ -154,7 +190,10 @@ def test_a_resumed_run_is_not_flagged_as_drift():
     load_company_b(writer, io)
 
     def remove_one_from_last_fy(s):
-        latest_mid = max(s["vouchers"], key=lambda mid: s["vouchers"][mid]["date"])
+        # An expense payment (no bills): deleting it straight from the fake's state can't unwind any bill it
+        # settled, and the fake (C35) rightly refuses a recreated Agst Ref that would then over-settle.
+        latest_mid = max((mid for mid in s["vouchers"] if "Payment for" in s["vouchers"][mid]["narration"]),
+                         key=lambda mid: s["vouchers"][mid]["date"])
         del s["vouchers"][latest_mid]
 
     books.edit_state(remove_one_from_last_fy)
@@ -447,7 +486,7 @@ def test_the_opening_bill_pauses_when_absent():
 
 def test_the_opening_bill_pause_is_skipped_when_the_bill_is_already_there():
     books = _empty_b()
-    books.edit_state(lambda s: s.update(bills_receivable=[("Op/2022-001", "Pune Digital Solutions", "62500.00")]))
+    books.edit_state(lambda s: s["bills"].update(OPENING_BILL))
     writer, io, _ = _loader(books)
     report = load_company_b(writer, io)
     assert not any("Op/2022-001" in p for p in report.pauses)

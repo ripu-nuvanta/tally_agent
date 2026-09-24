@@ -595,6 +595,9 @@ def test_a_bill_allocation_mirrors_the_party_line_sign(vch_type, party_amount, o
     Inv/1 under Bills PAYABLE. Production _render_bill_allocations mirrors the party sign; so does this now.
     BillSpec amounts are magnitudes — the writer applies the sign."""
     books = FakeBooks(name=B)
+    if bill[1] == "Agst Ref":            # C35: the fake refuses an Agst Ref to a bill that was never opened
+        opened = f"{-Decimal(expected):.2f}"
+        books.edit_state(lambda s: s["bills"].update({bill[0]: {"party": "Pune Traders", "amount": opened}}))
     writer, _ = _writer(books)
     writer.create_b_voucher(B, vch_type=vch_type, date="20230601", narration="[S0-B:9] x", party="Pune Traders",
                             lines=[("Pune Traders", party_amount, party_amount < 0), other],

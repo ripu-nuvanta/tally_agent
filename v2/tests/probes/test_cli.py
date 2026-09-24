@@ -197,6 +197,11 @@ def _console_input_honouring_flag_pauses(books: FakeBooks):
     flag_pause_re = re.compile(r"\[S0-B:(\d+)\].*?(ISCANCELLED|ISOPTIONAL) did not stick")
 
     def console_input(prompt: str) -> str:
+        if "Opening bill 'Op/2022-001'" in prompt:
+            # C35: receipts settle Op/2022-001, and the fake refuses an Agst Ref to a bill nobody opened — the
+            # operator enters it in the UI at this pause, as live.
+            books.edit_state(lambda s: s.setdefault("bills", {}).update(
+                {"Op/2022-001": {"party": "Pune Digital Solutions", "amount": "-62500.00"}}))
         match = flag_pause_re.search(prompt)
         if match:
             tag, xml_tag = match.group(1), match.group(2)

@@ -444,16 +444,54 @@ class FakeBooks:
                 if Decimal(bill["amount"]) != 0 and (Decimal(bill["amount"]) < 0) == receivable]
 
     @staticmethod
+    def _bills_refused(state: dict, element: ET.Element) -> bool:
+        """C35 (review 2026-09-24 #1/#5) — shapes the fake used to accept silently, each of which live Tally would
+        reject or mis-book. Refused with EXCEPTIONS=1 (the fake's approximation; the exact live answer to each is
+        unrecorded):
+        - bills under a line whose total's magnitude differs from that line's AMOUNT (the bill-wise split would
+          leave the ledger);
+        - an Agst Ref to a bill that was never opened (Tally would open a fresh bill on the wrong side, or refuse);
+        - an Agst Ref to another party's bill;
+        - an Agst Ref that pushes its bill past zero (over-settles it)."""
+        bills = state.get("bills", {})
+        for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
+            for entry in element.findall(tag):
+                allocations = entry.findall("BILLALLOCATIONS.LIST")
+                if not allocations:
+                    continue
+                party = entry.findtext("LEDGERNAME", "")
+                amounts = [Decimal(b.findtext("AMOUNT") or "0.00") for b in allocations]
+                # By MAGNITUDE only: live Tally accepted [S0-B:1]'s +9861.74 bill under a −9861.74 line (C34) and
+                # filed it by its own sign, so a sign mismatch is recorded behaviour, not a refusal.
+                if abs(sum(amounts, Decimal("0.00"))) != abs(Decimal(entry.findtext("AMOUNT") or "0.00")):
+                    return True
+                for bill, amount in zip(allocations, amounts):
+                    if bill.findtext("BILLTYPE") != "Agst Ref":
+                        continue
+                    target = bills.get(bill.findtext("NAME", ""))
+                    if target is None or target["party"] != party:
+                        return True
+                    before = Decimal(target["amount"])
+                    after = before + amount
+                    if before == 0 or (after != 0 and (after < 0) != (before < 0)):
+                        return True
+        return False
+
+    @staticmethod
     def _post_bills(state: dict, element: ET.Element) -> None:
         """New Ref opens a bill with its signed amount; Agst Ref adds its signed amount to that bill (a receipt's
-        + knocks off a sale's −)."""
+        + knocks off a sale's −). On Account names no bill, so nothing is opened (C35). Refusals happen first,
+        in `_bills_refused`."""
         bills = state.setdefault("bills", {})
         for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
             for entry in element.findall(tag):
                 party = entry.findtext("LEDGERNAME", "")
                 for bill in entry.findall("BILLALLOCATIONS.LIST"):
                     name, amount = bill.findtext("NAME", ""), Decimal(bill.findtext("AMOUNT") or "0.00")
-                    if bill.findtext("BILLTYPE") == "Agst Ref" and name in bills:
+                    bill_type = bill.findtext("BILLTYPE")
+                    if bill_type == "On Account":
+                        continue
+                    if bill_type == "Agst Ref":
                         bills[name]["amount"] = f"{Decimal(bills[name]['amount']) + amount:.2f}"
                     else:
                         bills[name] = {"party": party, "amount": f"{amount:.2f}"}
@@ -474,6 +512,8 @@ class FakeBooks:
                 # row's ACCOUNTINGALLOCATIONS — a nominal Sales line sent as well counts the goods twice and the
                 # answer is EXCEPTIONS=1 with no LINEERROR. Any unbalanced voucher gets the same answer here.
                 return import_result(exceptions=1)
+            if element.findtext("ISCANCELLED") != "Yes" and self._bills_refused(state, element):
+                return import_result(exceptions=1)                                                        # C35
             mid = str(state["next_master_id"])
             state["next_master_id"] += 1
             date = element.findtext("DATE", "")
