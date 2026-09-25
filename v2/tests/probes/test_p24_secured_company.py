@@ -73,6 +73,8 @@ async def test_security_and_vault_leave_export_unchanged(tmp_path):
     assert shapes["security_login_pending"]["company_list"]["transport"] == "timeout"
     assert shapes["vault_prompt_pending"]["active_company"]["transport"] == "timeout"
     assert "No credentials" in part["spec_impact"]
+    # both halves CONFIRMED: the whole-probe sentence, once, and no per-half repeats (C47 review I1)
+    assert part["spec_impact"].count(p24.CONFIRMED_IMPACT) == 1 and " on: " not in part["spec_impact"]
     assert "p24_C_baseline_vouchers.xml" in part["fixtures"]
     assert any(f.startswith("p24_C_security_login_pending_company_list") for f in part["fixtures"])
 
@@ -141,6 +143,30 @@ async def test_a_vault_rename_with_a_new_guid_and_cs_data_is_different_not_block
     assert part["observations"]["sub_verdicts"] == {"security": "CONFIRMED", "TallyVault": "DIFFERENT"}
     assert "vault renamed and re-keyed" in part["summary"] and "Probe Vault Encrypted" in part["summary"]
     assert "Q25" in part["spec_impact"]
+    # C47 review I1: a mixed result must not also claim the whole probe is unchanged -- the CONFIRMED half's impact
+    # is scoped to its own half.
+    assert p24.CONFIRMED_IMPACT not in part["spec_impact"]
+    assert "secured or vaulted" not in part["spec_impact"]
+    assert "Security on:" in part["spec_impact"] and "TallyVault on:" not in part["spec_impact"]
+
+
+async def test_a_failed_vault_half_does_not_claim_the_vault_is_unchanged(tmp_path):
+    """C47 review I1: security CONFIRMED + TallyVault FAILED -> no whole-probe 'unchanged' claim beside 'fails'."""
+    books = _books()
+    empty = lambda b: b.edit_state(lambda s: (s["ledgers"].clear(), s["vouchers"].clear()))
+    part = await _run(tmp_path, books, ScriptedIO(on_wait=operator(books, after_vault=empty)))
+    assert part["outcome"] == "FAILED", part["summary"]
+    text = part["spec_impact"]
+    assert "fails even with it open" in text and p24.CONFIRMED_IMPACT not in text
+    assert "secured or vaulted" not in text
+    assert text.index("fails even with it open") < text.index("Security on:")
+
+
+def test_each_half_confirmed_impact_names_only_its_half():
+    assert p24.half_confirmed_impact("security").startswith("Security on:")
+    assert p24.half_confirmed_impact("TallyVault").startswith("TallyVault on:")
+    for half in ("security", "TallyVault"):
+        assert "secured or vaulted" not in p24.half_confirmed_impact(half)
 
 
 async def test_company_c_without_setup_c_blocks(tmp_path):

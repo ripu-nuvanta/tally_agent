@@ -15,7 +15,7 @@ from v2.agent.tally.xml_utils import detect_error, parse_company_list, read_obje
 from v2.probes.companies import (COMPANIES, COMPANY_C_BOOKS_FROM, COMPANY_C_BOOKS_TO, COMPANY_C_LEDGER,
                                  COMPANY_C_VOUCHER_NARRATION)
 from v2.probes.context import ProbeContext
-from v2.probes.core import PartResult, Probe, ProbeBlocked, judge_halves
+from v2.probes.core import Outcome, PartResult, Probe, ProbeBlocked, judge_halves
 from v2.probes.reads import fill_month_request, master_request, parse_vouchers
 
 C = COMPANIES["C"]
@@ -46,6 +46,18 @@ PROMPT_STILL_OPEN = ("{stage}: prompt still open — Tally {why} after you press
 CONFIRMED_IMPACT = ("No credentials in the agent (R2, R26): once the person has logged in / entered the TallyVault "
                     "password in TallyPrime, XML export of a secured or vaulted company is unchanged (same GUID, same "
                     "data). Onboarding: open the company in TallyPrime as usual.")
+HALF_CONFIRMED_IMPACT = ("{label} on: once the person has {action} in TallyPrime, XML export is unchanged (same GUID, "
+                         "same data) — no credentials in the agent (R2, R26).")
+
+
+def half_confirmed_impact(half: str) -> str:
+    """A CONFIRMED half's impact, scoped to that half (C47 review I1): `judge_halves` keeps every half's impact, so
+    the whole-probe CONFIRMED_IMPACT beside another half's DIFFERENT/FAILED impact would contradict it."""
+    if half == "TallyVault":
+        return HALF_CONFIRMED_IMPACT.format(label="TallyVault", action="entered the TallyVault password")
+    return HALF_CONFIRMED_IMPACT.format(label=half[:1].upper() + half[1:], action="logged in")
+
+
 RELINK_IMPACT = ("Export works once the company is open, but its identity/content changed: a new GUID with the same "
                  "name takes the re-link path (Q25), never a new company.")
 RENAME_IMPACT = ("TallyVault renamed the company but kept its GUID: S1 keys a company by GUID only and updates its "
@@ -184,7 +196,7 @@ def _judge(stage: dict[str, Any], baseline: dict[str, Any], half: str) -> tuple[
     changed = [k for k in ("active_guid", "ledgers", "narrations") if stage[k] != baseline[k]]
     if changed:
         return "DIFFERENT", f"export works but {', '.join(changed)} changed", RELINK_IMPACT
-    return "CONFIRMED", "export unchanged", CONFIRMED_IMPACT
+    return "CONFIRMED", "export unchanged", half_confirmed_impact(half)
 
 
 def _shape_text(shapes: dict[str, Any]) -> str:
@@ -236,6 +248,8 @@ async def run_c(ctx: ProbeContext) -> PartResult:
     ctx.observe("gate_shapes", shapes)
     ctx.observe("sub_verdicts", {k: v[0] for k, v in halves.items()})
     outcome, summary, impacts = judge_halves({f"{k} on": v for k, v in halves.items()})
+    if outcome is Outcome.CONFIRMED:                     # both halves: the whole-probe sentence, once (review I1)
+        impacts = [CONFIRMED_IMPACT]
     login, vault_shape = _shape_text(login_pending), _shape_text(vault_pending)
     summary += f"; login prompt → {login}; TallyVault prompt → {vault_shape}"
     gate = (f"While a login prompt is open the gate sees {login}; while a TallyVault prompt is open, {vault_shape}. "

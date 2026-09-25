@@ -89,7 +89,9 @@ def judge_halves(halves: dict[str, tuple[str, str, str]]) -> tuple[Outcome, str,
     Returns the worst verdict, a summary naming EVERY half with its verdict (C46: a FAILED half must not hide a
     DIFFERENT one), and EVERY half's non-empty impact -- worst verdict first (stable within a verdict),
     de-duplicated. Ruling 2026-09-25: a CONFIRMED half's impact (e.g. R9 in 25 B) is a real spec input and is never
-    dropped because another half is worse. The caller may still choose its own impact text."""
+    dropped because another half is worse -- so every half's impact must be scoped to that half, never a claim about
+    the whole part (C47 review I1: probe 24's whole-probe CONFIRMED text beside a FAILED vault half contradicted
+    itself). The caller may still choose its own impact text."""
     worst = worst_verdict(verdict for verdict, _, _ in halves.values())
     summary = "; ".join(f"{name.replace('_', ' ')}: {text} ({verdict})" for name, (verdict, text, _) in halves.items())
     ranked = sorted(halves.values(), key=lambda half: -HALF_RANK[half[0]])
