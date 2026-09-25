@@ -193,6 +193,32 @@
 > tier-C check. Rules in [`LESSONS.md`](../../LESSONS.md) §15 rules 20b (corrected), 23–26. Spec
 > `docs/specs/2026-09-22-bi-s0-probes-design.md` "Changed 2026-09-25 (plan part 6)"; tracker rows 3/11/23/24/25.
 
+> **Changed 2026-09-25 (S0 live, plan part 7 — probe 22 forex, CONFIRMED; new Ruling C47):**
+> - **Decision 15 answered — CONFIRMED (the INR base is in the export).** A forex voucher line exports its AMOUNT as
+>   one expression holding face value, rate **and** INR base: `-$448.44 @ ? 82.99/$ = -? 37216.04` (the base currency
+>   ₹ exports as a literal `?`, followed by a space; the UI shows ₹). The extractor takes the **stated base** (the part
+>   after `=`) into every amount column and keeps currency, face value and rate in `raw`; **no conversion at read
+>   time**, and no face × rate computation. Both lines of each voucher balance to 0.00 in INR; no extra forex leaf
+>   field and no extra ledger line appear. The plain `amounts.parse_decimal` raises on this text, so the extractor
+>   needs a forex-aware amount parser (`v2/probes/reads.py` `parse_forex_amount` is the probe-side model).
+> - **R5 impact (Ruling C47):** TallyPrime values a forex ledger's balance — Opening/Closing, TB rows, group totals —
+>   at its face total × the rate of its **latest-dated** forex voucher (−$1,609.71 × 82.58 = −₹1,32,929.85), while
+>   the sales ledger keeps the vouchers' INR bases (₹1,33,113.72). So a forex party's INR balance **cannot be rebuilt
+>   by summing voucher bases**, and the TB is out by the unrealised forex difference (₹183.87). S1 reads that
+>   ledger's balance from Tally rather than recomputing it, and parity (rungs 1 and 2) must expect the difference on
+>   forex ledgers and their groups instead of flagging it.
+> - **Decision 11 parity — expression balances.** The forex party's `ClosingBalance` and `OpeningBalance` also export
+>   as the expression (`-$1609.71 @ ? 82.58/$ = -? 132929.85`), not a number. The agent's `parse_ledger_list` raises
+>   `AmountParseError` on it today. **Open for S1:** parse the stated base the same way as voucher lines, or take
+>   that ledger's balance from the ledger-level TB (probe 17's route). Probes 16 B and 11 must learn this before any
+>   re-run.
+> - Write side (S0 only, not the agent): currency masters are UI-only; multi-currency needs no feature switch in
+>   TallyPrime 7.
+>
+> *Scope caveat:* TallyPrime 7.0 Edit Log, **Educational**, under **Wine 11.0** — licensed Windows Tally is an open
+> tier-C check. Rules in [`LESSONS.md`](../../LESSONS.md) §15 rules 28–30. Spec
+> `docs/specs/2026-09-22-bi-s0-probes-design.md` "Changed 2026-09-25 (plan part 7)"; tracker row 22 and decision 15.
+
 ## 1. Context
 New product direction:
 - **BI layer.** The owner sees their business (sales, profit, who owes money, top customers, stock) and asks the AI chat. Everything is answered from **our DB**.
@@ -598,7 +624,7 @@ timeout. Every piece of agent work has a tier, and each cycle works top-down:
     - Lines, inventory lines and bill allocations have no GUID of their own in Tally. They are replaced with their voucher in the same transaction, and they go when the voucher is soft-deleted.
   - If probe 9 / 21 volumes make computed chat queries slow, add a per-ledger monthly totals table maintained on ingest. Decided in the S1 spec.
   - **All money columns are `Numeric(18,2)`, never Float** (§6 "Storage").
-  - **All amount columns hold the INR base amount** (decision 15). Voucher lines carry no currency column; where a voucher is in foreign currency, the original currency code, face value and Tally's own rate stay in `raw` JSONB for drill-down and are never aggregated. A probe must confirm the INR base amount is present on forex voucher lines (probe 22).
+  - **All amount columns hold the INR base amount** (decision 15). Voucher lines carry no currency column; where a voucher is in foreign currency, the original currency code, face value and Tally's own rate stay in `raw` JSONB for drill-down and are never aggregated. A probe must confirm the INR base amount is present on forex voucher lines (probe 22). **Changed 2026-09-25 (probe 22 CONFIRMED):** it is — the line AMOUNT's stated base (`… = -? 37216.04`); store it, keep face + rate in `raw`. A forex **ledger's** balance is at the latest voucher rate (C47), not the sum of these bases — see the header's plan-part-7 block.
 
 ## 6. The integrity (parity) system
 
@@ -1144,7 +1170,7 @@ Every probe **saves the raw Tally responses as fixtures** under `v2/tests/fixtur
 19. **Counter stability:** do `AltVchId` / `AltMstId` hold still across a multi-call capture window? This is the quiescence guard that prevents false parity alerts. (§6, R6)
 20. **Parity cost:** latency and payload size of a full ledger list + TB on a large company. (R27) **Tier C only.**
 21. **Full-history reach (decision 7b):** read `books_from` / the oldest available FY; can vouchers be fetched for an FY several years back, at what latency and payload size, and do closed/audited years behave differently? Extrapolate total storage across the whole books span. (R27, R29) **Tier C only** for the latency and size figures.
-22. **Forex vouchers (decision 15):** on a foreign-currency sale/purchase (export/import — an Indian company can still have these), does the voucher's ledger line expose the **INR base amount** alongside the foreign face value, and in which fields? Confirms that aggregating the base amount is safe and nothing needs conversion at read time. **If the base amount is not exposed, decision 15 must be revisited.** (decision 15) **Also needed by Part 2.**
+22. **Forex vouchers (decision 15):** on a foreign-currency sale/purchase (export/import — an Indian company can still have these), does the voucher's ledger line expose the **INR base amount** alongside the foreign face value, and in which fields? Confirms that aggregating the base amount is safe and nothing needs conversion at read time. **If the base amount is not exposed, decision 15 must be revisited.** (decision 15) **Also needed by Part 2.** **Changed 2026-09-25 (plan part 7, live B): CONFIRMED** — the base is stated in the AMOUNT expression; decision 15 holds. New: C47 (forex ledger valued at the latest voucher rate) and expression-form ledger balances — see the header.
 23. **GST classification and due dates:** do ledger masters expose Tally's GST classification (`TaxType`, `GSTDutyHead` or equivalent), so tax ledgers can be identified without name matching? Do Bills Receivable/Payable exports (and bill allocations) carry a due date or credit period, so overdue can be split without guessing? If either is missing, the GST tile or the overdue split is dropped from v1, never approximated. **Needed by Part 3** (GST position tile, overdue split).
 24. **Secured companies:** a company with Tally security (username/password) or TallyVault encryption, once it is open in Tally. Does XML export still work without extra credentials, and do the error shapes differ? (R2, R26)
 25. **Masters classification:** can Group export its primary group / nature, `IsRevenue` and `AffectsGrossProfit`, and can VoucherType export its parent and base type? Without them, balance-sheet and P&L ledgers can't be told apart (§6 "Rung 1") and custom voucher types can't be summed (§5 "Cloud"). (R5, R16)

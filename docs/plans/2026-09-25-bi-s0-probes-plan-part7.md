@@ -1017,7 +1017,7 @@ def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencyS
 - [x] **Step 4: Run** the file → PASS; full suite → green; record the count.
 - [x] **Step 5: Commit** `v2/probes/setup/forex_shape.py v2/tests/probes/test_forex_shape.py` (plus any fake edits):
   `feat(bi/v2): forex shape runner — throwaway-only, read back, saved (plan part 7 task 1.3)`.
-- [ ] **Step 6: Task-1 review before anything goes live.** Run the SDD spec-compliance review and the code-quality
+- [x] **Step 6: Task-1 review before anything goes live.** Run the SDD spec-compliance review and the code-quality
   review on `git diff P7_BASE..HEAD -- v2/`. It must check:
   - the runner writes only throwaways plus the currency;
   - every write has a read-back;
@@ -1027,6 +1027,10 @@ def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencyS
   - the fake's candidate knobs are commented as candidates.
 
   Fix the confirmed findings test-first, record them in `progress.md`, and add a tracker change-log row.
+
+  **Done 2026-09-25:** review `docs/code-review-bi-s0-part7-task1-2026-09-25.md` (`2de2280`, safe to run live after
+  fixes, no Critical); fix round I1–I5, M1, M6, R-SYM, R-F2 in `634f93b..42e12ca`. The findings are recorded in the
+  review's "Fix round" section and in this plan's deviations — no `progress.md` was kept (Step 0.4 stays open).
 
 ---
 
@@ -1038,7 +1042,7 @@ Logs go to `logs/` (not committed; cited by path).
 The restore point for this task is a **fresh** backup taken in step 2. `100000-company-B-loaded-2026-09-24` stays as
 the older one.
 
-- [ ] **Step 1: Pre-flight (read-only).** Same as part 6 Task 9 step 1:
+- [x] **Step 1: Pre-flight (read-only).** Same as part 6 Task 9 step 1:
   ```bash
   cd "/Users/nuvanta-mac-3/work/Tally prime"
   git log --oneline -1; uv run --project v2 pytest v2/tests -q 2>&1 | tail -1
@@ -1055,7 +1059,7 @@ the older one.
   Expected: the suite is green, `Load=100000`, one `tally.exe` with `s0probe`, and the list is exactly
   `["Sharma & Sons' Probe Traders"]`. If the list is anything else, restart through C44 (part 6 Task 9 step 2's
   snippet, `auto.control.restart("B", [COMPANIES["B"]])`).
-- [ ] **Step 2: Fresh backup of B** (Tally stops, the folder is copied, Tally starts; click "T: Continue In Educational
+- [x] **Step 2: Fresh backup of B** (Tally stops, the folder is copied, Tally starts; click "T: Continue In Educational
   Mode" when `CLICK NEEDED` shows):
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p7-backup-B-pre-forex-$(date +%F).log
@@ -1070,7 +1074,7 @@ the older one.
   EOF
   ```
   Expected: `…/s0probe-backups/100000-pre-forex-<date>`. Record it in `progress.md`.
-- [ ] **Step 3: Discovery reads, before any write** (read-only; the runner does these first as well, but look before
+- [x] **Step 3: Discovery reads, before any write** (read-only; the runner does these first as well, but look before
   you let it write):
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p7-forex-discovery-$(date +%F).log
@@ -1093,7 +1097,7 @@ the older one.
   - Record the base symbol exactly as exported. **Done 2026-09-25 (Ruling R-SYM):** company B's base currency NAME
     is a literal `?` (`logs/p7-forex-discovery-2026-09-25.log`). The runner now reads it itself
     (`forex_shape.base_currency`) and never hard-codes `₹`, so no code change is needed here.
-- [ ] **Step 4: F2.** In TallyPrime, check "Current Date" (top bar). If it is before 31-03-2026, press **F2** and set
+- [x] **Step 4: F2.** In TallyPrime, check "Current Date" (top bar). If it is before 31-03-2026, press **F2** and set
   31-03-2026. If the operator is away, the controller may drive it with **guarded** `osascript` keystrokes (LESSONS
   §15 rule 27: pid-guard every keystroke, no pause mid-sequence, screenshot before re-pressing anything, since the
   screen lags about 5 s). Under Ruling R-F2 the controller sets F2 **before** step 5 and passes
@@ -1118,7 +1122,7 @@ the older one.
   EOF
   PYTHONPATH=. uv run --project v2 python "$TMPDIR/p7_forex_shape.py" 2>&1 | tee logs/p7-forex-shape-live-$(date +%F).log
   ```
-- [ ] **Step 6: Decide by outcome** (write the decision into `progress.md` as a ruling, and into the tracker):
+- [x] **Step 6: Decide by outcome** (write the decision into `progress.md` as a ruling, and into the tracker):
 
   | `summary.json` outcome | Meaning | Next |
   |---|---|---|
@@ -1141,7 +1145,7 @@ the older one.
   | `popup` | A modal is up | Dismiss it (or restart Tally, C44). Then **restore** (step 7), because throwaway ledgers may be left behind |
   | Edition refuses forex at every route (XML and UI) | Educational/Wine limit | **Stop the part here:** restore (step 7), probe 22 stays **BLOCKED** with this reason, C36 stays, go to **Task 7** (docs only, "confirm on tier C") |
 
-- [ ] **Step 7: Restore path** (only for `popup`, the "edition refuses" row, or any sign that company B changed beyond
+- [x] **Step 7: Restore path** (only for `popup`, the "edition refuses" row, or any sign that company B changed beyond
   the currency master):
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p7-restore-B-$(date +%F).log
@@ -1158,7 +1162,7 @@ the older one.
   (One licence click.) Then check with step 1's company-list read and
   `uv run --project v2 python -m v2.probes setup-b` (verify only: it must create 0 and report no problems **under the
   old C36 code**, because Task 3 isn't merged yet).
-- [ ] **Step 8: B is unchanged apart from the currency.** Re-run the setup-b verify:
+- [x] **Step 8: B is unchanged apart from the currency.** Re-run the setup-b verify:
   `uv run --project v2 python -m v2.probes setup-b 2>&1 | tee logs/p7-setup-b-verify-after-shape-$(date +%F).log`.
   Expected: every master and voucher skipped, 0 created, the C36 note, no problems. That proves the throwaways are
   gone and the balances haven't moved.
@@ -1953,7 +1957,7 @@ PROBE = Probe(
 
 **Files:** Create `docs/code-review-bi-s0-part7-<YYYY-MM-DD>.md`.
 
-- [ ] **Step 1:** Run `superpowers:requesting-code-review` (or the `code-review` agent, opus) on
+- [x] **Step 1:** Run `superpowers:requesting-code-review` (or the `code-review` agent, opus) on
   `git diff P7_BASE..HEAD -- v2/`. Ask the reviewer to check at least:
   - **write safety:**
     - list-before-create for the currency and ledger;
@@ -1983,17 +1987,23 @@ PROBE = Probe(
     - 14 still last;
     - isolation (the probe never imports `setup`).
   - **Review Focus items 1–5**, one test each.
-- [ ] **Step 2:** Store the findings. Fix the confirmed ones test-first (`superpowers:receiving-code-review`). Re-run the
+- [x] **Step 2:** Store the findings. Fix the confirmed ones test-first (`superpowers:receiving-code-review`). Re-run the
   suite, with and without `-W error`, and record the count. The doc lists the suites **not** run: live Tally (Task 6),
   tier-C timing (⏭ Q29), and the root `tests/` suite (it doesn't collect `v2/`).
-- [ ] **Step 3: CLI smoke (no Tally):**
+- [x] **Step 3: CLI smoke (no Tally):**
   ```bash
   mkdir -p /tmp/s0-smoke-p7
   uv run --project v2 python -m v2.probes --results /tmp/s0-smoke-p7/results.json list | grep -E '^ ?22 '
   ```
   Expected: `22 forex B … not run` (no longer "not built").
-- [ ] **Step 4: Commit** the review doc and fixes (only the files named), plus a tracker change-log row with the
+- [x] **Step 4: Commit** the review doc and fixes (only the files named), plus a tracker change-log row with the
   review path.
+
+**Task 5 result (2026-09-25):** review `docs/code-review-bi-s0-part7-2026-09-25.md` (`b17dc8a`): "safe to run live:
+yes after fixes", no Critical, one Important (I1: setup-b couldn't tell a forex store from a plain-INR store). Fix
+round `3b07c9e` (I1), `5cd161a` (M1, M3), `0e7765d` (M5 text; M2/M4 recorded, no code) — see "Deviations (review fix
+round)". Step 3's CLI smoke was checked offline (`22  forex  B  B  not run`, D-notes of Tasks 3–4). The review's
+"Not run" list stands: live Tally (Task 6), tier-C timing (⏭ Q29), the root `tests/` suite.
 
 ---
 
@@ -2003,10 +2013,10 @@ PROBE = Probe(
 `v2/tests/fixtures/sync/p22_B_*` (+ `p21_B_*`, `p18_B_*` if the H2 re-runs happen),
 `docs/bi-s0-probe-results-<date>.md`. Logs go to `logs/`.
 
-- [ ] **Step 1: Pre-flight** (Task 2 step 1's commands). Also expect `$` in the currency list, no `ZZ Forex Probe`
+- [x] **Step 1: Pre-flight** (Task 2 step 1's commands). Also expect `$` in the currency list, no `ZZ Forex Probe`
   ledger, and 958 tagged vouchers (Task 2 step 8's state).
-- [ ] **Step 2: F2 ≥ 31-03-2026** (Task 2 step 4). `setup-b` also pauses for it.
-- [ ] **Step 3: Load** (the company-B loader; it writes only what is missing):
+- [x] **Step 2: F2 ≥ 31-03-2026** (Task 2 step 4). `setup-b` also pauses for it.
+- [x] **Step 3: Load** (the company-B loader; it writes only what is missing):
   ```bash
   uv run --project v2 python -m v2.probes setup-b 2>&1 | tee logs/setup-b-forex-live-$(date +%F).log
   ```
@@ -2048,7 +2058,7 @@ PROBE = Probe(
   If there is a voucher-create pause: **don't** type the voucher by hand. Stop, restore (Task 2 step 7, but using the
   **pre-forex** backup), and debug offline (`superpowers:systematic-debugging`): the live shape and the loader
   disagree.
-- [ ] **Step 4: Read-back sanity** (read-only):
+- [x] **Step 4: Read-back sanity** (read-only):
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p7-forex-readback-$(date +%F).log
   import httpx
@@ -2068,7 +2078,7 @@ PROBE = Probe(
   EOF
   ```
   (Under Educational, 101 is on 01-09 and 102 on 02-09. Under a licensed Tally, read 02-09 and 05-09.)
-- [ ] **Step 5: New restore point:**
+- [x] **Step 5: New restore point:**
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p7-backup-B-loaded-forex-$(date +%F).log
   import datetime
@@ -2082,13 +2092,13 @@ PROBE = Probe(
   EOF
   ```
   (One licence click. Tally resets F2 on this restart. Probe reads don't care about F2.)
-- [ ] **Step 6: Probe 22** (manual mode, never `--auto`):
+- [x] **Step 6: Probe 22** (manual mode, never `--auto`):
   ```bash
   uv run --project v2 python -m v2.probes run 22 --company B 2>&1 | tee logs/p22-live-$(date +%F).log
   ```
   CONFIRMED, DIFFERENT and FAILED are findings: record them and **don't re-run**. A BLOCKED "no forex" or "differs
   from the dataset" means stop: restore `…-loaded-forex-<date>` only if something changed, and debug offline.
-- [ ] **Step 7: Blast-radius re-runs (H2; recommended yes).** The dataset these two probes judge has changed. Sep 2022
+- [x] **Step 7: Blast-radius re-runs (H2; recommended yes).** The dataset these two probes judge has changed. Sep 2022
   now holds 20 vouchers, and FY 2022-23's TB includes the forex base. So re-run them on the live B, in this order,
   with 14 **not** re-run (it stays last in any session that runs it):
   ```bash
@@ -2098,13 +2108,13 @@ PROBE = Probe(
   Expected: both still CONFIRMED. 21 now reports 240 FY 2022-23 vouchers with `fy2022_month_09` at 20, and its
   size stats include the forex text. If 21's month parse or size maths chokes on the forex AMOUNT, that is a **real
   extractor finding**: record it, don't fix it live. The previous parts move to `history` automatically.
-- [ ] **Step 8: Read the numbers out:**
+- [x] **Step 8: Read the numbers out:**
   ```bash
   uv run --project v2 python -c "import json; p=json.load(open('v2/probes/results/results.json'))['probes']; \
   [print(k, p[k]['parts']['B']['outcome'], '—', p[k]['parts']['B']['summary']) for k in ('22','21','18')]; \
   print(json.dumps(p['22']['parts']['B']['observations'], ensure_ascii=False, indent=1))" 2>&1 | tee logs/s0-p7-numbers-$(date +%F).log
   ```
-- [ ] **Step 9: List, report, commit the evidence:**
+- [x] **Step 9: List, report, commit the evidence:**
   ```bash
   uv run --project v2 python -m v2.probes list | grep -E '^ ?(18|21|22) '
   uv run --project v2 python -m v2.probes report
@@ -2117,6 +2127,29 @@ PROBE = Probe(
   Then update tracker row 22 (outcome, proof, logs, backup name), rows 21/18 (the re-run line), and "Resume here", with
   a change-log row, **in the same turn**.
 
+**Task 6 result (live 2026-09-25, evidence `b9f7234`; suite 910 green):**
+- **Step 3 (load):** run 1 (`logs/setup-b-forex-live-2026-09-25.log`) created the USD ledger + 101/102 and the I1
+  forex read-back passed, but exited 1 on the Sundry Debtors magnitude → **Ruling C47** (see the Step 3 result above;
+  fixed offline `2c568be`, `136e5f6`, docs `ad23dfd`). Run 2 (`logs/setup-b-forex-live-2026-09-25-rerun.log`):
+  created 0, skipped 1/2/3/5/26/960, TB note "observed 183.87; expected 183.87 — C47", I1 note, no problems →
+  `Company B loaded`, stamped `company_b_loaded_at` 2026-09-25T16:51:08+05:30.
+- **Step 4 (read-back sanity):** covered by setup-b's own I1 check (every forex voucher read in its own day and
+  compared line by line with the dataset) plus probe 22's observations; no separate `p7-forex-readback` log was taken.
+- **Step 5 (backup):** `s0probe-backups/100000-company-B-loaded-forex-2026-09-25`
+  (`logs/p7-backup-B-loaded-forex-2026-09-25.log`) — the current baseline of company B.
+- **Step 6 (probe 22):** **CONFIRMED** (`logs/p22-live-2026-09-25.log`): both USD sales read with probe 5's request,
+  every primary line route `stated` (`-$448.44 @ ? 82.99/$ = -? 37216.04`, `-$1161.27 @ ? 82.58/$ = -? 95897.68`),
+  balanced, base/face/rate/currency = dataset, no extra forex field, no unexpected line. Recorded, not judged: the
+  USD party's `CurrencyName` `$`, ClosingBalance **expression** `-$1609.71 @ ? 82.58/$ = -? 132929.85` (C47,
+  183.87 from the vouchers' bases); currencies `$` (USD) and `?` (INR). Fixtures `p22_B_forex_sales.xml`,
+  `p22_B_usd_ledger.xml`, `p22_B_currencies.xml`.
+- **Step 7 (re-runs):** probe 21 B — first attempt **BLOCKED** only because the controller fed `/dev/null` to its
+  interactive period-lock ask (EOFError; process slip, `logs/p21-rerun-forex-2026-09-25-eof-blocked.log`, kept in
+  `history`); re-run answering `none` → **CONFIRMED**, FY 2022-23 = 240 (`logs/p21-rerun-forex-2026-09-25.log`).
+  Probe 18 B → **CONFIRMED** with C47 in the expected figures (`logs/p18B-rerun-forex-2026-09-25.log`). 14 not re-run.
+- **Step 8/9:** numbers read from `v2/probes/results/results.json` (no separate `s0-p7-numbers` log); results doc
+  regenerated into `docs/bi-s0-probe-results-2026-09-24.md` (title 2026-09-25); committed `b9f7234`.
+
 ---
 
 ### Task 7: Spec, tracker, LESSONS, Part 1 spec, roadmap (same session)
@@ -2124,7 +2157,7 @@ PROBE = Probe(
 **Files:** `docs/specs/2026-09-22-bi-s0-probes-design.md`, `docs/specs/2026-09-21-bi-part1-sync-design.md`,
 `docs/plans/2026-09-22-bi-part1-tracker.md`, `docs/roadmap.md`, `LESSONS.md`, and this plan (tick the boxes).
 
-- [ ] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 7):**` covering:
+- [x] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 7):**` covering:
   - (a) C36 lifted: how 101/102 are written (currency master, party, AMOUNT form, no bills), with the evidence folder.
     Mark the "Changed 2026-09-24 (Ruling C36)" line **superseded** (keep its text).
   - (b) §4.3: the Ledgers row gains the USD export party (or notes S-A), Groups/Ledgers mention the Currency master,
@@ -2135,7 +2168,7 @@ PROBE = Probe(
   - (f) §11.5 row 22: `forex_sales`, `usd_ledger`, `currencies`.
   - If the edition refused forex, record instead: "probe 22 BLOCKED — Educational/Wine can't store forex (evidence …);
     confirm on tier C".
-- [ ] **Step 2: Tracker.**
+- [x] **Step 2: Tracker.**
   - Row 22 ✅ with its real outcome and proof (commit SHAs, logs, fixtures, backups `100000-pre-forex-<date>` and
     `100000-company-B-loaded-forex-<date>`).
   - Rows 21/18 get their re-run line.
@@ -2143,7 +2176,7 @@ PROBE = Probe(
   - Rewrite "Resume here": the S0 exit-gate check (§10) is next, with the B restore point `…-loaded-forex-<date>`.
   - Add a change-log row naming every contradicted expectation (e.g. the tag names, F2-only, UI-only currency, a ledger
     closing expression).
-- [ ] **Step 3: LESSONS.md §15, new rule 28** (and 29 if needed):
+- [x] **Step 3: LESSONS.md §15, new rule 28** (and 29 if needed):
   - how a forex voucher must be written over XML (the proven AMOUNT form, currency master and ledger currency, what
     failed);
   - how it exports (stated base or not, extra fields, ledger closing form);
@@ -2151,11 +2184,18 @@ PROBE = Probe(
   - the delete-verification window trap (fact 3).
 
   Each rule carries the scope caveat: TallyPrime 7.0 Edit Log, **Educational**, Wine 11.0.
-- [ ] **Step 4: Part 1 spec.** One dated "Changed" line on decision 15 / §5 "Cloud" amount columns: CONFIRMED (base in
+- [x] **Step 4: Part 1 spec.** One dated "Changed" line on decision 15 / §5 "Cloud" amount columns: CONFIRMED (base in
   the export), DIFFERENT (S2 computes face × rate, and the rounding rule), or FAILED (decision 15 reopened). Add the
   ledger-closing note for decision 11 parity if it was an expression.
-- [ ] **Step 5: Roadmap.** Set C S0 row: probe 22 done (outcome); what remains (the §10 exit gate, then the S1 spec).
-- [ ] **Step 6: Commit** docs only: `docs(bi/v2): plan part 7 results into specs, tracker, LESSONS, roadmap`.
+- [x] **Step 5: Roadmap.** Set C S0 row: probe 22 done (outcome); what remains (the §10 exit gate, then the S1 spec).
+- [x] **Step 6: Commit** docs only: `docs(bi/v2): plan part 7 results into specs, tracker, LESSONS, roadmap`.
+
+**Task 7 result (2026-09-25):** S0 spec "Changed 2026-09-25 (plan part 7)" (C36 line marked superseded; §4.3, §6
+batch 5, §7 probe 22, §11.4, §11.5 row 22); Part 1 spec "Changed 2026-09-25 (S0 live, plan part 7)" (decision 15
+answered, C47's R5 impact, expression balances for decision 11); tracker row 22 ✅, rows 18/21 re-run lines,
+decision 15 row, §0 S0 row, "Resume here", change log; LESSONS §15 rules 28–30; roadmap Set C S0 row. **Part 7 is
+complete** apart from Step 0.4 (no SDD `progress.md` was kept — rulings live in this file) and the open follow-ups
+below.
 
 ---
 
@@ -2567,11 +2607,25 @@ the deferred probe 9), F2 (Task 1's `_books` helpers drop the seeded `$`), F3 (`
     gap = the `Opening Stock` row — the gap is unchanged. **Expected: CONFIRMED** on the re-run.
   - **Probe 21 B:** counts and sizes only — unchanged (Sep 2022 = 20, FY 2022-23 = 240, kind total 238).
   - **Probe 17:** company A only — unaffected.
-  - **Probe 16 B: a real gap, flagged (not fixed).** The agent's `parse_ledger_list` (`v2/agent/tally/reports.py`)
+  - **Probe 16 B: a real gap, flagged (not fixed) — OPEN (2026-09-25; see "Open follow-ups after part 7").** The agent's `parse_ledger_list` (`v2/agent/tally/reports.py`)
     raises `AmountParseError` on the USD party's expression closing, so a 16 B re-run would BLOCK with a harness
     error. Pinned by `test_b_the_live_forex_closing_is_a_harness_error_today` and
     `test_the_live_forex_closing_breaks_parse_ledger_list`; the other 16 B / masters tests read the candidate plain
     form. It is not re-run in Task 6 (M4). It needs a probe-16 fix (and an S1 parser decision) before any 16 B re-run.
     Probe 11 reads Ledger OpeningBalance, which live exports as the same expression for this ledger — not modelled in
-    the fake (its opening stays 0.00); same "before any re-run" caveat.
+    the fake (its opening stays 0.00); same "before any re-run" caveat — **OPEN**.
 
+## Open follow-ups after part 7 (recorded 2026-09-25, Task 7)
+
+- **OPEN — probe 16 B and probe 11 must learn the forex expression-form balances before any re-run.** The USD party
+  `Gulf Office Supplies LLC (USD)` exports ClosingBalance **and** OpeningBalance as an expression
+  (`-$1609.71 @ ? 82.58/$ = -? 132929.85`). The agent's `parse_ledger_list` (`v2/agent/tally/reports.py`) raises
+  `AmountParseError` on it, so a 16 B re-run would BLOCK with a harness error (pinned by
+  `test_b_the_live_forex_closing_is_a_harness_error_today`, `test_the_live_forex_closing_breaks_parse_ledger_list`);
+  probe 11's ledger half reads OpeningBalance, and the fake doesn't model that expression (its opening stays 0.00).
+  S1 must also decide how the extractor parses these balances (take the stated base, or read the ledger's balance
+  from the TB). See "Deviations (Ruling C47)" → Blast radius.
+- **OPEN — review M4:** the recorded B results of probes **3, 11, 14, 16, 25** were judged against the pre-part-7
+  dataset (958 vouchers, 25 ledgers). A later re-run that differs (esp. 16 B) is the dataset change, not a regression.
+- **Next:** the S0 exit-gate check (S0 spec §10), then the S1 spec. B's restore point is
+  `s0probe-backups/100000-company-B-loaded-forex-2026-09-25`.

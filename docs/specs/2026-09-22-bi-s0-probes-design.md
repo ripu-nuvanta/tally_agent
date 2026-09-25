@@ -10,7 +10,8 @@
 > **Changed 2026-09-24:** §4.3's duplicate-ledger-name pause (R9) is no longer a loader rule — it is a probe
 > observation, re-scoped to probe 25's B part by [`plans/2026-09-23-bi-s0-company-b-loader.md`](../plans/2026-09-23-bi-s0-company-b-loader.md);
 > `setup-b` never runs it. See §4.3.
-> **Changed 2026-09-24 (Ruling C36):** **probe 22 is BLOCKED.** The 2 USD export sales (tags 101/102) were being written
+> **Changed 2026-09-24 (Ruling C36)** — *superseded 2026-09-25 by "Changed 2026-09-25 (plan part 7)" below: C36 is
+> lifted, 101/102 are written as forex and probe 22 ran CONFIRMED; the original text is kept:* **probe 22 is BLOCKED.** The 2 USD export sales (tags 101/102) were being written
 > as plain INR sales (no Currency master, no ledger CURRENCYNAME, no forex AMOUNT), so probe 22 would have measured no
 > forex. `setup-b` now skips them (tags kept, nothing renumbers), leaves them out of the expected figures, and reports
 > one note. Unblocking needs a live-probed forex write shape first (review `code-review-bi-s0-company-b-live-fixes-2026-09-24.md` #2).
@@ -130,6 +131,36 @@
 > (g) §6 batch 6 is **manual only** (never `--auto`); §11.5 rows 3, 23, 24, 25 updated to the as-built step names.
 > Full detail: `docs/plans/2026-09-25-bi-s0-probes-plan-part6.md`, `.superpowers/sdd/2026-09-25-bi-s0-probes-plan-part6/progress.md`,
 > `docs/code-review-bi-s0-part6-2026-09-25.md`, tracker rows 3/11/23/24/25.
+> **Changed 2026-09-25 (plan part 7):** probe 22 built and run live on company B — **CONFIRMED**; Ruling C36 lifted;
+> new Ruling **C47**. Plan `docs/plans/2026-09-25-bi-s0-probes-plan-part7.md`; reviews
+> `docs/code-review-bi-s0-part7-task1-2026-09-25.md`, `docs/code-review-bi-s0-part7-2026-09-25.md`; evidence
+> `271ff01` (write shape), `b9f7234` (load + probe runs); results `docs/bi-s0-probe-results-2026-09-24.md`
+> (regenerated 2026-09-25), `v2/probes/results/results.json` `probes.22`.
+> (a) **C36 lifted — how 101/102 are written.** A live shape run on throwaways
+> (`v2/tests/fixtures/sync/forex_shape_2026-09-25_run1_currency_refused/`, `…_run2/`) found: the `$` Currency
+> master **cannot be created over XML** (EXCEPTIONS=1, and Tally keeps `$` as an import-exception master that then
+> blocks a UI create — B restored), so `$` (Formal name USD) is created **in the UI** and `setup-b` never sends a
+> Currency create (it stops before any write if `$` is missing, naming the UI steps). The party is a **new** ledger
+> `Gulf Office Supplies LLC (USD)` under Sundry Debtors, `CURRENCYNAME` `$`, not bill-wise, no GSTIN, used only by
+> 101/102 (Ruling P7-2 = S-B; the INR `Gulf Office Supplies LLC` carries 87 INR vouchers and is never altered). The
+> line AMOUNT is `-$448.44 @ 82.99/$ = -37216.04` — the rate and base **without** a base-currency symbol (V1b); the
+> same text with the base symbol (`@ ?82.99/$`) was refused. No bills, no inventory, no GST on these two. Multi-currency
+> needed no company feature switch (TallyPrime 7). The superseded C36 behaviour (skip, 958/238, one note) is gone.
+> (b) §4.3: the Ledgers row names the separate USD party, a Currencies row is added, and the loader rules gain
+> "currencies: list, never create; a party's currency is never altered".
+> (c) §7 probe 22 as built — steps, verdict table, live outcome (CONFIRMED) and the recorded C47 observation.
+> (d) §6 batch 5: "(BLOCKED — C36)" struck.
+> (e) §11.4 gains the formerly-skipped exemption (and the forex read-back) cases.
+> (f) §11.5 row 22: `forex_sales`, `usd_ledger`, `currencies`.
+> **New finding (Ruling C47):** TallyPrime values a forex ledger's balance (Opening/Closing, TB, group totals) at its
+> face total × the rate of its **latest-dated** forex voucher (−$1,609.71 × 82.58 = −₹1,32,929.85), while the sales
+> ledger keeps the vouchers' INR bases (₹1,33,113.72) — so the TB is out by the unrealised forex difference ₹183.87.
+> The loader's expected figures now model that (`expected_figures`, `Expected.forex_revaluation`); probe 18 B re-run
+> CONFIRMED with it; probe 21 B re-run CONFIRMED (FY 2022-23 = 240). Other rules found: ₹ exports as a literal `?`
+> (the UI shows ₹); a ledger that ever carried a voucher can't be deleted, even after the voucher is. **Open:** probes
+> 16 B and 11 read the USD party's expression-form ClosingBalance/OpeningBalance, which the agent's
+> `parse_ledger_list` can't parse (AmountParseError) — both need that before any re-run; probes 3/11/14/16/25 B were
+> judged against the pre-part-7 dataset (review M4). *Scope caveat:* TallyPrime 7.0 Edit Log, Educational, Wine 11.0.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -251,7 +282,8 @@ The float `parse_amount`, `writer.py`, `import_builder.py` (except the two helpe
 | Area | Content |
 |---|---|
 | Groups | Custom sub-groups "National Creditors" and "Local Creditors" under Sundry Creditors |
-| Ledgers | 6 debtors (one Hindi name "शर्मा ट्रेडर्स", one USD export customer, one **not** bill-wise), 4 creditors under the custom sub-groups, 1 bank, cash, sales, purchase, 3 expense ledgers, CGST / SGST / IGST input and output, capital |
+| Ledgers | 6 debtors (one Hindi name "शर्मा ट्रेडर्स", one USD export customer, one **not** bill-wise) — *changed 2026-09-25 (plan part 7): the USD export sales go to a 7th, dedicated debtor `Gulf Office Supplies LLC (USD)` (`CURRENCYNAME` `$`, not bill-wise, no GSTIN, outside the debtor rotation); the INR `Gulf Office Supplies LLC` keeps its INR vouchers and is never altered; 26 ledgers in all* — 4 creditors under the custom sub-groups, 1 bank, cash, sales, purchase, 3 expense ledgers, CGST / SGST / IGST input and output, capital |
+| Currencies (probe 22) | *Added 2026-09-25 (plan part 7):* `$` (Formal name USD, 2 decimals) beside the base `?` (INR; ₹ exports as `?`). **Created in the UI**, never over XML — an XML Currency create is refused and leaves an import-exception master |
 | Openings (probe 11) | Opening balances on capital, bank and 2 debtors; one debtor with an opening **bill**; opening stock on 2 items |
 | Stock (probe 15) | Units "Nos" and compound unit "Box of 10 Nos"; 5 items, one using the compound unit |
 | Vouchers | FY 2022-23 → 2025-26, about 20 per month (~960): sales (some with inventory lines, some on "Sales - GST"), purchases, receipts and payments with bill allocations (New Ref / Agst Ref), credit periods on some bills (probe 23), Hindi narrations, 2 USD export sales (probe 22), 2 cancelled and 2 optional vouchers (probe 3) |
@@ -265,6 +297,11 @@ The float `parse_amount`, `writer.py`, `import_builder.py` (except the two helpe
 - A flag that doesn't stick on import (e.g. cancelled, optional) turns into a **pause step**: the loader names the
   voucher and asks you to set it in the UI, then reads it back.
 - Ends by checking per-FY voucher counts and closing balances against the expected figures.
+- *Added 2026-09-25 (plan part 7):* **Currencies: list, never create.** A dataset currency missing from the company
+  stops the load before any write, with the UI steps (Create → Currency). **A party's currency is never altered by
+  the loader** (an existing ledger with the wrong currency is a problem, not an alter). Every forex voucher is read
+  back in its own day and compared line by line (ledger, currency, face, rate, INR base) with the dataset (review
+  I1). Expected balances value a forex ledger at the latest voucher rate (C47).
 - ~~**Duplicate ledger names (R9):** never attempted via XML (rule 10). A pause step asks you to try creating a
   ledger with an existing name under another parent in the UI and record what Tally says.~~ **Moved 2026-09-24:**
   not a loader rule — this UI pause belongs to probe 25's B part, and `setup-b` does not run it (still never
@@ -463,7 +500,7 @@ interface: each `pause` is performed, each `ask` is answered, and every action i
 | 3 | A | 3, 4, 6, 12, 23, 25 (A parts) | Non-mutating reads |
 | 4 | A | 7, 8, 10, then **13 last** → anchors check | Mutating; 13 restores A, so it goes last. In auto mode probe 10 runs popup → no company → quit, then reopens A so 13 can run (ruling 2026-09-22) |
 | — | B | `setup-b` | Loader + its pause steps |
-| 5 | B | 16, 18 (B parts), **5, then 21**, 3, 11, 15, 22 (BLOCKED — C36), 23, 25 (B parts), then **14 last** | Changed 2026-09-24: 5 runs immediately before 21 — 21 fetches with 5's confirmed `voucher_month` request (S0-D7); "21 first" is read as "first after the request it depends on". Changed 2026-09-24 (plan part 5, Ruling Q6): 14 runs last — its deliberately malformed request may upset Tally |
+| 5 | B | 16, 18 (B parts), **5, then 21**, 3, 11, 15, 22 ~~(BLOCKED — C36)~~ *(unblocked 2026-09-25, plan part 7)*, 23, 25 (B parts), then **14 last** | Changed 2026-09-24: 5 runs immediately before 21 — 21 fetches with 5's confirmed `voucher_month` request (S0-D7); "21 first" is read as "first after the request it depends on". Changed 2026-09-24 (plan part 5, Ruling Q6): 14 runs last — its deliberately malformed request may upset Tally |
 | 6 | C | 24 | Security, then Vault. Changed 2026-09-25 (plan part 6): **manual only** — never `--auto` (every step is a person at the TallyPrime UI); `--all --auto` reaching 24 BLOCKs cleanly |
 
 ## 7. Probe methods
@@ -615,13 +652,43 @@ saves its fixture per §5.6.
   Fixtures: `p15_B_hindi_ledger.xml`, `p15_B_hindi_narration.xml`, `p15_B_compound_unit_item.xml`,
   `p15_B_compound_unit_voucher.xml`, `p15_B_stock_summary.xml`.
 
-**Probe 22 — Forex** · B · feeds decision 15 · **BLOCKED 2026-09-24 (C36)** — `setup-b` skips the 2 USD export
-sales until a forex write shape is live-verified; see the header's "Changed 2026-09-24 (Ruling C36)".
+**Probe 22 — Forex** · B · feeds decision 15 · ~~**BLOCKED 2026-09-24 (C36)** — `setup-b` skips the 2 USD export
+sales until a forex write shape is live-verified; see the header's "Changed 2026-09-24 (Ruling C36)".~~
+*Superseded 2026-09-25 — built and run live, see "Changed 2026-09-25 (plan part 7)" at the end of this probe.*
 - The 2 USD export sales: record each line's raw AMOUNT text (it may be an expression like `$… @ ₹…/$ = ₹…`) and
   any *candidate* forex fields. `amounts.parse_decimal` raising on the expression is expected; the probe records
   the raw text.
 - **CONFIRMED** if the INR base amount comes from a field, or from one unambiguous parse rule, and balances to
   0.00 per voucher. **FAILED** → decision 15 is revisited.
+- **Changed 2026-09-25 (plan part 7) — as built and run live: CONFIRMED.** `requires=(0, 5)`, educational-sensitive.
+  Steps: `forex_sales` — probe 5's confirmed `voucher_month` request (the extractor's own) for the Sep-2022 window
+  (`month_window`; educational 01..02-09-2022, C43-safe); `usd_ledger` — the forex party's Ledger row (Name, Parent,
+  CurrencyName, Opening/ClosingBalance); `currencies` — the Currency list. Each voucher is judged on its **primary
+  lines** only (`reads.primary_lines`: a live voucher exports ALLLEDGERENTRIES and LEDGERENTRIES for the same postings).
+  Per line: the route (`stated` = forex expression with `= base`; `computed` = expression without a base; `field` =
+  plain number + a forex leaf field; `plain_no_forex`; `unparsed`), the base, and currency/face/rate vs the dataset.
+  Verdict, first match wins:
+
+  | Condition | Outcome |
+  |---|---|
+  | a dataset line is plain INR with no forex (`plain_no_forex`) | **BLOCKED** — the C36 failure again; re-run the shape probe / setup-b |
+  | a ledger line the dataset voucher doesn't have | **FAILED** "unexpected line(s)" (a Tally finding) |
+  | a line parses to no base | **FAILED** (decision 15 revisited) |
+  | a voucher doesn't balance to 0.00 in INR | **FAILED** |
+  | the stored base ≠ the dataset | **BLOCKED** (drift — restore / re-verify) |
+  | stored currency / face / rate ≠ the dataset | **BLOCKED** (drift) |
+  | every route `stated` or `field` | **CONFIRMED** — decision 15 holds |
+  | otherwise (base only as face × rate) | **DIFFERENT** — S2 computes the base |
+
+  The forex party's balance and the currencies are **recorded, not judged**: `closing_form` (plain / expression),
+  `closing_base`, `bases_total`, `revalued_at_latest_rate`, `revaluation_difference` (C47); an expression closing or a
+  C47 revaluation each add a sentence to the summary and `spec_impact`. A missing USD sale → BLOCKED (run setup-b).
+  **Live 2026-09-25: CONFIRMED** — both sales `stated`: `-$448.44 @ ? 82.99/$ = -? 37216.04` and
+  `-$1161.27 @ ? 82.58/$ = -? 95897.68` (₹ exports as `?` followed by a space), balanced, base/face/rate/currency =
+  dataset, no extra forex field, no unexpected line. Recorded: the USD party's ClosingBalance is an **expression**,
+  `-$1609.71 @ ? 82.58/$ = -? 132929.85` — valued at the **latest** voucher rate (C47), ₹183.87 from the sum of the
+  bases (−₹1,33,113.72). Fixtures `p22_B_forex_sales.xml`, `p22_B_usd_ledger.xml`, `p22_B_currencies.xml`; log
+  `logs/p22-live-2026-09-25.log`.
 
 **Probe 23 — GST classification and due dates** · A + B · feeds Part 3 tiles
 - A: *candidate* fields (TaxType, GSTDutyHead, TypeOfDutyTax) on the CGST / SGST / IGST ledgers; empty on non-tax
@@ -925,6 +992,10 @@ changes no current code (isolation test + `git status --porcelain`), and the roo
 | A master that already exists | Not re-created (LESSONS §15 rule 10) |
 | Company without "Probe" in its name | Refused before any request |
 | A read-back that doesn't match (e.g. cancelled flag dropped) | Turns into a pause step naming the voucher |
+| *Added 2026-09-25 (plan part 7):* the formerly skipped tags 101/102 missing from an otherwise complete FY 2022-23 | A **note** ("written now — skipped under C36 until plan part 7"), not a problem — only when the missing tags ⊆ `FORMERLY_SKIPPED_TAGS` **and** pre-count + missing = expected (D11) |
+| *Added 2026-09-25:* any other gap (or an extra / duplicated voucher) in that FY | Still a **problem** (exit 1, no stamp) |
+| *Added 2026-09-25:* the dataset currency `$` absent from the company | Stops before any write, naming the UI steps; never sends a Currency create (D8) |
+| *Added 2026-09-25:* a forex voucher stored as plain INR, or with another base / face / rate / currency | A **problem** naming the `…pre-forex-with-usd…` backup; exit 1, no stamp (review I1) |
 
 ### 11.5 Fixture matrix
 
@@ -958,7 +1029,7 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 | 18 | `A_tb_asof_2025-10-31`, `A_bills_receivable_asof_2025-09-30`, `A_bills_payable_asof_2025-09-30`, `A_stock_summary_asof_2025-09-30`, `A_vouchers_to_2025-10-31`, `B_tb_asof_2023-03-31` — **as built (plan part 5, C43/C33):** the 30-09-2025 bills/stock dates moved to **31-10-2025** and the untyped `vouchers_to_2025-10-31` read is replaced by an explicit `A_vouchers_fy` (whole-FY) fetch: `A_tb_asof_2025-10-31`, `A_bills_receivable_asof_2025-10-31`, `A_bills_payable_asof_2025-10-31`, `A_stock_summary_asof_2025-10-31`, `A_stock_item_openings`, `A_vouchers_fy`, `A_ledger_list`, `A_group_list`; B adds `B_ledger_list`, `B_group_list` alongside `B_tb_asof_2023-03-31`. The superseded 2025-09-30 / untyped `vouchers_to_2025-10-31` captures are kept byte-for-byte at [`v2/tests/fixtures/sync/c33_untyped_2026-09-23/`](../../v2/tests/fixtures/sync/c33_untyped_2026-09-23/), not deleted. |
 | 19 | `capture_quiet_{1,2,3}_{counters_start,ledgers,tb,counters_end}`, `after_ui_view`, `capture_moving_*` |
 | 21 | `books_from`, `fy2022_month_{04..03}`, `fy2025_month_03` (current-FY sample, sizes only), `period_locked_read` (if lockable) |
-| 22 | `forex_sales` |
+| 22 | `forex_sales` — **as built (plan part 7):** `forex_sales` (probe 5's month request, Sep 2022), `usd_ledger`, `currencies`; the write-shape evidence is a separate runner-written folder, `forex_shape_2026-09-25_run1_currency_refused/` and `forex_shape_2026-09-25_run2/` |
 | 23 | `A_gst_ledgers`, `B_bills_credit_period`, `B_bills_receivable_due` (as built, plan part 6: unchanged — `B_bills_credit_period` is June 2023 via probe 5's request, `B_bills_receivable_due` is Bills Receivable as-on 31-03-2026) |
 | 24 | `baseline`, `security_on`, `vault_on` — **as built (plan part 6), part C:** each of `C_baseline`, `C_security_on`, `C_vault_on` is five reads, `…_{company_list,active_company,counters,ledgers,vouchers}`; plus the gate reads `C_security_login_pending_{company_list,active_company}`, `C_security_on_ready_{company_list,active_company}`, `C_vault_prompt_pending_{company_list,active_company}`, `C_vault_on_ready_{company_list,active_company}` (23 fixtures; the plan's `vault_password_pending` was built as `vault_prompt_pending`) |
 | 25 | `A_groups`, `A_voucher_types`, `B_voucher_types` (as built, plan part 6: adds `B_ledgers_after_duplicate_attempt`, the R9 read-back) |
