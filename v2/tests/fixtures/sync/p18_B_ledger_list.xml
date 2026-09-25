@@ -126,6 +126,15 @@
       <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
      </LANGUAGENAME.LIST>
     </LEDGER>
+    <LEDGER NAME="Gulf Office Supplies LLC (USD)" RESERVEDNAME="">
+     <PARENT TYPE="String">Sundry Debtors</PARENT>
+     <LANGUAGENAME.LIST>
+      <NAME.LIST TYPE="String">
+       <NAME>Gulf Office Supplies LLC (USD)</NAME>
+      </NAME.LIST>
+      <LANGUAGEID TYPE="Number"> 1033</LANGUAGEID>
+     </LANGUAGENAME.LIST>
+    </LEDGER>
     <LEDGER NAME="HDFC Bank Current A/c" RESERVEDNAME="">
      <PARENT TYPE="String">Bank Accounts</PARENT>
      <LANGUAGENAME.LIST>

@@ -15,7 +15,7 @@
       "Indirect Expenses": "-1343000.00"
     },
     "company_a_reset_at": "2026-09-23T11:06:28+05:30",
-    "company_b_loaded_at": "2026-09-24T13:02:33+05:30",
+    "company_b_loaded_at": "2026-09-25T16:51:08+05:30",
     "company_c_loaded_at": "2026-09-25T10:47:22+05:30"
   },
   "confirmed_requests": {
@@ -2308,15 +2308,15 @@
                   "match": true
                 },
                 "Sales Accounts": {
-                  "tb": "969109.99",
-                  "computed": "969109.99",
+                  "tb": "1102223.71",
+                  "computed": "1102223.71",
                   "match": true
                 }
               },
               "stock_bearing": {
                 "Current Assets": {
-                  "tb": "-1821823.89",
-                  "computed": "-1797373.89",
+                  "tb": "-1954753.74",
+                  "computed": "-1930303.74",
                   "match": false,
                   "opening_stock": "-24450.00",
                   "gap": "-24450.00",
@@ -2328,7 +2328,7 @@
             "tb_opening_stock_row": {
               "present": true,
               "closing_balance": "-24450.00",
-              "tb_rows": 16
+              "tb_rows": 18
             },
             "sub_verdicts": {
               "tb": "CONFIRMED"
@@ -2344,7 +2344,7 @@
             "p18_B_group_list.xml"
           ],
           "manual_steps": [],
-          "ran_at": "2026-09-24T18:19:39+05:30"
+          "ran_at": "2026-09-25T16:52:49+05:30"
         }
       },
       "history": [
@@ -2763,6 +2763,73 @@
           ],
           "manual_steps": [],
           "ran_at": "2026-09-23T12:10:33+05:30"
+        },
+        {
+          "part": "B",
+          "outcome": "CONFIRMED",
+          "summary": "TB as-on 31-03-2023 equals the dataset for all 5 primary groups, and the stock-bearing group reconciles via its Opening Stock row [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "tb": {
+              "verdict": "CONFIRMED",
+              "groups": {
+                "Capital Account": {
+                  "tb": "1000000.00",
+                  "computed": "1000000.00",
+                  "match": true
+                },
+                "Current Liabilities": {
+                  "tb": "401323.97",
+                  "computed": "401323.97",
+                  "match": true
+                },
+                "Indirect Expenses": {
+                  "tb": "-55333.11",
+                  "computed": "-55333.11",
+                  "match": true
+                },
+                "Purchase Accounts": {
+                  "tb": "-493276.96",
+                  "computed": "-493276.96",
+                  "match": true
+                },
+                "Sales Accounts": {
+                  "tb": "969109.99",
+                  "computed": "969109.99",
+                  "match": true
+                }
+              },
+              "stock_bearing": {
+                "Current Assets": {
+                  "tb": "-1821823.89",
+                  "computed": "-1797373.89",
+                  "match": false,
+                  "opening_stock": "-24450.00",
+                  "gap": "-24450.00",
+                  "reconciled": true
+                }
+              },
+              "mismatched": []
+            },
+            "tb_opening_stock_row": {
+              "present": true,
+              "closing_balance": "-24450.00",
+              "tb_rows": 16
+            },
+            "sub_verdicts": {
+              "tb": "CONFIRMED"
+            },
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "A TB as-on a closed year's end is history on company B too — every primary group equals the dataset, the stock-bearing one via its own `Opening Stock` row: parity has a valid anchor during the backfill, and R30 needs no suspension (decision 11).",
+          "fixtures": [
+            "p18_B_tb_asof_2023-03-31.xml",
+            "p18_B_ledger_list.xml",
+            "p18_B_group_list.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-24T18:19:39+05:30"
         }
       ],
       "remaining": []
@@ -5687,6 +5754,618 @@
       "parts": {
         "B": {
           "outcome": "CONFIRMED",
+          "summary": "FY 2022-23 reached month by month: 12/12 months exact (240 vouchers; the cancelled pair reported, not judged); BooksFrom 01-04-2022; sizes for 8 voucher kinds. Timings recorded (Wine — not representative); the tier-C timing half stays ⏭ (Q29).",
+          "observations": {
+            "books_from": {
+              "exported": "20220401",
+              "expected": "01-04-2022",
+              "match": true
+            },
+            "months": {
+              "fy2022_month_04": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-04-01",
+                  "2022-04-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 758098
+              },
+              "fy2022_month_05": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-05-01",
+                  "2022-05-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757721
+              },
+              "fy2022_month_06": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-06-01",
+                  "2022-06-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757002
+              },
+              "fy2022_month_07": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-07-01",
+                  "2022-07-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 758665
+              },
+              "fy2022_month_08": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-08-01",
+                  "2022-08-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757899
+              },
+              "fy2022_month_09": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-09-01",
+                  "2022-09-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 691442
+              },
+              "fy2022_month_10": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-10-01",
+                  "2022-10-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757874
+              },
+              "fy2022_month_11": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-11-01",
+                  "2022-11-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757995
+              },
+              "fy2022_month_12": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-12-01",
+                  "2022-12-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757979
+              },
+              "fy2022_month_01": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2023-01-01",
+                  "2023-01-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757902
+              },
+              "fy2022_month_02": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 18,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2023-02-01",
+                  "2023-02-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [
+                  201,
+                  202
+                ],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 661941
+              },
+              "fy2022_month_03": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2023-03-01",
+                  "2023-03-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757909
+              }
+            },
+            "kinds": {
+              "sales+inventory+bills": {
+                "count": 79,
+                "xml_bytes": 3960303,
+                "json_bytes": 676737,
+                "column_bytes": 98196,
+                "rows": 553,
+                "xml_per_voucher": 50130,
+                "json_per_voucher": 8566,
+                "column_per_voucher": 1243,
+                "rows_per_voucher": "7.00"
+              },
+              "sales+inventory": {
+                "count": 13,
+                "xml_bytes": 641477,
+                "json_bytes": 105437,
+                "column_bytes": 13837,
+                "rows": 78,
+                "xml_per_voucher": 49344,
+                "json_per_voucher": 8111,
+                "column_per_voucher": 1064,
+                "rows_per_voucher": "6.00"
+              },
+              "purchase+inventory+bills": {
+                "count": 60,
+                "xml_bytes": 3012256,
+                "json_bytes": 518320,
+                "column_bytes": 74344,
+                "rows": 420,
+                "xml_per_voucher": 50204,
+                "json_per_voucher": 8639,
+                "column_per_voucher": 1239,
+                "rows_per_voucher": "7.00"
+              },
+              "receipt+bills": {
+                "count": 40,
+                "xml_bytes": 608108,
+                "json_bytes": 116876,
+                "column_bytes": 31198,
+                "rows": 160,
+                "xml_per_voucher": 15203,
+                "json_per_voucher": 2922,
+                "column_per_voucher": 780,
+                "rows_per_voucher": "4.00"
+              },
+              "payment+bills": {
+                "count": 24,
+                "xml_bytes": 364580,
+                "json_bytes": 69852,
+                "column_bytes": 18372,
+                "rows": 96,
+                "xml_per_voucher": 15191,
+                "json_per_voucher": 2911,
+                "column_per_voucher": 766,
+                "rows_per_voucher": "4.00"
+              },
+              "payment": {
+                "count": 12,
+                "xml_bytes": 173758,
+                "json_bytes": 30670,
+                "column_bytes": 7099,
+                "rows": 36,
+                "xml_per_voucher": 14480,
+                "json_per_voucher": 2556,
+                "column_per_voucher": 592,
+                "rows_per_voucher": "3.00"
+              },
+              "receipt": {
+                "count": 8,
+                "xml_bytes": 115858,
+                "json_bytes": 20466,
+                "column_bytes": 4818,
+                "rows": 24,
+                "xml_per_voucher": 14482,
+                "json_per_voucher": 2558,
+                "column_per_voucher": 602,
+                "rows_per_voucher": "3.00"
+              },
+              "sales": {
+                "count": 2,
+                "xml_bytes": 33052,
+                "json_bytes": 7116,
+                "column_bytes": 1346,
+                "rows": 6,
+                "xml_per_voucher": 16526,
+                "json_per_voucher": 3558,
+                "column_per_voucher": 673,
+                "rows_per_voucher": "3.00"
+              }
+            },
+            "block_bytes": {
+              "ALLLEDGERENTRIES.LIST": 7988,
+              "ALLINVENTORYENTRIES.LIST": 13614,
+              "BILLALLOCATIONS.LIST": 493
+            },
+            "storage": {
+              "per_voucher_bytes": {
+                "xml": "37434.4",
+                "raw": "6493.6",
+                "columns": "1047.1"
+              },
+              "mix_vouchers": 238,
+              "table": [
+                {
+                  "vouchers_per_year": 10000,
+                  "years": 2,
+                  "vouchers": 20000,
+                  "with_raw_mb": "150.8",
+                  "without_raw_mb": "20.9",
+                  "raw_recent_2_fy_only_mb": "150.8"
+                },
+                {
+                  "vouchers_per_year": 10000,
+                  "years": 5,
+                  "vouchers": 50000,
+                  "with_raw_mb": "377.0",
+                  "without_raw_mb": "52.4",
+                  "raw_recent_2_fy_only_mb": "182.2"
+                },
+                {
+                  "vouchers_per_year": 10000,
+                  "years": 10,
+                  "vouchers": 100000,
+                  "with_raw_mb": "754.1",
+                  "without_raw_mb": "104.7",
+                  "raw_recent_2_fy_only_mb": "234.6"
+                },
+                {
+                  "vouchers_per_year": 50000,
+                  "years": 2,
+                  "vouchers": 100000,
+                  "with_raw_mb": "754.1",
+                  "without_raw_mb": "104.7",
+                  "raw_recent_2_fy_only_mb": "754.1"
+                },
+                {
+                  "vouchers_per_year": 50000,
+                  "years": 5,
+                  "vouchers": 250000,
+                  "with_raw_mb": "1885.2",
+                  "without_raw_mb": "261.8",
+                  "raw_recent_2_fy_only_mb": "911.1"
+                },
+                {
+                  "vouchers_per_year": 50000,
+                  "years": 10,
+                  "vouchers": 500000,
+                  "with_raw_mb": "3770.3",
+                  "without_raw_mb": "523.6",
+                  "raw_recent_2_fy_only_mb": "1172.9"
+                },
+                {
+                  "vouchers_per_year": 200000,
+                  "years": 2,
+                  "vouchers": 400000,
+                  "with_raw_mb": "3016.3",
+                  "without_raw_mb": "418.8",
+                  "raw_recent_2_fy_only_mb": "3016.3"
+                },
+                {
+                  "vouchers_per_year": 200000,
+                  "years": 5,
+                  "vouchers": 1000000,
+                  "with_raw_mb": "7540.7",
+                  "without_raw_mb": "1047.1",
+                  "raw_recent_2_fy_only_mb": "3644.5"
+                },
+                {
+                  "vouchers_per_year": 200000,
+                  "years": 10,
+                  "vouchers": 2000000,
+                  "with_raw_mb": "15081.4",
+                  "without_raw_mb": "2094.2",
+                  "raw_recent_2_fy_only_mb": "4691.6"
+                }
+              ],
+              "q22": {
+                "raw_share_pct": "86.1",
+                "per_fy_mb": {
+                  "10000": {
+                    "with_raw": "75.4",
+                    "without_raw": "10.5"
+                  },
+                  "50000": {
+                    "with_raw": "377.0",
+                    "without_raw": "52.4"
+                  },
+                  "200000": {
+                    "with_raw": "1508.1",
+                    "without_raw": "209.4"
+                  }
+                },
+                "saving_if_raw_dropped_beyond_2_fy_mb": {
+                  "10000": {
+                    "5": "194.8",
+                    "10": "519.5"
+                  },
+                  "50000": {
+                    "5": "974.0",
+                    "10": "2597.4"
+                  },
+                  "200000": {
+                    "5": "3896.2",
+                    "10": "10389.7"
+                  }
+                }
+              },
+              "q23": {
+                "per_extra_fy_with_raw_mb": {
+                  "10000": "75.4",
+                  "50000": "377.0",
+                  "200000": "1508.1"
+                },
+                "per_extra_fy_without_raw_mb": {
+                  "10000": "10.5",
+                  "50000": "52.4",
+                  "200000": "209.4"
+                },
+                "month_chunks": [
+                  {
+                    "vouchers_per_year": 10000,
+                    "vouchers_per_month": 834,
+                    "month_xml_mb": "31.2",
+                    "over_chunk_cap": false
+                  },
+                  {
+                    "vouchers_per_year": 50000,
+                    "vouchers_per_month": 4167,
+                    "month_xml_mb": "156.0",
+                    "over_chunk_cap": false
+                  },
+                  {
+                    "vouchers_per_year": 200000,
+                    "vouchers_per_month": 16667,
+                    "month_xml_mb": "623.9",
+                    "over_chunk_cap": true
+                  }
+                ],
+                "caveats": [
+                  "indexes excluded",
+                  "JSONB binary overhead and TOAST compression (values over ~2 kB) are not modelled, so `raw` is an estimate in either direction",
+                  "child-row voucher_id and referenced GUIDs are sized as GUID strings — an upper bound if S1 uses bigint FKs",
+                  "company B's mix: one stock line per invoice — scale with block_bytes"
+                ]
+              }
+            },
+            "current_fy_sample": {
+              "month": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2026-03-01",
+                  "2026-03-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 758703
+              },
+              "kinds": {
+                "sales+inventory+bills": {
+                  "xml_per_voucher": 50133,
+                  "json_per_voucher": 8569
+                },
+                "purchase+inventory+bills": {
+                  "xml_per_voucher": 50205,
+                  "json_per_voucher": 8639
+                },
+                "receipt+bills": {
+                  "xml_per_voucher": 15208,
+                  "json_per_voucher": 2929
+                },
+                "receipt": {
+                  "xml_per_voucher": 14467,
+                  "json_per_voucher": 2543
+                },
+                "payment+bills": {
+                  "xml_per_voucher": 15206,
+                  "json_per_voucher": 2927
+                },
+                "payment": {
+                  "xml_per_voucher": 14482,
+                  "json_per_voucher": 2558
+                }
+              },
+              "note": "Part 1 probe 21's 'do closed years behave differently?': compare with `kinds`; no verdict."
+            },
+            "timings_ms": {
+              "note": "Wine — not representative",
+              "fy2022_month_04": 65,
+              "fy2022_month_05": 57,
+              "fy2022_month_06": 58,
+              "fy2022_month_07": 59,
+              "fy2022_month_08": 60,
+              "fy2022_month_09": 56,
+              "fy2022_month_10": 60,
+              "fy2022_month_11": 58,
+              "fy2022_month_12": 59,
+              "fy2022_month_01": 58,
+              "fy2022_month_02": 54,
+              "fy2022_month_03": 58,
+              "fy2025_month_03": 64
+            },
+            "period_lock": {
+              "status": "no period lock in this edition"
+            }
+          },
+          "spec_impact": "Q22/Q23 inputs (company B's mix, sizes under Wine): 1047.1 B/voucher without raw, raw JSON 6493.6 B more (86.1% of the total); 200k vouchers/yr × 10 yr = 15081.4 MB with raw, 2094.2 MB without, 4691.6 MB keeping raw for the recent 2 FYs only (indexes excluded); upper bounds — JSONB overhead/TOAST compression and bigint-vs-GUID FK sizing are unmodelled (see caveats). S1 decides Q22/Q23 on these.",
+          "fixtures": [
+            "p21_B_books_from.xml",
+            "p21_B_fy2022_month_04.xml",
+            "p21_B_fy2022_month_05.xml",
+            "p21_B_fy2022_month_06.xml",
+            "p21_B_fy2022_month_07.xml",
+            "p21_B_fy2022_month_08.xml",
+            "p21_B_fy2022_month_09.xml",
+            "p21_B_fy2022_month_10.xml",
+            "p21_B_fy2022_month_11.xml",
+            "p21_B_fy2022_month_12.xml",
+            "p21_B_fy2022_month_01.xml",
+            "p21_B_fy2022_month_02.xml",
+            "p21_B_fy2022_month_03.xml",
+            "p21_B_fy2025_month_03.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Probe 21 step 4, period lock: if this TallyPrime can lock a period for company B, lock 01-04-2022 to 31-03-2023 now and type 'locked'. Type 'none' if it has no period lock, or just press Enter to skip.",
+              "input": "none",
+              "done_at": "2026-09-25T16:53:03+05:30"
+            }
+          ],
+          "ran_at": "2026-09-25T16:53:03+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "B",
+          "outcome": "CONFIRMED",
           "summary": "FY 2022-23 reached month by month: 12/12 months exact (238 vouchers; the cancelled pair reported, not judged); BooksFrom 01-04-2022; sizes for 7 voucher kinds. Timings recorded (Wine — not representative); the tier-C timing half stays ⏭ (Q29).",
           "observations": {
             "books_from": {
@@ -6282,9 +6961,608 @@
             }
           ],
           "ran_at": "2026-09-24T15:51:57+05:30"
+        },
+        {
+          "part": "B",
+          "outcome": "BLOCKED",
+          "summary": "Harness error: EOFError: EOF when reading a line",
+          "observations": {
+            "books_from": {
+              "exported": "20220401",
+              "expected": "01-04-2022",
+              "match": true
+            },
+            "months": {
+              "fy2022_month_04": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-04-01",
+                  "2022-04-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 758098
+              },
+              "fy2022_month_05": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-05-01",
+                  "2022-05-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757721
+              },
+              "fy2022_month_06": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-06-01",
+                  "2022-06-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757002
+              },
+              "fy2022_month_07": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-07-01",
+                  "2022-07-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 758665
+              },
+              "fy2022_month_08": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-08-01",
+                  "2022-08-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757899
+              },
+              "fy2022_month_09": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-09-01",
+                  "2022-09-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 691442
+              },
+              "fy2022_month_10": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-10-01",
+                  "2022-10-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757874
+              },
+              "fy2022_month_11": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-11-01",
+                  "2022-11-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757995
+              },
+              "fy2022_month_12": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2022-12-01",
+                  "2022-12-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757979
+              },
+              "fy2022_month_01": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2023-01-01",
+                  "2023-01-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757902
+              },
+              "fy2022_month_02": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 18,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2023-02-01",
+                  "2023-02-02"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [
+                  201,
+                  202
+                ],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 661941
+              },
+              "fy2022_month_03": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2023-03-01",
+                  "2023-03-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 757909
+              }
+            },
+            "kinds": {
+              "sales+inventory+bills": {
+                "count": 79,
+                "xml_bytes": 3960303,
+                "json_bytes": 676737,
+                "column_bytes": 98196,
+                "rows": 553,
+                "xml_per_voucher": 50130,
+                "json_per_voucher": 8566,
+                "column_per_voucher": 1243,
+                "rows_per_voucher": "7.00"
+              },
+              "sales+inventory": {
+                "count": 13,
+                "xml_bytes": 641477,
+                "json_bytes": 105437,
+                "column_bytes": 13837,
+                "rows": 78,
+                "xml_per_voucher": 49344,
+                "json_per_voucher": 8111,
+                "column_per_voucher": 1064,
+                "rows_per_voucher": "6.00"
+              },
+              "purchase+inventory+bills": {
+                "count": 60,
+                "xml_bytes": 3012256,
+                "json_bytes": 518320,
+                "column_bytes": 74344,
+                "rows": 420,
+                "xml_per_voucher": 50204,
+                "json_per_voucher": 8639,
+                "column_per_voucher": 1239,
+                "rows_per_voucher": "7.00"
+              },
+              "receipt+bills": {
+                "count": 40,
+                "xml_bytes": 608108,
+                "json_bytes": 116876,
+                "column_bytes": 31198,
+                "rows": 160,
+                "xml_per_voucher": 15203,
+                "json_per_voucher": 2922,
+                "column_per_voucher": 780,
+                "rows_per_voucher": "4.00"
+              },
+              "payment+bills": {
+                "count": 24,
+                "xml_bytes": 364580,
+                "json_bytes": 69852,
+                "column_bytes": 18372,
+                "rows": 96,
+                "xml_per_voucher": 15191,
+                "json_per_voucher": 2911,
+                "column_per_voucher": 766,
+                "rows_per_voucher": "4.00"
+              },
+              "payment": {
+                "count": 12,
+                "xml_bytes": 173758,
+                "json_bytes": 30670,
+                "column_bytes": 7099,
+                "rows": 36,
+                "xml_per_voucher": 14480,
+                "json_per_voucher": 2556,
+                "column_per_voucher": 592,
+                "rows_per_voucher": "3.00"
+              },
+              "receipt": {
+                "count": 8,
+                "xml_bytes": 115858,
+                "json_bytes": 20466,
+                "column_bytes": 4818,
+                "rows": 24,
+                "xml_per_voucher": 14482,
+                "json_per_voucher": 2558,
+                "column_per_voucher": 602,
+                "rows_per_voucher": "3.00"
+              },
+              "sales": {
+                "count": 2,
+                "xml_bytes": 33052,
+                "json_bytes": 7116,
+                "column_bytes": 1346,
+                "rows": 6,
+                "xml_per_voucher": 16526,
+                "json_per_voucher": 3558,
+                "column_per_voucher": 673,
+                "rows_per_voucher": "3.00"
+              }
+            },
+            "block_bytes": {
+              "ALLLEDGERENTRIES.LIST": 7988,
+              "ALLINVENTORYENTRIES.LIST": 13614,
+              "BILLALLOCATIONS.LIST": 493
+            },
+            "storage": {
+              "per_voucher_bytes": {
+                "xml": "37434.4",
+                "raw": "6493.6",
+                "columns": "1047.1"
+              },
+              "mix_vouchers": 238,
+              "table": [
+                {
+                  "vouchers_per_year": 10000,
+                  "years": 2,
+                  "vouchers": 20000,
+                  "with_raw_mb": "150.8",
+                  "without_raw_mb": "20.9",
+                  "raw_recent_2_fy_only_mb": "150.8"
+                },
+                {
+                  "vouchers_per_year": 10000,
+                  "years": 5,
+                  "vouchers": 50000,
+                  "with_raw_mb": "377.0",
+                  "without_raw_mb": "52.4",
+                  "raw_recent_2_fy_only_mb": "182.2"
+                },
+                {
+                  "vouchers_per_year": 10000,
+                  "years": 10,
+                  "vouchers": 100000,
+                  "with_raw_mb": "754.1",
+                  "without_raw_mb": "104.7",
+                  "raw_recent_2_fy_only_mb": "234.6"
+                },
+                {
+                  "vouchers_per_year": 50000,
+                  "years": 2,
+                  "vouchers": 100000,
+                  "with_raw_mb": "754.1",
+                  "without_raw_mb": "104.7",
+                  "raw_recent_2_fy_only_mb": "754.1"
+                },
+                {
+                  "vouchers_per_year": 50000,
+                  "years": 5,
+                  "vouchers": 250000,
+                  "with_raw_mb": "1885.2",
+                  "without_raw_mb": "261.8",
+                  "raw_recent_2_fy_only_mb": "911.1"
+                },
+                {
+                  "vouchers_per_year": 50000,
+                  "years": 10,
+                  "vouchers": 500000,
+                  "with_raw_mb": "3770.3",
+                  "without_raw_mb": "523.6",
+                  "raw_recent_2_fy_only_mb": "1172.9"
+                },
+                {
+                  "vouchers_per_year": 200000,
+                  "years": 2,
+                  "vouchers": 400000,
+                  "with_raw_mb": "3016.3",
+                  "without_raw_mb": "418.8",
+                  "raw_recent_2_fy_only_mb": "3016.3"
+                },
+                {
+                  "vouchers_per_year": 200000,
+                  "years": 5,
+                  "vouchers": 1000000,
+                  "with_raw_mb": "7540.7",
+                  "without_raw_mb": "1047.1",
+                  "raw_recent_2_fy_only_mb": "3644.5"
+                },
+                {
+                  "vouchers_per_year": 200000,
+                  "years": 10,
+                  "vouchers": 2000000,
+                  "with_raw_mb": "15081.4",
+                  "without_raw_mb": "2094.2",
+                  "raw_recent_2_fy_only_mb": "4691.6"
+                }
+              ],
+              "q22": {
+                "raw_share_pct": "86.1",
+                "per_fy_mb": {
+                  "10000": {
+                    "with_raw": "75.4",
+                    "without_raw": "10.5"
+                  },
+                  "50000": {
+                    "with_raw": "377.0",
+                    "without_raw": "52.4"
+                  },
+                  "200000": {
+                    "with_raw": "1508.1",
+                    "without_raw": "209.4"
+                  }
+                },
+                "saving_if_raw_dropped_beyond_2_fy_mb": {
+                  "10000": {
+                    "5": "194.8",
+                    "10": "519.5"
+                  },
+                  "50000": {
+                    "5": "974.0",
+                    "10": "2597.4"
+                  },
+                  "200000": {
+                    "5": "3896.2",
+                    "10": "10389.7"
+                  }
+                }
+              },
+              "q23": {
+                "per_extra_fy_with_raw_mb": {
+                  "10000": "75.4",
+                  "50000": "377.0",
+                  "200000": "1508.1"
+                },
+                "per_extra_fy_without_raw_mb": {
+                  "10000": "10.5",
+                  "50000": "52.4",
+                  "200000": "209.4"
+                },
+                "month_chunks": [
+                  {
+                    "vouchers_per_year": 10000,
+                    "vouchers_per_month": 834,
+                    "month_xml_mb": "31.2",
+                    "over_chunk_cap": false
+                  },
+                  {
+                    "vouchers_per_year": 50000,
+                    "vouchers_per_month": 4167,
+                    "month_xml_mb": "156.0",
+                    "over_chunk_cap": false
+                  },
+                  {
+                    "vouchers_per_year": 200000,
+                    "vouchers_per_month": 16667,
+                    "month_xml_mb": "623.9",
+                    "over_chunk_cap": true
+                  }
+                ],
+                "caveats": [
+                  "indexes excluded",
+                  "JSONB binary overhead and TOAST compression (values over ~2 kB) are not modelled, so `raw` is an estimate in either direction",
+                  "child-row voucher_id and referenced GUIDs are sized as GUID strings — an upper bound if S1 uses bigint FKs",
+                  "company B's mix: one stock line per invoice — scale with block_bytes"
+                ]
+              }
+            },
+            "current_fy_sample": {
+              "month": {
+                "returned": 20,
+                "expected_written": 20,
+                "expected_unflagged": 20,
+                "bounded": true,
+                "out_of_window": 0,
+                "date_span": [
+                  "2026-03-01",
+                  "2026-03-31"
+                ],
+                "untagged": 0,
+                "missing": [],
+                "extra": [],
+                "duplicates": [],
+                "flagged_returned": [],
+                "flagged_missing": [],
+                "reach_ok": true,
+                "drifted": false,
+                "match": true,
+                "bytes": 758703
+              },
+              "kinds": {
+                "sales+inventory+bills": {
+                  "xml_per_voucher": 50133,
+                  "json_per_voucher": 8569
+                },
+                "purchase+inventory+bills": {
+                  "xml_per_voucher": 50205,
+                  "json_per_voucher": 8639
+                },
+                "receipt+bills": {
+                  "xml_per_voucher": 15208,
+                  "json_per_voucher": 2929
+                },
+                "receipt": {
+                  "xml_per_voucher": 14467,
+                  "json_per_voucher": 2543
+                },
+                "payment+bills": {
+                  "xml_per_voucher": 15206,
+                  "json_per_voucher": 2927
+                },
+                "payment": {
+                  "xml_per_voucher": 14482,
+                  "json_per_voucher": 2558
+                }
+              },
+              "note": "Part 1 probe 21's 'do closed years behave differently?': compare with `kinds`; no verdict."
+            },
+            "timings_ms": {
+              "note": "Wine — not representative",
+              "fy2022_month_04": 60,
+              "fy2022_month_05": 57,
+              "fy2022_month_06": 59,
+              "fy2022_month_07": 58,
+              "fy2022_month_08": 58,
+              "fy2022_month_09": 54,
+              "fy2022_month_10": 60,
+              "fy2022_month_11": 58,
+              "fy2022_month_12": 59,
+              "fy2022_month_01": 58,
+              "fy2022_month_02": 54,
+              "fy2022_month_03": 59,
+              "fy2025_month_03": 64
+            }
+          },
+          "spec_impact": "",
+          "fixtures": [
+            "p21_B_books_from.xml",
+            "p21_B_fy2022_month_04.xml",
+            "p21_B_fy2022_month_05.xml",
+            "p21_B_fy2022_month_06.xml",
+            "p21_B_fy2022_month_07.xml",
+            "p21_B_fy2022_month_08.xml",
+            "p21_B_fy2022_month_09.xml",
+            "p21_B_fy2022_month_10.xml",
+            "p21_B_fy2022_month_11.xml",
+            "p21_B_fy2022_month_12.xml",
+            "p21_B_fy2022_month_01.xml",
+            "p21_B_fy2022_month_02.xml",
+            "p21_B_fy2022_month_03.xml",
+            "p21_B_fy2025_month_03.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-25T16:52:49+05:30"
         }
-      },
-      "history": [],
+      ],
       "remaining": []
     },
     "11": {
@@ -6996,6 +8274,127 @@
             }
           ],
           "ran_at": "2026-09-25T12:24:23+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "22": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "B": {
+          "outcome": "CONFIRMED",
+          "summary": "INR base read from the export (stated); the forex party's ClosingBalance exports as an expression; the forex party is valued at the latest voucher rate (C47): 183.87 from the vouchers' bases — tags [101, 102] [Educational mode — confirm on a licensed Tally]",
+          "observations": {
+            "vouchers": {
+              "101": {
+                "tag": 101,
+                "lines": [
+                  {
+                    "ledger": "Gulf Office Supplies LLC (USD)",
+                    "amount_raw": "-$448.44 @ ? 82.99/$ = -? 37216.04",
+                    "route": "stated",
+                    "base": "-37216.04",
+                    "parse_decimal_raises": true,
+                    "forex_fields": [],
+                    "currency_matches": true,
+                    "fx_matches": true,
+                    "rate_matches": true
+                  },
+                  {
+                    "ledger": "Export Sales",
+                    "amount_raw": "$448.44 @ ? 82.99/$ = ? 37216.04",
+                    "route": "stated",
+                    "base": "37216.04",
+                    "parse_decimal_raises": true,
+                    "forex_fields": [],
+                    "currency_matches": true,
+                    "fx_matches": true,
+                    "rate_matches": true
+                  }
+                ],
+                "routes": [
+                  "stated"
+                ],
+                "unexpected_ledgers": [],
+                "forex_mismatch": [],
+                "balanced": true,
+                "base_matches_dataset": true,
+                "forex_matches_dataset": true
+              },
+              "102": {
+                "tag": 102,
+                "lines": [
+                  {
+                    "ledger": "Gulf Office Supplies LLC (USD)",
+                    "amount_raw": "-$1161.27 @ ? 82.58/$ = -? 95897.68",
+                    "route": "stated",
+                    "base": "-95897.68",
+                    "parse_decimal_raises": true,
+                    "forex_fields": [],
+                    "currency_matches": true,
+                    "fx_matches": true,
+                    "rate_matches": true
+                  },
+                  {
+                    "ledger": "Export Sales",
+                    "amount_raw": "$1161.27 @ ? 82.58/$ = ? 95897.68",
+                    "route": "stated",
+                    "base": "95897.68",
+                    "parse_decimal_raises": true,
+                    "forex_fields": [],
+                    "currency_matches": true,
+                    "fx_matches": true,
+                    "rate_matches": true
+                  }
+                ],
+                "routes": [
+                  "stated"
+                ],
+                "unexpected_ledgers": [],
+                "forex_mismatch": [],
+                "balanced": true,
+                "base_matches_dataset": true,
+                "forex_matches_dataset": true
+              }
+            },
+            "extra_fields": [],
+            "usd_ledger": {
+              "found": true,
+              "currency_name": "$",
+              "closing_text": "-$1609.71 @ ? 82.58/$ = -? 132929.85",
+              "closing_form": "expression",
+              "closing_base": "-132929.85",
+              "bases_total": "-133113.72",
+              "revalued_at_latest_rate": true,
+              "revaluation_difference": "183.87"
+            },
+            "currencies": [
+              {
+                "Name": "$",
+                "MailingName": "USD",
+                "ExpandedSymbol": "USD",
+                "DecimalPlaces": "2"
+              },
+              {
+                "Name": "?",
+                "MailingName": "INR",
+                "ExpandedSymbol": "INR",
+                "DecimalPlaces": "2"
+              }
+            ],
+            "tags": [
+              "Educational"
+            ]
+          },
+          "spec_impact": "Forex voucher lines carry the INR base amount in the export (the AMOUNT's stated base, or a plain field): S1 stores the base in every amount column and keeps face value + rate in raw — decision 15 holds, no conversion at read time. The forex party's ClosingBalance exports as an expression, not a number: S1 parity (decision 11) must parse its base part the same way, or read that ledger's balance from the TB. The forex party's balance is its face total at the latest voucher rate, not the sum of the vouchers' INR bases (C47): S1's per-ledger and TB parity must expect that unrealised forex difference (the TB is out by it).",
+          "fixtures": [
+            "p22_B_forex_sales.xml",
+            "p22_B_usd_ledger.xml",
+            "p22_B_currencies.xml"
+          ],
+          "manual_steps": [],
+          "ran_at": "2026-09-25T16:52:47+05:30"
         }
       },
       "history": [],
