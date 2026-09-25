@@ -208,6 +208,9 @@ def _export_voucher(state: dict, mid: str, v: dict, *, credit_periods: bool = Tr
     parse_vouchers), not a byte-for-byte copy of live Tally. Probe 21's live byte counts come from live Tally only.
     A posting that knows its bill date / credit period (seed_company_b(bills=True)) exports them as BILLDATE and
     BILLCREDITPERIOD (live shape: p21_B_fy2022_month_02.xml); without them the bytes are exactly as before.
+    Known gap (pre-flight F9, kept as ruled): live Agst Ref allocations ALSO carry BILLCREDITPERIOD and the ORIGINAL
+    bill's BILLDATE (p21 217 → Inv/45: "30 Days", 20220601); the fake stamps them on New Ref postings only. Probe 23 B
+    reads New Ref bills only, so no verdict depends on it — model it before any probe reads Agst Ref terms.
     A cancelled voucher exports the recorded live shape (Ruling S2, p21_B_fy2022_month_02.xml 201/202): header only,
     an empty PARTYLEDGERNAME and empty placeholder lists -- no ledger or inventory lines, no amounts."""
     header = _voucher_header(state, mid, v)
