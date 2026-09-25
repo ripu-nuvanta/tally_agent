@@ -15,7 +15,8 @@
       "Indirect Expenses": "-1343000.00"
     },
     "company_a_reset_at": "2026-09-23T11:06:28+05:30",
-    "company_b_loaded_at": "2026-09-24T13:02:33+05:30"
+    "company_b_loaded_at": "2026-09-24T13:02:33+05:30",
+    "company_c_loaded_at": "2026-09-25T10:47:22+05:30"
   },
   "confirmed_requests": {
     "active_company": {
@@ -6793,6 +6794,208 @@
           ],
           "manual_steps": [],
           "ran_at": "2026-09-24T18:18:52+05:30"
+        }
+      },
+      "history": [],
+      "remaining": []
+    },
+    "24": {
+      "outcome": "CONFIRMED",
+      "parts": {
+        "C": {
+          "outcome": "CONFIRMED",
+          "summary": "security on: export unchanged (CONFIRMED); TallyVault on: export unchanged (CONFIRMED); login prompt → an answer listing [] (as if no company were open); TallyVault prompt → an answer listing [] (as if no company were open)",
+          "observations": {
+            "baseline": {
+              "stage": "baseline",
+              "companies": [
+                "Probe Vault Co"
+              ],
+              "errors": {},
+              "active_guid": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5",
+              "counters_guid": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5",
+              "ledgers": [
+                "Cash",
+                "Profit & Loss A/c",
+                "S0 Vault Expense"
+              ],
+              "narrations": [
+                "[S0-C:1] Probe Vault voucher"
+              ],
+              "ok": true
+            },
+            "gate_shapes": {
+              "security_login_pending": {
+                "company_list": {
+                  "transport": "answered",
+                  "body": {
+                    "companies": []
+                  }
+                },
+                "active_company": {
+                  "transport": "answered",
+                  "body": {
+                    "rows": []
+                  }
+                }
+              },
+              "vault_prompt_pending": {
+                "company_list": {
+                  "transport": "answered",
+                  "body": {
+                    "companies": []
+                  }
+                },
+                "active_company": {
+                  "transport": "answered",
+                  "body": {
+                    "rows": []
+                  }
+                }
+              }
+            },
+            "security_on_ready": {
+              "company_list": {
+                "transport": "answered",
+                "body": {
+                  "companies": [
+                    "Probe Vault Co"
+                  ]
+                }
+              },
+              "active_company": {
+                "transport": "answered",
+                "body": {
+                  "rows": [
+                    {
+                      "Name": "Probe Vault Co",
+                      "GUID": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5"
+                    }
+                  ]
+                }
+              }
+            },
+            "security_on": {
+              "stage": "security_on",
+              "companies": [
+                "Probe Vault Co"
+              ],
+              "errors": {},
+              "active_guid": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5",
+              "counters_guid": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5",
+              "ledgers": [
+                "Cash",
+                "Profit & Loss A/c",
+                "S0 Vault Expense"
+              ],
+              "narrations": [
+                "[S0-C:1] Probe Vault voucher"
+              ],
+              "ok": true
+            },
+            "vault_on_ready": {
+              "company_list": {
+                "transport": "answered",
+                "body": {
+                  "companies": [
+                    "Probe Vault Co"
+                  ]
+                }
+              },
+              "active_company": {
+                "transport": "answered",
+                "body": {
+                  "rows": [
+                    {
+                      "Name": "Probe Vault Co",
+                      "GUID": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5"
+                    }
+                  ]
+                }
+              }
+            },
+            "vault_on": {
+              "stage": "vault_on",
+              "companies": [
+                "Probe Vault Co"
+              ],
+              "errors": {},
+              "active_guid": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5",
+              "counters_guid": "9d87f8c7-3e7c-46c0-a5b8-5d70f4ef32f5",
+              "ledgers": [
+                "Cash",
+                "Profit & Loss A/c",
+                "S0 Vault Expense"
+              ],
+              "narrations": [
+                "[S0-C:1] Probe Vault voucher"
+              ],
+              "ok": true
+            },
+            "sub_verdicts": {
+              "security": "CONFIRMED",
+              "TallyVault": "CONFIRMED"
+            }
+          },
+          "spec_impact": "No credentials in the agent (R2, R26): once the person has logged in / entered the TallyVault password in TallyPrime, XML export of a secured or vaulted company is unchanged (same GUID, same data). Onboarding: open the company in TallyPrime as usual. While a login prompt is open the gate sees an answer listing [] (as if no company were open); while a TallyVault prompt is open, an answer listing [] (as if no company were open). S2's gate treats both as 'company not open' (skip quietly, retry next cycle).",
+          "fixtures": [
+            "p24_C_baseline_company_list.xml",
+            "p24_C_baseline_active_company.xml",
+            "p24_C_baseline_counters.xml",
+            "p24_C_baseline_ledgers.xml",
+            "p24_C_baseline_vouchers.xml",
+            "p24_C_security_login_pending_company_list.xml",
+            "p24_C_security_login_pending_active_company.xml",
+            "p24_C_security_on_ready_company_list.xml",
+            "p24_C_security_on_ready_active_company.xml",
+            "p24_C_security_on_company_list.xml",
+            "p24_C_security_on_active_company.xml",
+            "p24_C_security_on_counters.xml",
+            "p24_C_security_on_ledgers.xml",
+            "p24_C_security_on_vouchers.xml",
+            "p24_C_vault_prompt_pending_company_list.xml",
+            "p24_C_vault_prompt_pending_active_company.xml",
+            "p24_C_vault_on_ready_company_list.xml",
+            "p24_C_vault_on_ready_active_company.xml",
+            "p24_C_vault_on_company_list.xml",
+            "p24_C_vault_on_active_company.xml",
+            "p24_C_vault_on_counters.xml",
+            "p24_C_vault_on_ledgers.xml",
+            "p24_C_vault_on_vouchers.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Probe 24, step 1 — turn on security for 'Probe Vault Co'. In TallyPrime: K: Company → Alter → Probe Vault Co. Set 'Control user access to company data' to Yes, type a THROWAWAY username and password (never a real one; do not type them here or anywhere in the repo), repeat the password, and accept the screen (A: Accept). Log in if TallyPrime asks. Press Enter here once company C is open and you are at the Gateway of Tally.",
+              "done_at": "2026-09-25T10:50:51+05:30"
+            },
+            {
+              "n": 2,
+              "instruction": "Probe 24, step 2 — K: Company → Shut → Probe Vault Co. Then K: Company → Select → Probe Vault Co. STOP at the login box: leave it open (do not log in yet) and press Enter here.",
+              "done_at": "2026-09-25T10:52:34+05:30"
+            },
+            {
+              "n": 3,
+              "instruction": "Probe 24, step 3 — log in to company C now, wait for the Gateway of Tally, then press Enter here.",
+              "done_at": "2026-09-25T10:53:40+05:30"
+            },
+            {
+              "n": 4,
+              "instruction": "Probe 24, step 4 — turn on TallyVault for 'Probe Vault Co': K: Company → Change TallyVault → Probe Vault Co. Type a THROWAWAY TallyVault password twice (again: never here, never in the repo) and accept. If TallyPrime shuts or reopens the company, open it again (TallyVault password, then your login). Press Enter here once company C is open at the Gateway of Tally.",
+              "done_at": "2026-09-25T11:45:35+05:30"
+            },
+            {
+              "n": 5,
+              "instruction": "Probe 24, step 5 — K: Company → Shut → Probe Vault Co. Then K: Company → Select → Probe Vault Co. STOP at the TallyVault password box: leave it open and press Enter here.",
+              "done_at": "2026-09-25T11:47:24+05:30"
+            },
+            {
+              "n": 6,
+              "instruction": "Probe 24, step 6 — type the TallyVault password (and your login when asked), wait for the Gateway of Tally, then press Enter here.",
+              "done_at": "2026-09-25T12:24:23+05:30"
+            }
+          ],
+          "ran_at": "2026-09-25T12:24:23+05:30"
         }
       },
       "history": [],
