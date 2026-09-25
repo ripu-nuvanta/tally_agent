@@ -25,6 +25,8 @@ class CReport:
 
 
 def load_company_c(writer: TallyWriter, company: str = COMPANIES["C"]) -> CReport:
+    if company != COMPANIES["C"]:                             # review M1: setup-c writes to company C only
+        raise CompanyCLoadError(f"setup-c loads only {COMPANIES['C']!r}, not {company!r}.")
     check_writable(company)                                   # before any request at all
     loaded = writer.company_names()
     if loaded != [company]:

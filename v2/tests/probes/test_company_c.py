@@ -47,3 +47,11 @@ def test_the_ledger_under_another_group_is_a_problem_not_a_second_create():
     with pytest.raises(CompanyCLoadError, match="Sundry Debtors"):
         load_company_c(_writer(books))
     assert _imports(books) == []
+
+
+def test_a_company_other_than_c_is_refused_even_when_named_probe():
+    """Review M1: the `company=` parameter can't point setup-c at another 'Probe' company (A or B)."""
+    books = FakeBooks(name=COMPANIES["A"])
+    with pytest.raises(CompanyCLoadError, match="only"):
+        load_company_c(_writer(books), company=COMPANIES["A"])
+    assert books.requests == []
