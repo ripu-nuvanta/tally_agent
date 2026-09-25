@@ -178,6 +178,9 @@ class Expected:
     # C41: (stock item, last day of month) -> closing quantity (in the item's quantity unit, C40); flagged/skipped
     # vouchers move no stock
     stock_month_end: dict[tuple[str, date], Decimal] = field(default_factory=dict)
+    # C47: last day of month -> Σ over currency ledgers of (balance at the latest voucher rate − Σ the vouchers' INR
+    # bases). Tally's Trial Balance is out by exactly this (the unrealised forex difference; 183.87 at the books' end).
+    forex_revaluation: dict[date, Decimal] = field(default_factory=dict)
 
 
 def gstin(state_code: str, pan: str) -> str:
@@ -617,11 +620,29 @@ def expected_figures(dataset: Dataset) -> Expected:
                                              for l in dataset.ledgers if l.opening_bill and l.opening is not None}
     stock: dict[str, Decimal] = {i.name: (i.opening_qty or Decimal("0")) for i in dataset.items}       # C41
     stock_month_end: dict[tuple[str, date], Decimal] = {}
+    # C47 (live 2026-09-25, logs/setup-b-forex-live-2026-09-25.log): TallyPrime values a forex ledger at the rate of
+    # its LATEST-dated forex voucher — `-$1609.71 @ ? 82.58/$ = -? 132929.85`, not the sum of the INR bases
+    # (-133113.72). Its counter-ledger (Export Sales) keeps the bases. Per currency ledger: signed face total and the
+    # latest rate so far (vouchers are walked in (date, tag) order).
+    currency_ledgers = {l.name for l in dataset.ledgers if l.currency}
+    fx_face: dict[str, Decimal] = {}
+    fx_rate: dict[str, Decimal] = {}
+    revaluation_at: dict[date, Decimal] = {}
+
+    forex_bases: dict[str, Decimal] = {}
+
+    def _revaluation(name: str) -> Decimal:
+        """Face total × latest rate (HALF_UP to paise; 1609.71 × 82.58 has no tie) − the bases posted so far."""
+        revalued = (fx_face[name] * fx_rate[name]).quantize(Decimal("0.01"), ROUND_HALF_UP)
+        return revalued - forex_bases[name]
+
+    def value(name: str) -> Decimal:
+        return running[name] + (_revaluation(name) if name in fx_face else Decimal("0.00"))
     for (year, month) in _months():
         last = date(year, month, monthrange(year, month)[1])
         if month == 4:
-            for name, value in running.items():
-                fy_opening[(name, date(year, 4, 1))] = value
+            for name in running:
+                fy_opening[(name, date(year, 4, 1))] = value(name)
         for v in sorted(dataset.vouchers, key=lambda v: (v.date, v.tag)):
             if (v.date.year, v.date.month) != (year, month) or v.skip_reason:     # C36: never written
                 continue
@@ -633,6 +654,11 @@ def expected_figures(dataset: Dataset) -> Expected:
                 continue
             for line in v.lines:
                 running[line.ledger] = running.get(line.ledger, Decimal("0.00")) + line.amount
+                if line.ledger in currency_ledgers and v.fx_rate is not None:                         # C47
+                    fx_face[line.ledger] = fx_face.get(line.ledger, Decimal("0.00")) + (
+                        -v.fx_amount if line.amount < 0 else v.fx_amount)
+                    fx_rate[line.ledger] = v.fx_rate
+                    forex_bases[line.ledger] = forex_bases.get(line.ledger, Decimal("0.00")) + line.amount
             for inv in v.inventory:              # C41: purchases bring stock in, sales take it out
                 stock[inv.item] += inv.qty if v.kind == "purchase" else -inv.qty
             for b in v.bills:
@@ -640,12 +666,13 @@ def expected_figures(dataset: Dataset) -> Expected:
                     bills[(v.party, b.name)] = b.amount
                 elif b.bill_type == "Agst Ref":
                     bills[(v.party, b.name)] -= b.amount
-        for name, value in running.items():
-            month_end[(name, last)] = value
+        for name in running:
+            month_end[(name, last)] = value(name)
+        revaluation_at[last] = sum((_revaluation(name) for name in fx_face), Decimal("0.00"))
         for name, qty in stock.items():
             stock_month_end[(name, last)] = qty
     outstanding = {key: left for key, left in bills.items() if left != 0}
-    return Expected(month_end, fy_opening, by_month, by_fy, outstanding, stock_month_end)
+    return Expected(month_end, fy_opening, by_month, by_fy, outstanding, stock_month_end, revaluation_at)
 
 
 def generate(licence: str = "licensed") -> Dataset:

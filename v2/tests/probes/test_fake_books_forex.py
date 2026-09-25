@@ -130,3 +130,29 @@ def test_seeded_tag_101_exports_the_live_amount_shape():
                                                                        Decimal("-37216.04"))
     assert state["currencies"]["$"] == USD_CURRENCY_ROW and state["ledgers"]["Gulf Office Supplies LLC (USD)"][
         "currency"] == "$"
+
+
+# --- C47 (live 2026-09-25): a forex ledger is valued, and its closing exported, at the latest voucher rate -------------
+LIVE_USD_PARTY_CLOSING = "-$1609.71 @ ? 82.58/$ = -? 132929.85"      # ledger_details after setup-b, live company B
+
+
+def test_the_usd_party_closing_is_the_live_expression_at_the_latest_rate():
+    from v2.tests.probes.fake_books import seed_company_b
+    books = FakeBooks(name=B, educational=True)
+    seed_company_b(books, "educational", masters=True)
+    row = _writer(books).ledger_details(B, "Gulf Office Supplies LLC (USD)")
+    assert (row["CurrencyName"], row["ClosingBalance"]) == ("$", LIVE_USD_PARTY_CLOSING)
+    assert _writer(books).ledger_details(B, "Export Sales")["ClosingBalance"] != ""   # a plain INR ledger stays plain
+
+
+def test_the_fakes_trial_balance_is_out_by_the_forex_difference_like_live():
+    from v2.probes.reads import exploded_tb_rows, primary_group_rows
+    from v2.tests.probes.fake_books import seed_company_b
+    books = FakeBooks(name=B, educational=True)
+    seed_company_b(books, "educational", masters=True)
+    rows = exploded_tb_rows(_writer(books).b_trial_balance(B, "01-04-2022", "31-03-2026"))
+    total = sum((r["closing_balance"] for r in primary_group_rows(rows).values() if r["closing_balance"] is not None),
+                Decimal("0.00"))
+    assert total == Decimal("183.87")                                  # live note: "total observed: 183.87"
+    sundry = next(r for r in rows if r["account_name"] == "Sundry Debtors")["closing_balance"]
+    assert abs(sundry) == Decimal("2590148.41")                        # live: "Tally has |-2590148.41|"

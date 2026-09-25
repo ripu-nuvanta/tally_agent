@@ -54,7 +54,8 @@ async def test_forex_sales_confirmed_when_the_amount_states_the_base(tmp_path):
     assert all(l["parse_decimal_raises"] for j in obs["vouchers"].values() for l in j["lines"])   # expected (§11.2)
     assert [l["base"] for l in obs["vouchers"]["101"]["lines"]] == ["-37216.04", "37216.04"]
     assert part["fixtures"][-3:] == ["p22_B_forex_sales.xml", "p22_B_usd_ledger.xml", "p22_B_currencies.xml"]
-    assert obs["usd_ledger"]["currency_name"] == "$" and obs["usd_ledger"]["closing_form"] == "plain"
+    # C47 (live 2026-09-25): the USD party's closing exports as an expression — recorded, not judged.
+    assert obs["usd_ledger"]["currency_name"] == "$" and obs["usd_ledger"]["closing_form"] == "expression"
     assert {c["Name"] for c in obs["currencies"]} == {"?", "$"}
     assert obs["extra_fields"] == []
 
@@ -128,7 +129,7 @@ async def test_educational_window_is_c43_safe(tmp_path):
 
 
 async def test_usd_ledger_closing_expression_is_recorded_not_judged(tmp_path):
-    part = await _run(tmp_path, _books(forex_ledger_closing="expression"))
+    part = await _run(tmp_path, _books())                        # C47: the live default
     assert part["outcome"] == "CONFIRMED"
     led = part["observations"]["usd_ledger"]
     assert led["closing_form"] == "expression" and led["currency_name"] == "$"
@@ -232,3 +233,9 @@ def test_the_live_capture_matches_face_rate_and_currency():
                                party_alias=voucher["header"].get("PARTYLEDGERNAME"))
     assert judged["forex_matches_dataset"] and judged["unexpected_ledgers"] == []
     assert all(l["fx_matches"] and l["rate_matches"] and l["currency_matches"] for l in judged["lines"])
+
+
+async def test_a_plain_usd_ledger_closing_is_recorded_too(tmp_path):
+    part = await _run(tmp_path, _books(forex_ledger_closing="plain"))     # candidate
+    assert part["outcome"] == "CONFIRMED" and part["observations"]["usd_ledger"]["closing_form"] == "plain"
+    assert "ClosingBalance exports as an expression" not in part["summary"]

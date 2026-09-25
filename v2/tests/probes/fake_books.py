@@ -10,7 +10,7 @@ import html
 import json
 import re
 import xml.etree.ElementTree as ET
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 from typing import Callable
 
@@ -405,9 +405,10 @@ class FakeBooks:
                  bill_due_offset_days: int = 0, header_lists_flagged: bool = True,
                  forex_currency_create: str = "refuse", forex_storage: str = "expression",
                  forex_forms_accepted: tuple[str, ...] = ("full", "no_base"), forex_on_base_party: str = "same",
-                 forex_export_form: str = "full", forex_ledger_closing: str = "plain", deletes_stick: bool = True,
+                 forex_export_form: str = "full", forex_ledger_closing: str = "expression", deletes_stick: bool = True,
                  refuse_narrations: tuple[str, ...] = (), forex_currency_listed: bool = True,
-                 ledger_currency_sticks: bool = True, forex_rate_symbols_refused: tuple[str, ...] = ("?",)):
+                 ledger_currency_sticks: bool = True, forex_rate_symbols_refused: tuple[str, ...] = ("?",),
+                 forex_ledger_revaluation: str = "latest_rate"):
         self.folder = folder
         # plan part 7 (probe 22). Task 3.9 pinned the defaults to the live read-back on company B (2026-09-25:
         # forex_shape_2026-09-25_run2/, run1_currency_refused/; test_fake_books_forex.py compares them with the
@@ -429,9 +430,13 @@ class FakeBooks:
         # "plain_plus_field" (plain INR AMOUNT + a hypothesis FOREXAMOUNT field, only to cover probe 22's "field"
         # route) are candidates.
         self.forex_export_form = forex_export_form
-        # a currency ledger's ClosingBalance: "plain" (a number) | "expression" — both candidates: live never read a
-        # currency ledger's closing with a voucher on it (the throwaway's read-back was taken before its voucher).
+        # a currency ledger's ClosingBalance: live — "expression" (C47, 2026-09-25: `-$1609.71 @ ? 82.58/$ =
+        # -? 132929.85` after setup-b). "plain" (a number) is a candidate.
         self.forex_ledger_closing = forex_ledger_closing
+        # C47, live 2026-09-25: "latest_rate" — a currency ledger's balance is its face total × the rate of its
+        # latest-dated forex voucher, not the sum of the INR bases (Export Sales keeps the bases, so the TB is out by
+        # the unrealised difference). "bases" (the plain sum) is a candidate.
+        self.forex_ledger_revaluation = forex_ledger_revaluation
         # False = a voucher delete answers DELETED=1 but the voucher stays (plan part 7 fact 3 / Review Focus 2).
         self.deletes_stick = deletes_stick
         # A test seam: a voucher whose NARRATION contains one of these gets EXCEPTIONS=1 ("this shape is refused").
@@ -679,15 +684,9 @@ class FakeBooks:
         abs()'d bank openings landed as credits). So this fake takes the sign as given and never re-derives it
         from the group's nature.
         """
-        balances = {name: Decimal(led.get("opening", "0.00")) for name, led in state["ledgers"].items()}
-        for voucher in state["vouchers"].values():
-            if _flagged(voucher):                                                      # C42: posts nothing
-                continue
-            if (_yyyymmdd(voucher["date"]) or voucher["date"]) > as_on:                # C33: closing as on the (typed, or current-period) SVTODATE
-                continue
-            for line in voucher.get("lines", []):
-                name = line["ledger"]
-                balances[name] = balances.get(name, Decimal("0.00")) + Decimal(line["amount"] or "0.00")
+        # C42: flagged vouchers post nothing; C33: closing as on the (typed, or current-period) SVTODATE; C47: a
+        # currency ledger at its latest voucher rate — all in `_ledger_balances`.
+        balances = self._ledger_balances(state, up_to=as_on)
         buckets: dict[str, Decimal] = {}
         for name, led in state["ledgers"].items():
             bucket = self._bucket_of(state, led["parent"])
@@ -718,16 +717,27 @@ class FakeBooks:
             group = parents[group]
         return group
 
-    @staticmethod
-    def _ledger_balances(state: dict, *, up_to: str, before: str | None = None) -> dict[str, Decimal]:
-        """Opening + unflagged lines dated ≤ up_to (and < before, when given). C42: flagged vouchers post nothing."""
+    def _ledger_balances(self, state: dict, *, up_to: str, before: str | None = None) -> dict[str, Decimal]:
+        """Opening + unflagged lines dated ≤ up_to (and < before, when given). C42: flagged vouchers post nothing.
+        C47 (live 2026-09-25): under `forex_ledger_revaluation="latest_rate"` a currency ledger's forex lines count as
+        their face total × the rate of the latest-dated one (HALF_UP to paise), not as their INR bases."""
         balances = {n: Decimal(l.get("opening") or "0.00") for n, l in state["ledgers"].items()}
-        for v in state["vouchers"].values():
+        forex: dict[str, list[tuple[str, int, Decimal, Decimal]]] = {}
+        for mid, v in state["vouchers"].items():
             day = _yyyymmdd(v["date"]) or v["date"]
             if _flagged(v) or day > up_to or (before is not None and day >= before):
                 continue
             for line in v.get("lines", []):
-                balances[line["ledger"]] = balances.get(line["ledger"], Decimal("0.00")) + Decimal(line["amount"] or "0")
+                name = line["ledger"]
+                if (self.forex_ledger_revaluation == "latest_rate" and line.get("fx") and line.get("rate")
+                        and state["ledgers"].get(name, {}).get("currency")):
+                    forex.setdefault(name, []).append((day, int(mid), Decimal(line["fx"]), Decimal(line["rate"])))
+                    continue
+                balances[name] = balances.get(name, Decimal("0.00")) + Decimal(line["amount"] or "0")
+        for name, lines in forex.items():
+            face = sum((fx for _, _, fx, _ in lines), Decimal("0.00"))
+            rate = max(lines)[3]                                     # the latest-dated forex voucher's rate
+            balances[name] = balances.get(name, Decimal("0.00")) + (face * rate).quantize(Decimal("0.01"), ROUND_HALF_UP)
         return balances
 
     def _b_collection(self, state: dict, body: str, period: tuple[str, str], request: httpx.Request) -> str | None:
@@ -822,21 +832,23 @@ class FakeBooks:
         return f"<ENVELOPE><BODY><DATA><COLLECTION>{''.join(out)}</COLLECTION></DATA></BODY></ENVELOPE>"
 
     def _closing_text(self, state: dict, name: str, closing: Decimal, *, up_to: str) -> str:
-        """A ledger's ClosingBalance text. Plain (`_amount_text`) unless `forex_ledger_closing == "expression"` and the
-        ledger has a currency: then `-$1609.71 = -?133113.72` (the base currency's NAME) — a HYPOTHESIS (plan part 7 Review Focus 4), never
-        measured live."""
+        """A ledger's ClosingBalance text. Plain (`_amount_text`) unless the ledger has a currency and forex lines and
+        `forex_ledger_closing == "expression"` — then the live C47 form (2026-09-25, ledger_details after setup-b):
+        `-$1609.71 @ ? 82.58/$ = -? 132929.85` — face total @ the latest voucher rate = `closing` (the revalued
+        balance from `_ledger_balances`), in the base currency's own prefix."""
         currency = state["ledgers"].get(name, {}).get("currency", "")
         if self.forex_ledger_closing != "expression" or not currency or closing == 0:
             return _amount_text(closing)
-        fx_total = Decimal("0.00")
-        for v in state["vouchers"].values():
-            if _flagged(v) or (_yyyymmdd(v["date"]) or v["date"]) > up_to:
-                continue
-            fx_total += sum((Decimal(line["fx"]) for line in v.get("lines", [])
-                             if line["ledger"] == name and line.get("fx")), Decimal("0.00"))
-        sign = "-" if closing < 0 else ""
-        base = next((n for n, c in state.get("currencies", {}).items() if c.get("MailingName") == "INR"), "")
-        return f"{sign}{currency}{abs(fx_total):.2f} = {sign}{base}{abs(closing):.2f}"
+        lines = [(_yyyymmdd(v["date"]) or v["date"], int(mid), Decimal(line["fx"]), Decimal(line.get("rate") or "0"))
+                 for mid, v in state["vouchers"].items()
+                 if not _flagged(v) and (_yyyymmdd(v["date"]) or v["date"]) <= up_to
+                 for line in v.get("lines", []) if line["ledger"] == name and line.get("fx")]
+        if not lines:
+            return _amount_text(closing)
+        fx_total = sum((fx for _, _, fx, _ in lines), Decimal("0.00"))
+        sign, prefix = ("-" if closing < 0 else ""), self._base_prefix(state)
+        return (f"{sign}{currency}{abs(fx_total):.2f} @ {prefix}{max(lines)[3]:.2f}/{currency} = "
+                f"{sign}{prefix}{abs(closing):.2f}")
 
     @staticmethod
     def _base_prefix(state: dict) -> str:
@@ -859,7 +871,7 @@ class FakeBooks:
         sign = "-" if base < 0 else ""
         prefix = self._base_prefix(state)
         face = f"{sign}{fa.currency}{abs(fa.fx):.2f}"
-        out = {"fx": f"{sign}{abs(fa.fx):.2f}"}
+        out = {"fx": f"{sign}{abs(fa.fx):.2f}", "rate": f"{fa.rate}"}           # data (C47), never exported
         if self.forex_export_form == "plain_plus_field":
             out["extra"] = {"FOREXAMOUNT": face}
         elif self.forex_export_form == "no_base":

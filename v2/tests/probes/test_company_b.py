@@ -576,7 +576,11 @@ def test_after_a_full_load_the_trial_balance_nets_to_zero_with_opening_stock_on_
     books = _empty_b()
     writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     report = load_company_b(writer, io)
-    assert any("Trial Balance Dr/Cr total observed: 0.00." in n for n in report.notes), report.notes
+    # C47: the USD party is valued at the latest voucher rate, Export Sales at the bases — the TB is out by the
+    # unrealised forex difference, exactly as live (183.87 on 2026-09-25), and the note says it's expected.
+    assert any("Trial Balance Dr/Cr total observed: 183.87" in n and "expected 183.87" in n and "C47" in n
+               for n in report.notes), report.notes
+    assert not report.problems
 
 
 # --- C40: compound-unit quantities go out in the compound's first unit, masters and vouchers alike ----------------------
@@ -608,7 +612,8 @@ def test_a_full_load_never_takes_an_item_negative_and_the_trial_balance_still_cl
     writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     report = load_company_b(writer, io, licence=licence)
     assert report.problems == []
-    assert any("Trial Balance Dr/Cr total observed: 0.00." in n for n in report.notes), report.notes
+    # C47: the TB is out by exactly the unrealised forex difference (183.87 in both licences), and nothing else.
+    assert any("Trial Balance Dr/Cr total observed: 183.87; expected 183.87" in n for n in report.notes), report.notes
     imports = [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r]
     purchases = [r for r in imports if 'VCHTYPE="Purchase"' in r]
     assert len(purchases) == 240 and all("<ALLINVENTORYENTRIES.LIST>" in r for r in purchases)
@@ -634,10 +639,18 @@ LIVE_RUN4_EDUCATIONAL = {"Sundry Debtors": Decimal("2457218.56"), "Sales Account
 
 
 # Plan part 7: run 4 had 101/102 skipped (C36). Written now, both USD sales' INR base (₹37,216.04 + ₹95,897.68) adds
-# to Sundry Debtors (the USD party) and to Sales Accounts (Export Sales), and nothing else moves.
+# to Sales Accounts (Export Sales). Sundry Debtors gains the USD party valued at the LATEST voucher rate instead
+# (C47, live 2026-09-25: $1,609.71 × 82.58 = ₹1,32,929.85), and nothing else moves.
 USD_SALES_BASE = Decimal("37216.04") + Decimal("95897.68")
-EDUCATIONAL_WITH_FOREX = {b: v + (USD_SALES_BASE if b in ("Sundry Debtors", "Sales Accounts") else 0)
+USD_PARTY_REVALUED = Decimal("132929.85")
+EDUCATIONAL_WITH_FOREX = {b: v + {"Sundry Debtors": USD_PARTY_REVALUED, "Sales Accounts": USD_SALES_BASE}.get(b, 0)
                           for b, v in LIVE_RUN4_EDUCATIONAL.items()}
+# C47: the live forex load's Sundry Debtors (logs/setup-b-forex-live-2026-09-25.log, "Tally has |-2590148.41|").
+LIVE_FOREX_SUNDRY_DEBTORS = Decimal("2590148.41")
+
+
+def test_expected_sundry_debtors_is_the_live_forex_load_figure_c47():
+    assert EDUCATIONAL_WITH_FOREX["Sundry Debtors"] == LIVE_FOREX_SUNDRY_DEBTORS
 
 
 def test_expected_group_balances_for_educational_equal_the_live_run4_figures():

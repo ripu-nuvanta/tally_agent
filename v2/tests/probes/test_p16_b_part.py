@@ -13,6 +13,10 @@ B = COMPANIES["B"]
 
 
 def _books(**knobs) -> FakeBooks:
+    # C47: live, the USD party's ClosingBalance exports as an expression that probe 16 B can't parse today (pinned by
+    # test_b_the_live_forex_closing_is_a_harness_error_today). The other tests here are about the INR ledgers, so they
+    # use the candidate plain form unless a test says otherwise.
+    knobs.setdefault("forex_ledger_closing", "plain")
     books = FakeBooks(name=B, educational=True, **knobs)
     seed_company_b(books, "educational", masters=True)
     return books
@@ -114,3 +118,11 @@ async def test_b_scope_reads_that_disagree_are_different(tmp_path, monkeypatch):
     part = await _run(tmp_path, _books(ledger_svtodate_honoured=True))
     assert part["outcome"] == "DIFFERENT", part["summary"]
     assert "disagree" in part["summary"]
+
+
+async def test_b_the_live_forex_closing_is_a_harness_error_today(tmp_path):
+    """C47 (live 2026-09-25): after the plan-part-7 load the USD party's ClosingBalance is `-$1609.71 @ ? 82.58/$ =
+    -? 132929.85`. `parse_ledger_list` raises on it, so a 16 B re-run BLOCKs with a harness error. Known gap, pinned so
+    it can't pass silently: fix probe 16's ledger read before any 16 B re-run (plan part 7 review M4)."""
+    part = await _run(tmp_path, _books(forex_ledger_closing="expression"))
+    assert part["outcome"] == "BLOCKED" and "AmountParseError" in part["summary"] and "132929.85" in part["summary"]

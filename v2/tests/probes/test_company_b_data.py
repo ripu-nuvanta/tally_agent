@@ -195,7 +195,8 @@ def test_gstin_check_digit_matches_the_official_algorithm():
 def test_month_end_balances_equal_openings_plus_the_running_sum():
     ds = generate()
     exp = expected_figures(ds)
-    for ledger in ("Domestic Sales", "Capital Account", USD_DEBTOR, USD_EXPORT_PARTY):
+    # USD_EXPORT_PARTY is not a running sum of INR bases: Tally revalues it at the latest voucher rate (C47, below).
+    for ledger in ("Domestic Sales", "Capital Account", USD_DEBTOR):
         for (name, day), value in exp.ledger_month_end.items():
             if name != ledger:
                 continue
@@ -432,7 +433,9 @@ def test_expected_counts_include_the_usd_sales():
     assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) == 960
     assert exp.voucher_count_by_fy["2022-23"] == 240
     last = max(day for _, day in exp.ledger_month_end)
-    assert exp.ledger_month_end[(USD_EXPORT_PARTY, last)] == Decimal("-133113.72")   # both sales, never settled
+    # C47 (live 2026-09-25): both sales, never settled, valued at the LATEST voucher rate — $1609.71 × 82.58.
+    assert exp.ledger_month_end[(USD_EXPORT_PARTY, last)] == Decimal("-132929.85")
+    assert exp.ledger_month_end[("Export Sales", date(2022, 9, 30))] == Decimal("133113.72")   # keeps the bases
 
 
 def test_the_forex_write_shape_is_the_live_one():
@@ -623,3 +626,28 @@ def test_expected_stock_month_ends_match_an_independent_replay():
                          if v.date <= cut and not (v.cancelled or v.optional or v.skip_reason)
                          for inv in v.inventory if inv.item == i.name), Decimal("0"))
             assert exp.stock_month_end[(i.name, cut)] == (i.opening_qty or 0) + moved, (licence, i.name)
+
+
+# --- C47 (live 2026-09-25, logs/setup-b-forex-live-2026-09-25.log): a forex ledger is valued at the latest rate ---------
+LIVE_USD_PARTY_CLOSING = "-$1609.71 @ ? 82.58/$ = -? 132929.85"      # ledger_details, live company B after the load
+
+
+def test_forex_ledger_is_valued_at_the_latest_voucher_rate_c47():
+    """TallyPrime values a forex ledger's balance at the rate of its latest-dated forex voucher (1609.71 × 82.58 =
+    132929.85), not at the sum of the vouchers' INR bases (133113.72). Export Sales keeps the bases, so the books'
+    Trial Balance is out by the unrealised difference, 183.87."""
+    from v2.probes.reads import parse_forex_amount
+    live = parse_forex_amount(LIVE_USD_PARTY_CLOSING)
+    for licence in ("educational", "licensed"):
+        ds = generate(licence)
+        exp = expected_figures(ds)
+        forex = sorted((v for v in ds.vouchers if v.fx_rate is not None), key=lambda v: (v.date, v.tag))
+        face = sum((v.fx_amount for v in forex), Decimal("0.00"))
+        assert (face, forex[-1].fx_rate) == (abs(live.fx), live.rate)
+        for (name, day), value in exp.ledger_month_end.items():
+            if name != USD_EXPORT_PARTY:
+                continue
+            assert value == (live.base if day >= date(2022, 9, 30) else Decimal("0.00")), (licence, day)
+        assert exp.forex_revaluation[date(2026, 3, 31)] == Decimal("183.87")
+        assert exp.forex_revaluation[date(2022, 8, 31)] == Decimal("0.00")
+        assert exp.ledger_fy_opening[(USD_EXPORT_PARTY, date(2023, 4, 1))] == live.base

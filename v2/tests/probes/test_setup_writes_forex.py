@@ -134,7 +134,8 @@ def test_fake_export_forms_and_closing_expression(form, amount_raw, extra):
              if v["header"].get("NARRATION") == "S0-throwaway forex V1"]
     party = next(l for l in found[0]["ledger_lines"] if l["fields"]["LEDGERNAME"] == "ZZ Party")
     assert party["amount_raw"] == amount_raw and party["fields"].get("FOREXAMOUNT") == extra
-    assert writer.ledger_details(B, "ZZ Party")["ClosingBalance"] == "-$448.44 = -?37216.04"
+    # C47 live layout: face total @ the latest voucher rate = the revalued balance, in the base prefix "? ".
+    assert writer.ledger_details(B, "ZZ Party")["ClosingBalance"] == "-$448.44 @ ? 82.99/$ = -? 37216.04"
 
 
 def test_the_fakes_base_currency_is_named_like_live_b():

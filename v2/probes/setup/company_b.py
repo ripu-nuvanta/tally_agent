@@ -674,10 +674,13 @@ def _verify_balances(writer: TallyWriter, company: str, dataset: Dataset, report
     primaries = primary_group_rows(rows)
     total = sum((row["closing_balance"] for row in primaries.values() if row["closing_balance"] is not None),
                Decimal("0.00"))
+    revaluation = expected_figures(dataset).forex_revaluation
+    forex_gap = revaluation[max(revaluation)] if revaluation else Decimal("0.00")
     report.notes.append(
-        f"Trial Balance Dr/Cr total observed: {total}. The live netting rule for this (including how/whether "
-        "opening stock reconciles it) is unsettled — that's probe 16/17/18's job to confirm, not asserted here "
-        "(S0-D7).")
+        f"Trial Balance Dr/Cr total observed: {total}; expected {forex_gap} — C47 (live 2026-09-25): a forex ledger is "
+        "valued at its latest voucher rate while its sales keep the vouchers' INR bases, so the TB is out by the "
+        "unrealised forex difference. The live netting rule for this (including how/whether opening stock "
+        "reconciles it) is unsettled — that's probe 16/17/18's job to confirm, not asserted here (S0-D7).")
 
     actual_by_name: dict[str, Decimal] = {}
     for row in rows:

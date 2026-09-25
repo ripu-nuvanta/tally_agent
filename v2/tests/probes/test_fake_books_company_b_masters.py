@@ -16,6 +16,10 @@ B = COMPANIES["B"]
 
 
 def _books(**knobs) -> FakeBooks:
+    # C47: live, the USD party's ClosingBalance is an expression that `parse_ledger_list` can't read (pinned by
+    # test_the_live_forex_closing_breaks_parse_ledger_list below); these ledger-collection tests are about other
+    # ledgers, so they read the candidate plain form unless a test says otherwise.
+    knobs.setdefault("forex_ledger_closing", "plain")
     books = FakeBooks(name=B, educational=True, **knobs)
     seed_company_b(books, "educational", masters=True)
     return books
@@ -43,7 +47,12 @@ def test_masters_match_the_dataset_and_the_tb_nets_to_zero():
     rows = exploded_tb_rows(_ask(books, wrap_report("Trial Balance", "01-04-2022", "31-03-2023", B,
                                                     extra_vars={"EXPLODEFLAG": "Yes"})))
     primaries = primary_group_rows(rows)
-    assert sum((r["closing_balance"] or Decimal(0)) for r in primaries.values()) == Decimal("0.00")
+    # C47 (live 2026-09-25): the TB is out by the unrealised forex difference — the USD party at the latest rate,
+    # Export Sales at the bases. As on 31-03-2023 both USD sales (Sep 2022) are in: 183.87.
+    from v2.probes.setup.company_b_data import expected_figures, generate
+    gap = expected_figures(generate("educational")).forex_revaluation[date(2023, 3, 31)]
+    assert gap == Decimal("183.87")
+    assert sum((r["closing_balance"] or Decimal(0)) for r in primaries.values()) == gap
     assert next(r for r in rows if r["account_name"] == "Opening Stock")["closing_balance"] == Decimal("-24450.00")
 
 
@@ -96,3 +105,12 @@ def test_malformed_and_unknown_company_answers():
     unknown = master_request("S0P14Ledgers", "Ledger", ["Name"], B + " X")
     assert "<LEDGER " in _ask(_books(), unknown)                                  # default: SVCurrentCompany ignored
     assert detect_error(_ask(_books(honour_company_var=True), unknown))
+
+
+def test_the_live_forex_closing_breaks_parse_ledger_list():
+    """C47 / plan part 7 Review Focus 4, a real S1 finding pinned here (not fixed in S0): the agent's Ledger parser
+    raises on the USD party's live ClosingBalance `-$1609.71 @ ? 82.58/$ = -? 132929.85`. Probe 16 B inherits it."""
+    import pytest
+    from v2.agent.tally.amounts import AmountParseError
+    with pytest.raises(AmountParseError, match="132929.85"):
+        _ledgers(_books(forex_ledger_closing="expression"))
