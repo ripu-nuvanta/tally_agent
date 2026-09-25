@@ -230,3 +230,63 @@ entry with `"tally": ""`. That is not a date difference. Recording only, so no v
 Fix both before any probe 11 / 16 B / 24 re-run, or before the S1 expression-balance parser is written against
 FakeBooks. The C47 numbers themselves (expected figures, FakeBooks TB, setup-b note, probe 22 record) agree with the
 live evidence to the paisa.
+
+## Fix round (2026-09-25)
+
+Both Important findings fixed test-first, offline only (nothing sent to Tally; `results.json` and the recorded
+fixtures untouched). Suite after each commit: normal and `-W error` both green.
+
+| Finding | Commit | Suite |
+|---|---|---|
+| I1 | `86df230` | 912 passed (normal and `-W error`) |
+| I2 | `b92a659` | 917 passed (normal and `-W error`) |
+
+### I1: fixed in `86df230`
+
+- **Probe 24.** A CONFIRMED half now carries `half_confirmed_impact(half)`: "Security on: …" or "TallyVault on: …".
+  Each one is scoped to its own half. The whole-probe `CONFIRMED_IMPACT` is used only when **both** halves are
+  CONFIRMED, and then it appears once, so the text recorded for the live result (C: both CONFIRMED) is unchanged.
+  A mixed result no longer claims that "a secured or vaulted company is unchanged".
+- **`judge_halves` docstring.** It now says every half's impact must be scoped to that half.
+- **Tests.**
+  - The mixed-halves test (`test_a_vault_rename_with_a_new_guid_…`) now asserts:
+    - `CONFIRMED_IMPACT not in spec_impact`;
+    - no "secured or vaulted" wording;
+    - "Security on:" is present and "TallyVault on:" is absent.
+  - New `test_a_failed_vault_half_does_not_claim_the_vault_is_unchanged` drives the real probe with an empty vault
+    export (FAILED). It asserts there is no whole-probe claim, and that the FAILED impact comes first.
+  - New `test_each_half_confirmed_impact_names_only_its_half`.
+  - The both-CONFIRMED test asserts the whole-probe sentence appears exactly once, with no per-half repeats.
+- **Other `judge_halves` callers checked.** Probes 3 and 23 don't call it; the only callers are 11, 24 and 25.
+  - **Probe 11.** Its CONFIRMED halves carry `""`, and it falls back to its whole-probe `CONFIRMED_IMPACT` only when
+    no half has an impact. Every DIFFERENT/FAILED impact names its own half (ledger OpeningBalance, opening bill,
+    StockItem openings).
+  - **Probe 25 B.** `B_TYPE_*` are about voucher types, and `R9_*` are about duplicate names. Each is already scoped
+    to its half.
+  - No change was needed in either.
+
+### I2: fixed in `b92a659`
+
+- **FakeBooks.**
+  - New knob `forex_ledger_opening`: `"expression"` is the live value and the default, `"plain"` is the candidate.
+  - Under the live FY-scoped opening (`ledger_opening_scope="fy"`), a currency ledger's OpeningBalance now goes
+    through the same builder as the closing: `_forex_balance_text`, which uses forex lines dated before the FY start
+    at the latest rate before it.
+  - Under the books-scope opening, the value is the master's own INR opening, so it stays plain. That opening has
+    no forex lines.
+- **Tests.**
+  - `test_the_usd_party_opening_and_closing_match_the_live_capture` sends probe 22 B's own request to the fake and
+    compares **both** tags with `p22_B_usd_ledger.xml`.
+  - `test_the_plain_forex_opening_is_a_candidate_knob`.
+  - `test_the_live_forex_opening_breaks_parse_ledger_list_too`: the closing is plain here, so the opening alone
+    raises `AmountParseError`.
+  - **Probe 11 B is pinned**, the same way as 16 B's closing pin: `test_b_the_live_forex_opening_is_a_harness_error_today`
+    expects BLOCKED, `AmountParseError`, `132929.85`.
+  - **16 B also has an opening pin:** `test_b_the_live_forex_opening_is_a_harness_error_today_too`. A fix to the
+    closing alone would still BLOCK live.
+  - The other probe 11 / 16 B / masters tests use the candidate plain opening via `_books` `setdefault`, as they
+    already did for the closing.
+- **Still open.** The "probes 11 B / 16 B need an expression-form balance parser" caveat is now pinned on both tags
+  offline. Writing that parser remains an open S1 decision.
+
+**Not done here.** Minors M1–M6 are deferred to S1 hardening, as recorded in the S0 exit-gate verdict.
