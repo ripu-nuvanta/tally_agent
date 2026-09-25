@@ -1,0 +1,112 @@
+"""Plan part 7 Task 3.9: FakeBooks' forex defaults pinned to the LIVE read-back (Task 2, company B, 2026-09-25).
+
+Evidence (committed once, never edited): `forex_shape_2026-09-25_run2/` (outcome `stored_forex`, chosen V1b) and
+`forex_shape_2026-09-25_run1_currency_refused/` (the `$` Currency master create over XML: EXCEPTIONS=1). Every
+default the live run settled is compared here with the capture itself, not with a hand-typed copy of it."""
+import json
+from decimal import Decimal
+from pathlib import Path
+
+import pytest
+
+from v2.agent.tally.xml_utils import read_objects
+from v2.probes.companies import COMPANIES
+from v2.probes.reads import parse_vouchers, primary_lines
+from v2.probes.setup.company_b_data import USD_CURRENCY
+from v2.probes.setup.writes import (CURRENCY_FIELDS, ForexLine, TallyWriter, WriteFailed, b_day_voucher_request)
+from v2.tests.probes.fake_books import USD_CURRENCY_ROW, FakeBooks, sync_client
+
+B = COMPANIES["B"]
+_SYNC = Path(__file__).parent.parent / "fixtures" / "sync"
+SHAPE = _SYNC / "forex_shape_2026-09-25_run2"                         # live: stored_forex, chosen V1b
+REFUSED = _SYNC / "forex_shape_2026-09-25_run1_currency_refused"     # live: the XML currency create refused
+CHOSEN = json.loads((SHAPE / "summary.json").read_text(encoding="utf-8"))["chosen"]
+LINES = [("ZZ Party", Decimal("-37216.04"), True), ("Export Sales", Decimal("37216.04"), False)]
+
+
+def _live_voucher(variant: str) -> dict:
+    raw = (SHAPE / f"variant_{variant}.xml").read_text(encoding="utf-8")
+    return next(v for v in parse_vouchers(raw) if v["header"].get("NARRATION") == f"S0-throwaway forex {variant}")
+
+
+def _books(**knobs) -> FakeBooks:
+    books = FakeBooks(name=B, educational=True, **knobs)
+    books.edit_state(lambda s: s["currencies"].__setitem__("$", dict(USD_CURRENCY_ROW)))   # created in the UI live
+    return books
+
+
+def _writer(books) -> TallyWriter:
+    return TallyWriter(sync_client(books.transport()), say=lambda _m: None)
+
+
+def _fake_voucher(books, writer, narration: str) -> dict:
+    raw = writer.post(b_day_voucher_request(B, "01-09-2022"))
+    return next(v for v in parse_vouchers(raw) if v["header"].get("NARRATION") == narration)
+
+
+def _write_throwaway(books, *, party_currency: str | None, base_symbol: str) -> tuple[TallyWriter, str]:
+    writer = _writer(books)
+    writer.create_party_ledger(B, "ZZ Party", parent="Sundry Debtors", bill_wise=False, currency=party_currency)
+    narration = "S0-throwaway forex fake"
+    writer.create_b_voucher(B, vch_type="Sales", date="20220901", narration=narration, party="ZZ Party",
+                            lines=LINES, forex=ForexLine("$", Decimal("448.44"), Decimal("82.99"),
+                                                         form=CHOSEN["form"], base_symbol=base_symbol))
+    return writer, narration
+
+
+def _amounts(voucher: dict, party: str) -> dict[str, str]:
+    return {("party" if l["fields"]["LEDGERNAME"] == party else l["fields"]["LEDGERNAME"]): l["amount_raw"]
+            for l in primary_lines(voucher)}
+
+
+def test_the_live_run_chose_v1b_the_rate_without_a_base_symbol():
+    assert CHOSEN == {"variant": "V1b", "party_currency": "$", "form": "full", "base_symbol": ""}
+
+
+def test_fake_default_export_is_the_live_v1b_text_byte_for_byte():
+    """Sent `@ 82.99/$ = -37216.04` (no base symbol); live exported `@ ? 82.99/$ = -? 37216.04` — the base
+    currency's NAME "?" plus a space (its HasSpace=Yes), whatever was sent."""
+    books = _books()
+    writer, narration = _write_throwaway(books, party_currency="$", base_symbol=CHOSEN["base_symbol"])
+    live = _amounts(_live_voucher("V1b"), "ZZ Forex Probe USD Debtor")
+    assert _amounts(_fake_voucher(books, writer, narration), "ZZ Party") == live
+    assert live == {"party": "-$448.44 @ ? 82.99/$ = -? 37216.04", "Export Sales": "$448.44 @ ? 82.99/$ = ? 37216.04"}
+
+
+def test_fake_default_keeps_forex_on_a_base_currency_party_like_live_v3():
+    books = _books()
+    writer, narration = _write_throwaway(books, party_currency=None, base_symbol="")
+    assert (_amounts(_fake_voucher(books, writer, narration), "ZZ Party")
+            == _amounts(_live_voucher("V3"), "ZZ Forex Probe INR Debtor"))
+
+
+def test_fake_default_refuses_the_rate_written_with_the_base_symbol_like_live_v1():
+    live = {v["id"]: v for v in json.loads((SHAPE / "summary.json").read_text(encoding="utf-8"))["variants"]}["V1"]
+    assert live["classification"] == "refused" and live["base_symbol"] == "?"
+    with pytest.raises(WriteFailed, match="exceptions=1"):
+        _write_throwaway(_books(), party_currency="$", base_symbol="?")
+
+
+def test_fake_default_refuses_a_currency_create_like_live_run1():
+    assert json.loads((REFUSED / "summary.json").read_text(encoding="utf-8"))["outcome"] == "currency_refused"
+    books = FakeBooks(name=B, educational=True)
+    with pytest.raises(WriteFailed, match="exceptions=1"):
+        _writer(books).create_currency(B, USD_CURRENCY)
+    assert "$" not in books.state["currencies"]
+
+
+def test_the_fakes_usd_row_is_the_live_currency_row():
+    live = read_objects((SHAPE / "currencies_after.xml").read_text(encoding="utf-8"), "CURRENCY", CURRENCY_FIELDS)
+    row = next(r for r in live if r["Name"] == "$")
+    fake = _writer(_books()).list_currencies(B)["$"]
+    assert {k: fake.get(k, "") for k in CURRENCY_FIELDS} == {k: row.get(k, "").strip() for k in CURRENCY_FIELDS}
+
+
+def test_fake_forex_line_carries_the_live_extra_fields():
+    """The forex-only leaf fields live exported (V1b line vs V0 line) — the fake must export the same names."""
+    control = primary_lines(_live_voucher("V0"))[0]["fields"]
+    extra_live = set(primary_lines(_live_voucher("V1b"))[0]["fields"]) - set(control)
+    books = _books()
+    writer, narration = _write_throwaway(books, party_currency="$", base_symbol="")
+    assert extra_live <= set(primary_lines(_fake_voucher(books, writer, narration))[0]["fields"])
+    assert extra_live == set()                          # live: a forex line carries no extra leaf field at all

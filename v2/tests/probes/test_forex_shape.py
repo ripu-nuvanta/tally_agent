@@ -11,13 +11,15 @@ from v2.probes.safety import GuardError
 from v2.probes.setup import forex_shape
 from v2.probes.setup.company_b_data import USD_DEBTOR
 from v2.probes.setup.writes import TallyWriter, WriteFailed, WriteRefused
-from v2.tests.probes.fake_books import FakeBooks, seed_company_b, sync_client
+from v2.tests.probes.fake_books import CANDIDATE_FOREX_KNOBS, FakeBooks, seed_company_b, sync_client
 
 B = COMPANIES["B"]
 
 
 def _books(**knobs) -> FakeBooks:
-    books = FakeBooks(name=B, educational=True, **knobs)
+    # plan part 7 Task 3.9: the fake's defaults are now the live answers; these tests pin Task 1's code against the
+    # candidate ones (an XML currency create that works, a "?" rate accepted) unless a test names its own knob.
+    books = FakeBooks(name=B, educational=True, **{**CANDIDATE_FOREX_KNOBS, **knobs})
     seed_company_b(books, "educational", masters=True)
     return books
 

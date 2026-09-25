@@ -134,6 +134,18 @@ STATE_FILE = "fake_company.json"
 COMPANY_LIST_MARKER = "<ID>List of Companies</ID>"
 
 
+# plan part 7 Task 3.9 — live (forex_shape_2026-09-25_run2/currencies_after.xml): the `$` Currency master as company B
+# lists it. It was created in the UI: the XML create is refused (run1, EXCEPTIONS=1). No DecimalSymbol is exported.
+USD_CURRENCY_ROW = {"MailingName": "USD", "OriginalName": "$", "ExpandedSymbol": "USD", "IsSuffix": "No",
+                    "HasSpace": "No", "DecimalPlaces": "2"}
+
+
+# The pre-live candidate answers Task 1's writer and shape-runner tests were written against (plan part 7 Task 3.9
+# moved the defaults to the live ones): an XML Currency create that succeeds, and a rate with a base symbol accepted.
+# Those tests pass these explicitly, so they keep exercising the branches the live run did not take.
+CANDIDATE_FOREX_KNOBS = {"forex_currency_create": "ok", "forex_rate_symbols_refused": ()}
+
+
 def seed_state(name: str = SEED_COMPANY) -> dict:
     return {
         "name": name, "guid": GUID, "alt_vch": 50, "alt_mst": 266, "last_voucher_date": "20260301",
@@ -375,28 +387,34 @@ class FakeBooks:
                  bill_credit_period_exported: bool = True, bill_due_from_credit_period: bool = True,
                  voucher_type_parent_exported: bool = True, stock_opening_scope: str = "current",
                  bill_due_offset_days: int = 0, header_lists_flagged: bool = True,
-                 forex_currency_create: str = "ok", forex_storage: str = "expression",
+                 forex_currency_create: str = "refuse", forex_storage: str = "expression",
                  forex_forms_accepted: tuple[str, ...] = ("full", "no_base"), forex_on_base_party: str = "same",
                  forex_export_form: str = "full", forex_ledger_closing: str = "plain", deletes_stick: bool = True,
                  refuse_narrations: tuple[str, ...] = (), forex_currency_listed: bool = True,
-                 ledger_currency_sticks: bool = True, forex_rate_symbols_refused: tuple[str, ...] = ()):
+                 ledger_currency_sticks: bool = True, forex_rate_symbols_refused: tuple[str, ...] = ("?",)):
         self.folder = folder
-        # plan part 7 (probe 22) — every forex default below is a CANDIDATE (plan part 7), to be re-pinned to the live
-        # read-back by Task 3 (forex_shape_<date>/). Nothing here has been measured live yet.
-        # "ok" | "refuse" (EXCEPTIONS=1) | "popup" (a modal: the create times out) — a Currency master create.
+        # plan part 7 (probe 22). Task 3.9 pinned the defaults to the live read-back on company B (2026-09-25:
+        # forex_shape_2026-09-25_run2/, run1_currency_refused/; test_fake_books_forex.py compares them with the
+        # capture). Each knob says "live" or "candidate"; the candidate values stay only so every probe-22 branch has a
+        # test (the part-6 pattern).
+        # live — run1: "refuse" (EXCEPTIONS=1, no LINEERROR; `$` then had to be created in the UI). "ok" | "popup" (a
+        # modal: the create times out) are candidates, kept for the shape runner's own tests.
         self.forex_currency_create = forex_currency_create
-        # "expression" (the forex text is kept) | "plain" (accepted, but stored as plain INR — the C36 failure) |
-        # "refuse" (EXCEPTIONS=1) — a voucher line whose AMOUNT is a forex expression.
+        # live — "expression" (V1b/V3 kept the forex text). "plain" (accepted, but stored as plain INR — the C36
+        # failure) | "refuse" (EXCEPTIONS=1) are candidates.
         self.forex_storage = forex_storage
-        # which AMOUNT forms are accepted: "full" (`… = ₹base`, F1) and/or "no_base" (F2); others get EXCEPTIONS=1.
+        # which AMOUNT forms are accepted: "full" (`… = base`, F1) is live (V1b); "no_base" (F2) is a candidate (V2
+        # never ran, because V1b stored). Others get EXCEPTIONS=1.
         self.forex_forms_accepted = tuple(forex_forms_accepted)
-        # a forex voucher whose PARTY ledger has NO currency (V3 / H1 fallback S-A): "same" (kept like any forex
-        # voucher) | "refuse" (EXCEPTIONS=1) | "plain" (accepted, every line stored as plain INR).
+        # a forex voucher whose PARTY ledger has NO currency: live — "same" (V3 kept like any forex voucher).
+        # "refuse" (EXCEPTIONS=1) | "plain" (accepted, every line stored as plain INR) are candidates.
         self.forex_on_base_party = forex_on_base_party
-        # how a kept forex line exports: "full" | "no_base" | "plain_plus_field" (plain INR AMOUNT + a hypothesis
-        # FOREXAMOUNT field, only to cover probe 22's "field" route).
+        # how a kept forex line exports: live — "full" in the live layout (`_forex_line_text`). "no_base" |
+        # "plain_plus_field" (plain INR AMOUNT + a hypothesis FOREXAMOUNT field, only to cover probe 22's "field"
+        # route) are candidates.
         self.forex_export_form = forex_export_form
-        # a currency ledger's ClosingBalance: "plain" (a number) | "expression" (a hypothesis, never measured).
+        # a currency ledger's ClosingBalance: "plain" (a number) | "expression" — both candidates: live never read a
+        # currency ledger's closing with a voucher on it (the throwaway's read-back was taken before its voucher).
         self.forex_ledger_closing = forex_ledger_closing
         # False = a voucher delete answers DELETED=1 but the voucher stays (plan part 7 fact 3 / Review Focus 2).
         self.deletes_stick = deletes_stick
@@ -405,8 +423,10 @@ class FakeBooks:
         # candidate (review I5): False = a Currency create answers CREATED=1 but the master never shows in the list.
         self.forex_currency_listed = forex_currency_listed
         # candidate (review I3): False = a ledger create answers CREATED=1 but CURRENCYNAME is silently dropped.
+        # Live: True (ledgers_after_create.xml, CURRENCYNAME "$").
         self.ledger_currency_sticks = ledger_currency_sticks
-        # candidate (R-SYM): forex AMOUNTs whose rate carries one of these base symbols get EXCEPTIONS=1.
+        # live — V1: a rate written WITH the base symbol "?" (`@ ?82.99/$`) got EXCEPTIONS=1, no LINEERROR; V1b's bare
+        # rate stored. () is the candidate "every symbol accepted".
         self.forex_rate_symbols_refused = tuple(forex_rate_symbols_refused)
         # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
         # BILLCREDITPERIOD (p21_B_fy2022_month_02.xml). Hypotheses measured live by probes 3 B / 23 B / 25 B:
@@ -802,21 +822,34 @@ class FakeBooks:
         base = next((n for n, c in state.get("currencies", {}).items() if c.get("MailingName") == "INR"), "")
         return f"{sign}{currency}{abs(fx_total):.2f} = {sign}{base}{abs(closing):.2f}"
 
-    def _forex_line_text(self, base: Decimal, fa: ForexAmount) -> dict:
-        """How one KEPT forex line is stored and exported, by `forex_export_form` (plan part 7; candidates until
-        Task 3 pins the live read-back). The ONE place this text is built — `_voucher` (imports) and, from Task 3,
-        `seed_company_b` both call it, so seeded and imported forex lines cannot drift apart. `fx` (signed like the
-        base) is data for `_closing_text`, never exported."""
+    @staticmethod
+    def _base_prefix(state: dict) -> str:
+        """The base currency's NAME as a forex export writes it, followed by a space when its HasSpace is Yes — live
+        company B: "? " (variant_V1b.xml `@ ? 82.99/$ = -? 37216.04`; currencies_after.xml: NAME "?", HasSpace Yes)."""
+        name, row = next(((n, c) for n, c in state.get("currencies", {}).items() if c.get("MailingName") == "INR"),
+                         ("", {}))
+        return name + (" " if name and row.get("HasSpace") == "Yes" else "")
+
+    def _forex_line_text(self, state: dict, base: Decimal, fa: ForexAmount) -> dict:
+        """How one KEPT forex line is stored and exported, by `forex_export_form`. The ONE place this text is built —
+        `_voucher` (imports) and `seed_company_b` both call it, so seeded and imported forex lines cannot drift
+        apart. Live layout (Task 3.9, forex_shape_2026-09-25_run2/variant_V1b.xml): Tally rewrites the rate and the
+        base with the base currency's own prefix (`_base_prefix`) whatever symbol was sent — V1b sent none and got
+        `-$448.44 @ ? 82.99/$ = -? 37216.04`. `forex_storage="plain"` (candidate, the C36 failure) keeps nothing:
+        {} — the line stays plain INR, seeded or imported alike (pre-flight F3). `fx` (signed like the base) is data
+        for `_closing_text`, never exported."""
+        if self.forex_storage == "plain":
+            return {}
         sign = "-" if base < 0 else ""
-        rate_symbol = fa.rate_symbol                     # as sent: the discovered base NAME, or none (R-SYM)
+        prefix = self._base_prefix(state)
         face = f"{sign}{fa.currency}{abs(fa.fx):.2f}"
         out = {"fx": f"{sign}{abs(fa.fx):.2f}"}
         if self.forex_export_form == "plain_plus_field":
             out["extra"] = {"FOREXAMOUNT": face}
         elif self.forex_export_form == "no_base":
-            out["amount_text"] = f"{face} @ {rate_symbol}{fa.rate:.2f}/{fa.currency}"
+            out["amount_text"] = f"{face} @ {prefix}{fa.rate:.2f}/{fa.currency}"
         else:
-            out["amount_text"] = f"{face} @ {rate_symbol}{fa.rate:.2f}/{fa.currency} = {sign}{rate_symbol}{abs(base):.2f}"
+            out["amount_text"] = f"{face} @ {prefix}{fa.rate:.2f}/{fa.currency} = {sign}{prefix}{abs(base):.2f}"
         return out
 
     def _forex_entries(self, state: dict, element: ET.Element) -> dict[str, ForexAmount] | None:
@@ -1185,7 +1218,7 @@ class FakeBooks:
             lines = self._posted_lines(element)
             for line in lines:
                 if line["ledger"] in forex:
-                    line.update(self._forex_line_text(Decimal(line["amount"]), forex[line["ledger"]]))
+                    line.update(self._forex_line_text(state, Decimal(line["amount"]), forex[line["ledger"]]))
             if sum((Decimal(line["amount"] or "0.00") for line in lines), Decimal("0.00")) != 0:
                 # C32 (live 2026-09-24, logs/debug-vch1-*.log): Tally totals the ledger lines AND every inventory
                 # row's ACCOUNTINGALLOCATIONS — a nominal Sales line sent as well counts the goods twice and the

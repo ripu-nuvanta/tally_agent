@@ -7,7 +7,7 @@ from v2.probes.reads import parse_forex_amount
 from v2.probes.setup.company_b_data import USD_CURRENCY, CurrencySpec
 from v2.probes.setup.writes import (ForexLine, TallyWriter, WriteFailed, WriteTimeout, WriteUnverified,
                                     currency_matches, forex_amount_text, validate_b_voucher)
-from v2.tests.probes.fake_books import FakeBooks, seed_company_b, sync_client
+from v2.tests.probes.fake_books import CANDIDATE_FOREX_KNOBS, FakeBooks, seed_company_b, sync_client
 
 B = COMPANIES["B"]
 # R-SYM (live discovery 2026-09-25): company B's base currency is NAMEd "?" — the base symbol is never hard-coded.
@@ -20,7 +20,9 @@ def _writer(books) -> TallyWriter:
 
 
 def _books(**knobs) -> FakeBooks:
-    books = FakeBooks(name=B, educational=True, **knobs)
+    # plan part 7 Task 3.9: the fake's defaults are now the live answers; these tests pin Task 1's code against the
+    # candidate ones (an XML currency create that works, a "?" rate accepted) unless a test names its own knob.
+    books = FakeBooks(name=B, educational=True, **{**CANDIDATE_FOREX_KNOBS, **knobs})
     seed_company_b(books, "educational", masters=True)
     return books
 
@@ -109,9 +111,11 @@ def test_delete_b_voucher_verifies_in_the_vouchers_own_day():
         writer.delete_b_voucher(B, mid, vch_type="Sales", day="01-09-2022", date_text="1-Sep-2022")
 
 
+# plan part 7 Task 3.9: the export layout is the live one — the base currency's NAME and a space ("? "), whatever
+# symbol was sent (forex_shape_2026-09-25_run2/variant_V1b.xml). It was the sent text echoed back before.
 @pytest.mark.parametrize("form, amount_raw, extra", [
-    ("full", "-$448.44 @ ?82.99/$ = -?37216.04", None),
-    ("no_base", "-$448.44 @ ?82.99/$", None),
+    ("full", "-$448.44 @ ? 82.99/$ = -? 37216.04", None),
+    ("no_base", "-$448.44 @ ? 82.99/$", None),
     ("plain_plus_field", "-37216.04", "-$448.44"),
 ])
 def test_fake_export_forms_and_closing_expression(form, amount_raw, extra):
