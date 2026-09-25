@@ -23,7 +23,7 @@ its OPENINGVALUE is signed on the wire like a ledger opening: the stock is a deb
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from typing import Callable
 
@@ -105,9 +105,22 @@ class WriteTimeout(WriteFailed):
     """Tally didn't answer in time (a modal may be open)."""
 
 
+class WriteUnverified(WriteFailed):
+    """Tally answered created/altered=1 but the read-back doesn't show the object. It may well exist under another
+    name: never re-send the create (a duplicate master create raises a blocking modal, LESSONS §15 rule 10)."""
+
+
 def check_writable(company: str) -> None:
     if "Probe" not in company:
         raise WriteRefused(f"Refusing to write to {company!r}: only companies with 'Probe' in the name.")
+
+
+def currency_matches(row: dict[str, str], spec: CurrencySpec) -> bool:
+    """I5 (review 2026-09-25): a Currency row is `spec` if its symbol or formal name appears in ANY of the listed
+    fields — Tally may key the master by the formal name, or return the symbol under another tag (all candidates
+    until plan part 7 Task 2). Used for list-before-create and for the read-back."""
+    wanted = {spec.symbol, spec.formal_name}
+    return any(row.get(name, "") in wanted for name in CURRENCY_FIELDS if row.get(name, ""))
 
 
 def currency_request(company: str) -> str:
@@ -130,12 +143,15 @@ class ForexLine:
     """How a forex voucher's lines go on the wire (plan part 7). `fx_amount` is the voucher's face value as a
     MAGNITUDE — every line of a 2-line export sale carries it, signed like that line's INR amount. `form` "full"
     states the base ("… = ₹37216.04", candidate F1); "no_base" leaves Tally to compute it (F2). Both are
-    CANDIDATES until plan part 7 Task 2 reads a live forex voucher back."""
+    CANDIDATES until plan part 7 Task 2 reads a live forex voucher back.
+    `base_symbol` has NO default (Ruling R-SYM, 2026-09-25): it is the NAME of the company's base currency as read
+    from Tally — company B's is a literal "?" (logs/p7-forex-discovery-2026-09-25.log) — or "" for the rate written
+    without a base symbol. Never hard-code "₹"."""
     symbol: str
     fx_amount: Decimal
     rate: Decimal
-    base_symbol: str = "₹"
     form: str = "full"
+    base_symbol: str = field(kw_only=True)
 
 
 def forex_amount_text(inr: Decimal, forex: ForexLine) -> str:
@@ -530,15 +546,19 @@ class TallyWriter:
         xml = wrap_collection("S0BVoucherTypes", "VoucherType", VOUCHER_TYPE_FIELDS, company)
         return [row["Name"] for row in read_objects(self.post(xml), "VOUCHERTYPE", VOUCHER_TYPE_FIELDS)]
 
+    def currency_rows(self, company: str) -> list[dict[str, str]]:
+        return read_objects(self.post(currency_request(company)), "CURRENCY", CURRENCY_FIELDS)
+
     def list_currencies(self, company: str) -> dict[str, dict[str, str]]:
-        return {row["Name"]: row for row in read_objects(self.post(currency_request(company)), "CURRENCY",
-                                                          CURRENCY_FIELDS)}
+        return {row["Name"]: row for row in self.currency_rows(company)}
 
     def create_currency(self, company: str, spec: CurrencySpec) -> bool:
         """List first (LESSONS §15 rule 10), create, read back. No verified op exists — the tags are candidates
-        (plan part 7 Task 2 step 3). Returns False when it was already there (nothing sent)."""
+        (plan part 7 Task 2 step 3). Returns False when it was already there (nothing sent). "There" means
+        `currency_matches` on any listed row (I5). A create Tally confirms that the read-back can't find raises
+        `WriteUnverified` — never a plain refusal, because re-sending it would be a duplicate create."""
         check_writable(company)
-        if spec.symbol in self.list_currencies(company):
+        if any(currency_matches(row, spec) for row in self.currency_rows(company)):
             self.say(f"currency {spec.symbol!r} already exists — not re-created")
             return False
         inner = (f'<CURRENCY NAME="{esc(spec.symbol)}" ACTION="Create">\n'
@@ -551,8 +571,10 @@ class TallyWriter:
         result = self.import_("All Masters", company, inner)
         if not ((result.created == 1 or result.altered == 1) and result.clean):          # rule 11
             raise WriteFailed(f"Currency {spec.symbol!r} not created: {result}")
-        if spec.symbol not in self.list_currencies(company):
-            raise WriteFailed(f"Currency {spec.symbol!r} not found on read-back")
+        if not any(currency_matches(row, spec) for row in self.currency_rows(company)):
+            raise WriteUnverified(f"Currency {spec.symbol!r}: Tally answered {result} but no listed currency carries "
+                                  f"{spec.symbol!r} or {spec.formal_name!r} — do NOT re-run the create; inspect the "
+                                  "Currency list (currencies_after.xml) and Tally's Currency masters in the UI")
         return True
 
     def ledger_details(self, company: str, name: str) -> dict[str, str] | None:

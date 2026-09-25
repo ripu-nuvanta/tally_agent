@@ -4,13 +4,14 @@ import pytest
 
 from v2.probes.companies import COMPANIES
 from v2.probes.reads import parse_forex_amount
-from v2.probes.setup.company_b_data import USD_CURRENCY
-from v2.probes.setup.writes import (ForexLine, TallyWriter, WriteFailed, WriteTimeout, forex_amount_text,
-                                    validate_b_voucher)
+from v2.probes.setup.company_b_data import USD_CURRENCY, CurrencySpec
+from v2.probes.setup.writes import (ForexLine, TallyWriter, WriteFailed, WriteTimeout, WriteUnverified,
+                                    currency_matches, forex_amount_text, validate_b_voucher)
 from v2.tests.probes.fake_books import FakeBooks, seed_company_b, sync_client
 
 B = COMPANIES["B"]
-FX = ForexLine(symbol="$", fx_amount=Decimal("448.44"), rate=Decimal("82.99"))
+# R-SYM (live discovery 2026-09-25): company B's base currency is NAMEd "?" — the base symbol is never hard-coded.
+FX = ForexLine(symbol="$", fx_amount=Decimal("448.44"), rate=Decimal("82.99"), base_symbol="?")
 LINES = [("ZZ Party", Decimal("-37216.04"), True), ("Export Sales", Decimal("37216.04"), False)]
 
 
@@ -29,8 +30,11 @@ def test_forex_text_round_trips_through_the_parser():
         text = forex_amount_text(inr, FX)
         fa = parse_forex_amount(text)
         assert fa.base == inr and fa.fx == (FX.fx_amount if inr > 0 else -FX.fx_amount) and fa.rate == FX.rate
-    assert forex_amount_text(Decimal("-37216.04"), FX) == "-$448.44 @ ₹82.99/$ = -₹37216.04"
-    no_base = ForexLine("$", Decimal("448.44"), Decimal("82.99"), form="no_base")
+    assert forex_amount_text(Decimal("-37216.04"), FX) == "-$448.44 @ ?82.99/$ = -?37216.04"
+    bare = ForexLine("$", Decimal("448.44"), Decimal("82.99"), base_symbol="")          # R-SYM: no base symbol
+    assert forex_amount_text(Decimal("-37216.04"), bare) == "-$448.44 @ 82.99/$ = -37216.04"
+    assert parse_forex_amount(forex_amount_text(Decimal("-37216.04"), bare)).base == Decimal("-37216.04")
+    no_base = ForexLine("$", Decimal("448.44"), Decimal("82.99"), form="no_base", base_symbol="?")
     assert parse_forex_amount(forex_amount_text(Decimal("-37216.04"), no_base)).base is None
 
 
@@ -47,7 +51,7 @@ def test_validate_refuses_a_line_that_is_not_face_times_rate():
 
 
 def test_validate_refuses_a_rounding_tie():
-    tie = ForexLine("$", Decimal("0.50"), Decimal("0.01"))          # 0.005: HALF_UP 0.01, HALF_EVEN 0.00
+    tie = ForexLine("$", Decimal("0.50"), Decimal("0.01"), base_symbol="?")          # 0.005: HALF_UP 0.01, HALF_EVEN 0.00
     with pytest.raises(ValueError, match="rounding tie"):
         validate_b_voucher(vch_type="Sales", narration="x", party="P",
                            lines=[("P", Decimal("-0.01"), True), ("S", Decimal("0.01"), False)], forex=tie)
@@ -91,7 +95,7 @@ def test_forex_sale_goes_out_as_expression_and_books_the_base():
     mid = writer.create_b_voucher(B, vch_type="Sales", date="20220901", narration="S0-throwaway forex V1",
                                   party="ZZ Party", lines=LINES, forex=FX)
     body = next(r for r in books.requests if "S0-throwaway forex V1" in r and "Import" in r)
-    assert "<AMOUNT>-$448.44 @ ₹82.99/$ = -₹37216.04</AMOUNT>" in body
+    assert "<AMOUNT>-$448.44 @ ?82.99/$ = -?37216.04</AMOUNT>" in body
     assert [l["amount"] for l in books.state["vouchers"][mid]["lines"]] == ["-37216.04", "37216.04"]
 
 
@@ -106,8 +110,8 @@ def test_delete_b_voucher_verifies_in_the_vouchers_own_day():
 
 
 @pytest.mark.parametrize("form, amount_raw, extra", [
-    ("full", "-$448.44 @ ₹82.99/$ = -₹37216.04", None),
-    ("no_base", "-$448.44 @ ₹82.99/$", None),
+    ("full", "-$448.44 @ ?82.99/$ = -?37216.04", None),
+    ("no_base", "-$448.44 @ ?82.99/$", None),
     ("plain_plus_field", "-37216.04", "-$448.44"),
 ])
 def test_fake_export_forms_and_closing_expression(form, amount_raw, extra):
@@ -124,4 +128,34 @@ def test_fake_export_forms_and_closing_expression(form, amount_raw, extra):
              if v["header"].get("NARRATION") == "S0-throwaway forex V1"]
     party = next(l for l in found[0]["ledger_lines"] if l["fields"]["LEDGERNAME"] == "ZZ Party")
     assert party["amount_raw"] == amount_raw and party["fields"].get("FOREXAMOUNT") == extra
-    assert writer.ledger_details(B, "ZZ Party")["ClosingBalance"] == "-$448.44 = -₹37216.04"
+    assert writer.ledger_details(B, "ZZ Party")["ClosingBalance"] == "-$448.44 = -?37216.04"
+
+
+def test_the_fakes_base_currency_is_named_like_live_b():
+    # R-SYM: logs/p7-forex-discovery-2026-09-25.log — NAME "?", MAILINGNAME/EXPANDEDSYMBOL "INR".
+    rows = _writer(_books()).list_currencies(B)
+    assert rows["?"]["MailingName"] == "INR" and rows["?"]["ExpandedSymbol"] == "INR"
+
+
+def test_a_currency_listed_under_its_formal_name_counts_as_present():
+    # I5: Tally may key the master by its formal name; list-before-create must still see it (no duplicate create).
+    books = _books()
+    books.edit_state(lambda s: s["currencies"].__setitem__("USD", {"MailingName": "USD", "ExpandedSymbol": "USD"}))
+    assert _writer(books).create_currency(B, USD_CURRENCY) is False
+    assert not any("<CURRENCY " in r for r in books.requests)
+
+
+@pytest.mark.parametrize("row, present", [
+    ({"Name": "$"}, True), ({"Name": "USD"}, True), ({"Name": "x", "OriginalName": "$"}, True),
+    ({"Name": "x", "MailingName": "USD"}, True), ({"Name": "x", "ExpandedSymbol": "USD"}, True),
+    ({"Name": "?", "MailingName": "INR", "ExpandedSymbol": "INR", "OriginalName": "?"}, False),
+])
+def test_currency_matches_on_name_symbol_or_formal_name(row, present):
+    assert currency_matches(row, USD_CURRENCY) is present
+    assert currency_matches(row, CurrencySpec("€", "EUR")) is False
+
+
+def test_a_created_currency_that_is_not_listed_is_unverified_not_refused():
+    # I5: created=1 but the read-back misses it — a distinct error, so nobody re-sends a create (rule 10 modal).
+    with pytest.raises(WriteUnverified, match="do NOT re-run"):
+        _writer(_books(forex_currency_listed=False)).create_currency(B, USD_CURRENCY)

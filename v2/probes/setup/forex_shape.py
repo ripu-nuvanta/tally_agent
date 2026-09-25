@@ -12,10 +12,11 @@ from typing import Callable
 
 from v2.agent.tally.amounts import AmountParseError, parse_decimal
 from v2.agent.tally.envelopes import wrap_collection
+from v2.agent.tally.xml_utils import read_objects
 from v2.probes.reads import parse_forex_amount, parse_vouchers
 from v2.probes.safety import check_company
 from v2.probes.setup.company_b_data import USD_CURRENCY, CurrencySpec
-from v2.probes.setup.writes import (ForexLine, TallyWriter, WriteFailed, WriteTimeout, b_day_voucher_request,
+from v2.probes.setup.writes import (CURRENCY_FIELDS, ForexLine, TallyWriter, WriteFailed, WriteTimeout, b_day_voucher_request,
                                     currency_request, ledger_detail_request)
 
 DAY = "01-09-2022"                 # C43-safe (day 1), inside B's books, the day tag 101 lands on (Educational)
@@ -53,6 +54,7 @@ class VariantResult:
 @dataclass
 class ShapeReport:
     outcome: str = "not_run"
+    base_symbol: str = ""                                # the base currency's NAME as Tally lists it (R-SYM)
     currency: dict = field(default_factory=dict)
     company_features: list = field(default_factory=list)
     variants: list[VariantResult] = field(default_factory=list)
@@ -65,6 +67,14 @@ class ShapeReport:
     def summary(self) -> str:
         rows = ", ".join(f"{v.id}={v.classification}" for v in self.variants)
         return f"outcome={self.outcome} chosen={self.chosen} variants: {rows or '—'}"
+
+
+def base_currency(rows: list[dict[str, str]]) -> dict[str, str] | None:
+    """R-SYM: the company's base currency row — the one whose formal name reads INR (live B: NAME "?", MAILINGNAME
+    and EXPANDEDSYMBOL "INR"), else the only row. None when that is ambiguous or the row has no Name."""
+    inr = [r for r in rows if "INR" in (r.get("MailingName"), r.get("ExpandedSymbol"), r.get("OriginalName"))]
+    row = inr[0] if len(inr) == 1 else (rows[0] if len(rows) == 1 else None)
+    return row if row is not None and row.get("Name") else None
 
 
 def _stored(v: VariantResult) -> bool:
@@ -110,7 +120,13 @@ def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencyS
                           "pre-forex backup first (plan part 7 Task 2).")
 
     save("company_features", wrap_collection("S0FxCompany", "Company", COMPANY_FEATURE_FIELDS, company))
-    save("currencies_before", currency_request(company))
+    before = read_objects(save("currencies_before", currency_request(company)), "CURRENCY", CURRENCY_FIELDS)
+    base = base_currency(before)
+    if base is None:
+        report.outcome = "base_currency_unknown"
+        report.notes.append("No single base (INR) currency in the Currency list — see currencies_before.xml")
+        return finish()
+    report.base_symbol = base["Name"]
     save("export_sales_ledger", ledger_detail_request(company, NOMINAL))
     try:
         created = writer.create_currency(company, currency)
@@ -137,7 +153,8 @@ def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencyS
         def variant(vid: str, party: str, form: str | None) -> VariantResult:
             result = VariantResult(id=vid, party=party, form=form)
             report.variants.append(result)
-            forex = None if form is None else ForexLine(currency.symbol, FX_AMOUNT, RATE, form=form)
+            forex = None if form is None else ForexLine(currency.symbol, FX_AMOUNT, RATE, form=form,
+                                                          base_symbol=report.base_symbol)
             narration = NARRATION.format(vid)
             try:
                 result.master_id = writer.create_b_voucher(

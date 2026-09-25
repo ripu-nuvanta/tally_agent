@@ -150,9 +150,11 @@ def seed_state(name: str = SEED_COMPANY) -> dict:
         "units": {},
         "items": {},
         "voucherTypes": ["Sales", "Purchase", "Receipt", "Payment", "Contra", "Journal"],
-        # plan part 7: the base currency. Field values are a candidate — Task 2 step 3 reads the live ₹ row.
-        "currencies": {"₹": {"MailingName": "INR", "ExpandedSymbol": "INR", "DecimalSymbol": "paise",
-                             "DecimalPlaces": "2"}},
+        # plan part 7: the base currency — live (R-SYM, logs/p7-forex-discovery-2026-09-25.log): company B's base
+        # currency is NAMEd a literal "?" (its symbol was lost at UI creation under Wine), MAILINGNAME/EXPANDEDSYMBOL
+        # "INR", and every ledger's CurrencyName reads "?".
+        "currencies": {"?": {"MailingName": "INR", "OriginalName": "?", "ExpandedSymbol": "INR",
+                             "DecimalSymbol": "paise", "IsSuffix": "No", "HasSpace": "Yes", "DecimalPlaces": "2"}},
     }
 
 
@@ -376,7 +378,8 @@ class FakeBooks:
                  forex_currency_create: str = "ok", forex_storage: str = "expression",
                  forex_forms_accepted: tuple[str, ...] = ("full", "no_base"), forex_on_base_party: str = "same",
                  forex_export_form: str = "full", forex_ledger_closing: str = "plain", deletes_stick: bool = True,
-                 refuse_narrations: tuple[str, ...] = ()):
+                 refuse_narrations: tuple[str, ...] = (), forex_currency_listed: bool = True,
+                 ledger_currency_sticks: bool = True, forex_rate_symbols_refused: tuple[str, ...] = ()):
         self.folder = folder
         # plan part 7 (probe 22) — every forex default below is a CANDIDATE (plan part 7), to be re-pinned to the live
         # read-back by Task 3 (forex_shape_<date>/). Nothing here has been measured live yet.
@@ -399,6 +402,12 @@ class FakeBooks:
         self.deletes_stick = deletes_stick
         # A test seam: a voucher whose NARRATION contains one of these gets EXCEPTIONS=1 ("this shape is refused").
         self.refuse_narrations = tuple(refuse_narrations)
+        # candidate (review I5): False = a Currency create answers CREATED=1 but the master never shows in the list.
+        self.forex_currency_listed = forex_currency_listed
+        # candidate (review I3): False = a ledger create answers CREATED=1 but CURRENCYNAME is silently dropped.
+        self.ledger_currency_sticks = ledger_currency_sticks
+        # candidate (R-SYM): forex AMOUNTs whose rate carries one of these base symbols get EXCEPTIONS=1.
+        self.forex_rate_symbols_refused = tuple(forex_rate_symbols_refused)
         # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
         # BILLCREDITPERIOD (p21_B_fy2022_month_02.xml). Hypotheses measured live by probes 3 B / 23 B / 25 B:
         # optional vouchers listed, BILLDUE = bill date + credit period, a custom voucher type exports its Parent.
@@ -557,7 +566,8 @@ class FakeBooks:
                                  for mid, v in sorted(in_period.items(), key=lambda kv: int(kv[0]))
                                  if self._listed(v)])
         if "S0BCurrencies" in body or "S0P22Currencies" in body:          # plan part 7 (candidate fields)
-            return objects_xml("CURRENCY", [{"Name": n, **c} for n, c in state.get("currencies", {}).items()])
+            return objects_xml("CURRENCY", [{"Name": n, **{k: v for k, v in c.items() if k != "hidden"}}
+                                            for n, c in state.get("currencies", {}).items() if not c.get("hidden")])
         if "S0BLedgerDetail" in body:                                          # plan part 7
             match = re.search(r'\$Name = "([^"]*)"', body)
             wanted = html.unescape(match.group(1)) if match else ""
@@ -772,7 +782,7 @@ class FakeBooks:
 
     def _closing_text(self, state: dict, name: str, closing: Decimal, *, up_to: str) -> str:
         """A ledger's ClosingBalance text. Plain (`_amount_text`) unless `forex_ledger_closing == "expression"` and the
-        ledger has a currency: then `-$1609.71 = -₹133113.72` — a HYPOTHESIS (plan part 7 Review Focus 4), never
+        ledger has a currency: then `-$1609.71 = -?133113.72` (the base currency's NAME) — a HYPOTHESIS (plan part 7 Review Focus 4), never
         measured live."""
         currency = state["ledgers"].get(name, {}).get("currency", "")
         if self.forex_ledger_closing != "expression" or not currency or closing == 0:
@@ -784,7 +794,8 @@ class FakeBooks:
             fx_total += sum((Decimal(line["fx"]) for line in v.get("lines", [])
                              if line["ledger"] == name and line.get("fx")), Decimal("0.00"))
         sign = "-" if closing < 0 else ""
-        return f"{sign}{currency}{abs(fx_total):.2f} = {sign}₹{abs(closing):.2f}"
+        base = next((n for n, c in state.get("currencies", {}).items() if c.get("MailingName") == "INR"), "")
+        return f"{sign}{currency}{abs(fx_total):.2f} = {sign}{base}{abs(closing):.2f}"
 
     def _forex_line_text(self, base: Decimal, fa: ForexAmount) -> dict:
         """How one KEPT forex line is stored and exported, by `forex_export_form` (plan part 7; candidates until
@@ -792,7 +803,7 @@ class FakeBooks:
         `seed_company_b` both call it, so seeded and imported forex lines cannot drift apart. `fx` (signed like the
         base) is data for `_closing_text`, never exported."""
         sign = "-" if base < 0 else ""
-        rate_symbol = fa.rate_symbol or "₹"
+        rate_symbol = fa.rate_symbol                     # as sent: the discovered base NAME, or none (R-SYM)
         face = f"{sign}{fa.currency}{abs(fa.fx):.2f}"
         out = {"fx": f"{sign}{abs(fa.fx):.2f}"}
         if self.forex_export_form == "plain_plus_field":
@@ -821,7 +832,8 @@ class FakeBooks:
                     continue
                 ledger = entry.findtext("LEDGERNAME", "")
                 form = "full" if fa.base is not None else "no_base"
-                if self.forex_storage == "refuse" or form not in self.forex_forms_accepted:
+                if (self.forex_storage == "refuse" or form not in self.forex_forms_accepted
+                        or fa.rate_symbol in self.forex_rate_symbols_refused):
                     return None
                 if base_party and self.forex_on_base_party == "refuse":
                     return None
@@ -915,7 +927,8 @@ class FakeBooks:
                                         lambda el: {"MailingName": el.findtext("MAILINGNAME", ""),
                                                     "ExpandedSymbol": el.findtext("EXPANDEDSYMBOL", ""),
                                                     "DecimalSymbol": el.findtext("DECIMALSYMBOL", ""),
-                                                    "DecimalPlaces": el.findtext("DECIMALPLACES", "")})
+                                                    "DecimalPlaces": el.findtext("DECIMALPLACES", ""),
+                                                    **({} if self.forex_currency_listed else {"hidden": True})})
         if element.tag == "LEDGER":
             return self._ledger(state, element, action, request)
         if element.tag == "VOUCHER":
@@ -985,7 +998,7 @@ class FakeBooks:
             ledgers[name] = {"parent": element.findtext("PARENT", ""), "email": "", "alter_id": state["alt_mst"],
                              "guid": f"{state['guid']}-{state['alt_mst']:08x}",
                              "opening": element.findtext("OPENINGBALANCE", "0.00")}
-            if currency:
+            if currency and self.ledger_currency_sticks:
                 ledgers[name]["currency"] = currency
             bill_wise = element.findtext("ISBILLWISEON")
             if bill_wise:
