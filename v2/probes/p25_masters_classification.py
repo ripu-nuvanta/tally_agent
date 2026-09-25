@@ -91,6 +91,9 @@ R9_NOTE = ("Company B: if TallyPrime saved a second ledger {name!r} under {other
            "(s0probe-backups/100000-company-B-loaded-2026-09-24).")
 
 
+R9_EMPTY_REASK = "No answer was typed (Enter alone). Asking once more — "
+
+
 def r9_prompt(name: str, parent: str, other: str) -> str:
     return (f"Probe 25 B, duplicate ledger name (R9). In TallyPrime: Gateway of Tally → Create → Ledger. Name: {name}   "
             f"Under: {other}   (it already exists under {parent}). Try to save it (A: Accept on the right-hand "
@@ -109,6 +112,8 @@ async def duplicate_name_attempt(ctx: ProbeContext, licence: str) -> dict:
     note = R9_NOTE.format(name=name, other=other)
     ctx.on_abort(note)
     answer = ctx.ask(r9_prompt(name, parent, other)).strip()
+    if not answer:                                   # review M6: Enter alone is not TallyPrime's message
+        answer = ctx.ask(R9_EMPTY_REASK + r9_prompt(name, parent, other)).strip()
     if answer.lower() == "skip":
         ctx.resolve_abort(note)
         return {"status": "skipped by the operator"}
@@ -116,7 +121,11 @@ async def duplicate_name_attempt(ctx: ProbeContext, licence: str) -> dict:
         "S0P25BLedgers", "Ledger", LEDGER_CHECK_FIELDS, ctx.company_name)), "LEDGER", LEDGER_CHECK_FIELDS)
     parents = sorted(row["Parent"] for row in rows if row["Name"] == name)
     out = {"status": "attempted", "ledger": name, "existing_parent": parent, "tried_parent": other,
-           "tally_message": answer, "parents_after": parents}
+           "tally_message": answer or None, "parents_after": parents}
+    if not answer and parents == [parent]:
+        # Review M6: no answer means no evidence an attempt was made, so one ledger read back isn't a refusal.
+        ctx.resolve_abort(note)
+        return {"status": "not measured (no answer typed, twice)", "ledger": name, "parents_after": parents}
     if parents == [parent]:
         out["verdict"] = "refused"
         ctx.resolve_abort(note)
@@ -126,7 +135,8 @@ async def duplicate_name_attempt(ctx: ProbeContext, licence: str) -> dict:
     else:
         raise ProbeBlocked(f"Ledger {name!r} now reads under {parents or 'nothing'}, not {parent!r} — company B "
                            f"changed during the R9 attempt. {note}")
-    out["answer_agrees"] = (answer.lower() == "saved") == (out["verdict"] == "accepted")
+    out["answer_agrees"] = (None if not answer
+                            else (answer.lower() == "saved") == (out["verdict"] == "accepted"))
     return out
 
 

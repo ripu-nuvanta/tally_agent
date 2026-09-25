@@ -92,3 +92,32 @@ async def test_a_missing_custom_voucher_type_blocks(tmp_path):
     books.edit_state(lambda s: s["voucherTypes"].remove(B_CUSTOM_VOUCHER_TYPE))
     part = await _run(tmp_path, books, ScriptedIO(answers=["Duplicate Entry!"]))
     assert part["outcome"] == "BLOCKED" and B_CUSTOM_VOUCHER_TYPE in part["summary"]
+
+
+async def test_an_empty_r9_answer_is_asked_again(tmp_path):
+    """Review M6: Enter alone is not TallyPrime's message — the question is asked once more."""
+    io = ScriptedIO(answers=["", "Duplicate Entry!"])
+    part = await _run(tmp_path, _books(), io)
+    r9 = part["observations"]["r9"]
+    assert len(io.asks) == 2 and r9["verdict"] == "refused"
+    assert r9["tally_message"] == "Duplicate Entry!" and r9["answer_agrees"] is True
+
+
+async def test_two_empty_r9_answers_leave_r9_unmeasured(tmp_path):
+    """Review M6: with no answer there is no evidence an attempt was made, so a single ledger read back is not a
+    CONFIRMED refusal, and nothing is recorded as an agreeing Tally message."""
+    part = await _run(tmp_path, _books(), ScriptedIO(answers=["", "  "]))
+    obs = part["observations"]
+    assert "verdict" not in obs["r9"] and "answer_agrees" not in obs["r9"] and "tally_message" not in obs["r9"]
+    assert obs["r9"]["status"].startswith("not measured")
+    assert obs["sub_verdicts"]["duplicate_name"].startswith("not measured")
+    assert part["outcome"] == "DIFFERENT" and "R9" not in part["spec_impact"]
+
+
+async def test_two_empty_r9_answers_still_catch_a_saved_duplicate(tmp_path):
+    books = _books()
+    books.edit_state(lambda s: s.setdefault("duplicate_ledgers", []).append({"name": NAME, "parent": OTHER}))
+    part = await _run(tmp_path, books, ScriptedIO(answers=["", ""]))
+    r9 = part["observations"]["r9"]
+    assert r9["verdict"] == "accepted" and r9["tally_message"] is None and r9["answer_agrees"] is None
+    assert "CLEANUP" in part["summary"]
