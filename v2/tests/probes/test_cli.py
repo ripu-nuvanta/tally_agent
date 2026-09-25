@@ -223,7 +223,7 @@ def _console_input_honouring_flag_pauses(books: FakeBooks):
 def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
     config = tmp_config(tmp_path)
     write_company_folder(config.company_folder("B"), COMPANIES["B"])
-    books = FakeBooks(config.company_folder("B"), name=COMPANIES["B"])
+    books = FakeBooks(config.company_folder("B"), name=COMPANIES["B"], educational=False)   # the load is licensed
     # NOTE (deviation from the task-8 brief's verbatim test): `books.state` is a read-only snapshot (a copy, per
     # fake_books.py's own docstring — "a snapshot that silently discards books.state[...] = ... is a trap"), so
     # `books.state["voucherTypes"] = [...]` as the brief wrote it is a no-op against the live fake. Using
@@ -292,7 +292,7 @@ def test_setup_b_returns_one_when_verification_finds_a_problem(tmp_path, capsys)
     fail under that same mutation, which is exactly the blind spot this test closes."""
     config = tmp_config(tmp_path)
     write_company_folder(config.company_folder("B"), COMPANIES["B"])
-    books = FakeBooks(config.company_folder("B"), name=COMPANIES["B"])
+    books = FakeBooks(config.company_folder("B"), name=COMPANIES["B"], educational=False)   # the load is licensed
     books.edit_state(lambda s: s.__setitem__(
         "voucherTypes", ["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
     # National Creditors already exists in Tally, but under the wrong parent — I4 flags this as a `problems`

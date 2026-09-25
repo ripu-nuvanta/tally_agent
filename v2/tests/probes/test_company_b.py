@@ -35,10 +35,12 @@ def _loader(books, **io_kwargs):
     return writer, ScriptedIO(**io_kwargs), said
 
 
-def _empty_b(*, usd_currency: bool = True):
+def _empty_b(*, usd_currency: bool = True, educational: bool = False):
     """An empty company B shell. Plan part 7: live B has the `$` Currency master, created in the UI (the XML create
-    is refused — forex_shape_2026-09-25_run1_currency_refused/), so the shell has it too unless a test says not."""
-    books = FakeBooks(name=B)
+    is refused — forex_shape_2026-09-25_run1_currency_refused/), so the shell has it too unless a test says not.
+    Review I1 fix round: the fake's licence follows the load's (`load_company_b` defaults to "licensed"): the forex
+    read-back reads 102's own day, 05-09-2022 licensed, which an educational Tally would not honour (C43)."""
+    books = FakeBooks(name=B, educational=educational)
     books.edit_state(lambda s: s.update(voucherTypes=["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
     if usd_currency:
         books.edit_state(lambda s: s["currencies"].__setitem__("$", dict(USD_CURRENCY_ROW)))
@@ -655,7 +657,7 @@ def test_an_educational_load_through_the_fake_lands_the_live_run4_figures_and_ve
 
 # --- plan part 7: the USD export sales written with the live forex shape (C36 lifted) -------------------------------
 def _full_load(licence: str = "educational"):
-    books = _empty_b()
+    books = _empty_b(educational=licence == "educational")
     writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
     return books, load_company_b(writer, io, licence=licence)
 
@@ -763,7 +765,7 @@ def test_any_other_gap_in_that_fy_is_still_a_problem():
     books.edit_state(_drop_tags(101, 102, 103))
     report = _load(books)
     assert any("FY 2022-23" in p and "missing" in p for p in report.problems)
-    assert not any("plan part 7" in n for n in report.notes)
+    assert not any("skipped under C36" in n for n in report.notes)
 
 
 def test_existing_usd_party_without_its_currency_is_a_problem_and_never_altered():
@@ -794,3 +796,82 @@ def test_forex_sale_round_trips_through_the_extractors_request():
         assert all(l["amount_raw"].count("? ") == 2 for l in lines)            # the live export layout
         bases = [forex_base(parse_forex_amount(l["amount_raw"]))[0] for l in lines]
         assert sorted(bases) == [-inr, inr] and sum(bases) == 0
+
+
+# --- plan part 7 review I1: setup-b reads every forex voucher back — created=1 is not proof ---------------------------
+def _corrupt_on_readback(books, tag: int, ledger: str, text: str):
+    """Tally keeps something else than what was sent: rewrite the stored line just before the first day read-back."""
+    def before(body: str) -> None:
+        if "S0FxDay" not in body:
+            return
+
+        def mutate(state):
+            v = next(v for v in state["vouchers"].values() if v["narration"].startswith(f"[S0-B:{tag}]"))
+            next(l for l in v["lines"] if l["ledger"] == ledger)["amount_text"] = text
+        books.edit_state(mutate)
+    books.before_request = before
+
+
+def test_forex_readback_passes_and_leaves_a_note_on_a_clean_load():
+    books, report = _full_load()
+    assert not report.problems
+    days = [r for r in books.requests if "S0FxDay" in r]
+    assert len(days) == 2 and '<SVFROMDATE TYPE="Date">01-09-2022' in days[0]    # each voucher's own C43-safe day
+    assert any("[S0-B:101, 102]" in n and "read back as forex" in n for n in report.notes)
+
+
+def test_a_forex_sale_stored_as_plain_inr_is_a_problem():
+    """Review I1 / Review Focus 1: created=1, the count and every group magnitude match — only a read-back sees C36."""
+    books = _empty_b(educational=True)
+    books.forex_storage = "plain"
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io, licence="educational")
+    bad = [p for p in report.problems if "[S0-B:101]" in p or "[S0-B:102]" in p]
+    assert len(bad) == 2 and all("plain INR" in p and "pre-forex-with-usd" in p for p in bad), report.problems
+
+
+def test_a_forex_sale_stored_with_another_base_is_a_problem():
+    books = _empty_b(educational=True)
+    _corrupt_on_readback(books, 101, USD_EXPORT_PARTY, "-$448.44 @ ? 82.99/$ = -? 37216.05")
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io, licence="educational")
+    bad = [p for p in report.problems if "[S0-B:101]" in p]
+    assert len(bad) == 1 and "base" in bad[0] and "37216.05" in bad[0], report.problems
+    assert not any("[S0-B:102]" in p for p in report.problems)
+
+
+@pytest.mark.parametrize("text, what", [
+    ("-$448.44 @ ? 83.00/$ = -? 37216.04", "rate"),
+    ("-$448.45 @ ? 82.99/$ = -? 37216.04", "face"),
+    ("-€448.44 @ ? 82.99/€ = -? 37216.04", "currency"),
+])
+def test_a_forex_sale_with_another_face_rate_or_currency_is_a_problem(text, what):
+    books = _empty_b(educational=True)
+    _corrupt_on_readback(books, 101, USD_EXPORT_PARTY, text)
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io, licence="educational")
+    assert any("[S0-B:101]" in p and what in p for p in report.problems), report.problems
+
+
+def test_an_existing_plain_usd_sale_is_caught_on_a_rerun_too():
+    """A re-run after a bad load must not exit 0 and re-stamp: the check covers every forex voucher in Tally,
+    not just the ones this run created."""
+    books = _loaded_b()
+    books.edit_state(lambda s: [l.pop("amount_text", None) for v in s["vouchers"].values()
+                                if v["narration"].startswith("[S0-B:102]") for l in v["lines"]])
+    report = _load(books)
+    assert report.created["vouchers"] == 0
+    assert any("[S0-B:102]" in p and "plain INR" in p for p in report.problems)
+
+
+def test_a_forex_readback_that_times_out_is_a_problem_not_a_crash():
+    books = _empty_b(educational=True)
+
+    def before(body: str) -> None:
+        if "S0FxDay" in body:
+            books.popup = True                              # a modal: every request from here times out
+    books.before_request = before
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    report = load_company_b(writer, io, licence="educational")
+    assert [p for p in report.problems if "forex read-back" in p and "failed" in p]
+    assert not any("read back as forex" in n for n in report.notes)

@@ -63,7 +63,8 @@ from v2.agent.tally.reports import parse_bills
 from v2.agent.tally.xml_utils import read_objects
 from v2.probes.companies import COMPANIES
 from v2.probes.console import ProbeIO
-from v2.probes.reads import exploded_tb_rows, primary_group_rows, voucher_request
+from v2.probes.reads import (exploded_tb_rows, forex_base, parse_forex_amount, parse_vouchers, primary_group_rows,
+                             primary_lines, voucher_request)
 from v2.probes.setup.company_b_data import (
     FOREX_BASE_SYMBOL,
     FOREX_FORM,
@@ -81,6 +82,7 @@ from v2.probes.setup.writes import (
     B_READBACK_TO,
     ForexLine,
     TallyWriter,
+    b_day_voucher_request,
     WriteFailed,
     WriteTimeout,
     check_writable,
@@ -551,6 +553,70 @@ def _verify(writer: TallyWriter, company: str, dataset: Dataset, report: LoadRep
                     f"FY {fy}: voucher count mismatch — expected {expected_count}, Tally has {actual_count}")
 
     _verify_balances(writer, company, dataset, report)
+    _verify_forex(writer, company, dataset, report)
+
+
+FOREX_RESTORE_HINT = ("restore `s0probe-backups/100000-pre-forex-with-usd-2026-09-25` — setup-b is keyed by tag and "
+                      "never re-writes or alters an existing voucher")
+
+
+def forex_line_problems(v: VoucherSpec, lines: list[dict]) -> list[str]:
+    """Plan part 7 review I1: what is wrong with one forex voucher as Tally stored it, line by line against the
+    dataset — the ledgers, and on every line the currency symbol, the face value, the rate and the INR base (stated,
+    or face × rate). Empty = stored exactly as sent. `lines` are `reads.primary_lines` (each posting once, D14)."""
+    want = {line.ledger: line.amount for line in v.lines}
+    got = [l["fields"].get("LEDGERNAME", "") for l in lines]
+    issues: list[str] = []
+    if sorted(got) != sorted(want):
+        issues.append(f"ledgers {sorted(got)} ≠ the dataset's {sorted(want)}")
+    for line in lines:
+        ledger, text = line["fields"].get("LEDGERNAME", ""), line["amount_raw"]
+        if ledger not in want:
+            continue
+        fa = parse_forex_amount(text)
+        if fa is None:
+            issues.append(f"{ledger!r} stored as plain INR ({text!r}), no forex — the C36 failure")
+            continue
+        if fa.currency != v.currency_symbol:
+            issues.append(f"{ledger!r}: currency {fa.currency!r} ≠ {v.currency_symbol!r} ({text!r})")
+        if abs(fa.fx) != v.fx_amount:
+            issues.append(f"{ledger!r}: face {abs(fa.fx)} ≠ {v.fx_amount} ({text!r})")
+        if fa.rate != v.fx_rate:
+            issues.append(f"{ledger!r}: rate {fa.rate} ≠ {v.fx_rate} ({text!r})")
+        base = forex_base(fa)[0]
+        if base != want[ledger]:
+            issues.append(f"{ledger!r}: base {base} ≠ the dataset's {want[ledger]} ({text!r})")
+    return issues
+
+
+def _verify_forex(writer: TallyWriter, company: str, dataset: Dataset, report: LoadReport) -> None:
+    """Plan part 7 review I1 (Global Constraints: read back every write — `created=1` is not proof). A plain-INR store
+    (C36) or a forex store with another base posts the same INR amounts, so the counts and the group balances above
+    can't see it. Every forex voucher of the dataset — created now or already there, so a re-run after a bad load
+    still fails — is read back in its OWN day (C43-safe: 01-09 / 02-09-2022 educational) and checked with
+    `forex_line_problems`. Anything wrong is a problem: setup-b exits 1 and does not stamp `company_b_loaded_at`."""
+    good: list[int] = []
+    for v in sorted((v for v in dataset.vouchers if v.currency != "INR" and not v.skip_reason),
+                    key=lambda v: (v.date, v.tag)):
+        day = v.date.strftime("%d-%m-%Y")
+        try:
+            found = [x for x in parse_vouchers(writer.post(b_day_voucher_request(company, day)))
+                     if _parse_tag(x["header"].get("NARRATION", "")) == v.tag]
+        except (WriteFailed, WriteTimeout) as exc:                                                          # I7
+            report.problems.append(f"[S0-B:{v.tag}] forex read-back on {day} failed: {exc}")
+            continue
+        if len(found) != 1:
+            report.problems.append(f"[S0-B:{v.tag}] forex read-back: {len(found)} voucher(s) on {day}, expected 1.")
+            continue
+        issues = forex_line_problems(v, primary_lines(found[0]))
+        if issues:
+            report.problems.append(f"[S0-B:{v.tag}] {v.narration}: not stored as the forex voucher that was sent — "
+                                   + "; ".join(issues) + f". {FOREX_RESTORE_HINT}.")
+        else:
+            good.append(v.tag)
+    if good:
+        report.notes.append(f"[S0-B:{', '.join(map(str, good))}] read back as forex: currency, face, rate and INR base "
+                            "as sent (plan part 7 review I1).")
 
 
 def _primary_bucket(ledger_parent: str, group_parents: dict[str, str]) -> str:
