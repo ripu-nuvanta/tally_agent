@@ -1090,16 +1090,21 @@ the older one.
     `create_currency`'s tags to the names that did come back, re-run Task 1's tests (add a test pinning the new tags),
     commit that with a ruling, then continue.
   - **If `$` already exists:** fine. The runner skips the create (`created_now=false`).
-  - Record the base symbol exactly as exported (`₹`, `Rs.` or other). If it is not `₹`, the runner's `ForexLine`
-    must use it: pass `currency=` unchanged, but set `ForexLine.base_symbol`. That is a one-line change in
-    `forex_shape.variant()`, recorded as a ruling.
+  - Record the base symbol exactly as exported. **Done 2026-09-25 (Ruling R-SYM):** company B's base currency NAME
+    is a literal `?` (`logs/p7-forex-discovery-2026-09-25.log`). The runner now reads it itself
+    (`forex_shape.base_currency`) and never hard-codes `₹`, so no code change is needed here.
 - [ ] **Step 4: F2.** In TallyPrime, check "Current Date" (top bar). If it is before 31-03-2026, press **F2** and set
   31-03-2026. If the operator is away, the controller may drive it with **guarded** `osascript` keystrokes (LESSONS
   §15 rule 27: pid-guard every keystroke, no pause mid-sequence, screenshot before re-pressing anything, since the
-  screen lags about 5 s). The runner also pauses for this (`F2_TEXT`) after the currency step.
-- [ ] **Step 5: Run the shape runner** (manual; it pauses once for F2):
+  screen lags about 5 s). Under Ruling R-F2 the controller sets F2 **before** step 5 and passes
+  `f2_confirm=lambda: None`. The runner's default confirmation asks on the console, and it refuses to start without
+  a terminal.
+- [ ] **Step 5: Run the shape runner** from a script file (R-F2 / D6: a heredoc is stdin, so it can't carry a
+  console prompt). F2 must already be ≥ 31-03-2026. The evidence folder must not exist yet; the runner refuses to
+  overwrite a `summary.json`.
   ```bash
-  uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p7-forex-shape-live-$(date +%F).log
+  cd "/Users/nuvanta-mac-3/work/Tally prime"
+  cat > "$TMPDIR/p7_forex_shape.py" <<'EOF'
   import datetime, httpx
   from pathlib import Path
   from v2.probes.companies import COMPANIES
@@ -1107,19 +1112,31 @@ the older one.
   from v2.probes.setup.writes import TallyWriter
   out = Path(f"v2/tests/fixtures/sync/forex_shape_{datetime.date.today()}")
   with httpx.Client(base_url="http://localhost:9000", trust_env=False) as http:
-      report = forex_shape.run(TallyWriter(http, print), COMPANIES["B"], out)
+      report = forex_shape.run(TallyWriter(http, print), COMPANIES["B"], out,
+                               f2_confirm=lambda: None)        # R-F2: F2 was set before this run
       print(report.summary())
   EOF
+  PYTHONPATH=. uv run --project v2 python "$TMPDIR/p7_forex_shape.py" 2>&1 | tee logs/p7-forex-shape-live-$(date +%F).log
   ```
 - [ ] **Step 6: Decide by outcome** (write the decision into `progress.md` as a ruling, and into the tracker):
 
   | `summary.json` outcome | Meaning | Next |
   |---|---|---|
-  | `stored_forex`, `chosen.variant` = `V1` | F1 on a USD party works | Task 3 with the recommended H1 (S-B, F1) |
+  | `stored_forex`, `chosen.variant` = `V1` (`base_symbol` `?`) | F1 on a USD party works, with the discovered base symbol | Task 3 with the recommended H1 (S-B, F1) and `base_symbol="?"` |
+  | `stored_forex`, `chosen.variant` = `V1b` (`base_symbol` `""`) | F1 works only with the rate written without a base symbol (R-SYM) | Task 3 with F1 and `base_symbol=""` |
   | `stored_forex`, `chosen.variant` = `V2` | Only F2 works (Tally computes base) | Task 3 with `form="no_base"` (Ruling P7-5); probe 22 will likely say DIFFERENT |
   | `stored_forex`, `chosen.party_currency` = `null` (only V3) | A USD-currency ledger is refused; forex on an INR party works | **Ask the human (H1 fallback):** S-A = 101/102 stay on `Gulf Office Supplies LLC` (never altered) with forex lines. Task 3 drops the new ledger |
   | `forex_dropped` | Tally accepts, but stores plain INR | **UI fallback (Ruling P7-5):** the person enters one USD sale by hand on a throwaway party (Gateway → Vouchers → F8 Sales, type `$448.44`, rate `82.99`), the controller exports that day with `b_day_voucher_request`, saves it as `ui_entered.xml` in the evidence folder, and the voucher is deleted in the UI. If the UI stores forex, re-code the renderer to the exported text (a ruling + test) and re-run step 5. If the UI can't either → last row |
   | `currency_refused` | XML can't create the currency | **UI fallback:** Gateway → Create → Currency (`$`, formal name `USD`, 2 decimals, "cent"). If Tally asks to enable multi-currency (F11), accept it in the UI — never over XML. Read back with step 3's snippet, then re-run step 5 (it will skip the create) |
+  | `forex_mismatch` | Tally kept a forex-looking amount, but not the sent values (I1; `notes` name what differs, e.g. face, rate or base) | **Not** stored. Read `variant_V*.xml`: `systematic-debugging` on how Tally rewrote the line before any re-run. Probably a restore |
+  | `currency_unverified` | `created=1`, but no listed currency carries `$`/`USD` (I5) | **Do NOT re-run** (it would be a duplicate create, and the rule-10 modal). Inspect `currencies_after.xml` and the UI's Currency list, fix `currency_matches`/`CURRENCY_FIELDS` test-first, then re-run (the create is then skipped) |
+  | `ledger_currency_refused` | The USD ledger was refused, or its `CURRENCYNAME` didn't stick (I3). The throwaway ledgers were deleted | UI: enable multi-currency (F11) / set the ledger's currency, then re-run. Otherwise it is the H1 fallback S-A (ask the human) |
+  | `ledger_refused` | The plain INR throwaway ledger itself failed | `systematic-debugging` (the same create shape works in `sign_check`) |
+  | `f2_or_date_dropped` | `created=1`, but a voucher is not on 01-09-2022 (I2), which is F2 below the date | Set F2 ≥ 31-03-2026, **restore** (a dropped voucher may have landed elsewhere), re-run |
+  | `unrecognised` | A read-back line matches no known form | Read `variant_V*.xml` by hand, then decide |
+  | `base_currency_unknown` | No single INR base row in the Currency list; nothing was written | Check `currencies_before.xml` / `base_currency` |
+  | `aborted` (+ a traceback) | An error stopped the run: a delete that didn't stick ("still there"), a read-back MasterID ≠ LASTVCHID ("not deleting", I4) or a leftover ("leftover_found" in `notes`). `summary.json` is still written | **Restore** (step 7) unless `notes` say `leftover_found` and nothing was written |
+  | any outcome with `numbering.changed = true` | Real company-B voucher numbers or AlterIDs in 01-09-2022..31-03-2023 changed (M6) | **Restore** (step 7), even if the forex result is good |
   | `control_failed` | V0 itself failed | The non-inventory, no-GST Sales shape is wrong on B: `superpowers:systematic-debugging` on the V0 `LINEERROR`/read-back **before** anything forex. It may need `Sales` without `ISINVOICE`; record a ruling |
   | `popup` | A modal is up | Dismiss it (or restart Tally, C44). Then **restore** (step 7), because throwaway ledgers may be left behind |
   | Edition refuses forex at every route (XML and UI) | Educational/Wine limit | **Stop the part here:** restore (step 7), probe 22 stays **BLOCKED** with this reason, C36 stays, go to **Task 7** (docs only, "confirm on tier C") |
@@ -2191,6 +2208,25 @@ standing instruction to proceed**: **H1 = S-B** (new ledger `Gulf Office Supplie
   - Probe 16 B is not re-run (its FAILED is C45, unrelated). 14 is not re-run.
   - Cost: two cheap reads, plus `history` entries.
 
+**Decided by the controller, 2026-09-25 (review fix round):**
+
+- **R-SYM (live discovery, `logs/p7-forex-discovery-2026-09-25.log`):** company B's base currency exports `NAME` =
+  a literal `?` (byte 0x3F), with MAILINGNAME `INR` and EXPANDEDSYMBOL `INR`. Every ledger's `CurrencyName` is `?`
+  too. Hindi text round-trips fine (probe 15), so this is how B stores its base symbol (lost at UI creation under
+  Wine), not a transport bug. What changed:
+  - `ForexLine.base_symbol` has no default. The runner reads it from the Currency list (`forex_shape.base_currency`)
+    and never hard-codes `₹`.
+  - The classifier accepts the discovered symbol or none.
+  - The runner tries the variants in this order: V1 = the full form with the discovered symbol (`@ ?82.99/$ =
+    -?37216.04`); V1b = the rate with no base symbol (`@ 82.99/$ = -37216.04`), if V1 isn't stored; V2 = no stated
+    base; V3 = the INR party with the chosen form.
+  - Each variant is judged only on its read-back values (I1).
+  - `FakeBooks`' base currency is `?`. **Task 3 must pass the chosen `base_symbol` into `_forex_of` / the seed.**
+- **R-F2 (replaces the `input()` pause; review M2 / D6):** `run(..., f2_confirm: Callable[[], None])`, called once,
+  after the currency step and before the first throwaway. The default asks on the console, and it refuses
+  (`WriteRefused`, before any request) unless stdin is a tty. The controller sets F2 itself and passes
+  `f2_confirm=lambda: None`. Step 5 shows the script-file form.
+
 **Decided here:**
 
 - **P7-1:** discover the shape on **throwaways** (`ZZ Forex Probe …` ledgers, `S0-throwaway forex` vouchers on
@@ -2360,4 +2396,9 @@ tests pasted as written. The loader (3.5–3.7) was only checked statically.
   fake.
 - Narration note (not a failure): with S-B, 101/102's narration reads `Export sale to Gulf Office Supplies LLC (USD)`.
   101/102 are outside the sha pin, so nothing else moves.
+
+**Review fix round (2026-09-25, `docs/code-review-bi-s0-part7-task1-2026-09-25.md`):** I1–I5, M1, M6, R-SYM and
+R-F2 are fixed test-first (`634f93b`, `d6644f2`, `4229c9a`; 810 → 846 passed, green normally and with `-W error`).
+The details are in the review's "Fix round" section. One addition: **D7** — the runner refuses an `out_dir` that
+already holds a `summary.json`, so a re-run can't overwrite a failed run's evidence.
 

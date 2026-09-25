@@ -197,3 +197,56 @@ do NOT re-run; inspect `currencies_after.xml`"), and always save `currencies_aft
 | 5 | C43 dates; F2-dropped detection? | All dates are day 1 (safe), but no runtime guard on the writer path (M3). F2 drop is detected for V1–V3 but misreported for V0 (I2). |
 | 6 | `input()` F2 pause from a script file with a tty? | Safe from an interactive terminal even with `| tee`; fails without a tty (heredoc, agent shell). Refuse up front (M2). |
 | 7 | Tests mock only the network, messy shapes? | Yes, network-only; missing the adversarial shapes listed above. |
+
+---
+
+## Fix round (2026-09-25)
+
+The fixes were made test-first, offline only (FakeBooks), with no change to `results.json` or the fixtures.
+Commits:
+- `634f93b` (I5 + R-SYM writer and fake);
+- `d6644f2` (I1);
+- `4229c9a` (I2–I4, I5 in the runner, M1, M6, R-SYM variants, R-F2).
+
+The suite went from **810 to 846 passed**, green normally and with `-W error`.
+
+| Finding | Fix | Tests (`v2/tests/probes/…`) |
+|---|---|---|
+| I1 | `classify(line, sent, *, base_symbol, symbol, fx, rate)` returns forex only when **every value is the sent value**: currency `$`, face 448.44, rate 82.99, the face's sign = the sent INR's sign, the stated (or face × rate) base = the sent INR, and a base symbol that is the discovered one or none. Anything else is the new class `forex_mismatch` (never stored). `forex_problems` names each difference in `notes`. A mismatch on any line makes the whole variant `forex_mismatch`. The field route is strict: a non-AMOUNT field must carry both the face value and the currency symbol. New outcome `forex_mismatch` | `test_forex_shape.py::test_classify` (the review's three texts, plus rate, sign, base, wrong base symbol, loose `$`/`@` fields, face without symbol), `test_forex_problems_name_what_differs`, `test_a_mismatched_v1_is_not_stored_and_the_bare_rate_is_tried`, `test_every_variant_mismatched_is_its_own_outcome` |
+| I2 | V0 `dropped` gives the outcome `f2_or_date_dropped` with the F2 text, never `control_failed`. A later variant that is dropped still adds an F2 note, and if nothing is stored the outcome is `f2_or_date_dropped` | `test_v0_dropped_by_f2_is_named_as_f2_not_a_broken_shape` |
+| I3 | `create_ledger` adds the name to `made` as soon as Tally has the ledger, even when the create's own read-back then raises (it re-checks `writer.ledger`). A ledger `WriteFailed` finishes with `ledger_currency_refused` (USD) or `ledger_refused` (INR), saves `ledgers_after_create.xml`, and cleans up. `summary.json` is written on every path past the guards | `test_a_ledger_currency_that_does_not_stick_is_cleaned_up_and_reported` (FakeBooks `ledger_currency_sticks=False`) |
+| I4 | Before a delete, exactly one voucher must be read back by its narration, and its `MASTERID` must equal LASTVCHID. Otherwise a `WriteFailed` ("… not deleting anything") is raised **without sending a delete**, the outcome is `aborted`, and the summary is written | `test_a_lastvchid_that_is_not_the_read_back_voucher_is_never_deleted` (a LASTVCHID naming a real 01-09-2022 voucher: no delete is sent, and the voucher survives) |
+| I5 | `writes.currency_matches` treats the currency as present if its symbol or formal name appears in **any** `CURRENCY_FIELDS` value. This applies to list-before-create and to the read-back. A confirmed create that the read-back can't see raises the new `WriteUnverified` ("do NOT re-run"), and the runner gives the outcome `currency_unverified`. `currencies_after.xml` is saved on every non-modal path (refused, unverified or ok) | `test_setup_writes_forex.py::test_currency_matches_on_name_symbol_or_formal_name`, `…_listed_under_its_formal_name_counts_as_present`, `…_created_currency_that_is_not_listed_is_unverified_not_refused`; `test_forex_shape.py::test_an_unverified_currency_create_stops_with_do_not_rerun`, `test_a_refused_currency_still_saves_currencies_after` |
+| M1 | `summary.json` is written before the cleanup and rewritten after it. The first error is re-raised after both writes | `test_summary_is_written_when_a_completed_run_fails_its_cleanup` |
+| M6 | A header-only read (`S0FxNumbers`: MasterID, VoucherNumber, AlterID; 01-09-2022..31-03-2023, both C43-safe) runs before any write and after the cleanup (`numbers_before.xml`, `numbers_after.xml`). `summary.numbering` lists `number_changed`, `alter_id_changed`, `missing` and `added` for the real vouchers, and sets `changed`. Any change adds a "restore" note. The window runs from Sep 2022 **to FY end**, a superset of what was asked, because automatic Sales numbering renumbers every later voucher in the FY | `test_a_renumbered_voucher_is_flagged`; the happy path asserts `changed is False` |
+
+**Controller rulings (recorded in the plan's rulings, dated 2026-09-25):**
+- **R-SYM.** The base symbol is discovered from the Currency list (`base_currency`: the INR row's `Name`, which is
+  `?` on live B) and is never hard-coded. `ForexLine.base_symbol` has no default. Variant order:
+  - V1: `@ ?82.99/$ = -?37216.04`;
+  - V1b: `@ 82.99/$ = -37216.04`, if V1 isn't stored;
+  - V2: no stated base;
+  - V3: the INR party with the chosen form.
+
+  `FakeBooks`' base currency is `?` (as live) and gets a new knob, `forex_rate_symbols_refused`. Tests:
+  - `test_run_stores_forex_on_both_parties_and_cleans_up` checks the `?` on the wire and that Gulf and the real
+    vouchers are byte-identical afterwards;
+  - `test_a_refused_base_symbol_falls_back_to_the_bare_rate`;
+  - `test_unknown_base_currency_stops_before_any_write`;
+  - `test_the_fakes_base_currency_is_named_like_live_b`.
+- **R-F2.** `f2_confirm: Callable[[], None]` replaces `wait`. The default refuses with `WriteRefused` before any
+  request unless stdin is a tty. Plan Task 2 Step 5 now shows the script-file form with `f2_confirm=lambda: None`.
+  Tests: `test_the_default_f2_confirm_refuses_without_a_terminal`,
+  `test_f2_confirm_is_called_once_after_the_currency_and_before_the_ledgers`.
+
+**Also done:**
+- M8 (the leftover INR ledger and leftover voucher cases): `test_other_leftovers_refuse_too`.
+- D7: the runner refuses an `out_dir` that already has a `summary.json`, so a re-run can't overwrite evidence
+  (`test_an_existing_evidence_folder_is_never_overwritten`).
+- M4 in part: a read-back line matching no known form is now the outcome `unrecognised`, not `refused`.
+
+**Not done (minors left open):**
+- M3: no runtime C43 guard on the writer path. The dates are still hard-coded day 1 / 31.
+- M5: a dropped voucher is not located.
+- M7: the rate's precision.
+
