@@ -73,7 +73,7 @@ def _bill_row(ref: str, party: str, amount: str, bill_date: str = "1-Apr-25", du
 def _voucher_header(state: dict, mid: str, v: dict) -> dict[str, str]:
     lines = [] if v.get("cancelled") == "Yes" else v.get("lines", [])     # Ruling S2: live has an empty party name
     return {"DATE": v["date"], "GUID": f"{state['guid']}-{int(mid):08x}", "MASTERID": mid, "ALTERID": mid,
-            "VOUCHERTYPENAME": v.get("vch_type", ""), "VOUCHERNUMBER": mid, "REFERENCE": "",
+            "VOUCHERTYPENAME": v.get("vch_type", ""), "VOUCHERNUMBER": v.get("number", mid), "REFERENCE": "",
             "PARTYLEDGERNAME": lines[0]["ledger"] if lines else "", "NARRATION": v["narration"],
             "ISCANCELLED": v["cancelled"], "ISOPTIONAL": v["optional"], "ISPOSTDATED": v["post_dated"]}
 
@@ -579,6 +579,11 @@ class FakeBooks:
                 "Name": wanted, "Parent": led["parent"], "CurrencyName": led.get("currency", ""),
                 "IsBillWiseOn": led.get("bill_wise", ""), "OpeningBalance": led.get("opening", "0.00"),
                 "ClosingBalance": self._closing_text(state, wanted, closing, up_to=self.current_period[1])}])
+        if "S0FxNumbers" in body:                         # plan part 7 review M6: header fields only
+            return objects_xml("VOUCHER", [{"MasterID": mid, "VoucherNumber": v.get("number", mid), "AlterID": mid,
+                                            "Date": v["date"], "VoucherTypeName": v.get("vch_type", ""),
+                                            "Narration": v["narration"]}
+                                           for mid, v in sorted(in_period.items(), key=lambda kv: int(kv[0]))])
         if "S0OpVouchers" in body:
             return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
                                             "IsPostDated": v["post_dated"]} for mid, v in in_period.items()])
