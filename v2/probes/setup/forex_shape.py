@@ -13,7 +13,7 @@ from typing import Callable
 from v2.agent.tally.amounts import AmountParseError, parse_decimal
 from v2.agent.tally.envelopes import wrap_collection
 from v2.agent.tally.xml_utils import read_objects
-from v2.probes.reads import parse_forex_amount, parse_vouchers
+from v2.probes.reads import ForexAmount, forex_base, parse_forex_amount, parse_vouchers
 from v2.probes.safety import check_company
 from v2.probes.setup.company_b_data import USD_CURRENCY, CurrencySpec
 from v2.probes.setup.writes import (CURRENCY_FIELDS, ForexLine, TallyWriter, WriteFailed, WriteTimeout, b_day_voucher_request,
@@ -81,9 +81,44 @@ def _stored(v: VariantResult) -> bool:
     return v.classification in ("forex_full", "forex_no_base", "plain_with_forex_field")
 
 
-def classify(line: dict, sent_inr: Decimal) -> str:
+def forex_problems(fa: ForexAmount, sent_inr: Decimal, *, base_symbol: str, symbol: str = "$",
+                   fx: Decimal = FX_AMOUNT, rate: Decimal = RATE) -> list[str]:
+    """I1 (review 2026-09-25): how a read-back forex expression differs from what was SENT. Empty = it is the sent
+    voucher line, value for value: the currency, the face, the rate, the sign, the INR base (stated, or face × rate
+    when not stated — no rounding tie here, fact 4) and a base symbol that is the discovered one or none (R-SYM)."""
+    problems = []
+    if fa.currency != symbol:
+        problems.append(f"currency {fa.currency!r} ≠ {symbol!r}")
+    if abs(fa.fx) != fx:
+        problems.append(f"face {abs(fa.fx)} ≠ {fx}")
+    if fa.rate != rate:
+        problems.append(f"rate {fa.rate} ≠ {rate}")
+    if (fa.fx < 0) != (sent_inr < 0):
+        problems.append(f"face sign {fa.fx} ≠ the sent INR's sign ({sent_inr})")
+    if fa.rate_symbol not in (base_symbol, ""):
+        problems.append(f"base symbol {fa.rate_symbol!r} is neither the discovered {base_symbol!r} nor none")
+    base, how = forex_base(fa)
+    if base != sent_inr:
+        problems.append(f"{how} base {base} ≠ the sent {sent_inr}")
+    return problems
+
+
+def _field_carries_forex(line: dict, symbol: str, fx: Decimal) -> bool:
+    """I1: a strict field route — a non-AMOUNT leaf whose text carries the face value AND the currency symbol."""
+    face = f"{fx:.2f}"
+    return any(face in text and symbol in text for key, text in line["fields"].items() if key != "AMOUNT")
+
+
+def classify(line: dict, sent_inr: Decimal, *, base_symbol: str, symbol: str = "$", fx: Decimal = FX_AMOUNT,
+             rate: Decimal = RATE) -> str:
+    """One read-back line, judged ONLY on its values against what was sent (I1): `forex_full` / `forex_no_base` (an
+    expression that is exactly the sent line), `forex_mismatch` (an expression that differs — see
+    `forex_problems`), `plain_with_forex_field` (the sent INR plus a field carrying the face value and symbol),
+    `plain_inr` (the sent INR and nothing forex — the C36 failure on a forex variant), `other`."""
     fa = parse_forex_amount(line["amount_raw"])
     if fa is not None:
+        if forex_problems(fa, sent_inr, base_symbol=base_symbol, symbol=symbol, fx=fx, rate=rate):
+            return "forex_mismatch"
         return "forex_full" if fa.base is not None else "forex_no_base"
     try:
         value = parse_decimal(line["amount_raw"])
@@ -91,8 +126,7 @@ def classify(line: dict, sent_inr: Decimal) -> str:
         return "other"
     if value is None or value != sent_inr:
         return "other"
-    forexish = any(("$" in text or "@" in text) for key, text in line["fields"].items() if key != "AMOUNT")
-    return "plain_with_forex_field" if forexish else "plain_inr"
+    return "plain_with_forex_field" if _field_carries_forex(line, symbol, fx) else "plain_inr"
 
 
 def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencySpec = USD_CURRENCY,
@@ -173,10 +207,19 @@ def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencyS
             for line in found[0]["ledger_lines"]:
                 ledger = line["fields"].get("LEDGERNAME", "")
                 sent = -INR if ledger == party else INR
-                result.lines.append({"ledger": ledger, "amount_raw": line["amount_raw"], "fields": line["fields"],
-                                     "classification": classify(line, sent)})
+                fa = parse_forex_amount(line["amount_raw"])
+                result.lines.append({
+                    "ledger": ledger, "amount_raw": line["amount_raw"], "fields": line["fields"],
+                    "classification": classify(line, sent, base_symbol=report.base_symbol, symbol=currency.symbol),
+                    "problems": forex_problems(fa, sent, base_symbol=report.base_symbol, symbol=currency.symbol)
+                    if fa is not None else []})
             party_line = next((l for l in result.lines if l["ledger"] == party), None)
             result.classification = party_line["classification"] if party_line else "other"
+            if any(l["classification"] == "forex_mismatch" for l in result.lines):
+                result.classification = "forex_mismatch"          # I1: any line off the sent values
+                report.notes.append(f"{vid}: read back but not as sent — "
+                                    + "; ".join(f"{l['ledger']}: {', '.join(l['problems'])}"
+                                                for l in result.lines if l["problems"]))
             writer.delete_b_voucher(company, result.master_id, vch_type="Sales", day=DAY, date_text=DATE_TEXT)
             return result
 

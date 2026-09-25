@@ -4,6 +4,7 @@ from decimal import Decimal
 import pytest
 
 from v2.probes.companies import COMPANIES
+from v2.probes.reads import parse_forex_amount
 from v2.probes.safety import GuardError
 from v2.probes.setup import forex_shape
 from v2.probes.setup.writes import TallyWriter, WriteFailed
@@ -104,15 +105,33 @@ def test_wrong_company_is_refused_before_any_write(tmp_path):
 
 
 @pytest.mark.parametrize("amount, fields, expected", [
-    ("-$448.44 @ ₹82.99/$ = -₹37216.04", {}, "forex_full"),
-    ("-$448.44 @ ₹82.99/$", {}, "forex_no_base"),
+    ("-$448.44 @ ?82.99/$ = -?37216.04", {}, "forex_full"),
+    ("-$448.44 @ 82.99/$ = -37216.04", {}, "forex_full"),                 # R-SYM: the rate without a base symbol
+    ("-$448.44 @ ?82.99/$", {}, "forex_no_base"),
     ("-37216.04", {"FOREXAMOUNT": "-$448.44"}, "plain_with_forex_field"),
     ("-37216.04", {}, "plain_inr"),
     ("-37216.05", {}, "other"),
+    # I1: values that parse but are not what was sent — never "stored"
+    ("-$37216.04 @ ?82.99/$ = -?3088558.16", {}, "forex_mismatch"),      # Tally reinterpreted the amount
+    ("-?37216.04 @ ?1.00/? = -?37216.04", {}, "forex_mismatch"),          # a base-currency line in expression form
+    ("-$448.44 @ ?83.00/$ = -?37220.52", {}, "forex_mismatch"),           # another rate
+    ("$448.44 @ ?82.99/$ = ?37216.04", {}, "forex_mismatch"),             # the sign flipped
+    ("-$448.44 @ ?82.99/$ = -?37216.05", {}, "forex_mismatch"),           # a stated base ≠ the INR sent
+    ("-$448.44 @ ₹82.99/$ = -₹37216.04", {}, "forex_mismatch"),           # a base symbol that isn't the discovered one
+    # I1: the field route is strict — a stray "$" or "@" is not a forex value
+    ("-37216.04", {"LEDGERCURRENCY": "$"}, "plain_inr"),
+    ("-37216.04", {"NOTE": "@ desk"}, "plain_inr"),
+    ("-37216.04", {"FOREXAMOUNT": "448.44"}, "plain_inr"),                 # the face without the currency symbol
 ])
 def test_classify(amount, fields, expected):
     line = {"amount_raw": amount, "fields": {"AMOUNT": amount, **fields}}
-    assert forex_shape.classify(line, Decimal("-37216.04")) == expected
+    assert forex_shape.classify(line, Decimal("-37216.04"), base_symbol="?") == expected
+
+
+def test_forex_problems_name_what_differs():
+    problems = forex_shape.forex_problems(parse_forex_amount("-$37216.04 @ ?82.99/$ = -?3088558.16"),
+                                          Decimal("-37216.04"), base_symbol="?")
+    assert any("448.44" in p for p in problems) and any("base" in p for p in problems)
 
 
 def test_cleanup_failure_does_not_mask_the_first_error(tmp_path):
