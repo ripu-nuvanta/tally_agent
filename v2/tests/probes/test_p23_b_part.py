@@ -97,3 +97,24 @@ def test_the_live_month_export_carries_credit_periods_that_match_the_dataset():
     expected = {n: t for n, t in bill_terms("educational").items()
                 if t.credit_period and not t.flagged and date(2023, 2, 1) <= t.bill_date <= date(2023, 2, 2)}
     assert p23.credit_period_check(found, expected)["verdict"] == "CONFIRMED"
+
+
+def test_a_report_bill_date_that_differs_from_the_voucher_date_is_recorded():
+    """Review M3: offsets are measured against the dataset's bill date AND the report row's own BILLDATE, so a Tally
+    bill date that differs from the voucher date shows up as such (recorded; the verdict is unchanged)."""
+    from v2.probes.company_b_view import BillTerm
+    term = BillTerm("S-1", "Party", date(2023, 6, 10), "30 Days", False)
+    rows = [{"bill_number": "S-1", "bill_date": "12-Jun-2023", "due_date": "10-Jul-2023"}]
+    due = p23.due_date_check(rows, {"S-1": term})
+    assert due["verdict"] == "CONFIRMED"
+    assert due["offsets"] == {"S-1": 30}
+    assert due["report_offsets"] == {"S-1": 28}
+    assert due["bill_date_differs"] == {"S-1": {"tally": "12-Jun-2023", "setup": "2023-06-10"}}
+
+
+def test_matching_report_bill_dates_record_no_difference():
+    from v2.probes.company_b_view import BillTerm
+    term = BillTerm("S-1", "Party", date(2023, 6, 10), "30 Days", False)
+    rows = [{"bill_number": "S-1", "bill_date": "10-Jun-2023", "due_date": "10-Jul-2023"}]
+    due = p23.due_date_check(rows, {"S-1": term})
+    assert due["report_offsets"] == {"S-1": 30} and due["bill_date_differs"] == {}

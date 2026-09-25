@@ -103,6 +103,8 @@ def due_date_check(bills: list[dict], terms: dict[str, BillTerm]) -> dict:
     wrong: dict[str, dict] = {}
     opening: dict[str, dict] = {}
     offsets: dict[str, int] = {}
+    report_offsets: dict[str, int] = {}                   # review M3: due − the report row's own BILLDATE
+    bill_date_differs: dict[str, dict] = {}
     by_credit: dict[str, set[int]] = {}
     for bill in bills:
         name = bill["bill_number"]
@@ -122,6 +124,11 @@ def due_date_check(bills: list[dict], terms: dict[str, BillTerm]) -> dict:
         if due is not None:
             offsets[name] = (due - term.bill_date).days       # Ruling S4: the rule is measured, per bill
             by_credit.setdefault(str(term.credit_days), set()).add(offsets[name])
+        row_date = tally_date(bill["bill_date"])
+        if due is not None and row_date is not None:
+            report_offsets[name] = (due - row_date).days
+        if row_date != term.bill_date:
+            bill_date_differs[name] = {"tally": bill["bill_date"], "setup": term.bill_date.isoformat()}
         if due is None:
             no_due.append(name)
         elif due == term.due:
@@ -139,7 +146,8 @@ def due_date_check(bills: list[dict], terms: dict[str, BillTerm]) -> dict:
         verdict = "FAILED"
     return {"compared": compared, "ok": len(ok), "as_bill_date": sorted(as_bill_date), "no_due": sorted(no_due),
             "wrong": wrong, "unknown": sorted(unknown), "flagged_listed": sorted(flagged_listed), "opening": opening,
-            "offsets": offsets, "offsets_by_credit_days": {k: sorted(v) for k, v in sorted(by_credit.items())},
+            "offsets": offsets, "report_offsets": report_offsets, "bill_date_differs": bill_date_differs,
+            "offsets_by_credit_days": {k: sorted(v) for k, v in sorted(by_credit.items())},
             "verdict": verdict}
 
 
