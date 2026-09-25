@@ -133,8 +133,9 @@
 >    **matched that as-on date exactly**. **Bills/Stock Summary as-on a valid day ARE a historical snapshot, same as
 >    the TB** — the §4 month-end snapshot design and the Part 3 "vs last month-end" tiles can use a dated report
 >    directly on a valid day; only an Educational-mode non-1/2/31 date needs the vouchers-based workaround.
-> 4. **R5 — probe 11, openings.** Ledger `OpeningBalance` and the debtor's opening bill **CONFIRMED** against
->    setup's books-start values. Stock `OpeningBalance`/`OpeningRate`/`OpeningValue` **FAILED** — **new finding,
+> 4. **R5 — probe 11, openings.** ~~Ledger `OpeningBalance` and the debtor's opening bill **CONFIRMED** against
+>    setup's books-start values.~~ *(Superseded 2026-09-25 for the ledger half: ledger `OpeningBalance` is the
+>    current-FY opening too — see "Changed 2026-09-25 (plan part 6)" below. The opening bill stands.)* Stock `OpeningBalance`/`OpeningRate`/`OpeningValue` **FAILED** — **new finding,
 >    Ruling C46**: `StockItem.OpeningBalance` is the **current period's** opening, not books-start (all 5 items'
 >    "opening" equalled the dataset's stock at 31-03-2025, not 01-04-2022). **Input for the sync design:** a
 >    books-start stock opening must come from a historical report (point 3 above), never the StockItem master.
@@ -160,6 +161,37 @@
 > `docs/specs/2026-09-22-bi-s0-probes-design.md` "Changed 2026-09-24 (plan part 5, live run)"; tracker
 > `docs/plans/2026-09-22-bi-part1-tracker.md` rows 11/14/15/16/17/18 and decision 11; results
 > `docs/bi-s0-probe-results-2026-09-24.md`.
+
+> **Changed 2026-09-25 (S0 live, plan part 6 — probes 3 B, 23 B, 25 B + R9, 11 re-run under C46, 24 on company C):**
+> - **R16 (probe 3 B, CONFIRMED):** the extractor's month request returns cancelled and optional vouchers **with**
+>   their `IsCancelled`/`IsOptional` flags; a cancelled voucher exports **no ledger lines and an empty
+>   `PartyLedgerName`**; no other voucher carries a flag. S1 ingests flagged vouchers and keeps both kinds out of
+>   balances by the flags, as Tally does (C42).
+> - **Part 3 overdue split (probe 23 B, CONFIRMED):** two agreeing sources — each New Ref bill's `BILLCREDITPERIOD` on
+>   the voucher, and Bills Receivable's due-date column (`BILLDUE` = bill date + credit period, 202/202). S1 stores the
+>   credit period on the bill row and reads due dates from the Bills snapshot. The overdue split stays in v1.
+> - **R9 (probe 25 B, CONFIRMED):** TallyPrime **refuses** a duplicate ledger name within a company even under a
+>   different group ("Oops! Name already exists. Enter a different name.", at the Name field). Ledger names are
+>   therefore unique per company, across groups: S1 may treat a ledger name as unique within a company, but still
+>   keys ledgers by GUID (renames cascade by GUID, probe 8). The "fixtures must include duplicate names under different
+>   parents" note in R9 applies across companies or across a rename, not within one company. Custom voucher types
+>   resolve to their base type only by the Parent walk (25 B DIFFERENT, same rule as 25 A).
+> - **R2 / R26 + onboarding + gate shape (probe 24, CONFIRMED):** once the person has logged in / entered the
+>   TallyVault password in TallyPrime, the XML export of a secured or vaulted company is unchanged (same GUID, same
+>   data) — **no credentials in the agent**; onboarding says "open the company in TallyPrime as usual". While a login
+>   or TallyVault prompt is open, Tally **answers** with an empty company list and no active company — as if no
+>   company were open — so S2's gate treats it as "company not open" (skip quietly, retry next cycle). TallyVault
+>   encrypts in place (same company folder/number, same GUID); the vaulted name shows as asterisks in Select Company.
+> - **R5 (probe 11 re-run under C46, DIFFERENT) — corrects point 4 of the 2026-09-24 block above:** **both** ledger
+>   and stock master openings are **current-period** (current-FY) openings — ledger `OpeningBalance` for 14/25 ledgers
+>   equals the current FY's opening (probe 16 B agrees, `opening_scope = fy`); stock 5/5 as at 01-04-2025. The
+>   debtor's opening bill on the ledger master is CONFIRMED. **Books-start anchors come from the TB / Stock Summary
+>   as-on the books start** (probe 18's route), never a master's `OpeningBalance`. (The "two inputs" list above
+>   already said this for both masters; point 4's ledger half was the misreading.)
+>
+> *Scope caveat:* TallyPrime 7.0 Edit Log, **Educational**, under **Wine 11.0** — licensed Windows Tally is an open
+> tier-C check. Rules in [`LESSONS.md`](../../LESSONS.md) §15 rules 20b (corrected), 23–26. Spec
+> `docs/specs/2026-09-22-bi-s0-probes-design.md` "Changed 2026-09-25 (plan part 6)"; tracker rows 3/11/23/24/25.
 
 ## 1. Context
 New product direction:

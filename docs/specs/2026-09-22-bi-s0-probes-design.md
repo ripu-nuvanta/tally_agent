@@ -78,6 +78,58 @@
 > (`git mv`, 50 files, byte-identical) — see LESSONS.md §15 and the tracker's change log.
 > Full detail: `.superpowers/sdd/2026-09-24-bi-s0-probes-plan-part5/progress.md`, `docs/bi-s0-probe-results-2026-09-24.md`,
 > `docs/code-review-bi-s0-part5-2026-09-24.md`.
+> **Changed 2026-09-25 (plan part 6):** B parts of probes 3, 23, 25 built and run live on company B; probe 11 re-run
+> under the C46 rule; company C built; probe 24 built and run live on company C. Outcomes: 3 **CONFIRMED** (A+B),
+> 23 **CONFIRMED** (A+B), 25 **DIFFERENT** (A DIFFERENT, B DIFFERENT with its R9 sub-verdict CONFIRMED), 11
+> **DIFFERENT**, 24 **CONFIRMED**. Evidence commits `ced8171` (3 B, 11, 23 B, 25 B with R9 skipped), `a282544` (R9
+> measured), `84b37c9` (company C + probe 24); results `docs/bi-s0-probe-results-2026-09-24.md` (regenerated
+> 2026-09-25), `v2/probes/results/results.json`.
+> (a) §7 **probe 3 B as built:** probe 21 had already seen the cancelled pair 201/202 in probe 5's month export, so B
+> does not re-ask "are cancelled vouchers returned". It judges the flags on the **extractor's own request** (probe 5's
+> `voucher_month`) for Feb 2023 (201/202) and Jul 2023 (301/302, the optional pair nobody had seen), and runs one
+> header-only books-wide read (01-04-2022..31-03-2026) to check that the other 954 vouchers carry no flag. Verdicts: a
+> returned flagged voucher without its flag → FAILED; a flagged voucher not listed → DIFFERENT (R16 has less to filter);
+> a flag on a voucher the dataset did not flag → BLOCKED as drift. **Live: CONFIRMED** — 201/202 `IsCancelled=Yes`,
+> 301/302 `IsOptional=Yes` on both reads; the cancelled pair exports **no ledger lines and an empty
+> `PartyLedgerName`**; the other 954 carry no flag.
+> (b) §7 **probe 23 B as built:** voucher credit periods from **June 2023 via probe 5's request** (the New Ref bills'
+> `BILLCREDITPERIOD`), and the due-date column of **Bills Receivable as-on 31-03-2026**. The two sources answer one
+> question (can Part 3's overdue split be built?), so: both work → CONFIRMED, one → DIFFERENT (the impact names the
+> source), neither → FAILED. Due = bill date + credit period in calendar days; `BILLOVERDUE`, the opening bill (no
+> credit period) and `On Account` rows are recorded, not judged. **Live: CONFIRMED** — 12/12 June-2023 New Ref bills
+> carry their credit period ("30 Days"/"45 Days"); 202/202 Bills Receivable due dates = bill date + credit period.
+> (c) §7 **probe 25 B as built:** voucher types only (group nature was settled by A's Parent walk). `Sales - GST` →
+> Sales counts as resolved when reached by the Parent walk (`resolved_by` recorded). **R9 is a UI-only, action-less ask
+> inside 25 B**, never XML (LESSONS §15 rule 10), offered only when interactive and not in auto mode; the read-back
+> (`B_ledgers_after_duplicate_attempt`) decides, not the typed answer; "saved" → DIFFERENT + a restore of B. **Live:
+> DIFFERENT** for the voucher-type half ('Sales - GST' has no base type of its own; it resolves to Sales only via the
+> Parent walk). **R9 CONFIRMED (2026-09-25, `a282544`):** TallyPrime **refused** a second ledger `Delhi Metal Traders`
+> under Sundry Debtors (the existing one is under National Creditors) with "Oops! Name already exists. Enter a
+> different name." — raised at the **Name** field, before Under/Accept; read-back: one ledger, parent unchanged, B
+> untouched (no restore). **R9 spec impact (written here by hand — the probe's combined `spec_impact` carries only the
+> voucher-type half):** ledger names are unique within a company, across groups, so S1 may treat a ledger name as
+> unique per company, but it still keys ledgers by GUID (renames, probe 8). The 2026-09-24 run of 25 B (R9 "skipped
+> by the operator") is kept in `results.json` `history`.
+> (d) §7 **probe 11 — correction of the 2026-09-24 text.** The recorded evidence shows ledger `OpeningBalance` = the
+> **current-FY** opening for 14 of 25 ledgers (all 14 mismatches equal `current_fy_opening`; the other 11 read the same at both dates, so they do not
+> tell), consistent with probe 16 B's `opening_scope.verdict = "fy"` (14 as FY, 0 as books). The
+> 2026-09-24 "ledger openings **CONFIRMED** against books-start" is **superseded**: the stock FAILED was checked first
+> and returned early, so the summary never showed the ledger half. Re-run 2026-09-25 under the C46 rule (every half
+> named, `sub_verdicts`): **DIFFERENT** — ledgers DIFFERENT (current FY), opening bill `Op/2022-001` ₹62,500 on the
+> ledger master CONFIRMED, stock DIFFERENT (current period, 5/5). The re-run reproduced the offline relabel of the
+> 2026-09-24 snapshot (`v2/tests/fixtures/sync/c46_p11_live_2026-09-24/`), so company B had not changed.
+> (e) §4.4 **company C as built** — see §4.4. Books 01-04-2025, content from `setup-c`, folder **100001**, manual
+> only, and **credentials are never recorded anywhere** (overrides "throwaway passwords recorded in the results").
+> (f) §7 **probe 24 as built:** five reads per stage (company list, active GUID via probe 2's request, counters via
+> probe 1's, ledger list, vouchers via probe 5's, 01-04-2025..31-03-2026) at baseline, security on, vault on; plus two
+> gate reads (company list + active company) while the login / TallyVault prompt is open (`*_pending_*`) and after it
+> is answered (`*_ready_*`). **Live: CONFIRMED** — security on and TallyVault on both leave the export unchanged (same
+> GUID, ledgers, narration). **Gate shape:** while either prompt is open Tally **answers** (transport ok) with an
+> **empty** company list and no active-company rows — "as if no company were open" — so S2's gate treats it as
+> "company not open" (skip quietly, retry). No timeout, no new error envelope.
+> (g) §6 batch 6 is **manual only** (never `--auto`); §11.5 rows 3, 23, 24, 25 updated to the as-built step names.
+> Full detail: `docs/plans/2026-09-25-bi-s0-probes-plan-part6.md`, `.superpowers/sdd/2026-09-25-bi-s0-probes-plan-part6/progress.md`,
+> `docs/code-review-bi-s0-part6-2026-09-25.md`, tracker rows 3/11/23/24/25.
 > **Parent:** [`2026-09-21-bi-part1-sync-design.md`](2026-09-21-bi-part1-sync-design.md) §12 (probe list), §7 (test tiers),
 > §5 "Code isolation (v2)". **Status:** [`plans/2026-09-22-bi-part1-tracker.md`](../plans/2026-09-22-bi-part1-tracker.md) §3.
 >
@@ -219,8 +271,24 @@ The float `parse_amount`, `writer.py`, `import_builder.py` (except the two helpe
   attempted via XML, rule 10).
 
 ### 4.4 Company C — "Probe Vault Co"
-Created by you in the UI with one ledger and one voucher. Probe 24 turns on security (username + password), then
-TallyVault, with throwaway passwords recorded in the results (the company holds no real data).
+~~Created by you in the UI with one ledger and one voucher. Probe 24 turns on security (username + password), then
+TallyVault, with throwaway passwords recorded in the results (the company holds no real data).~~
+**Superseded 2026-09-25 (plan part 6) — as built:**
+- **Shell created in the TallyPrime UI** (K: Company → Create): name `Probe Vault Co`, financial year and books
+  beginning **01-04-2025**, State Maharashtra, no security at creation. The Company Features screen defaulted GST and
+  inventory to **Yes** and was accepted unchanged (the plan's "(no GST)" note was a guess). Tally gave it folder
+  **100001** — the lowest free number (B has 100000, A 100003), observed, not assumed.
+- **Content loaded by `python -m v2.probes setup-c`** (`v2/probes/setup/company_c.py`, expected content in
+  `v2/probes/companies.py` `COMPANY_C_*`): one ledger `S0 Vault Expense` under Indirect Expenses and one ₹100 Payment
+  dated 01-04-2025, narration `[S0-C:1] Probe Vault voucher`. Idempotent live: run 1 `Created: ledger, voucher`, run 2
+  `Created: nothing; already there: ledger, voucher` (`logs/setup-c-live-2026-09-25.log`).
+- **Manual only.** C is **not** in `OperatorConfig.company_numbers`; the operator never starts Tally on it (a start
+  with `Load=<C>` would stop at a login/vault prompt no licence click clears); tally.ini stays `Load=100000`.
+- **Unsecured baseline backup:** `s0probe-backups/100001-company-C-baseline-2026-09-25`. After probe 24 the secured +
+  vaulted folder was archived to `s0probe-backups/100001-company-C-secured-vaulted-2026-09-25` (out of git, deletable).
+- **Credentials are never recorded anywhere** — not in `results.json`, fixtures, sidecars, logs, docs or commits.
+  The harness never asks for or sends one; the person types them into TallyPrime only. A leak grep over
+  `v2 docs logs LESSONS.md` ran before the evidence commit and was clean.
 
 ### 4.5 Safety rules
 - **Company guard.** Before any request, the probe checks that exactly **one** company is loaded and it is the one
@@ -396,7 +464,7 @@ interface: each `pause` is performed, each `ask` is answered, and every action i
 | 4 | A | 7, 8, 10, then **13 last** → anchors check | Mutating; 13 restores A, so it goes last. In auto mode probe 10 runs popup → no company → quit, then reopens A so 13 can run (ruling 2026-09-22) |
 | — | B | `setup-b` | Loader + its pause steps |
 | 5 | B | 16, 18 (B parts), **5, then 21**, 3, 11, 15, 22 (BLOCKED — C36), 23, 25 (B parts), then **14 last** | Changed 2026-09-24: 5 runs immediately before 21 — 21 fetches with 5's confirmed `voucher_month` request (S0-D7); "21 first" is read as "first after the request it depends on". Changed 2026-09-24 (plan part 5, Ruling Q6): 14 runs last — its deliberately malformed request may upset Tally |
-| 6 | C | 24 | Security, then Vault |
+| 6 | C | 24 | Security, then Vault. Changed 2026-09-25 (plan part 6): **manual only** — never `--auto` (every step is a person at the TallyPrime UI); `--all --auto` reaching 24 BLOCKs cleanly |
 
 ## 7. Probe methods
 
@@ -458,6 +526,14 @@ saves its fixture per §5.6.
 - B: the 2 cancelled and 2 optional vouchers carry their flags; all others don't. (IsPostDated is checked on
   probe 16's post-dated voucher.)
 - **FAILED** for a missing flag → R16 filtering is redesigned before S1.
+- **Changed 2026-09-25 (plan part 6) — B as built and run live: CONFIRMED.** Flags judged on probe 5's
+  `voucher_month` request for Feb 2023 (201/202) and Jul 2023 (301/302), plus a header-only books-wide read for "no
+  other voucher is flagged" (probe 21 had already seen 201/202; that evidence is re-judged offline, not re-asked).
+  Flagged-but-unlisted → DIFFERENT; flag on an unflagged voucher → BLOCKED (drift). Live: both pairs carry their
+  flags on both reads; the cancelled pair exports no ledger lines and an empty `PartyLedgerName`; the other 954 carry
+  no flag. Impact (R16): the extractor's month request returns cancelled and optional vouchers **with** their flags; S1
+  ingests them and keeps both out of balances by `IsCancelled`/`IsOptional`, as Tally does (C42). Fixtures
+  `p03_B_vouchers_flags.xml`, `p03_B_flagged_month_2023_02.xml`, `p03_B_flagged_month_2023_07.xml`.
 
 **Probe 4 — `$AlterID > N` filter** · A · feeds decision 9, R6
 - For Voucher, Ledger, Group, StockItem: full fetch → max AlterID M. Filter `$AlterID > M-5` → exactly the 5
@@ -503,7 +579,18 @@ saves its fixture per §5.6.
 **Probe 11 — Openings** · B · feeds R5
 - Ledger OpeningBalance, the debtor's opening bill (*candidate* opening-bills field, else Bills Receivable as-on
   books start), stock OpeningBalance / OpeningRate / OpeningValue — all against setup's values.
-- **Changed 2026-09-24 (plan part 5, live run):** **FAILED (stock only).** Ledger OpeningBalance and the debtor's
+- **Changed 2026-09-25 (plan part 6) — correction, re-run under C46: DIFFERENT.** Ledger `OpeningBalance` is the
+  **current-FY** opening, not books-start: 14 of 25 ledgers differ from setup's books-start value and all 14 equal
+  the current FY's opening (`as_current_fy`), matching probe 16 B's `opening_scope.verdict = "fy"`. The opening bill
+  `Op/2022-001` (₹62,500, dated 31-03-2022, on the ledger master via `BillAllocations`) CONFIRMED. Stock openings are
+  the current period's (as at 01-04-2025) for 5/5 items (C46). Sub-verdicts: ledgers DIFFERENT, opening bill
+  CONFIRMED, stock DIFFERENT; every half is now named in the summary. Impact (R5): **both** ledger and stock master
+  openings are current-period-relative; a books-start anchor comes from a TB / Stock Summary as-on the books start
+  (probe 18's route), never a master's `OpeningBalance`. Log `logs/p11-rerun-c46-2026-09-25.log`; the 2026-09-24
+  captures are kept byte-for-byte in `v2/tests/fixtures/sync/c46_p11_live_2026-09-24/`. **The 2026-09-24 text below
+  is superseded where it says ledger openings were CONFIRMED against books-start** — it misread a summary that
+  showed only the stock half.
+- ~~**Changed 2026-09-24 (plan part 5, live run):**~~ *(superseded 2026-09-25 for the ledger half, see above)* **FAILED (stock only).** Ledger OpeningBalance and the debtor's
   opening bill (via `BillAllocations` on the Ledger collection, filtered to the party) **CONFIRMED** against
   setup's books-start values. Stock OpeningBalance / OpeningRate / OpeningValue for all 5 items **FAILED** — **new
   finding, Ruling C46**: `StockItem.OpeningBalance` is the **current period's** opening, not the books-start one;
@@ -541,6 +628,14 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
   ledgers.
 - B: BillCreditPeriod / due date on the bills setup gave credit periods; the due-date column of Bills Receivable.
 - Missing → **FAILED** for that half → the GST tile or the overdue split is dropped from v1 (Part 1 probe 23).
+- **Changed 2026-09-25 (plan part 6) — B as built and run live: CONFIRMED.** Credit periods from June 2023 via probe
+  5's `voucher_month` request; due dates from Bills Receivable as-on 31-03-2026. Both sources work → CONFIRMED, one →
+  DIFFERENT, neither → FAILED (one question: can the overdue split be built). Due = bill date + credit period in
+  calendar days; `BILLOVERDUE`, the opening bill and `On Account` rows recorded, not judged. Live: 12/12 June-2023
+  New Ref bills carry `BILLCREDITPERIOD` ("30 Days"/"45 Days"); Bills Receivable `BILLDUE` = bill date + credit period
+  for 202/202 bills. Impact (Part 3 overdue split): two agreeing sources — S1 stores the credit period on the bill
+  row and reads due dates from the Bills snapshot. Fixtures `p23_B_bills_credit_period.xml`,
+  `p23_B_bills_receivable_due.xml`.
 
 **Probe 25 — Masters classification** · A + B · feeds the S1 schema, R5, R16
 - Groups: *candidate* fields Parent, PrimaryGroup / _PrimaryGroup, Nature, IsRevenue, AffectsGrossProfit,
@@ -548,6 +643,15 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
 - Voucher types: Parent, ReservedName. B's "Sales - GST" must resolve to Sales.
 - Missing → **DIFFERENT**: nature is derived by walking Parent to a reserved primary group, and base type by the
   parent chain (the mapping goes in the S1 spec).
+- **Changed 2026-09-25 (plan part 6) — B as built and run live: DIFFERENT, with R9 CONFIRMED.** Voucher types:
+  `Sales - GST` exports Parent `Sales` and an empty ReservedName, so it resolves to Sales only by the Parent walk
+  (DIFFERENT, same rule as A). **R9 (duplicate ledger names)** is asked here as a UI-only, action-less step (never
+  XML — LESSONS §15 rule 10), only when interactive and not auto; the read-back decides. Live 2026-09-25: TallyPrime
+  **refused** a second `Delhi Metal Traders` under Sundry Debtors (existing under National Creditors) — "Oops! Name
+  already exists. Enter a different name." at the Name field; read-back one ledger, parent unchanged. **R9 impact:**
+  ledger names are unique within a company across groups; S1 may treat a ledger name as unique per company but keys
+  ledgers by GUID. Fixtures `p25_B_voucher_types.xml`, `p25_B_ledgers_after_duplicate_attempt.xml`; logs
+  `logs/p25B-live-2026-09-25.log`, `logs/p25B-r9-2026-09-25.log`.
 
 ### Change and identity
 
@@ -707,6 +811,21 @@ sales until a forex write shape is live-verified; see the header's "Changed 2026
 - Baseline export. Pause: enable security (username / password), reopen and log in → export. Pause: enable
   TallyVault, reopen with the vault password → export. Record each response.
 - Needs credentials → onboarding note + a new error shape for the gate.
+- **Changed 2026-09-25 (plan part 6) — as built and run live on company C (100001): CONFIRMED.** Manual only,
+  `requires=(0, 1, 2, 5)`; "export" = five reads per stage (company list, active GUID with probe 2's request, counters
+  with probe 1's, ledger list, vouchers with probe 5's for 01-04-2025..31-03-2026) at `baseline`, `security_on`,
+  `vault_on`; plus the two gate reads (company list, active company) while the prompt is open (`security_login_pending`,
+  `vault_prompt_pending`, via `try_send`) and once it is answered (`security_on_ready`, `vault_on_ready`). The probe
+  never asks for or sends a credential. Verdict mapping: export unchanged after log-in/unlock → CONFIRMED; export works
+  but GUID/content changed → DIFFERENT (re-link, Q25); export fails with the company open → FAILED; another company
+  open → BLOCKED. Live: security on and TallyVault on both left the export unchanged (GUID
+  `9d87f8c7-…`, ledgers, narration). **Gate shape:** with a login or TallyVault prompt open, both reads were
+  **answered** with an empty company list and no active-company rows (as if no company were open) — no timeout, no
+  error envelope → S2's gate treats it as "company not open" (skip quietly, retry). **Impact (R2, R26):** no
+  credentials in the agent; onboarding says "open the company in TallyPrime as usual". Observed in the UI (TallyPrime
+  7 EDU): security is K: Company → **Security** ("Security And User Access"); TallyVault is K: Company → TallyVault
+  and offers "create a copy of <company> (<number>)?" — **No** encrypts in place (same folder); a vaulted company's
+  name shows as asterisks in Select Company. Fixtures `p24_C_*` (23 files); log `logs/p24-live-2026-09-25.log`.
 
 ## 8. Deferred probes (⏭)
 Probe 9 (latency per chunk; can the accountant keep typing), probe 20 (parity cost on a large company), the timing
@@ -822,7 +941,7 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 | 0 | `company_list`, `guid_before_rename`, `guid_after_rename`, `anchors_bills_receivable`, `anchors_bills_payable`, `anchors_tb` |
 | 1 | `counters_candidates`, `ledger_list`, `counters_baseline`, `ledger_before`, `counters_after_{create,alter,delete}_voucher`, `ledger_after_voucher`, `counters_after_{alter,create,delete}_ledger` |
 | 2 | `active_{a,b,c}`, `active_{a,b,c}_no_company` |
-| 3 | `A_vouchers_ids_flags`, `B_vouchers_flags` |
+| 3 | `A_vouchers_ids_flags`, `B_vouchers_flags` (as built, plan part 6: adds `B_flagged_month_2023_02`, `B_flagged_month_2023_07` — probe 5's month request for the cancelled and the optional pair) |
 | 4 | `{voucher,ledger,group,stockitem}_full`, `…_gt_m_minus_5`, `…_gt_m`, `…_gt_0` |
 | 5 | `month_svdates`, `month_svdates_untyped` (evidence only), `month_formula` (if needed), `day_svdates`, `report_tb_typed`, `report_tb_untyped` (evidence only) |
 | 6 | `vouchers_nested`, `line_guid_fetch`, `line_guid_tdl` |
@@ -840,9 +959,9 @@ names per probe are fixed by the implementation plans (part 2 adds steps, e.g. p
 | 19 | `capture_quiet_{1,2,3}_{counters_start,ledgers,tb,counters_end}`, `after_ui_view`, `capture_moving_*` |
 | 21 | `books_from`, `fy2022_month_{04..03}`, `fy2025_month_03` (current-FY sample, sizes only), `period_locked_read` (if lockable) |
 | 22 | `forex_sales` |
-| 23 | `A_gst_ledgers`, `B_bills_credit_period`, `B_bills_receivable_due` |
-| 24 | `baseline`, `security_on`, `vault_on` |
-| 25 | `A_groups`, `A_voucher_types`, `B_voucher_types` |
+| 23 | `A_gst_ledgers`, `B_bills_credit_period`, `B_bills_receivable_due` (as built, plan part 6: unchanged — `B_bills_credit_period` is June 2023 via probe 5's request, `B_bills_receivable_due` is Bills Receivable as-on 31-03-2026) |
+| 24 | `baseline`, `security_on`, `vault_on` — **as built (plan part 6), part C:** each of `C_baseline`, `C_security_on`, `C_vault_on` is five reads, `…_{company_list,active_company,counters,ledgers,vouchers}`; plus the gate reads `C_security_login_pending_{company_list,active_company}`, `C_security_on_ready_{company_list,active_company}`, `C_vault_prompt_pending_{company_list,active_company}`, `C_vault_on_ready_{company_list,active_company}` (23 fixtures; the plan's `vault_password_pending` was built as `vault_prompt_pending`) |
+| 25 | `A_groups`, `A_voucher_types`, `B_voucher_types` (as built, plan part 6: adds `B_ledgers_after_duplicate_attempt`, the R9 read-back) |
 
 ## 12. Risks (S0-specific)
 

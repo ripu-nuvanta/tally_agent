@@ -2275,7 +2275,7 @@ PROBE = Probe(
 Only probe 25 B's R9 step can change company B, and only if TallyPrime accepts the duplicate. That is why it runs last.
 The pristine restore point is `s0probe-backups/100000-company-B-loaded-2026-09-24`.
 
-- [ ] **Step 1: Pre-flight (read-only).**
+- [x] **Step 1: Pre-flight (read-only).**
   ```bash
   cd "/Users/nuvanta-mac-3/work/Tally prime"
   git log --oneline -1; uv run --project v2 pytest v2/tests -q 2>&1 | tail -1
@@ -2294,7 +2294,7 @@ The pristine restore point is `s0probe-backups/100000-company-B-loaded-2026-09-2
   `100000-company-B-loaded-2026-09-24`. There is one `tally.exe` with `s0probe` in its command line. The licence is
   `educational` and `company_b_loaded_at` is set. The confirmed requests are `active_company, company_counters,
   ledger_level_tb, voucher_month`. The company list is exactly `["Sharma & Sons' Probe Traders"]`.
-- [ ] **Step 2: B only.** If the list is anything else, restart through C44 (click "T: Continue In Educational Mode"
+- [x] **Step 2: B only.** If the list is anything else, restart through C44 (click "T: Continue In Educational Mode"
   when `CLICK NEEDED` shows):
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p6-restart-B-$(date +%F).log
@@ -2307,7 +2307,7 @@ The pristine restore point is `s0probe-backups/100000-company-B-loaded-2026-09-2
       auto.close()
   EOF
   ```
-- [ ] **Step 3: Run, one probe per log, in this order (manual mode, never `--auto`):**
+- [x] **Step 3: Run, one probe per log, in this order (manual mode, never `--auto`):**
   ```bash
   uv run --project v2 python -m v2.probes run 3 --company B 2>&1 | tee logs/p03B-live-$(date +%F).log
   uv run --project v2 python -m v2.probes run 11 2>&1 | tee logs/p11-rerun-c46-$(date +%F).log
@@ -2323,7 +2323,7 @@ The pristine restore point is `s0probe-backups/100000-company-B-loaded-2026-09-2
     saved).
   - Any BLOCKED "Company B differs from the dataset…" or "drifted": stop, and restore (step 4). DIFFERENT and FAILED
     are findings: record them and don't re-run.
-- [ ] **Step 4: Only if probe 25 B's `r9.verdict` is `accepted`, or a drift BLOCK happened: restore company B.**
+- [x] **Step 4: Only if probe 25 B's `r9.verdict` is `accepted`, or a drift BLOCK happened: restore company B.** *(Not needed 2026-09-25: R9 was refused and no drift BLOCK happened; B unchanged.)*
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/p6-restore-B-$(date +%F).log
   import datetime, shutil, subprocess
@@ -2343,14 +2343,14 @@ The pristine restore point is `s0probe-backups/100000-company-B-loaded-2026-09-2
   EOF
   ```
   (One licence click is needed.) The moved-aside folder is the evidence of what TallyPrime saved. Keep it.
-- [ ] **Step 5: Read the numbers out** (for the tracker and specs):
+- [x] **Step 5: Read the numbers out** (for the tracker and specs):
   ```bash
   uv run --project v2 python -c "import json; p=json.load(open('v2/probes/results/results.json'))['probes']; \
   [print(k, p[k]['parts']['B']['outcome'], '—', p[k]['parts']['B']['summary']) for k in ('3','11','23','25')]; \
   print(json.dumps({k: p[k]['parts']['B']['observations'].get('sub_verdicts') for k in ('11','23','25')}, ensure_ascii=False)); \
   print(json.dumps(p['25']['parts']['B']['observations']['r9'], ensure_ascii=False))" 2>&1 | tee logs/s0-p6-b-numbers-$(date +%F).log
   ```
-- [ ] **Step 6: List, report, commit the evidence.**
+- [x] **Step 6: List, report, commit the evidence.**
   ```bash
   uv run --project v2 python -m v2.probes list | grep -E '^ ?(3|11|23|25) '
   uv run --project v2 python -m v2.probes report
@@ -2369,10 +2369,10 @@ The pristine restore point is `s0probe-backups/100000-company-B-loaded-2026-09-2
 **Files:** none committed here. `setup-c` writes `environment.company_c_loaded_at` into `results.json`, which Task 11
 commits. Logs go to `logs/`.
 
-- [ ] **Step 1: Pre-flight.** Only B is open (Task 9 step 1's company-list snippet). Record
+- [x] **Step 1: Pre-flight.** Only B is open (Task 9 step 1's company-list snippet). Record
   `ls ~/.wine/drive_c/users/Public/TallyPrimeEditLog/s0probe | tee logs/company-c-before-$(date +%F).log` (expect
   `100000 100003`).
-- [ ] **Step 2: Create company C (you, in TallyPrime; mouse / menu wording as TallyPrime 7 shows it).**
+- [x] **Step 2: Create company C (you, in TallyPrime; mouse / menu wording as TallyPrime 7 shows it).**
   1. Top menu bar → **K: Company** → **Create**.
   2. **Company Name:** `Probe Vault Co`, exactly. The mailing name fills itself.
   3. **State:** Maharashtra, **Country:** India (keep the defaults if already set).
@@ -2387,19 +2387,19 @@ commits. Logs go to `logs/`.
      of Tally must show only `Probe Vault Co`.
   If a menu item's wording differs from the above, use the nearest item and write the exact wording into the log
   (step 3).
-- [ ] **Step 3: Record C's company number.** Tally assigns the lowest free number: B got 100000. Given `100000` and
+- [x] **Step 3: Record C's company number.** Tally assigns the lowest free number: B got 100000. Given `100000` and
   `100003`, expect `100001`, but **don't assume it**.
   ```bash
   ls ~/.wine/drive_c/users/Public/TallyPrimeEditLog/s0probe | tee logs/company-c-created-$(date +%F).log
   ```
   The one new folder is company C's number. Write it into the tracker row 24 proof and into the log. It is
   **not** added to `OperatorConfig.company_numbers` (Task 6: manual-only).
-- [ ] **Step 4: Load it.**
+- [x] **Step 4: Load it.**
   `uv run --project v2 python -m v2.probes setup-c 2>&1 | tee logs/setup-c-live-$(date +%F).log` → `Created:
   ledger, voucher` and `Company C loaded`. Run it a second time into the same log (`tee -a`) → `Created: nothing;
   already there: ledger, voucher` (live idempotence). Optional UI check: Gateway → Day Book shows the ₹100 Payment
   dated 1-Apr-2025.
-- [ ] **Step 5: Back up the unsecured baseline** (Tally idle, company C open is fine, as with B's backup):
+- [x] **Step 5: Back up the unsecured baseline** (Tally idle, company C open is fine, as with B's backup):
   ```bash
   C=100001   # ← the number from step 3
   D=~/.wine/drive_c/users/Public/TallyPrimeEditLog
@@ -2415,19 +2415,19 @@ commits. Logs go to `logs/`.
 **Files (written by the runner, then committed):** `results.json`, `v2/tests/fixtures/sync/p24_C_*`, the regenerated
 results doc. Logs go to `logs/`.
 
-- [ ] **Step 1: Pre-flight.** The company list (Task 9 step 1 snippet) is exactly `['Probe Vault Co']`, and
+- [x] **Step 1: Pre-flight.** The company list (Task 9 step 1 snippet) is exactly `['Probe Vault Co']`, and
   `results.json` has `company_c_loaded_at` plus the four confirmed requests.
-- [ ] **Step 2: Run** (manual, never `--auto`):
+- [x] **Step 2: Run** (manual, never `--auto`):
   `uv run --project v2 python -m v2.probes run 24 2>&1 | tee logs/p24-live-$(date +%F).log`.
   Do each pause exactly as printed:
   (1) turn on security with **throwaway** credentials and stay logged in → (2) Shut and Select company C, stop at
   the login box → (3) log in → (4) Change TallyVault with a **throwaway** password, reopen if TallyPrime closes it →
   (5) Shut and Select, stop at the TallyVault box → (6) enter the vault password and log in. The probe never asks
   you to type a credential into the terminal. If you ever find yourself doing that, stop.
-- [ ] **Step 3: Record what TallyVault did to the folder:**
+- [x] **Step 3: Record what TallyVault did to the folder:**
   `ls ~/.wine/drive_c/users/Public/TallyPrimeEditLog/s0probe | tee logs/company-c-after-vault-$(date +%F).log`
   (a new number or a renamed folder is itself a finding for Q25 / probe 13's restore story).
-- [ ] **Step 4: Credential leak check (before any `git add`).** Type each throwaway value at a hidden prompt; nothing
+- [x] **Step 4: Credential leak check (before any `git add`).** Type each throwaway value at a hidden prompt; nothing
   lands in shell history:
   ```bash
   for what in username password vault-password; do
@@ -2436,7 +2436,7 @@ results doc. Logs go to `logs/`.
   done; unset V
   ```
   Expected: no `LEAK` line.
-- [ ] **Step 5: Clean up.** In TallyPrime: **K: Company** → **Shut** → `Probe Vault Co`, so that nothing reopens it at
+- [x] **Step 5: Clean up.** In TallyPrime: **K: Company** → **Shut** → `Probe Vault Co`, so that nothing reopens it at
   a prompt. Then archive its folder(s) and return to company B through C44 (one licence click):
   ```bash
   uv run --project v2 python - <<'EOF' 2>&1 | tee logs/company-c-archive-$(date +%F).log
@@ -2462,7 +2462,7 @@ results doc. Logs go to `logs/`.
   ```
   Expected: `s0probe` holds `100000 100003`, `Load=100000`, and `B -> ["Sharma & Sons' Probe Traders"]`. The archive
   stays out of git. It can be deleted any time, since nothing depends on it and its credentials are throwaway.
-- [ ] **Step 6: List, report, commit the evidence.**
+- [x] **Step 6: List, report, commit the evidence.**
   ```bash
   uv run --project v2 python -m v2.probes list | grep -E '^ ?24 '
   uv run --project v2 python -m v2.probes report
@@ -2479,7 +2479,7 @@ results doc. Logs go to `logs/`.
 **Files:** `docs/specs/2026-09-22-bi-s0-probes-design.md`, `docs/specs/2026-09-21-bi-part1-sync-design.md`,
 `docs/plans/2026-09-22-bi-part1-tracker.md`, `docs/roadmap.md`, `LESSONS.md`, and this plan (tick the boxes).
 
-- [ ] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 6):**` covering:
+- [x] **Step 1: S0 spec.** Add a header line `**Changed <date> (plan part 6):**` covering:
   (a) §7 probe 3 B as built (what B measures given probe 21's evidence; the verdict mapping; outcome).
   (b) §7 probe 23 B as built (June 2023 via probe 5's request, Bills Receivable as-on 31-03-2026, the two-source
   verdict; outcome).
@@ -2492,22 +2492,22 @@ results doc. Logs go to `logs/`.
   (f) §7 probe 24 as built: five-read export, pending-prompt gate shapes, outcome.
   (g) §6 batch 6: manual only. §11.5 rows 3 (+ `B_flagged_month_2023_02/07`), 23, 24 (+ the `*_pending_*` steps, the
   per-read names), 25 (+ `B_ledgers_after_duplicate_attempt`).
-- [ ] **Step 2: Tracker.** Rows 3, 11, 23, 24, 25 get ✅ with proof (or their real outcome). Row 11 also gets the
+- [x] **Step 2: Tracker.** Rows 3, 11, 23, 24, 25 get ✅ with proof (or their real outcome). Row 11 also gets the
   correction of its 2026-09-24 "ledger openings CONFIRMED" text (superseded, not deleted). Update the §0 S0 row and
   §1 decisions 9 (probe 3) and 11 (probe 11 if it changes the anchor story). Rewrite "Resume here" to the state
   actually left behind. Next steps: probe 22 still blocked on the forex write shape; the S0 exit-gate check (§10); S1
   spec. Add a dated change-log row with every contradicted expectation (including the probe-11 misreading).
-- [ ] **Step 3: LESSONS.md §15.** Rule 20b: its "Ledger OpeningBalance … did **not** have this problem" is wrong.
+- [x] **Step 3: LESSONS.md §15.** Rule 20b: its "Ledger OpeningBalance … did **not** have this problem" is wrong.
   Correct it (current-period-relative for ledgers too, citing p11's observations and 16 B's `opening_scope`), keeping
   the old text in a superseded note. Add a rule for any new finding: optional/cancelled listing and flags, due-date
   column, R9, secured/vault export and gate shapes. Each carries its scope caveat (Educational, Wine 11.0, TallyPrime
   7.0).
-- [ ] **Step 4: Part 1 spec.** One dated "Changed" line: R16 (3 B), Part 3 overdue split (23 B), R9 (25 B), R2/R26 +
+- [x] **Step 4: Part 1 spec.** One dated "Changed" line: R16 (3 B), Part 3 overdue split (23 B), R9 (25 B), R2/R26 +
   onboarding + gate shape (24), R5 (11 under C46: both ledger and stock openings are current-period; books-start
   anchors come from the TB / Stock Summary as-on the books start).
-- [ ] **Step 5: Roadmap.** Set C S0 row: part 6 done; what remains (probe 22 blocked on forex write shape; exit
+- [x] **Step 5: Roadmap.** Set C S0 row: part 6 done; what remains (probe 22 blocked on forex write shape; exit
   gate; S1 spec).
-- [ ] **Step 6: Commit** docs only: `docs(bi/v2): plan part 6 results into specs, tracker, LESSONS, roadmap`.
+- [x] **Step 6: Commit** docs only: `docs(bi/v2): plan part 6 results into specs, tracker, LESSONS, roadmap`.
 
 ---
 
