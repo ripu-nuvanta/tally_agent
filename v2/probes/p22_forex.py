@@ -11,7 +11,7 @@ also exports both ALLLEDGERENTRIES.LIST and LEDGERENTRIES.LIST for the same line
 primary lines only (`reads.primary_lines`), each posting once."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from v2.agent.tally.amounts import AmountParseError, parse_decimal
 from v2.agent.tally.envelopes import formula_string
@@ -35,8 +35,32 @@ FAILED_IMPACT = ("The INR base can't be read from a forex voucher line unambiguo
 UNEXPECTED_IMPACT = ("Tally adds ledger line(s) to a forex voucher that were never sent (e.g. a rounding or exchange "
                      "line): S2 must expect lines beyond the entered ones on a forex voucher, and decision 15's base "
                      "handling is revisited before S1 (Part 1 probe 22).")
+REVALUATION_NOTE = (" The forex party's balance is its face total at the latest voucher rate, not the sum of the "
+                    "vouchers' INR bases (C47): S1's per-ledger and TB parity must expect that unrealised forex "
+                    "difference (the TB is out by it).")
 LEDGER_EXPRESSION_NOTE = (" The forex party's ClosingBalance exports as an expression, not a number: S1 parity (decision "
                           "11) must parse its base part the same way, or read that ledger's balance from the TB.")
+
+
+def revaluation(closing: str | None, specs: dict) -> dict:
+    """C47 (live 2026-09-25): TallyPrime values a forex ledger at the rate of its LATEST-dated forex voucher, not at
+    the sum of the vouchers' INR bases. Recorded, never judged: the ledger's closing base (the stated base of an
+    expression, or a plain number), whether it equals face total × the latest dataset rate, and its difference from
+    the sum of the party lines' bases (the unrealised forex difference that leaves the TB out)."""
+    ordered = sorted(specs.values(), key=lambda v: (v.date, v.tag))
+    party_lines = [l for v in ordered for l in v.lines if l.ledger == v.party]
+    face = sum(((-v.fx_amount if l.amount < 0 else v.fx_amount) for v in ordered for l in v.lines
+                if l.ledger == v.party), Decimal("0.00"))
+    bases = sum((l.amount for l in party_lines), Decimal("0.00"))
+    expected = (face * ordered[-1].fx_rate).quantize(Decimal("0.01"), ROUND_HALF_UP) if ordered else None
+    fa = parse_forex_amount(closing)
+    try:
+        value = fa.base if fa is not None else parse_decimal(closing)
+    except AmountParseError:
+        value = None
+    return {"closing_base": None if value is None else f"{value:.2f}", "bases_total": f"{bases:.2f}",
+            "revalued_at_latest_rate": None if value is None else value == expected,
+            "revaluation_difference": None if value is None else f"{value - bases:.2f}"}
 
 
 def _parts_match(line: dict, spec) -> dict[str, bool | None]:
@@ -171,8 +195,9 @@ async def run_b(ctx: ProbeContext) -> PartResult:
         closing_form = "plain" if parse_decimal(closing) is not None else "missing"
     except AmountParseError:
         closing_form = "expression"
+    revalued = revaluation(closing, specs) if rows else {}
     ctx.observe("usd_ledger", {"found": bool(rows), "currency_name": rows[0]["CurrencyName"] if rows else None,
-                               "closing_text": closing, "closing_form": closing_form})
+                               "closing_text": closing, "closing_form": closing_form, **revalued})
     currencies = read_objects(await ctx.send("currencies", master_request("S0P22Currencies", "Currency",
                               CURRENCY_FIELDS, ctx.company_name)), "CURRENCY", CURRENCY_FIELDS)
     ctx.observe("currencies", currencies)
@@ -181,6 +206,10 @@ async def run_b(ctx: ProbeContext) -> PartResult:
     if closing_form == "expression":
         summary += "; the forex party's ClosingBalance exports as an expression"
         impact += LEDGER_EXPRESSION_NOTE
+    if revalued.get("revalued_at_latest_rate"):
+        summary += (f"; the forex party is valued at the latest voucher rate (C47): "
+                    f"{revalued['revaluation_difference']} from the vouchers' bases")
+        impact += REVALUATION_NOTE
     return PartResult(outcome, f"{summary} — tags {sorted(specs)}", spec_impact=impact)
 
 

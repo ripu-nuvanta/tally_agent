@@ -239,3 +239,29 @@ async def test_a_plain_usd_ledger_closing_is_recorded_too(tmp_path):
     part = await _run(tmp_path, _books(forex_ledger_closing="plain"))     # candidate
     assert part["outcome"] == "CONFIRMED" and part["observations"]["usd_ledger"]["closing_form"] == "plain"
     assert "ClosingBalance exports as an expression" not in part["summary"]
+
+
+# --- C47: the USD party is valued at the latest voucher rate — recorded, not judged ------------------------------------
+async def test_the_usd_party_revalued_at_the_latest_rate_is_recorded_not_judged(tmp_path):
+    part = await _run(tmp_path, _books())                        # live: -$1609.71 @ ? 82.58/$ = -? 132929.85
+    assert part["outcome"] == "CONFIRMED"
+    led = part["observations"]["usd_ledger"]
+    assert led["closing_text"] == "-$1609.71 @ ? 82.58/$ = -? 132929.85"
+    assert (led["revalued_at_latest_rate"], led["revaluation_difference"]) == (True, "183.87")
+    assert (led["bases_total"], led["closing_base"]) == ("-133113.72", "-132929.85")
+    assert "latest voucher rate" in part["summary"] and "183.87" in part["summary"]
+
+
+async def test_a_usd_party_at_the_sum_of_bases_is_recorded_as_not_revalued(tmp_path):
+    part = await _run(tmp_path, _books(forex_ledger_revaluation="bases"))     # candidate
+    led = part["observations"]["usd_ledger"]
+    assert part["outcome"] == "CONFIRMED"
+    assert (led["revalued_at_latest_rate"], led["revaluation_difference"]) == (False, "0.00")
+    assert "latest voucher rate" not in part["summary"]
+
+
+async def test_a_plain_usd_party_closing_is_still_checked_for_revaluation(tmp_path):
+    part = await _run(tmp_path, _books(forex_ledger_closing="plain"))
+    led = part["observations"]["usd_ledger"]
+    assert (led["closing_base"], led["revalued_at_latest_rate"], led["revaluation_difference"]) == (
+        "-132929.85", True, "183.87")
