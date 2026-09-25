@@ -123,3 +123,15 @@ async def test_the_2026_09_24_live_capture_relabels_to_different_under_c46(tmp_p
     assert obs["sub_verdicts"] == {"ledgers": "DIFFERENT", "opening_bill": "CONFIRMED", "stock": "DIFFERENT"}
     assert len(obs["ledgers"]["as_current_fy"]) == 14
     assert obs["stock_scope"]["scope"] == "current_period" and len(obs["stock_scope"]["as_current_period"]) == 5
+
+
+async def test_current_period_stock_says_rate_and_value_are_recorded_not_judged(tmp_path):
+    """Review M5: under C46 only the quantity decides the stock half; the summary says rate/value are record-only."""
+    part = await _run(tmp_path, _books(stock_opening_scope="current"))
+    assert "rate/value recorded, not judged" in part["summary"]
+    assert "USB Cable Type-C" in part["observations"]["stock"]
+
+
+async def test_books_scope_stock_judges_rate_and_value(tmp_path):
+    part = await _run(tmp_path, _books(**BOOKS_SCOPE))
+    assert "not judged" not in part["summary"]

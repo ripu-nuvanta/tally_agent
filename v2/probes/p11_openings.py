@@ -158,7 +158,8 @@ def _stock_half(stock: dict[str, dict], scope: dict) -> tuple[str, str, str]:
         return "CONFIRMED", f"{len(stock)} openings equal what setup-b wrote", ""
     if scope["scope"] == "current_period":
         return ("DIFFERENT", f"openings are the current period's (as at {B_CURRENT_PERIOD[0]}) for "
-                             f"{len(scope['as_current_period'])} item(s), not the books-start ones (C46)",
+                             f"{len(scope['as_current_period'])} item(s), not the books-start ones (C46); "
+                             "rate/value recorded, not judged",
                 STOCK_CURRENT_IMPACT)
     if scope["scope"] == "undecided":
         return "DIFFERENT", "books-start and current-period openings are equal on every item", STOCK_UNDECIDED_IMPACT
