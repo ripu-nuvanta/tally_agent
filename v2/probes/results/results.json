@@ -3723,6 +3723,55 @@
         },
         "B": {
           "outcome": "DIFFERENT",
+          "summary": "voucher type: 'Sales - GST' resolves to Sales only by the Parent walk (Sales - GST → Sales) (DIFFERENT); duplicate name: TallyPrime refused a second 'Delhi Metal Traders' ('Oops! Name already exists. Enter a different name.') (CONFIRMED)",
+          "observations": {
+            "voucher_type": {
+              "name": "Sales - GST",
+              "parent": "Sales",
+              "reserved_name": "",
+              "walk": [
+                "Sales - GST",
+                "Sales"
+              ],
+              "resolved_by": "Parent walk"
+            },
+            "r9": {
+              "status": "attempted",
+              "ledger": "Delhi Metal Traders",
+              "existing_parent": "National Creditors",
+              "tried_parent": "Sundry Debtors",
+              "tally_message": "Oops! Name already exists. Enter a different name.",
+              "parents_after": [
+                "National Creditors"
+              ],
+              "verdict": "refused",
+              "answer_agrees": true
+            },
+            "sub_verdicts": {
+              "voucher_type": "DIFFERENT",
+              "duplicate_name": "CONFIRMED"
+            }
+          },
+          "spec_impact": "A custom voucher type exports no base type of its own: S1 derives it by walking the voucher-type Parent chain (R16): 'Sales - GST' → Sales — the same Parent-chain rule probe 25 A put into the S1 spec.",
+          "fixtures": [
+            "p25_B_voucher_types.xml",
+            "p25_B_ledgers_after_duplicate_attempt.xml"
+          ],
+          "manual_steps": [
+            {
+              "n": 1,
+              "instruction": "Probe 25 B, duplicate ledger name (R9). In TallyPrime: Gateway of Tally → Create → Ledger. Name: Delhi Metal Traders   Under: Sundry Debtors   (it already exists under National Creditors). Try to save it (A: Accept on the right-hand button bar). Then press Esc until you are back at the Gateway of Tally, answering Yes if TallyPrime asks to quit without saving. Type TallyPrime's message word for word, or 'saved' if it saved the ledger, or 'skip' to leave R9 unmeasured.",
+              "input": "Oops! Name already exists. Enter a different name.",
+              "done_at": "2026-09-25T10:40:03+05:30"
+            }
+          ],
+          "ran_at": "2026-09-25T10:40:03+05:30"
+        }
+      },
+      "history": [
+        {
+          "part": "B",
+          "outcome": "DIFFERENT",
           "summary": "voucher type: 'Sales - GST' resolves to Sales only by the Parent walk (Sales - GST → Sales) (DIFFERENT); duplicate name (R9): skipped by the operator",
           "observations": {
             "voucher_type": {
@@ -3757,8 +3806,7 @@
           ],
           "ran_at": "2026-09-24T21:10:44+05:30"
         }
-      },
-      "history": [],
+      ],
       "remaining": []
     },
     "7": {
