@@ -69,6 +69,19 @@ class UnitSpec:
 
 
 @dataclass(frozen=True)
+class CurrencySpec:
+    """A Tally Currency master (plan part 7). `symbol` is the master's NAME and what a forex AMOUNT is written in;
+    `formal_name` is its expanded name. Field names on the wire are candidates until Task 2 measures them."""
+    symbol: str
+    formal_name: str
+    decimal_symbol: str = "cent"
+    decimal_places: int = 2
+
+
+USD_CURRENCY = CurrencySpec(symbol="$", formal_name="USD")
+
+
+@dataclass(frozen=True)
 class StockItemSpec:
     name: str
     unit: str

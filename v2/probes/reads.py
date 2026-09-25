@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import re
 import xml.etree.ElementTree as ET
+from dataclasses import dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from v2.agent.tally.amounts import AmountParseError, parse_decimal
 from v2.agent.tally.envelopes import COMPANY_PLACEHOLDER, esc, wrap_collection
@@ -155,6 +156,53 @@ def signed_ui_amount(text: str) -> Decimal | None:
         return -abs(value) if lowered.endswith("dr") else abs(value)
     return amount(cleaned)
 
+
+
+# --- forex amounts (probe 22, plan part 7) --------------------------------------------------------------------------
+# Candidate grammar (review 2026-09-24 #2): "<sign><sym><fx> @ <base sym><rate>/<sym> [= <sign><base sym><base>]".
+# Widened for the unmeasured export form: optional spaces, a missing "= base" part, "Rs." or no base symbol, a
+# symbol word ("USD"). Task 2 of plan part 7 measures Tally's own form; tests pin it to that capture.
+_FX_NUM = r"\d[\d,]*(?:\.\d+)?"
+_FOREX_RE = re.compile(
+    rf"^\s*(?P<s1>-?)\s*(?P<sym>[^\d\s@=/-]+)\s*(?P<s2>-?)\s*(?P<fx>{_FX_NUM})"
+    rf"\s*@\s*(?P<rsym>[^\d\s@=/-]*)\s*(?P<rate>{_FX_NUM})\s*/\s*(?P<per>[^\s=]+)"
+    rf"(?:\s*=\s*(?P<b1>-?)\s*(?P<bsym>[^\d\s=-]*)\s*(?P<b2>-?)\s*(?P<base>{_FX_NUM}))?\s*$")
+_PAISA = Decimal("0.01")
+
+
+@dataclass(frozen=True)
+class ForexAmount:
+    currency: str            # the foreign symbol as written ("$")
+    fx: Decimal              # signed foreign face value
+    rate: Decimal            # base-currency units per foreign unit
+    rate_symbol: str         # the base symbol as written ("₹", "Rs.", "")
+    base: Decimal | None     # signed base amount when the text states it ("= -₹37216.04"), else None
+    raw: str
+
+
+def _fx_number(text: str) -> Decimal:
+    return Decimal(text.replace(",", ""))
+
+
+def parse_forex_amount(text: str | None) -> ForexAmount | None:
+    """A Tally forex AMOUNT expression → its parts; anything else (a plain number, empty, junk) → None."""
+    match = _FOREX_RE.match(text or "")
+    if match is None:
+        return None
+    fx = _fx_number(match["fx"]) * (-1 if "-" in match["s1"] + match["s2"] else 1)
+    base = None
+    if match["base"] is not None:
+        base = _fx_number(match["base"]) * (-1 if "-" in (match["b1"] or "") + (match["b2"] or "") else 1)
+    return ForexAmount(currency=match["sym"], fx=fx, rate=_fx_number(match["rate"]),
+                       rate_symbol=match["rsym"] or "", base=base, raw=text)
+
+
+def forex_base(fa: ForexAmount) -> tuple[Decimal, str]:
+    """The INR base of one forex line: the stated "= ₹…" part when present ("stated"), else face × rate rounded
+    ROUND_HALF_UP to paise ("computed" — Tally's own rounding is unmeasured, so a computed base is a DIFFERENT)."""
+    if fa.base is not None:
+        return fa.base, "stated"
+    return (fa.fx * fa.rate).quantize(_PAISA, rounding=ROUND_HALF_UP), "computed"
 
 # --- vouchers -------------------------------------------------------------------------------------------------------
 def _leaf_fields(element: ET.Element) -> dict[str, str]:
