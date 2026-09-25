@@ -219,6 +219,23 @@
 > tier-C check. Rules in [`LESSONS.md`](../../LESSONS.md) §15 rules 28–30. Spec
 > `docs/specs/2026-09-22-bi-s0-probes-design.md` "Changed 2026-09-25 (plan part 7)"; tracker row 22 and decision 15.
 
+> **Changed 2026-09-25 (S0 exit gate — item 3 and the audit's stale-text exceptions,
+> `docs/bi-s0-exit-gate-2026-09-25.md`):** the dated blocks above already carried these results; this round writes
+> them into the **body** so no body line contradicts a header.
+> - **§6 "Rung 1" — probe 16's measured rule written in** (S0 spec §7 probe 16 outcome rule): `ClosingBalance` is as
+>   of the **current period's end** (31-03-2026 on company A), not Tally's current date; post-dated vouchers **are
+>   counted** and export `IsPostDated=Yes` (an ordinary future-dated voucher is counted too, exporting `No`); a typed
+>   `SVTODATE` is honoured **inside** the current period; before it, it clamps to the current period's start (C45).
+>   The old "Probe 16 settles both" is struck.
+> - **§6 "The opening anchor"** — the "as-on per-ledger balances are unobtainable" line and the "books-start
+>   `OpeningBalance` (probe 16)" line (and "Probe 16's route is impossible" under "Per-ledger anchors") are struck: master `OpeningBalance` is the **current-FY** opening (probes 11 and
+>   16 B), so the books-start anchor comes from the TB / Stock Summary as-on the books start (probe 18's route).
+> - **§6 Rungs 1–2 — C47 added:** a forex ledger is valued at its latest voucher rate, so parity expects the
+>   unrealised difference; expression-form balances need a parser (open S1 decision).
+> - **§11 R30 Handling** — the probe-16 per-ledger route is struck. **§12 probe 11** — the ledger-opening "CONFIRMED"
+>   is struck (current-period). **§15 Q22/Q23** — probe 21's 2026-09-25 re-run noted (every figure moved by <0.5%;
+>   the decisions hold). **§16 probe 16** — outcome noted.
+
 ## 1. Context
 New product direction:
 - **BI layer.** The owner sees their business (sales, profit, who owes money, top customers, stock) and asks the AI chat. Everything is answered from **our DB**.
@@ -676,8 +693,39 @@ no `is_deleted` of their own: they are replaced with their voucher and go when i
 
 **Post-dated vouchers.** `:as_on` must be the date Tally's `ClosingBalance` is as-of, which may be
 today or the end of the current period, and post-dated vouchers must be counted the way Tally counts
-them. Otherwise every ledger with a future-dated voucher shows a false mismatch. Probe 16 settles
-both, and `is_post_dated` is stored on every voucher (§5 "Cloud").
+them. Otherwise every ledger with a future-dated voucher shows a false mismatch. ~~Probe 16 settles
+both~~ *(settled — see the measured rule below)*, and `is_post_dated` is stored on every voucher (§5 "Cloud").
+
+**Changed 2026-09-25 (S0 exit gate) — probe 16's measured rule** (live 2026-09-24, typed, company A part DIFFERENT
+only on the nominal-ledger half, B part FAILED per C45; `v2/probes/results/results.json` `probes.16`, tracker row 16):
+- **As-of date = the current period's end.** `LEDGER.ClosingBalance` is as of the end of the period Tally has open
+  (company A: **31-03-2026**), **not** Tally's current date — the books had only reached 01-03-2026 before the run,
+  yet a throwaway voucher dated 31-03-2026 moved Cash (₹23,000 → ₹23,001). So rung 1 uses **`:as_on` = the current
+  period's end date**.
+- **Post-dated vouchers are counted.** A voucher marked post-dated (Ctrl+T) was included in `ClosingBalance` and
+  exported **`IsPostDated=Yes`**; an ordinary voucher dated after Tally's current date was included too (exporting
+  `IsPostDated=No`). So rung 1 does **not** filter on `is_post_dated` — lines of post-dated vouchers are summed like
+  any other; the cancelled / optional / deleted filters above still apply.
+- **`ClosingBalance` agrees with the lines.** Company A: 0 mismatches between each balance-sheet ledger's
+  `ClosingBalance` and its summed `ALLLEDGERENTRIES.LIST` lines (50 vouchers); company B: 19/19 closing balances
+  matched the dataset. Rung 1 stands at ledger level.
+- **As-on reads (C45).** A **typed** `SVTODATE` on the Ledger collection **is honoured inside the current period**
+  (A: 19 of 22 balance-sheet ledgers moved to the as-on lines at 31-10-2025); for a date **before** the current
+  period it silently **clamps to the current period's start** (**Ruling C45**, B: 31-03-2025 and 31-03-2023 both
+  answered with the 01-04-2025 balances). A dated Ledger collection is therefore a same-period read only, never a
+  past-period (backfill) anchor — those come from a TB (see "The opening anchor"). `SVFROMDATE` is never sent on a
+  master collection (LESSONS §15 rule 17).
+- *Scope caveat:* TallyPrime 7.0 Edit Log, **Educational**, under **Wine 11.0**; the as-of-period-end rule is an open
+  tier-C check on a licensed Tally.
+
+**Forex ledgers (C47, added 2026-09-25 S0 exit gate).** Tally values a forex ledger's `ClosingBalance` (and its TB
+row) at its face total × the rate of its **latest-dated** forex voucher, while our lines carry each voucher's stated
+INR base — so rung 1's computed sum differs from the mirrored balance by the **unrealised forex difference** (probe 22:
+₹183.87 on `Gulf Office Supplies LLC (USD)`). Rung 1 must expect that difference on forex ledgers instead of flagging
+it, and S1 reads the forex ledger's balance from Tally rather than recomputing it. That ledger's
+`ClosingBalance`/`OpeningBalance` also export as an **expression** (`-$1609.71 @ ? 82.58/$ = -? 132929.85`), which the
+plain amount parser rejects — **open S1 decision:** parse the stated base (the part after `=`) as for voucher lines,
+or take that ledger's balance from the ledger-level TB (probe 17's route).
 
 Nominal ledgers are marked `not_applicable`, **never** `match` — otherwise a future bug hides
 behind a false green.
@@ -690,6 +738,12 @@ Expenses.
 It also asserts **the snapshot itself balances** (Σ debit + Σ credit ≈ 0). If Tally's own TB does
 not balance, Tally is serving stale data (R4) and the whole run is discarded — not reported as our
 error.
+
+**Forex (C47, added 2026-09-25 S0 exit gate).** The TB values a forex ledger at its latest voucher rate (see Rung 1
+"Forex ledgers"), so every group that contains a forex ledger — up to its primary group — differs from our rollup by
+the same unrealised forex difference (probe 22: ₹183.87 under Sundry Debtors). Rung 2 expects that difference on
+those groups instead of flagging it; how it is computed (from Tally's forex ledger balance vs Σ its lines' INR bases)
+is part of S1's parity design, together with the expression-form balance parser.
 
 ### Rung 3 — statement-level (deferred, decision 11)
 Computed P&L net vs the full-FY P&L snapshot; computed asset/liability totals vs the BS snapshot;
@@ -720,8 +774,12 @@ be comparing a knowingly-incomplete DB against a current Tally.
   compare against  current mirrored LEDGER.ClosingBalance (rung 1)  /  current TB (rung 2)
   ```
 
-  The anchor can only come from a **`TYPE=Data` report** (probe 17's exploded ledger-level TB): as-on per-ledger
-  balances are unobtainable from the Ledger collection (live 2026-09-23 — see the header).
+  The anchor can only come from a **`TYPE=Data` report** (probe 17's exploded ledger-level TB): ~~as-on per-ledger
+  balances are unobtainable from the Ledger collection (live 2026-09-23 — see the header).~~ *(Corrected 2026-09-25,
+  S0 exit gate: that was measured untyped. A typed `SVTODATE` on the Ledger collection is honoured **inside** the
+  current period but clamps to the current period's start for any earlier date (C45, probe 16 B) — and the watermark
+  anchor is by definition before the current period, so the Ledger collection still can't supply it. See Rung 1's
+  measured rule.)*
 
   - **Capture:** the anchor TB is taken as-on the day before the window starts at the end of the
     first sync (and again at the end of a whole-company resync's 2-FY pass), and with **each backfill
@@ -731,9 +789,19 @@ be comparing a knowingly-incomplete DB against a current Tally.
     at the verified edge. Each anchor is a genuine month-end TB, so Part 2's Rule 1 can also serve
     "TB as on <that month-end>" from it as a snapshot. It is also what Part 2's probe-16 fallback
     computes forward from.
-  - Once history is complete, `tally_balance_as_on(...)` is replaced by the ledger's books-start
-    `OpeningBalance` (probe 16) and the comparison is the plain all-time one.
-- **Per-ledger anchors during backfill: available (settled 2026-09-23).** Probe 16's route is impossible, but
+  - ~~Once history is complete, `tally_balance_as_on(...)` is replaced by the ledger's books-start
+    `OpeningBalance` (probe 16) and the comparison is the plain all-time one.~~ *(Corrected 2026-09-25, S0 exit
+    gate: a ledger's master `OpeningBalance` is the **current-FY** opening, not books-start — probe 11 re-run under
+    C46 (14/25 ledgers at the current-FY opening) and probe 16 B (`opening_scope = fy`). Used as a books-start anchor
+    it would double-count every prior FY.)* Once history is complete, `tally_balance_as_on(...)` is replaced by the
+    **books-start opening read from a report as-on the books start** — the ledger-level TB (probe 17's
+    `ISLEDGERWISE=Yes`) for ledgers and groups, and the Stock Summary for stock — the route probe 18 proved on a
+    closed prior FY (company B, 31-03-2023). The comparison is then the plain all-time one. Never a master's
+    `OpeningBalance`. The exact as-on date convention (the books-start day itself vs the day before, and C43's
+    Educational-mode day restriction) is fixed in S1's parity design.
+- **Per-ledger anchors during backfill: available (settled 2026-09-23).** ~~Probe 16's route is impossible, but~~
+  *(Corrected 2026-09-25, S0 exit gate: probe 16's route works only inside the current period and clamps before it
+  (C45), so it cannot anchor a backfill — same net result)*, but
   **probe 17's is not**: `ISLEDGERWISE=Yes` on the `TYPE=Data` Trial Balance returns a **ledger-level** TB, safely
   and fast (company A: 29 ledger rows, ~7.3 KB, ~18 ms under Wine). So the anchor exists **per ledger** and rung 1
   runs mid-backfill; the fallback below is what happens only if this route fails on a customer's Tally.
@@ -1131,7 +1199,7 @@ R5, R16 and R25 are in Part 2; R24 and R28 are in Part 3.
 **R27: Data volume and DB cost**
 - *What:* a large trader has hundreds of thousands of vouchers, and `raw` JSONB doubles storage. **Decision 7b (backfill all history to books start) makes this materially worse** — a twelve-year-old company is roughly 6× the two-FY estimate, and it is unbounded by design.
 - *Handling:* measure bytes per month chunk in S0 (probe 9) and extrapolate to the **full books span** (probe 21), not just 2 FYs, before S1. Decide whether `raw` is kept permanently — and specifically whether it is kept for backfilled (older) years, where it is least likely to be needed. Q22 tracks this.
-- *Residual:* an unusually old or high-volume company may need a per-customer storage ceiling. Not designed for v1; revisit once probe 21 gives real numbers. **Probe 21 (2026-09-24, company B, Wine/Educational — headline):** full-history reach confirmed at least 3 FYs back (238/238 vouchers exact, month by month, decision 7b); `raw` JSON is 86.1% of per-voucher storage, and at 200k vouchers/yr the 10-year span is 15137.5 MB with `raw` vs 2100.5 MB without — Q22/Q23 numbers are in (§15); the ceiling decision itself is unchanged, still open.
+- *Residual:* an unusually old or high-volume company may need a per-customer storage ceiling. Not designed for v1; revisit once probe 21 gives real numbers. **Probe 21 (2026-09-24, company B, Wine/Educational — headline):** full-history reach confirmed at least 3 FYs back (238/238 vouchers exact, month by month, decision 7b); `raw` JSON is 86.1% of per-voucher storage, and at 200k vouchers/yr the 10-year span is 15137.5 MB with `raw` vs 2100.5 MB without — Q22/Q23 numbers are in (§15); the ceiling decision itself is unchanged, still open. *(Note 2026-09-25, S0 exit gate: these are the 2026-09-24 figures; the 2026-09-25 re-run moved each by under 0.5% — e.g. 15081.4 MB / 2094.2 MB — see §15 Q22.)*
 
 **R29: Background backfill never completes**
 - *What:* the backfill only advances on cycles where nothing else needs doing and Tally is open. A customer who opens Tally for twenty minutes a day, or whose books go back fifteen years, may never reach `books_from`. The UI would sit at "still loading" indefinitely.
@@ -1142,7 +1210,7 @@ R5, R16 and R25 are in Part 2; R24 and R28 are in Part 3.
 **R30: All-time ledger balances are not a valid parity anchor mid-backfill**
 - *What:* Tally's `LEDGER.ClosingBalance` is an **all-time** figure. Our computed balance only covers the synced window. While the backfill is incomplete these legitimately differ, and a naive rung-1 comparison would raise an integrity alert on every ledger of every customer, every day.
 - *Impact:* High — it would make the integrity system worse than useless during the period it is most needed.
-- *Handling:* §6 — while `backfill.state != complete`, the opening balance at the watermark comes from a TB snapshot as-on the day before the watermark. Our lines from the watermark onward are added to it, and the result is compared with Tally's current balance. The TB is group-level, so this runs at group level (rung 2) and rung 1 is suspended, unless per-ledger openings come from probe 16 (ledger `OpeningBalance` readable as-on a date) or probe 17 (a ledger-level TB). Once history is complete, the books-start opening balance replaces the watermark anchor. The Settings card states the verified span.
+- *Handling:* §6 — while `backfill.state != complete`, the opening balance at the watermark comes from a TB snapshot as-on the day before the watermark. Our lines from the watermark onward are added to it, and the result is compared with Tally's current balance. The TB is group-level, so this runs at group level (rung 2) and rung 1 is suspended, unless per-ledger openings come from ~~probe 16 (ledger `OpeningBalance` readable as-on a date) or~~ probe 17 (a ledger-level TB). *(Corrected 2026-09-25, S0 exit gate: probe 16's route is struck — a Ledger collection's `OpeningBalance` is current-FY, and a typed `SVTODATE` before the current period clamps to its start (C45); probe 17's `ISLEDGERWISE=Yes` TB is the per-ledger route and is available, so rung 1 is not suspended — §6 "The opening anchor".)* Once history is complete, the books-start opening balance replaces the watermark anchor *(read from the ledger-level TB / Stock Summary as-on the books start, probe 18's route — never a master `OpeningBalance`)*. The Settings card states the verified span.
 - *Prove in S0:* probe 18 (does a TB as-on a past date return correct historical values?). **Settled live 2026-09-23: yes.** Tally honours `SVFROMDATE`/`SVTODATE` on `TYPE=Data` reports, and every primary group reconciles to the vouchers once (a) the nominal ledger is taken from `ALLLEDGERENTRIES.LIST` only and (b) the stock-bearing group's static `Opening Stock` row is added to the ledger rollup. **The as-on TB is a valid parity anchor during the backfill; R30 needs no suspension on this ground.** **Changed 2026-09-24 (plan part 5, live B): re-confirmed on a past-FY date** — company B's TB as-on 31-03-2023 (a closed prior FY's end) matched the dataset for all 5 primary groups the same way. **Also settled: Bills Receivable, Bills Payable and Stock Summary as-on a valid date ARE history too** — the 2026-09-23 "ignore the as-on date" finding was a Ruling C43 artefact (an Educational-ignored 30-09-2025); at the C43-valid 31-10-2025 all three matched exactly (company A). Bills/Stock Summary as-on a valid date need no vouchers-based workaround; only an Educational-mode non-1/2/31 date does.
 
 ## 12. S0 probe list (on restored seed backup `seed_data/TDBK1800_100003.001`)
@@ -1159,7 +1227,7 @@ Every probe **saves the raw Tally responses as fixtures** under `v2/tests/fixtur
 8. Ledger rename: do old vouchers' names change? Is AlterID bumped? Does the GUID stay stable? (R9)
 9. Latency and size per chunk; can the accountant keep typing during a heavy query? (R3, R27) **Tier C only.**
 10. Error shapes: Tally closed, company closed, Educational mode, popup open. (R26)
-11. Opening balances/bills, stock opening qty/rate/value. (R5) **Changed 2026-09-24 (plan part 5, live B): FAILED, stock only.** Ledger `OpeningBalance` and the debtor's opening bill CONFIRMED against books-start values. Stock `OpeningBalance`/`OpeningRate`/`OpeningValue` FAILED — **new finding, Ruling C46**: `StockItem.OpeningBalance` is the current period's opening, not books-start (all 5 items = the dataset's stock at 31-03-2025). A books-start stock opening needs a historical report instead (probe 18's route), never the StockItem master.
+11. Opening balances/bills, stock opening qty/rate/value. (R5) **Changed 2026-09-24 (plan part 5, live B): FAILED, stock only.** ~~Ledger `OpeningBalance` and~~ the debtor's opening bill CONFIRMED against books-start values. *(Corrected 2026-09-25, S0 exit gate: the ledger half was never CONFIRMED — the probe 11 re-run under C46 (run 2026-09-24 20:57) is **DIFFERENT**: ledger `OpeningBalance` is the **current-period** (current-FY) opening, 14/25 ledgers at the current-FY opening, agreeing with probe 16 B's `opening_scope = fy`. Books-start anchors come from the TB / Stock Summary as-on the books start, probe 18's route. See the header's "Changed 2026-09-25 (plan part 6)".)* Stock `OpeningBalance`/`OpeningRate`/`OpeningValue` FAILED — **new finding, Ruling C46**: `StockItem.OpeningBalance` is the current period's opening, not books-start (all 5 items = the dataset's stock at 31-03-2025). A books-start stock opening needs a historical report instead (probe 18's route), never the StockItem master.
 12. Report snapshots via SVCurrentCompany at today's date. (R5)
 13. Backup restore: do the company GUID and MasterIDs change? (R8)
 14. **Company names with `&` / quotes / apostrophes:** escaped requests work, and unescaped ones fail as expected. (R13) **Changed 2026-09-24 (plan part 5, live B): CONFIRMED** — escaped works (26 ledgers incl. the Hindi one), unescaped fails, an unknown-company control answers without erroring (one company loaded), Tally alive after.
@@ -1248,8 +1316,8 @@ together with this part's questions.
 | Q19 | **Parity tolerance:** flat ₹1.00 per line (`PARITY_TOLERANCE_PAISE=100`), or percentage-based for large balances? A ₹1 tolerance on a ₹4 crore ledger is effectively exact; on a ₹500 ledger it is 0.2%. | R5 | Flat is simpler and catches more; decide after probe 20 shows real diff magnitudes |
 | Q20 | **Rung 3 in or out for v1?** Decision 11 defers it. Does Q8 (previous-FY closing snapshot, Part 2) change that — i.e. do we need statement-level parity to trust a stored FY close? | R5, Q8 | Revisit when Q8 is settled |
 | Q21 | **Parity retention:** proposed 90 days for runs, 7 days for matching lines, 90 for mismatching. Enough history to debug a recurring drift without storing a daily full ledger dump forever? | R20, R27 | Size it against probe 20's ledger counts |
-| Q22 | **Is `raw` JSONB kept for backfilled years?** Decision 7b makes storage unbounded. Keeping `raw` for the recent 2 FYs but dropping it for older backfilled years would roughly halve the marginal cost of deep history. | R27, R29 | Decide after probe 21. **Numbers (probe 21, 2026-09-24):** `raw` is 86.1% of per-voucher storage; per-FY cost at 10k/50k/200k vouchers-a-year, MB with `raw` = 75.7/378.4/1513.7, without = 10.5/52.5/210.1; saving from dropping `raw` beyond the recent 2 FYs, at 5 yr = 195.6/977.8/3911.1 MB, at 10 yr = 521.5/2607.4/10429.5 MB (`storage.q22`, `v2/probes/results/results.json`). At 200k vouchers/yr × 10 yr: 15137.5 MB with `raw` vs 2100.5 MB without vs 4707.9 MB keeping `raw` for the recent 2 FYs only. These are inputs, not the decision — it stays with the user. **DECIDED 2026-09-24 (user): keep `raw` for the recent 2 FYs only; older backfilled years store the structured columns only (re-fetch from Tally if ever needed).** |
-| Q23 | **Does the backfill need a floor?** Decision 7b says all history to books start. Do we want a safety ceiling (e.g. stop at 10 FYs, or at a storage budget) for pathological companies, and what does the UI say when it stops early? | R27, R29 | Revisit after probe 21 gives real numbers. **Numbers (probe 21, 2026-09-24):** per-extra-FY cost at 10k/50k/200k vouchers-a-year = 10.5/52.5/210.1 MB without `raw`, 75.7/378.4/1513.7 MB with (`storage.q23`); month-chunk XML size at 200k vouchers/yr is 626.9 MB and exceeds the ~5k-row chunk cap (`over_chunk_cap: true`) — a floor or a smaller chunk unit is needed at that volume; 10k and 50k/yr stay under the cap. At 200k vouchers/yr × 10 yr: 15137.5 MB with `raw`, 2100.5 MB without (same table as Q22). The decision on a floor stays with the user. **DECIDED 2026-09-24 (user): no year floor — decision 7b stands (all history to books start); large companies are handled by splitting month chunks into day chunks (probe 5 confirmed day windows) plus a per-company storage alert, not a hard stop.** |
+| Q22 | **Is `raw` JSONB kept for backfilled years?** Decision 7b makes storage unbounded. Keeping `raw` for the recent 2 FYs but dropping it for older backfilled years would roughly halve the marginal cost of deep history. | R27, R29 | Decide after probe 21. **Numbers (probe 21, 2026-09-24):** `raw` is 86.1% of per-voucher storage; per-FY cost at 10k/50k/200k vouchers-a-year, MB with `raw` = 75.7/378.4/1513.7, without = 10.5/52.5/210.1; saving from dropping `raw` beyond the recent 2 FYs, at 5 yr = 195.6/977.8/3911.1 MB, at 10 yr = 521.5/2607.4/10429.5 MB (`storage.q22`, `v2/probes/results/results.json`). At 200k vouchers/yr × 10 yr: 15137.5 MB with `raw` vs 2100.5 MB without vs 4707.9 MB keeping `raw` for the recent 2 FYs only. These are inputs, not the decision — it stays with the user. **DECIDED 2026-09-24 (user): keep `raw` for the recent 2 FYs only; older backfilled years store the structured columns only (re-fetch from Tally if ever needed).** **Re-run 2026-09-25 (S0 exit gate note):** probe 21's B re-run (plan part 7, 238 unflagged vouchers sized, FY 2022-23 now 240 incl. the USD sales) moved every figure by under 0.5%, in the decision's favour — 1050.3→1047.1 B/voucher without `raw`, 6518.5→6493.6 B `raw` JSON, `raw` share 86.1%→86.1%; at 200k/yr × 10 yr 15137.5→15081.4 MB with `raw`, 2100.5→2094.2 MB without, 4707.9→4691.6 MB `raw` for the recent 2 FYs only; the 200k/yr month chunk 626.9→623.9 MB, still `over_chunk_cap: true`; 10k/50k/yr still under the cap (`docs/bi-s0-exit-gate-2026-09-25.md` item 4). **The decision holds.** |
+| Q23 | **Does the backfill need a floor?** Decision 7b says all history to books start. Do we want a safety ceiling (e.g. stop at 10 FYs, or at a storage budget) for pathological companies, and what does the UI say when it stops early? | R27, R29 | Revisit after probe 21 gives real numbers. **Numbers (probe 21, 2026-09-24):** per-extra-FY cost at 10k/50k/200k vouchers-a-year = 10.5/52.5/210.1 MB without `raw`, 75.7/378.4/1513.7 MB with (`storage.q23`); month-chunk XML size at 200k vouchers/yr is 626.9 MB and exceeds the ~5k-row chunk cap (`over_chunk_cap: true`) — a floor or a smaller chunk unit is needed at that volume; 10k and 50k/yr stay under the cap. At 200k vouchers/yr × 10 yr: 15137.5 MB with `raw`, 2100.5 MB without (same table as Q22). The decision on a floor stays with the user. **DECIDED 2026-09-24 (user): no year floor — decision 7b stands (all history to books start); large companies are handled by splitting month chunks into day chunks (probe 5 confirmed day windows) plus a per-company storage alert, not a hard stop.** **Re-run 2026-09-25 (S0 exit gate note):** probe 21's B re-run (plan part 7, 238 unflagged vouchers sized, FY 2022-23 now 240 incl. the USD sales) moved every figure by under 0.5%, in the decision's favour — 1050.3→1047.1 B/voucher without `raw`, 6518.5→6493.6 B `raw` JSON, `raw` share 86.1%→86.1%; at 200k/yr × 10 yr 15137.5→15081.4 MB with `raw`, 2100.5→2094.2 MB without, 4707.9→4691.6 MB `raw` for the recent 2 FYs only; the 200k/yr month chunk 626.9→623.9 MB, still `over_chunk_cap: true`; 10k/50k/yr still under the cap (`docs/bi-s0-exit-gate-2026-09-25.md` item 4). **The decision holds.** |
 | Q25 | **Re-link on a new GUID:** is "same company name, different GUID → offer Re-link" (§4 "Company identity changes") the right trigger? Name matching can be fooled by two companies with the same name (e.g. one per FY split). Should re-link need the website password, or just a tray click? | R2, R8 | Default: tray + web prompt, website password required, never automatic |
 | Q28 | **Who can see a synced workspace?** v1 assumes the existing workspace ownership model: the account that bound the company. Owners often want their accountant on the same workspace, or the other way round. Share with other logins, and with what roles? | R19, R20 | Decide before the S3 spec (Part 3) |
 | Q29 | **Tier C machine (§7):** which x64 Windows machine do we use for everything the Mac can't cover — the installer, service, tray and updater, the Windows 10 minimum, SmartScreen checks and the timing probes — a cloud VM or a physical PC? | R3, R17 | Needed before S0's timing probes (9, 20, 21) and the first installer build |
@@ -1268,7 +1336,11 @@ to run first:
 - **Probe 16** — if `LEDGER.ClosingBalance` does **not** agree with Tally's own TB, rung 1 collapses
   and parity falls back to group level only, making month-bisect the primary localisation tool and
   changing the cost profile materially. Chat's computed balances also lose their base and fall back
-  to group-level forward computation from stored month-end TBs (Part 2, "Rule 1").
+  to group-level forward computation from stored month-end TBs (Part 2, "Rule 1"). **Settled 2026-09-24
+  (typed re-run; noted 2026-09-25, S0 exit gate): it agrees** — balance-sheet ledgers' `ClosingBalance` matched their
+  lines (A: 0 mismatches over 50 vouchers; B: 19/19), as of the current period's end with post-dated vouchers
+  counted; nominal ledgers are non-zero, so rung 1 selects by group nature. Rule written into §6 "Rung 1". Forex
+  ledgers differ by the unrealised difference (C47).
 - **Probe 18** — if a TB as-on a past date is unreliable, there is **no valid parity anchor while
   the backfill is incomplete** (R30), and parity would have to be suspended until full history
   lands. **Settled 2026-09-23 (TB) and 2026-09-24 (Bills/Stock, plan part 5): all four report reads
