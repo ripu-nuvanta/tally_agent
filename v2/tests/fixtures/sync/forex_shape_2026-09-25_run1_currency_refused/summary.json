@@ -1,0 +1,20 @@
+{
+  "outcome": "currency_refused",
+  "base_symbol": "?",
+  "currency": {},
+  "variants": [],
+  "chosen": null,
+  "numbering": {
+    "window": "01-09-2022..31-03-2023",
+    "before": 138,
+    "after": 138,
+    "number_changed": [],
+    "alter_id_changed": [],
+    "missing": [],
+    "added": [],
+    "changed": false
+  },
+  "notes": [
+    "Currency '$': Currency '$' not created: ImportResult(created=0, altered=0, deleted=0, errors=0, exceptions=1, last_vch_id='0', line_error='')"
+  ]
+}
