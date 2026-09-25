@@ -2007,12 +2007,23 @@ PROBE = Probe(
   ```bash
   uv run --project v2 python -m v2.probes setup-b 2>&1 | tee logs/setup-b-forex-live-$(date +%F).log
   ```
-  Expected:
-  - `currencies: created 0, skipped 1` (Task 2 kept `$`; `created 1` if B was restored);
-  - `ledgers: created 1` (the USD party; 0 under H1 = S-A);
+  Expected (changed 2026-09-25, D8 + review I1):
+  - `currencies: created 0, skipped 1` — always 0 created: setup-b never creates a currency (D8). `$` was made in the
+    UI and is in `100000-pre-forex-with-usd-2026-09-25`. **If B has no `$`** (e.g. restored from an older backup),
+    setup-b stops before any write with exit 1 and `setup-b failed: … create `$` (Formal name USD, ISO USD) in the
+    UI: Create → Currency … Nothing was written.` That is the designed stop, not a loader bug: create `$` in the UI
+    (or restore `…pre-forex-with-usd…`) and re-run;
+  - `groups: created 0, skipped 2`, `units: created 0, skipped 3`, `items: created 0, skipped 5`;
+  - `ledgers: created 1, skipped 25` (the USD party);
   - `vouchers: created 2, skipped 958`;
-  - Notes: `[S0-B:101, 102] written now — skipped under C36 until plan part 7…`;
+  - Notes: `[S0-B:101, 102] written now — skipped under C36 until plan part 7…`, **and** `[S0-B:101, 102] read back
+    as forex: currency, face, rate and INR base as sent (plan part 7 review I1).` (plus the TB total note);
   - **no Problems**, and `Company B loaded`, which re-stamps `company_b_loaded_at`.
+
+  **If Problems name `[S0-B:101]`/`[S0-B:102]` "not stored as the forex voucher that was sent"** (plain INR = C36, or a
+  different base/face/rate/currency) or "forex read-back … failed": setup-b exits 1 and does **not** stamp. Do **not**
+  take Step 5's backup. Restore `100000-pre-forex-with-usd-2026-09-25` (setup-b never re-writes an existing tag) and
+  debug offline.
 
   If there is a voucher-create pause: **don't** type the voucher by hand. Stop, restore (Task 2 step 7, but using the
   **pre-forex** backup), and debug offline (`superpowers:systematic-debugging`): the live shape and the loader
@@ -2480,4 +2491,37 @@ the deferred probe 9), F2 (Task 1's `_books` helpers drop the seeded `$`), F3 (`
 - `FakeBooks` needed only `"S0P22"` in `B_PROBE_COLLECTIONS`: its Currency list and ledger `CurrencyName` routes
   already existed from Task 1.
 - Task 5 step 3's CLI smoke was checked offline: `list` shows `22  forex  B  B  not run`.
+
+## Deviations (review fix round, 2026-09-25 — `docs/code-review-bi-s0-part7-2026-09-25.md`)
+
+- **I1 (`3b07c9e`).** `setup-b` now reads back every forex voucher of the dataset — created in this run or already
+  there — in its own day (`b_day_voucher_request`, educational 01-09 / 02-09-2022, licensed 02-09 / 05-09) and checks
+  each primary line's ledger, currency symbol, face, rate and INR base against the dataset (`forex_line_problems`).
+  A mismatch, a missing/duplicated voucher on that day or a failed read is a `problems` line naming the
+  `…pre-forex-with-usd…` backup → exit 1, no stamp. Checked for all forex vouchers (not only those just created) so a
+  re-run after a bad load can't exit 0. Done in the verify stage (`_verify_forex`, after the TB check), not inside
+  the create loop: same reads, and it also covers the re-run. The loader tests' fakes now follow the load's licence
+  (`_empty_b(educational=…)`, the CLI fakes `educational=False`): the licensed 102 is on 05-09-2022, a day an
+  educational fake (C43) doesn't honour. `test_a_forex_readback_that_times_out_is_a_problem_not_a_crash` passed on
+  first run (the I7-style wrap was written with the check).
+- **M1 (`5cd161a`).** Probe 22 compares each forex line's currency, face and rate with the dataset
+  (`currency_matches`/`fx_matches`/`rate_matches`, `forex_mismatch`). A mismatch maps to the table's row 4 — **BLOCKED
+  (drift)**, after the base check: the stored voucher isn't the one setup-b wrote, so it is company-B drift (Global
+  Constraints), not a Tally finding. Never CONFIRMED.
+- **M3 (`5cd161a`).** The C36 row (plain INR → BLOCKED) now looks only at the dataset voucher's own ledgers. A ledger
+  the dataset voucher doesn't have is recorded (`unexpected_ledgers`) and gives **FAILED "unexpected line(s) …"** with
+  its own `UNEXPECTED_IMPACT` (checked after C36, before unparsed/unbalanced): a line Tally adds to a forex voucher is
+  a finding about Tally, not loader drift. A dataset ledger that is missing makes `base_matches_dataset` false
+  (BLOCKED drift).
+- **M5.** Task 6 Step 3's expected output rewritten above (D8's stop, the I1 note and problems, and the full
+  created/skipped block).
+- **M2 (recorded, no code).** Probe 22 judges `reads.primary_lines` only (ALLLEDGERENTRIES when present, D14); whether
+  LEDGERENTRIES carries the same `(ledger, AMOUNT)` multiset is not observed. In the live capture
+  (`variant_V1b.xml`) both lists carry identical AMOUNT text. If a later capture ever disagrees, add a recorded
+  `lists_agree` observation.
+- **M4 (recorded, no code).** The recorded B results of probes **3** (`others` 954→956), **11**, **14** (ledger count
+  26→27), **16** (the USD party is a balance-sheet ledger; its ClosingBalance may export as an expression, Review
+  Focus 4) and **25** were judged against the pre-part-7 dataset. Task 6 re-runs only 21 and 18 B (H2). The Task 6
+  results doc and the tracker must name 3/11/14/16/25 B as "judged against the pre-part-7 dataset", so a later re-run
+  (esp. 16 B) isn't read as a regression.
 

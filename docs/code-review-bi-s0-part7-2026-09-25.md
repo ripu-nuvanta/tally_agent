@@ -157,3 +157,27 @@ None.
 - Tier-C timing (⏭ Q29).
 - The root `tests/` suite (it doesn't collect `v2/`).
 - `-W error` was not re-run by this review (the implementer recorded it green per commit).
+
+## Fix round (2026-09-25, offline, TDD)
+
+| Finding | Status | Commit | Tests |
+|---|---|---|---|
+| **I1** | Fixed (preferred fix). `company_b._verify_forex` + `forex_line_problems`: after the TB check, every dataset forex voucher (created now or already there) is read in its own day with `b_day_voucher_request` and each primary line's ledger, currency, face, rate and base are compared with the dataset. Any mismatch, a missing/duplicate voucher or a failed read → a `problems` line naming `100000-pre-forex-with-usd-2026-09-25` → exit 1, no stamp. Clean → a note `[S0-B:101, 102] read back as forex …`. | `3b07c9e` | `test_forex_readback_passes_and_leaves_a_note_on_a_clean_load`, `test_a_forex_sale_stored_as_plain_inr_is_a_problem` (`forex_storage="plain"`), `test_a_forex_sale_stored_with_another_base_is_a_problem`, `test_a_forex_sale_with_another_face_rate_or_currency_is_a_problem` ×3, `test_an_existing_plain_usd_sale_is_caught_on_a_rerun_too`, `test_a_forex_readback_that_times_out_is_a_problem_not_a_crash` |
+| **M1** | Fixed. Probe 22 records `currency_matches` / `fx_matches` / `rate_matches` per line; a mismatch → BLOCKED (drift, row 4 — the stored voucher isn't the one setup-b wrote). | `5cd161a` | `test_rate_differs_from_dataset_blocks_as_drift`, `test_face_or_currency_differs_from_dataset_blocks_as_drift`, `test_the_live_capture_matches_face_rate_and_currency` |
+| **M2** | Recorded only (plan Deviations, review fix round). | — | — |
+| **M3** | Fixed. The C36 row considers the dataset's ledgers only; an extra ledger → FAILED "unexpected line(s) …" with its own `UNEXPECTED_IMPACT`. | `5cd161a` | `test_an_extra_plain_line_is_its_own_finding_not_c36` |
+| **M4** | Recorded only (plan Deviations): 3/11/14/16/25 B to be named "judged against the pre-part-7 dataset" in the Task 6 results doc and tracker. | — | — |
+| **M5** | Fixed in the plan (Task 6 Step 3 expected output). | docs commit | — |
+
+Side change (I1): the loader tests' FakeBooks now follow the load's licence. A licensed load reads 102's own day,
+05-09-2022, which an educational fake doesn't honour (C43). `_empty_b(educational=…)`; the CLI setup-b fakes use
+`educational=False`.
+
+Suite: 888 → **896** (`3b07c9e`) → **900** (`5cd161a`), green normally and with `-W error` at each commit.
+
+**Task 6 changes:** Step 3's expected output adds the note `[S0-B:101, 102] read back as forex: currency, face, rate
+and INR base as sent (plan part 7 review I1).`, and setup-b makes two more read requests (the two day reads). If
+setup-b reports a 101/102 read-back problem, it exits 1 without stamping: don't take Step 5's backup, restore
+`…pre-forex-with-usd…`. Step 4 stays as a printed sanity read. Probe 22 can now also BLOCK on a face/rate/currency
+mismatch, or FAIL on "unexpected line(s)".
+
