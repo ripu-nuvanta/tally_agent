@@ -184,3 +184,21 @@ the probe's header collection omits them and that the extractor's request return
 - Tier-C timing (⏭ Q29).
 - The root `tests/` suite, which doesn't collect `v2/`. The root Vitest and Playwright suites weren't run either (not
   touched).
+
+## 7. Fix round (minors), 2026-09-25
+
+Test first for every behaviour change (each new test was run red, then green). `v2/` only; `results.json` (md5
+`90bc0d86…` before and after) and the recorded `v2/tests/fixtures/sync/*` fixtures untouched; nothing sent to Tally.
+
+| Item | Result | Commit | What |
+|---|---|---|---|
+| M1 | fixed | `9788d0e` | `load_company_c` raises `CompanyCLoadError` for any `company` other than C, before any request. Test: `test_a_company_other_than_c_is_refused_even_when_named_probe`. |
+| M2 | no change | — | Already done by the I1 fix (`0ec3653`): `_ready` reads go through `ctx.try_send` as `<stage>_ready_company_list` / `_active_company` (live: `p24_C_security_on_ready_company_list.xml`, …); asserted in `test_p24_secured_company.py`. |
+| M3 | fixed | `0697ad7` | `due_date_check` also records `report_offsets` (due − the report row's own BILLDATE) and `bill_date_differs` (report BILLDATE ≠ dataset bill date). Record-only; verdicts unchanged. Two tests in `test_p23_b_part.py`. |
+| M4 | fixed | `c81c53c` | FakeBooks `stock_opening_scope` defaults to `"current"` (live C46). The four probe 11 tests of the books-beginning shape now pass `stock_opening_scope="books"` explicitly. Test: `test_the_default_stock_opening_scope_follows_live_c46`. |
+| M5 | fixed | `8593761` | Probe 11's `current_period` stock half says "rate/value recorded, not judged" in its summary. Two tests. |
+| M6 | fixed | `ca5388c` | An empty R9 answer is asked once more. Two empty answers: if the read-back shows only the original ledger, R9 is "not measured (no answer typed, twice)" (no verdict, no `tally_message`, no `answer_agrees`), since nothing shows an attempt was made; if it shows a saved duplicate, the verdict is `accepted` with `tally_message None` and `answer_agrees None`. Three tests. |
+| M7 | partly (docs only) | `3871e86` | F9: the Agst Ref BILLCREDITPERIOD / original-BILLDATE gap is now noted in `_export_voucher`'s docstring (as ruled: "note it, don't change it"). F14 (`undecided` → DIFFERENT) not changed: it changes a verdict rule in production code, can't occur on B (5/5 telling), and was ruled "accept for now". Long lines not changed (style only). |
+| M8 | no change | — | Probe 24 has run live and company C is archived. A byte scan of every file under `v2/` finds no `ENTEREDBY`/`ALTEREDBY`, and the Task 11 value grep was clean. Redacting those tags in `Capture` would change capture semantics for every probe; revisit only if probe 24 is re-run. |
+
+Suite: `uv run --project v2 pytest v2/tests -q` **765 passed** (756 + 9 new); with `-W error` **765 passed**.
