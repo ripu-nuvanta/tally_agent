@@ -387,7 +387,8 @@ class FakeBooks:
         self.forex_storage = forex_storage
         # which AMOUNT forms are accepted: "full" (`… = ₹base`, F1) and/or "no_base" (F2); others get EXCEPTIONS=1.
         self.forex_forms_accepted = tuple(forex_forms_accepted)
-        # a forex line on a ledger with NO currency: "same" (kept like any forex line) | "refuse" | "plain".
+        # a forex voucher whose PARTY ledger has NO currency (V3 / H1 fallback S-A): "same" (kept like any forex
+        # voucher) | "refuse" (EXCEPTIONS=1) | "plain" (accepted, every line stored as plain INR).
         self.forex_on_base_party = forex_on_base_party
         # how a kept forex line exports: "full" | "no_base" | "plain_plus_field" (plain INR AMOUNT + a hypothesis
         # FOREXAMOUNT field, only to cover probe 22's "field" route).
@@ -804,9 +805,13 @@ class FakeBooks:
 
     def _forex_entries(self, state: dict, element: ET.Element) -> dict[str, ForexAmount] | None:
         """Plan part 7 (candidate rules): every ledger line whose AMOUNT is a forex expression. Refused (None →
-        EXCEPTIONS=1) by `forex_storage="refuse"`, a form not in `forex_forms_accepted`, or a base-currency ledger
-        under `forex_on_base_party="refuse"`. Otherwise the line's AMOUNT is rewritten IN PLACE to its INR base, so
-        the sign and balance checks see the base, and the kept lines (ledger → parsed text) are returned."""
+        EXCEPTIONS=1) by `forex_storage="refuse"`, a form not in `forex_forms_accepted`, or — under
+        `forex_on_base_party="refuse"` — a voucher whose PARTY ledger has no currency. Otherwise the line's AMOUNT is
+        rewritten IN PLACE to its INR base, so the sign and balance checks see the base, and the kept lines
+        (ledger → parsed text) are returned. The base-party rule keys on the voucher's party, not on each line's own
+        ledger: the nominal Export Sales line never has a currency, and it carries the forex text on every variant."""
+        party = element.findtext("PARTYLEDGERNAME") or ""
+        base_party = bool(party) and not state["ledgers"].get(party, {}).get("currency")
         kept: dict[str, ForexAmount] = {}
         for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
             for entry in element.findall(tag):
@@ -815,14 +820,13 @@ class FakeBooks:
                 if fa is None:
                     continue
                 ledger = entry.findtext("LEDGERNAME", "")
-                has_currency = bool(state["ledgers"].get(ledger, {}).get("currency"))
                 form = "full" if fa.base is not None else "no_base"
                 if self.forex_storage == "refuse" or form not in self.forex_forms_accepted:
                     return None
-                if not has_currency and self.forex_on_base_party == "refuse":
+                if base_party and self.forex_on_base_party == "refuse":
                     return None
                 amount.text = f"{forex_base(fa)[0]:.2f}"
-                if self.forex_storage == "plain" or (not has_currency and self.forex_on_base_party == "plain"):
+                if self.forex_storage == "plain" or (base_party and self.forex_on_base_party == "plain"):
                     continue
                 kept[ledger] = fa
         return kept
