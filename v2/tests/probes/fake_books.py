@@ -20,6 +20,7 @@ from v2.agent.tally.envelopes import esc
 from v2.probes.companies import SEED_COMPANY
 from v2.probes.operator.config import OperatorConfig
 from v2.probes.operator.tally_control import TallyProcess
+from v2.probes.reads import ForexAmount, forex_base, parse_forex_amount
 from v2.tests.probes.fakes import bills_xml, company_list_xml, objects_xml, stock_summary_xml, tb_xml, vouchers_xml
 
 # Tally's own fixed reserved-group hierarchy (not dataset-specific — just enough of it to build a believable
@@ -149,6 +150,9 @@ def seed_state(name: str = SEED_COMPANY) -> dict:
         "units": {},
         "items": {},
         "voucherTypes": ["Sales", "Purchase", "Receipt", "Payment", "Contra", "Journal"],
+        # plan part 7: the base currency. Field values are a candidate — Task 2 step 3 reads the live ₹ row.
+        "currencies": {"₹": {"MailingName": "INR", "ExpandedSymbol": "INR", "DecimalSymbol": "paise",
+                             "DecimalPlaces": "2"}},
     }
 
 
@@ -230,8 +234,12 @@ def _export_voucher(state: dict, mid: str, v: dict, *, credit_periods: bool = Tr
             + f"<BILLTYPE>{esc(b['type'])}</BILLTYPE><AMOUNT>{b['amount']}</AMOUNT></BILLALLOCATIONS.LIST>"
             for b in (v.get("bills", []) if i == 0 else []))
         body += (f"<ALLLEDGERENTRIES.LIST><LEDGERNAME>{esc(line['ledger'])}</LEDGERNAME>"
-                 f"<ISDEEMEDPOSITIVE>{line['deemed_positive']}</ISDEEMEDPOSITIVE><AMOUNT>{line['amount']}</AMOUNT>"
-                 f"{bills or '<BILLALLOCATIONS.LIST>  </BILLALLOCATIONS.LIST>'}</ALLLEDGERENTRIES.LIST>")
+                 f"<ISDEEMEDPOSITIVE>{line['deemed_positive']}</ISDEEMEDPOSITIVE>"
+                 # plan part 7: a forex line exports its knob-shaped text (FakeBooks._forex_line_text); a plain line's
+                 # bytes are exactly as before.
+                 f"<AMOUNT>{esc(line['amount_text']) if line.get('amount_text') else line['amount']}</AMOUNT>"
+                 + "".join(f"<{k}>{esc(v)}</{k}>" for k, v in line.get("extra", {}).items())
+                 + f"{bills or '<BILLALLOCATIONS.LIST>  </BILLALLOCATIONS.LIST>'}</ALLLEDGERENTRIES.LIST>")
     for inv in v.get("inventory", []):
         unit = state.get("items", {}).get(inv["item"], {}).get("qty_unit", "")
         qty = inv["qty"].lstrip("-") + (f" {unit}" if unit else "")
@@ -364,8 +372,32 @@ class FakeBooks:
                  cancelled_vouchers_listed: bool = True, optional_vouchers_listed: bool = True,
                  bill_credit_period_exported: bool = True, bill_due_from_credit_period: bool = True,
                  voucher_type_parent_exported: bool = True, stock_opening_scope: str = "current",
-                 bill_due_offset_days: int = 0, header_lists_flagged: bool = True):
+                 bill_due_offset_days: int = 0, header_lists_flagged: bool = True,
+                 forex_currency_create: str = "ok", forex_storage: str = "expression",
+                 forex_forms_accepted: tuple[str, ...] = ("full", "no_base"), forex_on_base_party: str = "same",
+                 forex_export_form: str = "full", forex_ledger_closing: str = "plain", deletes_stick: bool = True,
+                 refuse_narrations: tuple[str, ...] = ()):
         self.folder = folder
+        # plan part 7 (probe 22) — every forex default below is a CANDIDATE (plan part 7), to be re-pinned to the live
+        # read-back by Task 3 (forex_shape_<date>/). Nothing here has been measured live yet.
+        # "ok" | "refuse" (EXCEPTIONS=1) | "popup" (a modal: the create times out) — a Currency master create.
+        self.forex_currency_create = forex_currency_create
+        # "expression" (the forex text is kept) | "plain" (accepted, but stored as plain INR — the C36 failure) |
+        # "refuse" (EXCEPTIONS=1) — a voucher line whose AMOUNT is a forex expression.
+        self.forex_storage = forex_storage
+        # which AMOUNT forms are accepted: "full" (`… = ₹base`, F1) and/or "no_base" (F2); others get EXCEPTIONS=1.
+        self.forex_forms_accepted = tuple(forex_forms_accepted)
+        # a forex line on a ledger with NO currency: "same" (kept like any forex line) | "refuse" | "plain".
+        self.forex_on_base_party = forex_on_base_party
+        # how a kept forex line exports: "full" | "no_base" | "plain_plus_field" (plain INR AMOUNT + a hypothesis
+        # FOREXAMOUNT field, only to cover probe 22's "field" route).
+        self.forex_export_form = forex_export_form
+        # a currency ledger's ClosingBalance: "plain" (a number) | "expression" (a hypothesis, never measured).
+        self.forex_ledger_closing = forex_ledger_closing
+        # False = a voucher delete answers DELETED=1 but the voucher stays (plan part 7 fact 3 / Review Focus 2).
+        self.deletes_stick = deletes_stick
+        # A test seam: a voucher whose NARRATION contains one of these gets EXCEPTIONS=1 ("this shape is refused").
+        self.refuse_narrations = tuple(refuse_narrations)
         # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
         # BILLCREDITPERIOD (p21_B_fy2022_month_02.xml). Hypotheses measured live by probes 3 B / 23 B / 25 B:
         # optional vouchers listed, BILLDUE = bill date + credit period, a custom voucher type exports its Parent.
@@ -515,13 +547,27 @@ class FakeBooks:
         period = requested_period(body, self.current_period, educational=self.educational)
         in_period = {mid: v for mid, v in state["vouchers"].items()
                      if period[0] <= (_yyyymmdd(v["date"]) or v["date"]) <= period[1]}
-        if "<TYPE>Voucher</TYPE>" in body and ("S0VoucherMonth" in body or "S0P05MonthFormula" in body):
+        if "<TYPE>Voucher</TYPE>" in body and ("S0VoucherMonth" in body or "S0P05MonthFormula" in body
+                                               or "S0FxDay" in body):
             # Probe 5's month request and its formula candidate: full exports, bounded ONLY by the typed period
             # (C33: an untyped one reads current_period). The fake does not evaluate the formula; typed dates always
             # bound here, so probe 5 never needs it against FakeBooks (its formula path is tested with FakeTally).
             return vouchers_xml([_export_voucher(state, mid, v, credit_periods=self.bill_credit_period_exported)
                                  for mid, v in sorted(in_period.items(), key=lambda kv: int(kv[0]))
                                  if self._listed(v)])
+        if "S0BCurrencies" in body or "S0P22Currencies" in body:          # plan part 7 (candidate fields)
+            return objects_xml("CURRENCY", [{"Name": n, **c} for n, c in state.get("currencies", {}).items()])
+        if "S0BLedgerDetail" in body:                                          # plan part 7
+            match = re.search(r'\$Name = "([^"]*)"', body)
+            wanted = html.unescape(match.group(1)) if match else ""
+            led = state["ledgers"].get(wanted)
+            if led is None:
+                return objects_xml("LEDGER", [])
+            closing = self._ledger_balances(state, up_to=self.current_period[1]).get(wanted, Decimal("0.00"))
+            return objects_xml("LEDGER", [{
+                "Name": wanted, "Parent": led["parent"], "CurrencyName": led.get("currency", ""),
+                "IsBillWiseOn": led.get("bill_wise", ""), "OpeningBalance": led.get("opening", "0.00"),
+                "ClosingBalance": self._closing_text(state, wanted, closing, up_to=self.current_period[1])}])
         if "S0OpVouchers" in body:
             return objects_xml("VOUCHER", [{"MasterId": mid, "Narration": v["narration"], "Date": v["date"],
                                             "IsPostDated": v["post_dated"]} for mid, v in in_period.items()])
@@ -704,8 +750,12 @@ class FakeBooks:
                 parts.append(f"<PARENT>{esc(led['parent'])}</PARENT>")
             if "openingbalance" in fields:
                 parts.append(f"<OPENINGBALANCE>{_amount_text(opening)}</OPENINGBALANCE>")
+            if "currencyname" in fields:                   # plan part 7 (candidate: "" for a base-currency ledger)
+                parts.append(f"<CURRENCYNAME>{esc(led.get('currency', ''))}</CURRENCYNAME>")
             if "closingbalance" in fields:
-                parts.append(f"<CLOSINGBALANCE>{_amount_text(closing.get(name, Decimal('0.00')))}</CLOSINGBALANCE>")
+                parts.append(f"<CLOSINGBALANCE>"
+                             f"{esc(self._closing_text(state, name, closing.get(name, Decimal('0.00')), up_to=closing_to))}"
+                             "</CLOSINGBALANCE>")
             if "billallocations" in fields and self.ledger_opening_bills_exported:
                 for bill_name, bill in state.get("bills", {}).items():
                     if bill.get("opening") and bill["party"] == name:
@@ -718,6 +768,64 @@ class FakeBooks:
                 parent = f"<PARENT>{esc(dup['parent'])}</PARENT>" if "parent" in fields else ""
                 out.append(f'<LEDGER NAME="{esc(dup["name"])}"><NAME>{esc(dup["name"])}</NAME>{parent}</LEDGER>')
         return f"<ENVELOPE><BODY><DATA><COLLECTION>{''.join(out)}</COLLECTION></DATA></BODY></ENVELOPE>"
+
+    def _closing_text(self, state: dict, name: str, closing: Decimal, *, up_to: str) -> str:
+        """A ledger's ClosingBalance text. Plain (`_amount_text`) unless `forex_ledger_closing == "expression"` and the
+        ledger has a currency: then `-$1609.71 = -₹133113.72` — a HYPOTHESIS (plan part 7 Review Focus 4), never
+        measured live."""
+        currency = state["ledgers"].get(name, {}).get("currency", "")
+        if self.forex_ledger_closing != "expression" or not currency or closing == 0:
+            return _amount_text(closing)
+        fx_total = Decimal("0.00")
+        for v in state["vouchers"].values():
+            if _flagged(v) or (_yyyymmdd(v["date"]) or v["date"]) > up_to:
+                continue
+            fx_total += sum((Decimal(line["fx"]) for line in v.get("lines", [])
+                             if line["ledger"] == name and line.get("fx")), Decimal("0.00"))
+        sign = "-" if closing < 0 else ""
+        return f"{sign}{currency}{abs(fx_total):.2f} = {sign}₹{abs(closing):.2f}"
+
+    def _forex_line_text(self, base: Decimal, fa: ForexAmount) -> dict:
+        """How one KEPT forex line is stored and exported, by `forex_export_form` (plan part 7; candidates until
+        Task 3 pins the live read-back). The ONE place this text is built — `_voucher` (imports) and, from Task 3,
+        `seed_company_b` both call it, so seeded and imported forex lines cannot drift apart. `fx` (signed like the
+        base) is data for `_closing_text`, never exported."""
+        sign = "-" if base < 0 else ""
+        rate_symbol = fa.rate_symbol or "₹"
+        face = f"{sign}{fa.currency}{abs(fa.fx):.2f}"
+        out = {"fx": f"{sign}{abs(fa.fx):.2f}"}
+        if self.forex_export_form == "plain_plus_field":
+            out["extra"] = {"FOREXAMOUNT": face}
+        elif self.forex_export_form == "no_base":
+            out["amount_text"] = f"{face} @ {rate_symbol}{fa.rate:.2f}/{fa.currency}"
+        else:
+            out["amount_text"] = f"{face} @ {rate_symbol}{fa.rate:.2f}/{fa.currency} = {sign}{rate_symbol}{abs(base):.2f}"
+        return out
+
+    def _forex_entries(self, state: dict, element: ET.Element) -> dict[str, ForexAmount] | None:
+        """Plan part 7 (candidate rules): every ledger line whose AMOUNT is a forex expression. Refused (None →
+        EXCEPTIONS=1) by `forex_storage="refuse"`, a form not in `forex_forms_accepted`, or a base-currency ledger
+        under `forex_on_base_party="refuse"`. Otherwise the line's AMOUNT is rewritten IN PLACE to its INR base, so
+        the sign and balance checks see the base, and the kept lines (ledger → parsed text) are returned."""
+        kept: dict[str, ForexAmount] = {}
+        for tag in ("ALLLEDGERENTRIES.LIST", "LEDGERENTRIES.LIST"):
+            for entry in element.findall(tag):
+                amount = entry.find("AMOUNT")
+                fa = parse_forex_amount(amount.text if amount is not None else None)
+                if fa is None:
+                    continue
+                ledger = entry.findtext("LEDGERNAME", "")
+                has_currency = bool(state["ledgers"].get(ledger, {}).get("currency"))
+                form = "full" if fa.base is not None else "no_base"
+                if self.forex_storage == "refuse" or form not in self.forex_forms_accepted:
+                    return None
+                if not has_currency and self.forex_on_base_party == "refuse":
+                    return None
+                amount.text = f"{forex_base(fa)[0]:.2f}"
+                if self.forex_storage == "plain" or (not has_currency and self.forex_on_base_party == "plain"):
+                    continue
+                kept[ledger] = fa
+        return kept
 
     def _listed(self, v: dict) -> bool:
         if v.get("cancelled") == "Yes" and not self.cancelled_vouchers_listed:
@@ -792,6 +900,18 @@ class FakeBooks:
             state["alt_mst"] += 1
             self._save(state)
             return import_result(created=1)
+        if element.tag == "CURRENCY" and action == "Create":                    # plan part 7 (candidate)
+            if self.forex_currency_create == "refuse":
+                return import_result(exceptions=1, line_error="fake: currency refused")
+            if self.forex_currency_create == "popup":
+                self.popup = True
+                raise httpx.ReadTimeout("currency create modal", request=request)
+            state.setdefault("currencies", {})
+            return self._create_master(state, "currencies", element, request,
+                                        lambda el: {"MailingName": el.findtext("MAILINGNAME", ""),
+                                                    "ExpandedSymbol": el.findtext("EXPANDEDSYMBOL", ""),
+                                                    "DecimalSymbol": el.findtext("DECIMALSYMBOL", ""),
+                                                    "DecimalPlaces": el.findtext("DECIMALPLACES", "")})
         if element.tag == "LEDGER":
             return self._ledger(state, element, action, request)
         if element.tag == "VOUCHER":
@@ -854,10 +974,18 @@ class FakeBooks:
             if name in ledgers:
                 self.popup = True
                 raise httpx.ReadTimeout("duplicate master modal", request=request)
+            currency = element.findtext("CURRENCYNAME") or ""                        # plan part 7 (candidate tag)
+            if currency and currency not in state.get("currencies", {}):
+                return import_result(exceptions=1, line_error="fake: unknown currency")
             state["alt_mst"] += 1
             ledgers[name] = {"parent": element.findtext("PARENT", ""), "email": "", "alter_id": state["alt_mst"],
                              "guid": f"{state['guid']}-{state['alt_mst']:08x}",
                              "opening": element.findtext("OPENINGBALANCE", "0.00")}
+            if currency:
+                ledgers[name]["currency"] = currency
+            bill_wise = element.findtext("ISBILLWISEON")
+            if bill_wise:
+                ledgers[name]["bill_wise"] = bill_wise
             self._save(state)
             return import_result(created=1)
         if name not in ledgers:
@@ -1019,6 +1147,12 @@ class FakeBooks:
     def _voucher(self, state: dict, element: ET.Element, action: str) -> str:
         vouchers = state["vouchers"]
         if action == "Create":
+            narration_text = element.findtext("NARRATION", "")
+            if any(marker in narration_text for marker in self.refuse_narrations):
+                return import_result(exceptions=1)                     # test seam: "this voucher shape is refused"
+            forex = self._forex_entries(state, element)                # plan part 7: rewrites forex AMOUNTs to base
+            if forex is None:
+                return import_result(exceptions=1)
             if not self._signs_agree(element):
                 # I5: the flag whose wrong value is the documented cause of EXCEPTIONS=1 used not to be stored
                 # here at all, so no balance assertion could ever see it. The fake now approximates Tally's
@@ -1027,6 +1161,9 @@ class FakeBooks:
                 # finding 2 — "there's no helpful error message").
                 return import_result(exceptions=1)
             lines = self._posted_lines(element)
+            for line in lines:
+                if line["ledger"] in forex:
+                    line.update(self._forex_line_text(Decimal(line["amount"]), forex[line["ledger"]]))
             if sum((Decimal(line["amount"] or "0.00") for line in lines), Decimal("0.00")) != 0:
                 # C32 (live 2026-09-24, logs/debug-vch1-*.log): Tally totals the ledger lines AND every inventory
                 # row's ACCOUNTINGALLOCATIONS — a nominal Sales line sent as well counts the goods twice and the
@@ -1060,6 +1197,8 @@ class FakeBooks:
             self._save(state)
             return import_result(altered=1, last_vch_id=mid)
         if action == "Delete":
+            if not self.deletes_stick:                 # plan part 7 fact 3: DELETED=1, but the voucher stays
+                return import_result(deleted=1, last_vch_id=mid)
             del vouchers[mid]
             state["alt_vch"] += 3                     # live: a delete moved AltVchId by 3
             self._save(state)

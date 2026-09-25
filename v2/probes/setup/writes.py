@@ -24,7 +24,7 @@ its OPENINGVALUE is signed on the wire like a ledger opening: the stock is a deb
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
 from typing import Callable
 
 import httpx
@@ -33,8 +33,9 @@ from v2.agent.tally.envelopes import build_company_list, formula_string, wrap_co
 from v2.agent.tally.xml_utils import parse_company_list, read_objects, sanitize_xml
 from v2.probes.companies import COMPANIES, SEED_COMPANY, THROWAWAY_DATE, THROWAWAY_DATE_TEXT
 from v2.probes.licence import LICENCE_REQUEST, LicenceInfo, parse_licence_info
-from v2.probes.reads import PRIMARY_NATURE, TB_EXPLODE_VARS
+from v2.probes.reads import PRIMARY_NATURE, TB_EXPLODE_VARS, VOUCHER_MONTH_FIELDS, voucher_request
 from v2.probes.safety import check_request
+from v2.probes.setup.company_b_data import CurrencySpec
 from v2.probes.setup.import_xml import ImportResult, esc, wrap_import
 
 READBACK_FROM, READBACK_TO = "01-04-2025", "31-03-2026"
@@ -46,6 +47,10 @@ GROUP_FIELDS = ["Name", "Parent"]
 UNIT_FIELDS = ["Name", "BaseUnits", "Conversion"]
 ITEM_FIELDS = ["Name", "BaseUnits", "Parent"]
 VOUCHER_TYPE_FIELDS = ["Name", "Parent"]
+CURRENCY_FIELDS = ["Name", "MailingName", "ExpandedSymbol", "DecimalSymbol", "OriginalName", "IsSuffix",
+                   "HasSpace", "DecimalPlaces"]                     # candidates — plan part 7 Task 2 step 3 compares them
+LEDGER_DETAIL_FIELDS = ["Name", "Parent", "CurrencyName", "IsBillWiseOn", "OpeningBalance", "ClosingBalance"]
+_PAISA = Decimal("0.01")
 
 
 # M1: each reserved group's natural side, for `check_opening_side`'s dataset sanity check (the WIRE side comes from
@@ -105,6 +110,44 @@ def check_writable(company: str) -> None:
         raise WriteRefused(f"Refusing to write to {company!r}: only companies with 'Probe' in the name.")
 
 
+def currency_request(company: str) -> str:
+    return wrap_collection("S0BCurrencies", "Currency", CURRENCY_FIELDS, company)
+
+
+def ledger_detail_request(company: str, name: str) -> str:
+    return wrap_collection("S0BLedgerDetail", "Ledger", LEDGER_DETAIL_FIELDS, company,
+                           filters=[("S0BLedgerDetailOnly", f"$Name = {formula_string(name)}")])
+
+
+def b_day_voucher_request(company: str, day: str) -> str:
+    """Company B's vouchers on ONE day (DD-MM-YYYY, typed — C33; the day must be 1/2/31 under Educational — C43),
+    fetched whole like probe 5's month request, so a forex line comes back exactly as the extractor would see it."""
+    return voucher_request("S0FxDay", VOUCHER_MONTH_FIELDS, company, from_date=day, to_date=day)
+
+
+@dataclass(frozen=True)
+class ForexLine:
+    """How a forex voucher's lines go on the wire (plan part 7). `fx_amount` is the voucher's face value as a
+    MAGNITUDE — every line of a 2-line export sale carries it, signed like that line's INR amount. `form` "full"
+    states the base ("… = ₹37216.04", candidate F1); "no_base" leaves Tally to compute it (F2). Both are
+    CANDIDATES until plan part 7 Task 2 reads a live forex voucher back."""
+    symbol: str
+    fx_amount: Decimal
+    rate: Decimal
+    base_symbol: str = "₹"
+    form: str = "full"
+
+
+def forex_amount_text(inr: Decimal, forex: ForexLine) -> str:
+    """One line's AMOUNT text: `-$448.44 @ ₹82.99/$ = -₹37216.04` (F1) or without the `= …` part (F2). The sign
+    is the INR line's sign (debit negative, C22)."""
+    sign = "-" if inr < 0 else ""
+    text = f"{sign}{forex.symbol}{forex.fx_amount:.2f} @ {forex.base_symbol}{forex.rate:.2f}/{forex.symbol}"
+    if forex.form == "full":
+        text += f" = {sign}{forex.base_symbol}{abs(inr):.2f}"
+    return text
+
+
 @dataclass(frozen=True)
 class CheckedVoucher:
     """What `validate_b_voucher` proved and derived — exactly what `create_b_voucher` then renders."""
@@ -113,17 +156,33 @@ class CheckedVoucher:
     nominal_ledger: str
     is_purchase_type: bool
     is_invoice_type: bool
+    forex: ForexLine | None = None
 
 
 def validate_b_voucher(*, vch_type: str, narration: str, party: str, lines: list[tuple[str, Decimal, bool]],
                        inventory: list[tuple[str, str, Decimal, Decimal, Decimal]] = (),
-                       bills: list[tuple[str, str, Decimal, str | None]] = ()) -> CheckedVoucher:
+                       bills: list[tuple[str, str, Decimal, str | None]] = (),
+                       forex: ForexLine | None = None) -> CheckedVoucher:
     """Every pre-send check of `create_b_voucher`, as a pure function (C37, review #7): no request, no company.
     The loader runs it over the whole dataset BEFORE the first voucher is sent, so a bad voucher stops the load up
     front instead of crashing it mid-run with a ValueError. Raises ValueError naming the voucher."""
     total = sum((amount for _, amount, _ in lines), Decimal("0.00"))
     if total != Decimal("0.00"):
         raise ValueError(f"Voucher {narration!r} does not balance: {total}")
+    if forex is not None:
+        if inventory or bills:
+            raise ValueError(f"Voucher {narration!r}: a forex voucher here carries no inventory and no bills "
+                             "(plan part 7 Ruling P7-3: forex bill allocations are unverified)")
+        if forex.form not in ("full", "no_base"):
+            raise ValueError(f"Voucher {narration!r}: unknown forex form {forex.form!r}")
+        product = forex.fx_amount * forex.rate
+        base = product.quantize(_PAISA, rounding=ROUND_HALF_UP)
+        if base != product.quantize(_PAISA, rounding=ROUND_HALF_EVEN):
+            raise ValueError(f"Voucher {narration!r}: {forex.fx_amount} × {forex.rate} = {product} is a rounding tie "
+                             "— the stored base would depend on Tally's unmeasured rounding rule")
+        wrong = [ledger for ledger, amount, _ in lines if abs(amount) != base]
+        if wrong:
+            raise ValueError(f"Voucher {narration!r}: lines {wrong} are not face × rate = {base}")
 
     # Op 6/7 (docs/tally-write-exploration-v4.md) — confirmed 2026-09-23 by backend/tally_bridge/import_builder.py,
     # the production writer that has actually landed invoices in live Tally: stock+GST Sales/Purchase are
@@ -191,7 +250,7 @@ def validate_b_voucher(*, vch_type: str, narration: str, party: str, lines: list
             raise ValueError(f"Voucher {narration!r}: bill allocations total {bill_total}, but the {party!r} "
                              f"line is {party_amounts[0]}")
 
-    return CheckedVoucher(sent_lines, signed_bills, nominal_ledger, is_purchase_type, is_invoice_type)
+    return CheckedVoucher(sent_lines, signed_bills, nominal_ledger, is_purchase_type, is_invoice_type, forex=forex)
 
 
 class TallyWriter:
@@ -307,7 +366,7 @@ class TallyWriter:
                          lines: list[tuple[str, Decimal, bool]],
                          inventory: list[tuple[str, str, Decimal, Decimal, Decimal]] = (),
                          bills: list[tuple[str, str, Decimal, str | None]] = (),
-                         optional: bool = False) -> str:
+                         optional: bool = False, forex: ForexLine | None = None) -> str:
         """Sales/Purchase (with stock + GST), Receipt/Payment/Journal — the caller owns the sign convention (docs
 
         Op 6/7/8; live 2026-09-22): AMOUNT is signed as given per line, ISDEEMEDPOSITIVE is passed as given, and this
@@ -315,6 +374,8 @@ class TallyWriter:
         voucher is proven to balance. `BILLALLOCATIONS.LIST` nests only under the line whose ledger equals `party`;
         each bill amount is a MAGNITUDE and is sent with that party line's sign (C34).
         `ISCANCELLED` is never written here (cancelling is not reliably settable on import — Task 6 pause step).
+        `forex` (plan part 7, a CANDIDATE shape until Task 2 measures it): every line's AMOUNT goes out as a forex
+        expression (`forex_amount_text`) of that line's INR amount; no inventory, no bills (P7-3).
 
         **Ordering contract for `lines` when `inventory` is non-empty:** the party line first, then the nominal
         Sales/Purchase ledger, then any GST lines — `ACCOUNTINGALLOCATIONS.LIST` on every inventory row points at
@@ -333,7 +394,7 @@ class TallyWriter:
         """
         check_writable(company)
         checked = validate_b_voucher(vch_type=vch_type, narration=narration, party=party, lines=lines,
-                                     inventory=inventory, bills=bills)
+                                     inventory=inventory, bills=bills, forex=forex)
         sent_lines, signed_bills = checked.sent_lines, checked.signed_bills
         nominal_ledger, is_purchase_type, is_invoice_type = (checked.nominal_ledger, checked.is_purchase_type,
                                                              checked.is_invoice_type)
@@ -350,11 +411,12 @@ class TallyWriter:
                     + "\n    </BILLALLOCATIONS.LIST>"
                     for name, bill_type, bill_amount, credit_period in signed_bills)
             party_flag = ("\n    <ISPARTYLEDGER>Yes</ISPARTYLEDGER>" if is_invoice_type and ledger == party else "")
+            amount_text = forex_amount_text(amount, checked.forex) if checked.forex else f"{amount:.2f}"
             ledger_blocks.append(
                 f"""  <{ledger_tag}>
     <LEDGERNAME>{esc(ledger)}</LEDGERNAME>
     <ISDEEMEDPOSITIVE>{"Yes" if deemed_positive else "No"}</ISDEEMEDPOSITIVE>
-    <AMOUNT>{amount:.2f}</AMOUNT>{party_flag}{bill_xml}
+    <AMOUNT>{esc(amount_text)}</AMOUNT>{party_flag}{bill_xml}
   </{ledger_tag}>""")
 
         inventory_deemed_positive = "Yes" if is_purchase_type else "No"        # Op 7: goods in (Yes/−)
@@ -468,6 +530,51 @@ class TallyWriter:
         xml = wrap_collection("S0BVoucherTypes", "VoucherType", VOUCHER_TYPE_FIELDS, company)
         return [row["Name"] for row in read_objects(self.post(xml), "VOUCHERTYPE", VOUCHER_TYPE_FIELDS)]
 
+    def list_currencies(self, company: str) -> dict[str, dict[str, str]]:
+        return {row["Name"]: row for row in read_objects(self.post(currency_request(company)), "CURRENCY",
+                                                          CURRENCY_FIELDS)}
+
+    def create_currency(self, company: str, spec: CurrencySpec) -> bool:
+        """List first (LESSONS §15 rule 10), create, read back. No verified op exists — the tags are candidates
+        (plan part 7 Task 2 step 3). Returns False when it was already there (nothing sent)."""
+        check_writable(company)
+        if spec.symbol in self.list_currencies(company):
+            self.say(f"currency {spec.symbol!r} already exists — not re-created")
+            return False
+        inner = (f'<CURRENCY NAME="{esc(spec.symbol)}" ACTION="Create">\n'
+                 f"  <NAME>{esc(spec.symbol)}</NAME>\n"
+                 f"  <MAILINGNAME>{esc(spec.formal_name)}</MAILINGNAME>\n"
+                 f"  <EXPANDEDSYMBOL>{esc(spec.formal_name)}</EXPANDEDSYMBOL>\n"
+                 f"  <DECIMALSYMBOL>{esc(spec.decimal_symbol)}</DECIMALSYMBOL>\n"
+                 f"  <DECIMALPLACES>{spec.decimal_places}</DECIMALPLACES>\n"
+                 "  <ISSUFFIX>No</ISSUFFIX>\n  <HASSPACE>No</HASSPACE>\n</CURRENCY>")
+        result = self.import_("All Masters", company, inner)
+        if not ((result.created == 1 or result.altered == 1) and result.clean):          # rule 11
+            raise WriteFailed(f"Currency {spec.symbol!r} not created: {result}")
+        if spec.symbol not in self.list_currencies(company):
+            raise WriteFailed(f"Currency {spec.symbol!r} not found on read-back")
+        return True
+
+    def ledger_details(self, company: str, name: str) -> dict[str, str] | None:
+        rows = [r for r in read_objects(self.post(ledger_detail_request(company, name)), "LEDGER",
+                                        LEDGER_DETAIL_FIELDS) if r["Name"] == name]
+        return rows[0] if rows else None
+
+    def delete_b_voucher(self, company: str, master_id: str, *, vch_type: str, day: str, date_text: str) -> None:
+        """Delete by Master ID and verify in the voucher's OWN day. `delete_voucher` verifies through
+        `list_vouchers`, i.e. company A's FY 2025-26 window, where a 2022 voucher is never listed — a delete that
+        did not stick would pass there (plan part 7, fact 3)."""
+        check_writable(company)
+        inner = (f'<VOUCHER DATE="{esc(date_text)}" VCHTYPE="{esc(vch_type)}" TAGNAME="Master ID" '
+                 f'TAGVALUE="{esc(master_id)}" ACTION="Delete"></VOUCHER>')
+        result = self.import_("Vouchers", company, inner)
+        if result.deleted != 1 or not result.clean:
+            raise WriteFailed(f"Voucher {master_id} not deleted: {result}")
+        still = [r for r in read_objects(self.post(b_day_voucher_request(company, day)), "VOUCHER", ["MasterID"])
+                 if r.get("MasterID") == master_id]
+        if still:
+            raise WriteFailed(f"Voucher {master_id} still there on {day} after the delete")
+
     def b_trial_balance(self, company: str, from_date: str, to_date: str) -> str:
         """An exploded (EXPLODEFLAG=Yes, probe 17) Trial Balance — company_b.py's `_verify` compares
         primary/second-level group totals only from this; ledger-level TB shape is deferred to probes 16/17
@@ -554,7 +661,7 @@ class TallyWriter:
 
     def create_party_ledger(self, company: str, name: str, *, parent: str, bill_wise: bool,
                             opening: Decimal | None = None, gstin: str | None = None,
-                            allow_contra_natural: bool = False) -> None:
+                            allow_contra_natural: bool = False, currency: str | None = None) -> None:
         """`opening` is signed (debit negative, credit positive — company_b_data.py's convention) and goes on the
         wire AS IS: Tally reads OPENINGBALANCE's sign, negative = Dr, positive = Cr (Ruling C30, overturning
         C21/F11 — see the module docstring for the company-A evidence). Never `abs()` it.
@@ -562,7 +669,9 @@ class TallyWriter:
         `check_opening_side` (M1) runs FIRST — before the "already exists" skip, on purpose (m4): bad dataset
         signs fail loud on every run, even a re-run where the ledger exists and nothing would be sent. Do not move
         it after the skip. `allow_contra_natural` skips it — ONLY for sign_check.run_positive (C38), whose whole
-        point is a credit opening under a debit-natured group."""
+        point is a credit opening under a debit-natured group.
+
+        `currency` (plan part 7) sends CURRENCYNAME — a candidate tag — and reads it back through `ledger_details`."""
         check_writable(company)
         if opening is not None and not allow_contra_natural:
             check_opening_side(name, parent, opening)
@@ -573,6 +682,7 @@ class TallyWriter:
             f"\n  <OPENINGBALANCE>{opening:.2f}</OPENINGBALANCE>" if opening is not None else "",
             f"\n  <PARTYGSTIN>{esc(gstin)}</PARTYGSTIN>\n  <GSTREGISTRATIONTYPE>Regular</GSTREGISTRATIONTYPE>" if gstin
             else "\n  <GSTREGISTRATIONTYPE>Unregistered</GSTREGISTRATIONTYPE>",
+            f"\n  <CURRENCYNAME>{esc(currency)}</CURRENCYNAME>" if currency else "",
         ]))
         inner = (f'<LEDGER NAME="{esc(name)}" ACTION="Create">\n  <NAME.LIST><NAME>{esc(name)}</NAME></NAME.LIST>\n'
                  f'  <PARENT>{esc(parent)}</PARENT>\n  <ISBILLWISEON>{"Yes" if bill_wise else "No"}</ISBILLWISEON>'
@@ -583,6 +693,10 @@ class TallyWriter:
         row = self.ledger(company, name)
         if row is None or row["Parent"] != parent:
             raise WriteFailed(f"Party ledger {name!r} not found under {parent!r} on read-back")
+        if currency:
+            details = self.ledger_details(company, name)
+            if details is None or details["CurrencyName"] != currency:
+                raise WriteFailed(f"Party ledger {name!r}: CURRENCYNAME {currency!r} did not stick on read-back")
 
     # --- company ----------------------------------------------------------------------------------------------------
     def rename_company(self, old: str, new: str) -> None:
