@@ -150,13 +150,13 @@ one has a test in the task that owns the code.
 
 ## Before you start
 
-- [ ] **Step 0.1: Confirm the base and wait for the other agent.** Another agent is editing `v2/` for the part-6 review
+- [x] **Step 0.1: Confirm the base and wait for the other agent.** Another agent is editing `v2/` for the part-6 review
   minors. `git log --oneline -5` must show its commit(s), **and** `git status --short -- v2/` must be empty. If it isn't
   empty, **wait**. Do not stash, reset or touch another agent's files. Record the HEAD you start from as `P7_BASE`.
-- [ ] **Step 0.2: Record BASE.** `uv run --project v2 pytest v2/tests -q 2>&1 | tail -1`. It was 756 green after part
+- [x] **Step 0.2: Record BASE.** `uv run --project v2 pytest v2/tests -q 2>&1 | tail -1`. It was 756 green after part
   6; record whatever it is now. This part adds **about 45** tests (advisory). Each sub-task's last step records the
   running count.
-- [ ] **Step 0.3: Pre-flight scratch scan.** Same pattern as part 6's Step 0.3, on the offline Tasks 1, 3 and 4 only:
+- [x] **Step 0.3: Pre-flight scratch scan.** Same pattern as part 6's Step 0.3, on the offline Tasks 1, 3 and 4 only:
   ```bash
   SCRATCH="$TMPDIR/p7-scratch"
   git worktree add --detach "$SCRATCH" HEAD
@@ -218,7 +218,7 @@ The grammar is the candidate from the 2026-09-24 review (`-$448.44 @ ₹82.99/$ 
 tolerate spaces, a missing base part, a `Rs.` base symbol and a symbol word (`USD`), because Tally's own export form
 is still unmeasured.
 
-- [ ] **Step 1: Write the failing tests** (`v2/tests/probes/test_forex_amount.py`):
+- [x] **Step 1: Write the failing tests** (`v2/tests/probes/test_forex_amount.py`):
 
 ```python
 from decimal import Decimal
@@ -261,8 +261,8 @@ def test_parse_decimal_still_raises_on_the_expression():
     assert err.value.raw == "-$448.44 @ ₹82.99/$ = -₹37216.04"
 ```
 
-- [ ] **Step 2: Run:** `uv run --project v2 pytest v2/tests/probes/test_forex_amount.py -q` → FAIL (`ImportError: ForexAmount`).
-- [ ] **Step 3: Implement** (`v2/probes/reads.py`, plus `import re`, `from dataclasses import dataclass`,
+- [x] **Step 2: Run:** `uv run --project v2 pytest v2/tests/probes/test_forex_amount.py -q` → FAIL (`ImportError: ForexAmount`).
+- [x] **Step 3: Implement** (`v2/probes/reads.py`, plus `import re`, `from dataclasses import dataclass`,
   `from decimal import ROUND_HALF_UP` if not already imported):
 
 ```python
@@ -329,8 +329,8 @@ class CurrencySpec:
 USD_CURRENCY = CurrencySpec(symbol="$", formal_name="USD")
 ```
 
-- [ ] **Step 4: Run** the file → PASS. Then the full suite, and record the count.
-- [ ] **Step 5: Commit** `v2/probes/reads.py v2/probes/setup/company_b_data.py v2/tests/probes/test_forex_amount.py`:
+- [x] **Step 4: Run** the file → PASS. Then the full suite, and record the count.
+- [x] **Step 5: Commit** `v2/probes/reads.py v2/probes/setup/company_b_data.py v2/tests/probes/test_forex_amount.py`:
   `feat(bi/v2): forex AMOUNT expression parser + USD currency spec (plan part 7 task 1.1)`.
 
 #### Task 1.2: Writer pieces — currency, ledger currency, forex voucher lines, a day-window delete
@@ -367,7 +367,7 @@ USD_CURRENCY = CurrencySpec(symbol="$", formal_name="USD")
   - `refuse_narrations=()`: a voucher whose narration contains one of these gets `import_result(exceptions=1)`. This
     is a test seam for "this voucher shape is refused", used by the V0-control test.
 
-- [ ] **Step 1: Write the failing tests** (`v2/tests/probes/test_setup_writes_forex.py`):
+- [x] **Step 1: Write the failing tests** (`v2/tests/probes/test_setup_writes_forex.py`):
 
 ```python
 from decimal import Decimal
@@ -477,8 +477,8 @@ def test_delete_b_voucher_verifies_in_the_vouchers_own_day():
         writer.delete_b_voucher(B, mid, vch_type="Sales", day="01-09-2022", date_text="1-Sep-2022")
 ```
 
-- [ ] **Step 2: Run** → FAIL (`ImportError: ForexLine`).
-- [ ] **Step 3: Implement `writes.py`.** Add near `CheckedVoucher`:
+- [x] **Step 2: Run** → FAIL (`ImportError: ForexLine`).
+- [x] **Step 3: Implement `writes.py`.** Add near `CheckedVoucher`:
 
 ```python
 from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP
@@ -611,7 +611,7 @@ def b_day_voucher_request(company: str, day: str) -> str:
   `self.ledger_details(company, name)["CurrencyName"] == currency`, else raise
   `WriteFailed(f"Party ledger {name!r}: CURRENCYNAME {currency!r} did not stick on read-back")`.
 
-- [ ] **Step 4: Teach `FakeBooks`** (`fake_books.py`). Put each rule in a comment that names its source:
+- [x] **Step 4: Teach `FakeBooks`** (`fake_books.py`). Put each rule in a comment that names its source:
   "candidate — plan part 7, pinned by Task 3" or "live — forex_shape_<date>".
   - `seed_state`: `"currencies": {"₹": {"MailingName": "INR", "ExpandedSymbol": "INR", "DecimalSymbol": "paise",
     "DecimalPlaces": "2"}}` (base currency).
@@ -653,9 +653,9 @@ def b_day_voucher_request(company: str, day: str) -> str:
   - Put the text-building in **one** method, `FakeBooks._forex_line_text(base: Decimal, fa: ForexAmount) -> dict`, which
     returns `{"amount_text": …}`, `{"extra": {…}}` or `{}` according to the knobs. Task 3.8's `seed_company_b` calls
     it too, so seeded and imported forex lines honour the same knobs and can't drift apart.
-- [ ] **Step 5: Run** the new file → PASS. Then run the full suite: **the old byte-identity tests (p05, p21, p03 B,
+- [x] **Step 5: Run** the new file → PASS. Then run the full suite: **the old byte-identity tests (p05, p21, p03 B,
   p23 B) must stay green without edits.** Record the count.
-- [ ] **Step 6: Commit** `v2/probes/setup/writes.py v2/tests/probes/fake_books.py v2/tests/probes/test_setup_writes_forex.py`:
+- [x] **Step 6: Commit** `v2/probes/setup/writes.py v2/tests/probes/fake_books.py v2/tests/probes/test_setup_writes_forex.py`:
   `feat(bi/v2): forex writer pieces — currency, ledger currency, forex lines, day-window delete (plan part 7 task 1.2)`.
 
 #### Task 1.3: The shape runner `forex_shape.py`
@@ -690,7 +690,7 @@ read back the day, save the raw XML, classify both lines, delete the voucher, an
 At the end, delete both ledgers (only the ones this run created, after their vouchers are gone). **Keep the Currency
 master.**
 
-- [ ] **Step 1: Write the failing tests** (`v2/tests/probes/test_forex_shape.py`):
+- [x] **Step 1: Write the failing tests** (`v2/tests/probes/test_forex_shape.py`):
 
 ```python
 import json
@@ -810,8 +810,8 @@ def test_classify(amount, fields, expected):
     assert forex_shape.classify(line, Decimal("-37216.04")) == expected
 ```
 
-- [ ] **Step 2: Run** → FAIL (`ModuleNotFoundError: forex_shape`).
-- [ ] **Step 3: Implement** `v2/probes/setup/forex_shape.py`:
+- [x] **Step 2: Run** → FAIL (`ModuleNotFoundError: forex_shape`).
+- [x] **Step 3: Implement** `v2/probes/setup/forex_shape.py`:
 
 ```python
 """One-shot LIVE shape probe for a forex voucher (plan part 7, Ruling C36's unblocker). Not wired into the CLI —
@@ -1014,8 +1014,8 @@ def run(writer: TallyWriter, company: str, out_dir: Path, *, currency: CurrencyS
   Note: `delete_ledger` uses the existing `writer.ledger()` (a name filter with no date), so its read-back is valid
   for any year.
 
-- [ ] **Step 4: Run** the file → PASS; full suite → green; record the count.
-- [ ] **Step 5: Commit** `v2/probes/setup/forex_shape.py v2/tests/probes/test_forex_shape.py` (plus any fake edits):
+- [x] **Step 4: Run** the file → PASS; full suite → green; record the count.
+- [x] **Step 5: Commit** `v2/probes/setup/forex_shape.py v2/tests/probes/test_forex_shape.py` (plus any fake edits):
   `feat(bi/v2): forex shape runner — throwaway-only, read back, saved (plan part 7 task 1.3)`.
 - [ ] **Step 6: Task-1 review before anything goes live.** Run the SDD spec-compliance review and the code-quality
   review on `git diff P7_BASE..HEAD -- v2/`. It must check:
@@ -2170,9 +2170,12 @@ The messy real shapes are modelled on purpose (Test reality rule 2):
 
 ## Rulings / ambiguities (decisions made while writing, with the recommendation)
 
-**Needs a human (answer in Step 0.4, before Task 1):**
+**Needs a human (answer in Step 0.4, before Task 1):** both **decided 2026-09-25 by the controller, on the user's
+standing instruction to proceed**: **H1 = S-B** (new ledger `Gulf Office Supplies LLC (USD)`, the recommendation) and
+**H2 = yes** (re-run 21 and 18 B after the load).
 
-- **H1 = Ruling P7-2: which ledger carries the USD sales.**
+- **H1 = Ruling P7-2: which ledger carries the USD sales.** — **Decided 2026-09-25 (controller, on the user's
+  standing instruction to proceed): S-B**, the new ledger `Gulf Office Supplies LLC (USD)`.
   - **Recommend S-B:** a new ledger `Gulf Office Supplies LLC (USD)` under Sundry Debtors, `CURRENCYNAME` `$`, not
     bill-wise, no GSTIN, used only by 101/102. It is excluded from the debtor rotation, so no other voucher moves.
   - **Why not alter Gulf:** it has 87 live INR vouchers (fact 1). A currency change could re-cast them, and the
@@ -2180,7 +2183,8 @@ The messy real shapes are modelled on purpose (Test reality rule 2):
   - **Alternative S-A:** 101/102 stay on Gulf (INR ledger) with forex amounts, and no new ledger. It is simpler, but
     it doesn't model a real exporter's USD ledger, and it can't measure a forex ledger's closing balance.
   - Task 2 measures both (V1 vs V3). If only S-A works, the plan falls back to it automatically, after asking.
-- **H2 = Ruling P7-16: re-run probes 21 and 18 B after loading.**
+- **H2 = Ruling P7-16: re-run probes 21 and 18 B after loading.** — **Decided 2026-09-25 (controller, on the
+  user's standing instruction to proceed): yes**, re-run 21 and 18 B after the load.
   - **Recommend yes.** The dataset they judge changed (Sep 2022: 18 → 20 vouchers; FY 2022-23 TB includes ₹1,33,113.72
     more in Sundry Debtors/Sales). This is the blast-radius check on the extractor's month read and the TB anchor, and
     the re-run rule allows it: the judged expectation changed.
@@ -2287,3 +2291,73 @@ The messy real shapes are modelled on purpose (Test reality rule 2):
 - **Biggest risk:** Educational TallyPrime under Wine may not store forex at all (no multi-currency, or the import
   silently drops the forex part). The plan contains it: a throwaway-only probe, a fresh backup, a UI fallback, and a
   clean "BLOCKED — confirm on tier C" exit, with nothing permanent written to B.
+
+## Deviations (implementation of Steps 0.1–0.3 and Task 1, 2026-09-25)
+
+Run record: `P7_BASE` = `95941a1`, BASE = **766** passed. After 1.1 (`4aed355`) **780**, after 1.2 (`d4cda98`)
+**793**, after 1.3 (`47330a5`) **810**, all green normally and with `-W error`. Step 0.4 (SDD ledger, tracker row 22)
+was left to the controller: this run changed only `v2/` and this file, so there are no `.superpowers/` or tracker
+edits. For the same reason the pre-flight findings are recorded here and not in `preflight-scan.md`. Task 1.3 Step 6
+(the Task-1 review) is not ticked: the controller runs it.
+
+**Task 1: code blocks run in the real tree (Step 0.3 for Task 1):**
+- **D1 (fake).** The 1.2 bullet "the entry's ledger has no currency and `forex_on_base_party == "refuse"`" was
+  implemented literally, and it failed `test_base_party_refusal_is_evidence_not_failure`. The nominal `Export Sales`
+  line never has a currency and carries the forex text on every variant, so V1 was refused too. Fixed in the fake
+  (the test is the contract): the rule keys on the **voucher's party** (`PARTYLEDGERNAME`), not on each line's own
+  ledger. The same applies to `"plain"`.
+- **D2 (writer, minor).** `create_party_ledger`'s currency read-back also raises `WriteFailed` when
+  `ledger_details` returns `None`. The plan's form would have been a `TypeError`.
+- **D3 (runner, added).** When a delete did not stick, the `finally` ledger cleanup fails on live Tally, because a
+  ledger that still has a voucher can't be deleted. That `WriteFailed` would have hidden the original "still there"
+  error. Now a cleanup failure is added to `notes`, and the first error is the one raised. It still re-raises when
+  the run itself completed. Test: `test_cleanup_failure_does_not_mask_the_first_error`.
+- **D4 (runner, added).** A variant classified `dropped` (answered `created=1`, but not on 01-09-2022) now adds an
+  F2 note. Before, the outcome could read `refused` with no hint. Test: `test_a_dropped_voucher_leaves_an_f2_note`.
+- **D5 (test, added).** `test_fake_export_forms_and_closing_expression` (3 cases) covers the fake's
+  `forex_export_form` and `forex_ledger_closing` branches. Otherwise nothing would test them before Task 4.
+- **D6 (Task 2 Step 5 command).** The runner's F2 pause (`_console_wait` → `input()`) raises `EOFError` under
+  `uv run … python - <<'EOF'`, because the heredoc *is* stdin (checked offline). Step 5 as written would stop right
+  after the currency create. Run the snippet from a script file instead, with `PYTHONPATH=.` (a file outside the
+  repo root can't otherwise import `v2`). The live-run notes in the controller's hand-off give the exact command.
+- Otherwise every Task-1 code block and test ran as written. All the 1.1 grammar cases passed first time.
+
+**Step 0.3: scratch scan of Tasks 3 and 4.** Run at `47330a5` in a throwaway worktree (since removed). It used a
+minimal Task 3 (dataset 3.3 + seed 3.8 at the default candidate shape `FOREX_FORM="full"`) and Task 4's code and
+tests pasted as written. The loader (3.5–3.7) was only checked statically.
+- **Step 3.1 hashes** (the dataset is unchanged since `P7_BASE`): educational
+  `dd7f6d44ba52a5a42637edf441213533ba1b163750364bc69392800b8558d5be`, licensed
+  `546acc0609f63330c6d6c6d1bd9eddf3a6b95102c3914c913cd6e2c462b0da23`. All 7 of the Task 3.2 dataset tests passed
+  against the minimal 3.3. That includes the sha with the forex-only party left out of `debtor_names`, 960/240, and
+  −₹1,33,113.72. The 3.2 block also needs `date`, `Decimal`, `pytest` and `USD_DEBTOR` in scope.
+- **F1 (Task 3.4: its list of files to fix is incomplete).** These also break and are **not** listed:
+  - `test_company_b_data.py::test_every_sale_receipt_and_expense_payment_is_byte_identical_to_before_c41`
+    (~line 449). `_digest` hashes `repr(v)`, and the new `VoucherSpec` fields change every voucher's repr. Update
+    `_HEAD_DIGESTS` with a reason, or hash the pre-part-7 fields only.
+  - `test_p03_b_part.py::test_flags_on_both_reads_are_confirmed`: `others` 954 → 956.
+  - `test_p11_openings.py::test_the_2026_09_24_live_capture_relabels_to_different_under_c46`: the committed live
+    capture has no `Gulf Office Supplies LLC (USD)`, so probe 11's missing-ledger drift check BLOCKs. Any probe that
+    compares the dataset's ledgers with a **pre-part-7 live capture** will do the same.
+  - `test_cli.py::test_run_unbuilt_probe_returns_2` uses probe 22 as "the unbuilt probe". Task 4's registry change
+    breaks it, so pick another unbuilt probe.
+- **F2 (Task 3.8 breaks Task 1 tests).** Once `seed_company_b(masters=True)` seeds `$`, these tests fail: 3 in
+  `test_setup_writes_forex.py` (currency create / refused / popup) and 2 in `test_forex_shape.py` (currency refused /
+  popup). They assume `$` is absent from a freshly seeded B. 3.8 must have those tests drop `$` first (e.g.
+  `books.edit_state(lambda s: s["currencies"].pop("$"))`) or seed it behind a flag.
+- **F3 (Task 3.8).** Seeded forex lines go through `_forex_line_text`, so that method must honour
+  `forex_storage="plain"` (return `{}`). Otherwise Task 4's `test_plain_inr_without_forex_blocks_as_c36_recurrence`
+  gets expression text from the seed. The Task-1 fake applies `plain` only on import (`_forex_entries`). The scan
+  added it to `_forex_line_text`, and that test then passed.
+- **F4 (Task 3.5 helpers).** `test_company_b.py` has `_loader(books, **io_kwargs)` and `_empty_b()` (no `tmp_path`).
+  `_full_load`, `_loaded_b`, `_writer` and `_drop_tags` do not exist, so they must be written, and
+  `_empty_b(tmp_path)` must be `_empty_b()`. `VOUCHER_MONTH_TEMPLATE` (3.10) is not a helper in
+  `test_p05_voucher_month_bounds.py`. Take it from a probe-5 run's `store.confirmed("voucher_month")["xml_template"]`.
+- **F5 (Task 4 test).** `test_needs_probe_5` fails as written. `requires=(0, 5)` makes the runner block **before**
+  `run_b`, with its own wording "Run probe(s) 5 first.", so `"probe 5"` never appears. Assert
+  `"probe(s) 5" in part["summary"]` (or keep `requires=(0,)` and let `run_b`'s own message fire).
+- **Expected failures only:** `test_judge_on_the_live_shape_capture` and 3.9's `test_fake_books_forex.py` need Task
+  2's `forex_shape_<date>/` folder. With F3 applied, the other 20 of Task 4's 22 tests passed against the candidate
+  fake.
+- Narration note (not a failure): with S-B, 101/102's narration reads `Export sale to Gulf Office Supplies LLC (USD)`.
+  101/102 are outside the sha pin, so nothing else moves.
+
