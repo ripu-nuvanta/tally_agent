@@ -1196,6 +1196,9 @@ the older one.
 - **Numbering** 01-09-2022..31-03-2023 unchanged across the run (138 vouchers before and after, nothing renumbered).
 - Steps 5 and 9 are ticked on that evidence; steps 1–4 and 6–8 were run by the controller at the Mac (see the
   tracker and `logs/p7-*-2026-09-25.log`).
+- **Ruling C47 (found in Task 6, 2026-09-25; scope TallyPrime 7.0 Educational under Wine):** TallyPrime values a
+  forex ledger's balance at the rate of its **latest-dated** forex voucher, not at the sum of the vouchers' INR bases.
+  Task 2's throwaways could not show it (their ledger was read before its voucher). See the Task 6 result below.
 
 ---
 
@@ -2020,6 +2023,23 @@ PROBE = Probe(
     as forex: currency, face, rate and INR base as sent (plan part 7 review I1).` (plus the TB total note);
   - **no Problems**, and `Company B loaded`, which re-stamps `company_b_loaded_at`.
 
+  **Task 6 Step 3 result (live 2026-09-25, `logs/setup-b-forex-live-2026-09-25.log`) — Ruling C47.** setup-b created
+  the USD ledger and 101/102 (ledgers created 1, vouchers created 2), and the I1 forex read-back passed. It exited 1 on
+  one problem: `Sundry Debtors: balance magnitude mismatch — expected |-2590332.28|, Tally has |-2590148.41|`
+  (183.87), with the TB Dr/Cr total note at 183.87 (0.00 on every earlier load). Read live:
+  `ledger_details('Gulf Office Supplies LLC (USD)')` → CurrencyName `$`, OpeningBalance = ClosingBalance =
+  `-$1609.71 @ ? 82.58/$ = -? 132929.85`. **C47:** TallyPrime values a forex ledger at face total × the latest
+  voucher's rate (1609.71 × 82.58 = 132929.85), not Σ the INR bases (37216.04 + 95897.68 = 133113.72); Export Sales
+  keeps the bases, so the TB is out by the unrealised difference 183.87. Controller ruling: company B is correct, not
+  restored; the dataset's expectations change (fixed offline, `2c568be`, `136e5f6`, deviation D15). The re-run of
+  setup-b is expected to print:
+  - `currencies: created 0, skipped 1`, `groups: created 0, skipped 2`, `units: created 0, skipped 3`,
+    `items: created 0, skipped 5`, `ledgers: created 0, skipped 26`, `vouchers: created 0, skipped 960`;
+  - Pauses: the F2 instruction only;
+  - Notes: `Trial Balance Dr/Cr total observed: 183.87; expected 183.87 — C47 (live 2026-09-25): …` and
+    `[S0-B:101, 102] read back as forex: currency, face, rate and INR base as sent (plan part 7 review I1).`;
+  - no Problems → `Company B loaded: 'Sharma & Sons' Probe Traders' is ready.`, exit 0 (re-stamps).
+
   **If Problems name `[S0-B:101]`/`[S0-B:102]` "not stored as the forex voucher that was sent"** (plain INR = C36, or a
   different base/face/rate/currency) or "forex read-back … failed": setup-b exits 1 and does **not** stamp. Do **not**
   take Step 5's backup. Restore `100000-pre-forex-with-usd-2026-09-25` (setup-b never re-writes an existing tag) and
@@ -2524,4 +2544,34 @@ the deferred probe 9), F2 (Task 1's `_books` helpers drop the seeded `$`), F3 (`
   Focus 4) and **25** were judged against the pre-part-7 dataset. Task 6 re-runs only 21 and 18 B (H2). The Task 6
   results doc and the tracker must name 3/11/14/16/25 B as "judged against the pre-part-7 dataset", so a later re-run
   (esp. 16 B) isn't read as a regression.
+
+## Deviations (Ruling C47, 2026-09-25 — after Task 6 Step 3)
+
+- **D15 (`2c568be`).** `expected_figures` values each currency ledger at its signed face total × the rate of its
+  latest-dated forex voucher (HALF_UP to paise; 1609.71 × 82.58 has no tie), in `ledger_month_end` and
+  `ledger_fy_opening`, and records `Expected.forex_revaluation` (month end → Σ revalued − Σ bases; 183.87 from
+  Sep 2022 on, both licences). Nothing is hard-coded: `test_forex_ledger_is_valued_at_the_latest_voucher_rate_c47`
+  checks it against the live string. So `_expected_group_balances`' Sundry Debtors is |−25,90,148.41| (the live
+  figure, `test_expected_sundry_debtors_is_the_live_forex_load_figure_c47`), and setup-b's TB note now reads
+  "observed X; expected 183.87 — C47 …" (still a note, S0-D7). FakeBooks: `forex_ledger_revaluation="latest_rate"`
+  (live) revalues currency ledgers in `_ledger_balances` (which the TB now uses too), and
+  `forex_ledger_closing="expression"` (live) exports `-$1609.71 @ ? 82.58/$ = -? 132929.85`; each seeded/imported forex
+  line keeps its rate as data. `"bases"` and `"plain"` stay as candidates.
+- **D16 (`136e5f6`).** Probe 22's `usd_ledger` (recorded, not judged) adds `closing_base`, `bases_total`,
+  `revalued_at_latest_rate` and `revaluation_difference`; the summary says "valued at the latest voucher rate (C47):
+  183.87 from the vouchers' bases" and `spec_impact` gains a parity note. The verdict is unchanged.
+- **Blast radius checked:**
+  - **Probe 18 B:** its TB as-on 31-03-2023 expectation comes from `ledger_balances_at` → Current Assets now includes
+    the USD party at −1,32,929.85 (was −1,33,113.72); Income keeps +1,33,113.72. Both USD sales are Sep 2022, so the
+    latest rate as on 31-03-2023 is the same 82.58. Current Assets is the stock-bearing group, reconciled via its
+    gap = the `Opening Stock` row — the gap is unchanged. **Expected: CONFIRMED** on the re-run.
+  - **Probe 21 B:** counts and sizes only — unchanged (Sep 2022 = 20, FY 2022-23 = 240, kind total 238).
+  - **Probe 17:** company A only — unaffected.
+  - **Probe 16 B: a real gap, flagged (not fixed).** The agent's `parse_ledger_list` (`v2/agent/tally/reports.py`)
+    raises `AmountParseError` on the USD party's expression closing, so a 16 B re-run would BLOCK with a harness
+    error. Pinned by `test_b_the_live_forex_closing_is_a_harness_error_today` and
+    `test_the_live_forex_closing_breaks_parse_ledger_list`; the other 16 B / masters tests read the candidate plain
+    form. It is not re-run in Task 6 (M4). It needs a probe-16 fix (and an S1 parser decision) before any 16 B re-run.
+    Probe 11 reads Ledger OpeningBalance, which live exports as the same expression for this ledger — not modelled in
+    the fake (its opening stays 0.00); same "before any re-run" caveat.
 
