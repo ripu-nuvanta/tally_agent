@@ -50,7 +50,7 @@ _BARE_AMP = re.compile(r"&(?!(?:amp|lt|gt|apos|quot|#\d+|#x[0-9a-fA-F]+);)")
 _COMPANY_VAR = re.compile(r"<SVCurrentCompany>([^<]*)</SVCurrentCompany>")
 # Collection-name prefixes answered by the generic probe master routes below (probes 3 B, 11, 14, 15, 16 B, 18 B, 24,
 # 25 B).
-B_PROBE_COLLECTIONS = ("S0P03B", "S0P11", "S0P14", "S0P15", "S0P16B", "S0P18B", "S0P24", "S0P25B")
+B_PROBE_COLLECTIONS = ("S0P03B", "S0P11", "S0P14", "S0P15", "S0P16B", "S0P18B", "S0P22", "S0P24", "S0P25B")
 # The fake keeps no stock valuation: a current-period opening (C46 knob) is priced at this placeholder rate. Probe 11
 # records, never judges, the rate/value of a current-period opening.
 FAKE_STOCK_RATE = Decimal("100.00")

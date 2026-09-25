@@ -24,7 +24,8 @@ from v2.probes.core import ProbeBlocked
 from v2.probes.reads import dmy, fill_month_request, parse_vouchers, tally_date, untyped_period_vars
 from v2.probes.safety import EDUCATIONAL_DATE_VAR_DAYS, check_educational_date_values
 from v2.probes.setup.company_b_data import (COMPANY_B_BOOKS_FROM, COMPANY_B_LAST_MONTH, COMPOUND_UNIT, HINDI_DEBTOR,
-                                            OPENING_BILL_DATE, SALES_GST_VOUCHER_TYPE, TAG_PREFIX, Dataset, Expected, LedgerSpec, StockItemSpec, VoucherSpec,
+                                            OPENING_BILL_DATE, SALES_GST_VOUCHER_TYPE, TAG_PREFIX, USD_CURRENCY,
+                                            USD_EXPORT_PARTY, Dataset, Expected, LedgerSpec, StockItemSpec, VoucherSpec,
                                             _educational_days, expected_figures, generate, quantity_unit)
 
 if TYPE_CHECKING:
@@ -251,6 +252,15 @@ def credit_days(text: str | None) -> int | None:
 def written_vouchers(licence: str) -> dict[int, VoucherSpec]:
     """tag → voucher for every voucher the loader wrote (C36: skipped ones never exist in Tally)."""
     return {v.tag: v for v in dataset(licence).vouchers if not v.skip_reason}
+
+
+# Plan part 7 (probe 22): company B's USD export party and the symbol of its currency, re-exported for the probes.
+USD_CURRENCY_SYMBOL = USD_CURRENCY.symbol
+
+
+def forex_vouchers(licence: str) -> dict[int, VoucherSpec]:
+    """tag → voucher for every written foreign-currency voucher (company B: the USD export sales 101/102)."""
+    return {t: v for t, v in written_vouchers(licence).items() if v.currency != "INR"}
 
 
 def flagged_tags(licence: str) -> tuple[frozenset[int], frozenset[int]]:
