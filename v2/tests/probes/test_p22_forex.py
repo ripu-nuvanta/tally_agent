@@ -190,3 +190,45 @@ def test_judge_keys_the_base_match_by_ledger():
     judged = p22.judge_voucher(voucher, spec, party_alias=voucher["header"].get("PARTYLEDGERNAME"))
     assert judged["balanced"] and not judged["base_matches_dataset"]
     assert Decimal(judged["lines"][1]["base"]) == Decimal("37216.04")
+
+
+# --- plan part 7 review M1 / M3 ----------------------------------------------------------------------------------------
+async def test_rate_differs_from_dataset_blocks_as_drift(tmp_path):
+    """M1: the right base but another rate — Tally didn't keep what the dataset says; drift (row 4), never CONFIRMED."""
+    books = _books()
+    _edit_line(books, 101, USD_EXPORT_PARTY, amount_text="-$448.44 @ ? 83.00/$ = -? 37216.04")
+    _edit_line(books, 101, "Export Sales", amount_text="$448.44 @ ? 83.00/$ = ? 37216.04")
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "BLOCKED" and "differs from the dataset" in part["summary"] and "rate" in part["summary"]
+    assert part["observations"]["vouchers"]["101"]["lines"][0]["rate_matches"] is False
+
+
+async def test_face_or_currency_differs_from_dataset_blocks_as_drift(tmp_path):
+    books = _books()
+    _edit_line(books, 102, USD_EXPORT_PARTY, amount_text="-€1161.27 @ ? 82.58/€ = -? 95897.68")
+    _edit_line(books, 102, "Export Sales", amount_text="€1161.28 @ ? 82.58/€ = ? 95897.68")
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "BLOCKED" and "102" in part["summary"]
+    assert "currency" in part["summary"] and "face" in part["summary"]
+
+
+async def test_an_extra_plain_line_is_its_own_finding_not_c36(tmp_path):
+    """M3: a line Tally adds (e.g. rounding/exchange) is reported as an unexpected line, not as a plain-INR store."""
+    books = _books()
+
+    def add(state):
+        v = next(v for v in state["vouchers"].values() if v["narration"].startswith("[S0-B:101]"))
+        v["lines"].append({"ledger": "Bank Charges", "amount": "0.00", "deemed_positive": "No"})
+    books.edit_state(add)
+    part = await _run(tmp_path, books)
+    assert part["outcome"] == "FAILED" and "unexpected line" in part["summary"] and "Bank Charges" in part["summary"]
+    assert "plain INR" not in part["summary"]
+    assert part["observations"]["vouchers"]["101"]["unexpected_ledgers"] == ["Bank Charges"]
+
+
+def test_the_live_capture_matches_face_rate_and_currency():
+    voucher = _live("V1b")
+    judged = p22.judge_voucher(voucher, forex_vouchers("educational")[101],
+                               party_alias=voucher["header"].get("PARTYLEDGERNAME"))
+    assert judged["forex_matches_dataset"] and judged["unexpected_ledgers"] == []
+    assert all(l["fx_matches"] and l["rate_matches"] and l["currency_matches"] for l in judged["lines"])
