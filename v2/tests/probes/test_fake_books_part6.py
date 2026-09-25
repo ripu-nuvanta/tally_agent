@@ -130,6 +130,17 @@ def test_current_period_stock_openings_replay_to_the_dataset():
         assert qty_number(row["OpeningBalance"]) == stock_opening_at("educational", row["Name"], date(2025, 4, 1))
 
 
+def test_the_default_stock_opening_scope_follows_live_c46():
+    """Review M4: live C46 (p11 B re-run) exports the current period's opening, so that is the fake's default; the
+    "books" (books-beginning) shape is opt-in."""
+    xml = master_request("S0P11Stock", "StockItem", ["Name", "OpeningBalance"], B)
+    fields = ["Name", "OpeningBalance"]
+    assert (read_objects(_post(_b(), xml), "STOCKITEM", fields)
+            == read_objects(_post(_b(stock_opening_scope="current"), xml), "STOCKITEM", fields))
+    assert (read_objects(_post(_b(), xml), "STOCKITEM", fields)
+            != read_objects(_post(_b(stock_opening_scope="books"), xml), "STOCKITEM", fields))
+
+
 def test_company_c_seed_answers_every_probe_24_read():
     books = FakeBooks(name=C, educational=True)
     seed_company_c(books)

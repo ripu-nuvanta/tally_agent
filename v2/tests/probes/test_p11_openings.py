@@ -12,6 +12,9 @@ from v2.tests.probes.fakes import FakeTally, ScriptedIO, objects_xml, ready_stor
 B = COMPANIES["B"]
 
 
+BOOKS_SCOPE = {"stock_opening_scope": "books"}   # review M4: the pre-C46 hypothesis, opt-in (the default is C46's)
+
+
 def _books(**knobs) -> FakeBooks:
     books = FakeBooks(name=B, educational=True, **knobs)
     seed_company_b(books, "educational", masters=True)
@@ -28,7 +31,7 @@ async def _run(tmp_path, books):
 
 
 async def test_openings_straight_from_the_masters_are_confirmed(tmp_path):
-    part = await _run(tmp_path, _books())
+    part = await _run(tmp_path, _books(**BOOKS_SCOPE))
     assert part["outcome"] == "CONFIRMED", part["summary"]
     obs = part["observations"]
     assert obs["ledgers"]["mismatched"] == {} and obs["opening_bill"]["candidate"]["magnitude_match"] is True
@@ -53,7 +56,7 @@ async def test_fy_scoped_ledger_openings_are_different_and_point_at_probe_16(tmp
 
 
 async def test_stock_value_exported_positive_is_different(tmp_path):
-    books = _books()
+    books = _books(**BOOKS_SCOPE)
     books.edit_state(lambda s: [i.__setitem__("opening_value", i["opening_value"].lstrip("-"))
                                 for i in s["items"].values()])
     part = await _run(tmp_path, books)
@@ -61,7 +64,7 @@ async def test_stock_value_exported_positive_is_different(tmp_path):
 
 
 async def test_wrong_stock_quantity_fails(tmp_path):
-    books = _books()
+    books = _books(**BOOKS_SCOPE)
     books.edit_state(lambda s: s["items"]["USB Cable Type-C"].__setitem__("opening_qty", "100 Nos"))
     part = await _run(tmp_path, books)
     assert part["outcome"] == "FAILED" and "USB Cable Type-C" in part["summary"]
@@ -93,7 +96,7 @@ async def test_every_half_is_named_in_the_summary(tmp_path):
 
 
 async def test_a_mixed_stock_scope_fails(tmp_path):
-    books = _books()
+    books = _books(**BOOKS_SCOPE)
     books.edit_state(lambda s: s["items"]["USB Cable Type-C"].__setitem__("opening_qty", "11 Nos"))  # its 31-03-2025 qty
     part = await _run(tmp_path, books)
     assert part["outcome"] == "FAILED" and part["observations"]["stock_scope"]["scope"] == "mixed"

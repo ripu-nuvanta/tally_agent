@@ -360,7 +360,7 @@ class FakeBooks:
                  hindi_ledger_filter_matches: bool = True,
                  cancelled_vouchers_listed: bool = True, optional_vouchers_listed: bool = True,
                  bill_credit_period_exported: bool = True, bill_due_from_credit_period: bool = True,
-                 voucher_type_parent_exported: bool = True, stock_opening_scope: str = "books",
+                 voucher_type_parent_exported: bool = True, stock_opening_scope: str = "current",
                  bill_due_offset_days: int = 0, header_lists_flagged: bool = True):
         self.folder = folder
         # plan part 6. Recorded live: cancelled vouchers are listed with ISCANCELLED=Yes and New Ref bills export
@@ -376,7 +376,8 @@ class FakeBooks:
         # probe 23 B / Ruling S4: a due rule other than bill date + credit days (e.g. -1 = one day short).
         self.bill_due_offset_days = bill_due_offset_days
         self.voucher_type_parent_exported = voucher_type_parent_exported
-        # probe 11 / C46 (live 2026-09-24): "current" = StockItem opening fields are the current period's opening.
+        # probe 11 / C46 (live 2026-09-24): "current" (the default, review M4) = StockItem opening fields are the
+        # current period's opening; "books" = the books-beginning opening (the pre-C46 hypothesis, opt-in).
         self.stock_opening_scope = stock_opening_scope
 
         # probe 16: the 2026-09-23 untyped evidence; the typed form is re-measured live
