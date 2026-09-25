@@ -202,3 +202,9 @@ Test first for every behaviour change (each new test was run red, then green). `
 | M8 | no change | — | Probe 24 has run live and company C is archived. A byte scan of every file under `v2/` finds no `ENTEREDBY`/`ALTEREDBY`, and the Task 11 value grep was clean. Redacting those tags in `Capture` would change capture semantics for every probe; revisit only if probe 24 is re-run. |
 
 Suite: `uv run --project v2 pytest v2/tests -q` **765 passed** (756 + 9 new); with `-W error` **765 passed**.
+
+- **Follow-up (controller ruling, 2026-09-25):** `core.judge_halves` now returns EVERY half's non-empty impact (worst
+  verdict first, de-duplicated), so a CONFIRMED half's impact such as R9 in 25 B is no longer hidden. The outcome and
+  summary are unchanged. There is a new helper test, and 25 B's test now requires R9's impact after the Parent-chain
+  one. The recorded 25 B `spec_impact` in results.json stays as recorded. Suite **766 passed** both plain and with
+  `-W error`.

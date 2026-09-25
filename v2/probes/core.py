@@ -87,10 +87,11 @@ def judge_halves(halves: dict[str, tuple[str, str, str]]) -> tuple[Outcome, str,
     """A part judged half by half (probes 11, 24, 25): `halves` = name → (verdict, text, spec impact).
 
     Returns the worst verdict, a summary naming EVERY half with its verdict (C46: a FAILED half must not hide a
-    DIFFERENT one), and the impacts that apply: those of the non-CONFIRMED halves, or every non-empty impact when all
-    halves are CONFIRMED. The caller may still choose its own impact text."""
+    DIFFERENT one), and EVERY half's non-empty impact -- worst verdict first (stable within a verdict),
+    de-duplicated. Ruling 2026-09-25: a CONFIRMED half's impact (e.g. R9 in 25 B) is a real spec input and is never
+    dropped because another half is worse. The caller may still choose its own impact text."""
     worst = worst_verdict(verdict for verdict, _, _ in halves.values())
     summary = "; ".join(f"{name.replace('_', ' ')}: {text} ({verdict})" for name, (verdict, text, _) in halves.items())
-    impacts = [impact for verdict, _, impact in halves.values()
-               if impact and (verdict != "CONFIRMED" or worst == "CONFIRMED")]
+    ranked = sorted(halves.values(), key=lambda half: -HALF_RANK[half[0]])
+    impacts = list(dict.fromkeys(impact for _, _, impact in ranked if impact))
     return Outcome(worst), summary, impacts

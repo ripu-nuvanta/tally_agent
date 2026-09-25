@@ -35,7 +35,8 @@ async def test_custom_type_walks_to_sales_and_the_duplicate_is_refused(tmp_path)
     obs = part["observations"]
     assert obs["voucher_type"]["resolved_by"] == "Parent walk" and obs["r9"]["verdict"] == "refused"
     assert obs["sub_verdicts"] == {"voucher_type": "DIFFERENT", "duplicate_name": "CONFIRMED"}
-    assert "Parent chain" in part["spec_impact"] and "R9" not in part["spec_impact"]
+    assert "Parent chain" in part["spec_impact"] and p25.R9_REFUSED_IMPACT in part["spec_impact"]
+    assert part["spec_impact"].index("Parent chain") < part["spec_impact"].index("R9")   # worst half first
     assert NAME in io.asks[0] and OTHER in io.asks[0]
     assert part["fixtures"] == ["p25_B_voucher_types.xml", "p25_B_ledgers_after_duplicate_attempt.xml"]
 
