@@ -1099,7 +1099,7 @@ the older one.
   screen lags about 5 s). Under Ruling R-F2 the controller sets F2 **before** step 5 and passes
   `f2_confirm=lambda: None`. The runner's default confirmation asks on the console, and it refuses to start without
   a terminal.
-- [ ] **Step 5: Run the shape runner** from a script file (R-F2 / D6: a heredoc is stdin, so it can't carry a
+- [x] **Step 5: Run the shape runner** from a script file (R-F2 / D6: a heredoc is stdin, so it can't carry a
   console prompt). F2 must already be ≥ 31-03-2026. The evidence folder must not exist yet; the runner refuses to
   overwrite a `summary.json`.
   ```bash
@@ -1162,7 +1162,7 @@ the older one.
   `uv run --project v2 python -m v2.probes setup-b 2>&1 | tee logs/p7-setup-b-verify-after-shape-$(date +%F).log`.
   Expected: every master and voucher skipped, 0 created, the C36 note, no problems. That proves the throwaways are
   gone and the balances haven't moved.
-- [ ] **Step 9: Commit the evidence** (the folder only):
+- [x] **Step 9: Commit the evidence** (the folder only):
   ```bash
   git add v2/tests/fixtures/sync/forex_shape_$(date +%F)/
   git commit -m "data(bi/v2): forex write-shape evidence on company B (plan part 7 task 2)" \
@@ -1171,6 +1171,31 @@ the older one.
   Tracker: row 22 notes the shape outcome and `chosen`; change-log row; "Resume here". If the shape result changes the
   design (H1 fallback, F2 only, UI-only currency), add a dated "Changed" line to the S0 spec **now** (§4.3 or §7 probe
   22) and say so in the tracker.
+
+**Task 2 result (recorded 2026-09-25, Tasks 3–4 implementation session; evidence committed in `271ff01`):**
+- **Outcome `stored_forex`**, `chosen` = `{"variant": "V1b", "party_currency": "$", "form": "full", "base_symbol": ""}`
+  (`v2/tests/fixtures/sync/forex_shape_2026-09-25_run2/summary.json`).
+- **Import side.** The forex line is written with the rate **without** a base symbol (V1b:
+  `-$448.44 @ 82.99/$ = -37216.04`). V1 (the rate with company B's base symbol, `@ ?82.99/$ = -?37216.04`) was
+  **refused**: EXCEPTIONS=1, no LINEERROR. V3 (the same forex form on an INR party) was **stored** too.
+- **Read-back side** (`variant_V1b.xml`): party line `<AMOUNT>-$448.44 @ ? 82.99/$ = -? 37216.04</AMOUNT>`,
+  ISDEEMEDPOSITIVE Yes; `Export Sales` line `<AMOUNT>$448.44 @ ? 82.99/$ = ? 37216.04</AMOUNT>`, ISDEEMEDPOSITIVE No.
+  Tally rewrites the rate and the base in the base currency's own prefix, **`?` followed by a space**, whatever was
+  sent (the base currency ₹ shows correctly in the UI; it exports as `?`, and its `HasSpace` is Yes). A forex line
+  carries no extra leaf field compared with the plain V0 line. A live voucher exports both ALLLEDGERENTRIES.LIST and
+  LEDGERENTRIES.LIST for the same postings.
+- **The `$` Currency master cannot be created over XML** on this TallyPrime 7 Educational: run 1
+  (`forex_shape_2026-09-25_run1_currency_refused/`) got EXCEPTIONS=1, and Tally kept `$` as an import-**exception**
+  master, after which the UI refused to create `$`. Company B was restored; `$` was then created **in the UI**
+  (Formal name USD) and B backed up as `s0probe-backups/100000-pre-forex-with-usd-2026-09-25`. B has `$` now.
+  Consequence for Task 3: **setup-b never sends a Currency create** — it requires `$` to exist and otherwise stops
+  before any write, naming the UI steps (deviation D8).
+- **A ledger that ever had a voucher can't be deleted** ("Cannot be deleted!", `summary.json` notes), even after its
+  voucher was deleted: the throwaway `ZZ Forex Probe USD Debtor` stayed, so B was restored again (to the backup
+  above). Nothing in Task 3 creates and then deletes a ledger.
+- **Numbering** 01-09-2022..31-03-2023 unchanged across the run (138 vouchers before and after, nothing renumbered).
+- Steps 5 and 9 are ticked on that evidence; steps 1–4 and 6–8 were run by the controller at the Mac (see the
+  tracker and `logs/p7-*-2026-09-25.log`).
 
 ---
 
@@ -1202,7 +1227,7 @@ the older one.
   - `USD_SKIP_REASON` is **removed**. `VoucherSpec.skip_reason` stays as a general mechanism: no voucher uses it, and
     `_skip_notes` / the fake keep honouring it.
 
-- [ ] **Step 3.1: Pin the untouched dataset first.** At `P7_BASE`, compute and paste the hashes into the new test
+- [x] **Step 3.1: Pin the untouched dataset first.** At `P7_BASE`, compute and paste the hashes into the new test
   below (both licences):
   ```bash
   uv run --project v2 python - <<'EOF'
@@ -1214,7 +1239,7 @@ the older one.
       print(lic, hashlib.sha256("\n".join(rows).encode()).hexdigest())
   EOF
   ```
-- [ ] **Step 3.2: Write the failing dataset tests** (append to `test_company_b_data.py`; this replaces the "C36"
+- [x] **Step 3.2: Write the failing dataset tests** (append to `test_company_b_data.py`; this replaces the "C36"
   block's assertions):
 
 ```python
@@ -1276,7 +1301,7 @@ def test_expected_counts_include_the_usd_sales():
     assert FOREX_FORM in ("full", "no_base")
 ```
 
-- [ ] **Step 3.3: Run** → FAIL. **Implement the dataset:**
+- [x] **Step 3.3: Run** → FAIL. **Implement the dataset:**
   - Add `currency: str | None = None` to `LedgerSpec` (last, with a default) and `currency_symbol` / `fx_rate` to
     `VoucherSpec`, after `fx_amount`.
   - Add `currencies: tuple[CurrencySpec, ...] = ()` to `Dataset` (last).
@@ -1293,7 +1318,7 @@ def test_expected_counts_include_the_usd_sales():
   `fx_rate=fx_rate`, and no `skip_reason`. `generate()` passes `currencies=(USD_CURRENCY,)`. Delete
   `USD_SKIP_REASON`. Replace the C36 comment with a "plan part 7" one naming `FORMERLY_SKIPPED_TAGS`, and add
   `FOREX_FORM = "<chosen.form from summary.json>"` with a comment naming the evidence folder.
-- [ ] **Step 3.4: Run** the dataset tests → PASS. **Then fix the C36-era expectations** in the listed test files. Each
+- [x] **Step 3.4: Run** the dataset tests → PASS. **Then fix the C36-era expectations** in the listed test files. Each
   gets a one-line comment `# plan part 7: 101/102 written with forex (was C36-skipped)`:
   - 958 → 960 and 238 → 240;
   - `sep.skipped == {101, 102}` → `sep.skipped == frozenset()` and `len(sep.written) == 20`;
@@ -1302,7 +1327,7 @@ def test_expected_counts_include_the_usd_sales():
   - `test_company_b.py`'s C36 tests become Step 3.6's tests.
 
   Never change an expectation without its reason.
-- [ ] **Step 3.5: Write the failing loader tests** (`test_company_b.py`, new section "plan part 7"). Follow that file's
+- [x] **Step 3.5: Write the failing loader tests** (`test_company_b.py`, new section "plan part 7"). Follow that file's
   existing helpers for building a `FakeBooks` company B shell and running `load_company_b` with a scripted IO:
 
 ```python
@@ -1372,7 +1397,7 @@ def test_full_load_with_forex_verifies_clean(tmp_path):
 
   (Add small helpers `_drop_tags(*tags)` and `_loaded_b` in the test file if they don't already exist. `_drop_tags`
   removes the vouchers whose narration starts `[S0-B:<tag>]`.)
-- [ ] **Step 3.6: Implement the loader** (`company_b.py`):
+- [x] **Step 3.6: Implement the loader** (`company_b.py`):
   - `_MASTER_KINDS = ("currencies", "groups", "units", "items", "ledgers", "vouchers")`.
   - `load_company_b`: call `_load_currencies(...)` right after `_require_voucher_type` and before `_load_masters`.
   - Currencies are created with the same `_create_or_pause` UI fallback as every other master:
@@ -1432,8 +1457,8 @@ def _forex_of(v: VoucherSpec) -> ForexLine | None:
 
     Here `written = {v.tag: v for v in dataset.vouchers if not v.skip_reason}` and `present = set(existing.by_tag)`.
     Every other gap keeps its problem line exactly as before.
-- [ ] **Step 3.7: Run** the loader tests → PASS.
-- [ ] **Step 3.8: `seed_company_b` writes the forex sales.** `fill()` stores:
+- [x] **Step 3.7: Run** the loader tests → PASS.
+- [x] **Step 3.8: `seed_company_b` writes the forex sales.** `fill()` stores:
   - lines with the INR `amount`, updated with `books._forex_line_text(amount, parse_forex_amount(forex_amount_text(amount,
     ForexLine(...))))`. That is the same helper `_voucher` uses, so the `forex_storage` / `forex_export_form` knobs
     apply to seeded vouchers too. Probe 22's knob tests depend on this;
@@ -1441,7 +1466,7 @@ def _forex_of(v: VoucherSpec) -> ForexLine | None:
   - the new ledger with `"currency": "$"`.
 
   `test_fake_books_vouchers.py`'s 960 and the p21 counts now pass.
-- [ ] **Step 3.9: Pin the fake to the live capture** (`v2/tests/probes/test_fake_books_forex.py`, create):
+- [x] **Step 3.9: Pin the fake to the live capture** (`v2/tests/probes/test_fake_books_forex.py`, create):
 
 ```python
 from pathlib import Path
@@ -1496,7 +1521,7 @@ def test_fake_forex_line_carries_the_live_extra_fields():
 
   Update every knob's comment from "candidate" to "live — forex_shape_<date>". The knobs stay only for the
   hypotheses that live didn't settle.
-- [ ] **Step 3.10: The refresh round-trip analogue** (CLAUDE.md "Test reality" rule 7, S0 edition): load → read back
+- [x] **Step 3.10: The refresh round-trip analogue** (CLAUDE.md "Test reality" rule 7, S0 edition): load → read back
   through the **extractor's** request (probe 5's template via `fill_month_request`) → the forex text survives and
   parses to the dataset base. Add to `test_company_b.py`:
 
@@ -1514,7 +1539,7 @@ async def test_forex_sale_round_trips_through_the_extractors_request(tmp_path):
   (`VOUCHER_MONTH_TEMPLATE`: build it the way `test_p05_voucher_month_bounds.py` builds probe 5's confirmed template,
   and reuse that helper rather than copying XML. If the live form is `no_base`, `forex_base` computes the base, and
   this test still holds because there is no tie, fact 4.)
-- [ ] **Step 3.11: Run the whole suite** (and once with `-W error`); record the count. Commit the dataset, loader,
+- [x] **Step 3.11: Run the whole suite** (and once with `-W error`); record the count. Commit the dataset, loader,
   fake and tests together, only the files named:
   `feat(bi/v2): company B writes the USD export sales as forex (plan part 7 task 3; lifts C36)`.
 
@@ -1580,7 +1605,7 @@ In every outcome, `usd_ledger`'s `closing_form` (`"plain"`, or `"expression"` wh
 observed. When it is `"expression"`, the summary says "the forex party's ClosingBalance exports as an expression", and
 `LEDGER_EXPRESSION_NOTE` is appended to `spec_impact` (Review Focus 4). It is recorded, not judged.
 
-- [ ] **Step 1: Write the failing tests** (`v2/tests/probes/test_p22_forex.py`; harness helpers as in
+- [x] **Step 1: Write the failing tests** (`v2/tests/probes/test_p22_forex.py`; harness helpers as in
   `test_p15_unicode_compound_units.py`):
 
 ```python
@@ -1735,8 +1760,8 @@ def test_judge_on_the_live_shape_capture():
     assert judged["balanced"] and judged["base_matches_dataset"]
 ```
 
-- [ ] **Step 2: Run** → FAIL (`ImportError: p22_forex`).
-- [ ] **Step 3: Implement.** `company_b_view.py` (imports from `company_b_data` only):
+- [x] **Step 2: Run** → FAIL (`ImportError: p22_forex`).
+- [x] **Step 3: Implement.** `company_b_view.py` (imports from `company_b_data` only):
 
 ```python
 from v2.probes.setup.company_b_data import USD_CURRENCY, USD_EXPORT_PARTY   # add to the existing import
@@ -1913,9 +1938,9 @@ PROBE = Probe(
   - `_ledger_export` honours `currencyname` and the closing knob.
 
   Check that `master_request` refuses nothing here (no period vars).
-- [ ] **Step 4: Run** → PASS. Run the full suite plus `-W error`. Also check `test_isolation.py` stays green (the probe
+- [x] **Step 4: Run** → PASS. Run the full suite plus `-W error`. Also check `test_isolation.py` stays green (the probe
   imports only the view and reads). Record the count.
-- [ ] **Step 5: Commit** `v2/probes/company_b_view.py v2/probes/p22_forex.py v2/probes/registry.py
+- [x] **Step 5: Commit** `v2/probes/company_b_view.py v2/probes/p22_forex.py v2/probes/registry.py
   v2/tests/probes/fake_books.py v2/tests/probes/test_p22_forex.py`:
   `feat(bi/v2): probe 22 — forex INR base on the extractor's request (plan part 7 task 4)`.
 
@@ -2401,4 +2426,58 @@ tests pasted as written. The loader (3.5–3.7) was only checked statically.
 R-F2 are fixed test-first (`634f93b`, `d6644f2`, `4229c9a`; 810 → 846 passed, green normally and with `-W error`).
 The details are in the review's "Fix round" section. One addition: **D7** — the runner refuses an `out_dir` that
 already holds a `summary.json`, so a re-run can't overwrite a failed run's evidence.
+
+## Deviations (implementation of Tasks 3 and 4, 2026-09-25)
+
+Run record: start `271ff01` at **846** passed. After `d4be5fc` (3.9, the fake pinned to live) **853**, after `28e34fe`
+(Task 3) **870**, after `da9bada` (Task 4) **888**; every commit green normally and with `-W error`. Offline only:
+no Tally, no `setup-*`, no `run`. Only `v2/` and this file changed; no `.superpowers/`, tracker or spec edits (the
+controller owns those).
+
+**Applied from the pre-flight scan:** F1 (all four extra files: `_HEAD_DIGESTS` re-based at `271ff01` onto the
+pre-part-7 fields with 101/102 left out; `test_p03_b_part` 954 → 956; the p11 2026-09-24 capture judged against the
+ledgers B had then, via a monkeypatched `ledger_specs` without the USD party; `test_run_unbuilt_probe_returns_2` uses
+the deferred probe 9), F2 (Task 1's `_books` helpers drop the seeded `$`), F3 (`_forex_line_text` returns `{}` under
+`forex_storage="plain"`), F4 (`_full_load` / `_loaded_b` / `_drop_tags` / `_load` / `_imports` written;
+`_empty_b()` without `tmp_path`), F5 (`test_needs_probe_5` asserts `"probe(s) 5"`).
+
+- **D8 (loader: the currency is never created).** Task 2 showed the XML create is refused *and* leaves an
+  import-exception master behind. So `_load_currencies` + `_create_or_pause` became `_require_currencies`: list, and
+  if a dataset currency is missing (`currency_matches` on symbol or formal name), raise `CompanyBLoadError` before any
+  write with "create `$` (Formal name USD, ISO USD) in the UI: Create → Currency". `report.created["currencies"]` is
+  therefore always 0 (the `currencies` row stays in the report). Tests renamed/adapted:
+  `test_load_creates_the_currency_before_the_usd_ledger` → `test_the_loader_never_creates_the_currency_and_stops_before_any_write_without_it`
+  + `test_load_uses_the_ui_created_currency_for_the_usd_ledger`; `test_second_load_sends_no_currency_create` →
+  `…_and_no_voucher`; `test_formerly_skipped_gap_is_a_note_not_a_problem` expects currencies created 0 / skipped 1
+  (live B has `$`). Added `test_a_currency_listed_under_its_formal_name_satisfies_the_currency_check` and the CLI
+  test `test_setup_b_without_the_usd_currency_names_the_ui_step_and_writes_nothing`. `_empty_b()` and the CLI
+  setup-b fakes carry the UI-made `$` (`fake_books.USD_CURRENCY_ROW`, the live row). Task 6 Step 3's "`created 1` if B was restored" no longer applies: a B without `$` makes setup-b stop (exit 1) with the UI instruction.
+- **D9 (dataset).** Besides `FOREX_FORM = "full"`, `FOREX_BASE_SYMBOL = ""` (V1b) — `_forex_of` needs both
+  (`ForexLine.base_symbol` has no default, R-SYM). `test_the_forex_write_shape_is_the_live_one` pins both to
+  `summary.json`. The USD sales' narration reads `Export sale to Gulf Office Supplies LLC (USD)`.
+- **D10 (FakeBooks pinned, 3.9).** Defaults now: `forex_currency_create="refuse"` (run 1),
+  `forex_rate_symbols_refused=("?",)` (V1), `forex_on_base_party="same"` (V3), `forex_export_form="full"` in the live
+  layout — the base currency's NAME plus a space when its HasSpace is Yes (`_base_prefix`), whatever was sent;
+  `_forex_line_text` takes `state` for that. Still candidates, labelled: `no_base` accepted, `plain`/`refuse`
+  storage, `plain_plus_field`, and `forex_ledger_closing` (live never read a currency ledger's closing with a voucher
+  on it). Task 1's tests pass `CANDIDATE_FOREX_KNOBS` (XML create ok, `?` rate accepted) so they keep testing the
+  branches live didn't take; `test_fake_export_forms_and_closing_expression`'s layout moved to the live `? `.
+  `test_fake_books_forex.py` compares the fake with the capture itself, byte for byte on the AMOUNT text (primary
+  lines), instead of the plan's grammar-only comparison.
+- **D11 (drift exemption, stricter).** `_flag_predated_drift` turns the gap into the note only when the missing tags
+  are ⊆ `FORMERLY_SKIPPED_TAGS` **and** `pre_count + len(missing) == expected` — so an extra/duplicated voucher in the
+  same FY can't hide behind it.
+- **D12 (loader test fixture).** The run-4 educational group figures (`LIVE_RUN4_EDUCATIONAL`) predate 101/102; the
+  two tests compare with `EDUCATIONAL_WITH_FOREX` = run 4 + ₹1,33,113.72 on Sundry Debtors and Sales Accounts
+  (derived, not hand-set).
+- **D13 (round trip, 3.10).** Uses `p05.svdates_template()` — the `svdates_typed` form live probe 5 confirmed —
+  instead of a `VOUCHER_MONTH_TEMPLATE` helper (none exists), and also asserts the live `? ` layout survives.
+- **D14 (probe 22 judges primary lines).** The plan's `judge_voucher` iterated every `ledger_lines` entry; a live
+  voucher exports ALLLEDGERENTRIES and LEDGERENTRIES for the same postings, so each would count twice. It uses
+  `reads.primary_lines` (as does `extra_fields`), and the `usd_ledger` rows are filtered to the party's name. Tests
+  added: `test_judge_on_the_live_plain_control_is_the_c36_block` (live V0 → BLOCKED), `test_judge_keys_the_base_match_by_ledger`,
+  `test_master_reads_carry_no_period_variables`; the plan's `₹` strings in the edit tests use the live `? ` layout.
+- `FakeBooks` needed only `"S0P22"` in `B_PROBE_COLLECTIONS`: its Currency list and ledger `CurrencyName` routes
+  already existed from Task 1.
+- Task 5 step 3's CLI smoke was checked offline: `list` shows `22  forex  B  B  not run`.
 
