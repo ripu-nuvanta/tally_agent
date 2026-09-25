@@ -20,6 +20,7 @@ def _books(**knobs) -> FakeBooks:
     # test_the_live_forex_closing_breaks_parse_ledger_list below); these ledger-collection tests are about other
     # ledgers, so they read the candidate plain form unless a test says otherwise.
     knobs.setdefault("forex_ledger_closing", "plain")
+    knobs.setdefault("forex_ledger_opening", "plain")         # C47 review I2: same, for the FY-scoped opening
     books = FakeBooks(name=B, educational=True, **knobs)
     seed_company_b(books, "educational", masters=True)
     return books
@@ -114,3 +115,12 @@ def test_the_live_forex_closing_breaks_parse_ledger_list():
     from v2.agent.tally.amounts import AmountParseError
     with pytest.raises(AmountParseError, match="132929.85"):
         _ledgers(_books(forex_ledger_closing="expression"))
+
+
+def test_the_live_forex_opening_breaks_parse_ledger_list_too():
+    """C47 review I2: live, the USD party's (FY-scoped) OpeningBalance is the same expression as its closing
+    (p22_B_usd_ledger.xml:52). With the closing plain, the opening alone still breaks the agent's Ledger parser."""
+    import pytest
+    from v2.agent.tally.amounts import AmountParseError
+    with pytest.raises(AmountParseError, match="132929.85"):
+        _ledgers(_books(ledger_opening_scope="fy", forex_ledger_opening="expression"))

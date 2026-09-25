@@ -17,6 +17,7 @@ def _books(**knobs) -> FakeBooks:
     # test_b_the_live_forex_closing_is_a_harness_error_today). The other tests here are about the INR ledgers, so they
     # use the candidate plain form unless a test says otherwise.
     knobs.setdefault("forex_ledger_closing", "plain")
+    knobs.setdefault("forex_ledger_opening", "plain")         # C47 review I2: same, for the FY-scoped opening
     books = FakeBooks(name=B, educational=True, **knobs)
     seed_company_b(books, "educational", masters=True)
     return books
@@ -125,4 +126,11 @@ async def test_b_the_live_forex_closing_is_a_harness_error_today(tmp_path):
     -? 132929.85`. `parse_ledger_list` raises on it, so a 16 B re-run BLOCKs with a harness error. Known gap, pinned so
     it can't pass silently: fix probe 16's ledger read before any 16 B re-run (plan part 7 review M4)."""
     part = await _run(tmp_path, _books(forex_ledger_closing="expression"))
+    assert part["outcome"] == "BLOCKED" and "AmountParseError" in part["summary"] and "132929.85" in part["summary"]
+
+
+async def test_b_the_live_forex_opening_is_a_harness_error_today_too(tmp_path):
+    """C47 review I2: even with the closing half parsed, the USD party's FY-scoped OpeningBalance is an expression
+    too (p22_B_usd_ledger.xml:52), so a closing-only parser fix would still BLOCK 16 B live."""
+    part = await _run(tmp_path, _books(ledger_opening_scope="fy", forex_ledger_opening="expression"))
     assert part["outcome"] == "BLOCKED" and "AmountParseError" in part["summary"] and "132929.85" in part["summary"]

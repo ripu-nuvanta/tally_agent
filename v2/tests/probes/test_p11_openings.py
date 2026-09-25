@@ -16,6 +16,10 @@ BOOKS_SCOPE = {"stock_opening_scope": "books"}   # review M4: the pre-C46 hypoth
 
 
 def _books(**knobs) -> FakeBooks:
+    # C47 review I2: live, the USD party's FY-scoped OpeningBalance is an expression that probe 11 B can't parse today
+    # (pinned by test_b_the_live_forex_opening_is_a_harness_error_today). The other tests are about the INR ledgers,
+    # the bill and stock, so they use the candidate plain form unless a test says otherwise.
+    knobs.setdefault("forex_ledger_opening", "plain")
     books = FakeBooks(name=B, educational=True, **knobs)
     seed_company_b(books, "educational", masters=True)
     return books
@@ -141,3 +145,12 @@ async def test_current_period_stock_says_rate_and_value_are_recorded_not_judged(
 async def test_books_scope_stock_judges_rate_and_value(tmp_path):
     part = await _run(tmp_path, _books(**BOOKS_SCOPE))
     assert "not judged" not in part["summary"]
+
+
+async def test_b_the_live_forex_opening_is_a_harness_error_today(tmp_path):
+    """C47 review I2 (live 2026-09-25, p22_B_usd_ledger.xml:52): with FY-scoped openings (live, probe 11 B) the USD
+    party's OpeningBalance is `-$1609.71 @ ? 82.58/$ = -? 132929.85`. `parse_ledger_list` raises on it, so a 11 B
+    re-run BLOCKs with a harness error. Known gap, pinned like 16 B's closing: an expression-form balance parser is
+    needed before any 11 B re-run (open S1 decision)."""
+    part = await _run(tmp_path, _books(ledger_opening_scope="fy", forex_ledger_opening="expression"))
+    assert part["outcome"] == "BLOCKED" and "AmountParseError" in part["summary"] and "132929.85" in part["summary"]

@@ -156,3 +156,38 @@ def test_the_fakes_trial_balance_is_out_by_the_forex_difference_like_live():
     assert total == Decimal("183.87")                                  # live note: "total observed: 183.87"
     sundry = next(r for r in rows if r["account_name"] == "Sundry Debtors")["closing_balance"]
     assert abs(sundry) == Decimal("2590148.41")                        # live: "Tally has |-2590148.41|"
+
+
+def _usd_party_row(books) -> dict:
+    """Probe 22 B's own USD-ledger request, asked of the fake."""
+    import httpx
+    from v2.agent.tally.envelopes import formula_string
+    from v2.probes import p22_forex as p22
+    from v2.probes.reads import master_request
+    from v2.probes.setup.company_b_data import USD_EXPORT_PARTY
+    xml = master_request("S0P22Ledger", "Ledger", p22.LEDGER_FIELDS, B,
+                         filters=[("S0P22IsParty", f"$Name = {formula_string(USD_EXPORT_PARTY)}")])
+    with httpx.Client(transport=books.transport(), base_url="http://tally") as client:
+        text = client.post("/", content=xml.encode("utf-8")).text
+    return read_objects(text, "LEDGER", p22.LEDGER_FIELDS)[0]
+
+
+def test_the_usd_party_opening_and_closing_match_the_live_capture():
+    """C47 review I2: live exports the USD party's OpeningBalance as an expression too (p22_B_usd_ledger.xml:51-52,
+    the current FY's opening — probe 11 B live: ledger openings are FY-scoped)."""
+    from v2.probes import p22_forex as p22
+    from v2.tests.probes.fake_books import seed_company_b
+    live = read_objects((_SYNC / "p22_B_usd_ledger.xml").read_text(encoding="utf-8"), "LEDGER", p22.LEDGER_FIELDS)[0]
+    books = FakeBooks(name=B, educational=True, ledger_opening_scope="fy")
+    seed_company_b(books, "educational", masters=True)
+    row = _usd_party_row(books)
+    assert (row["OpeningBalance"], row["ClosingBalance"]) == (live["OpeningBalance"], live["ClosingBalance"])
+    assert row["OpeningBalance"] == LIVE_USD_PARTY_CLOSING
+
+
+def test_the_plain_forex_opening_is_a_candidate_knob():
+    from v2.agent.tally.amounts import parse_decimal
+    from v2.tests.probes.fake_books import seed_company_b
+    books = FakeBooks(name=B, educational=True, ledger_opening_scope="fy", forex_ledger_opening="plain")
+    seed_company_b(books, "educational", masters=True)
+    assert parse_decimal(_usd_party_row(books)["OpeningBalance"]) == Decimal("-132929.85")

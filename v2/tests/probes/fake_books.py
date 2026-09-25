@@ -408,7 +408,7 @@ class FakeBooks:
                  forex_export_form: str = "full", forex_ledger_closing: str = "expression", deletes_stick: bool = True,
                  refuse_narrations: tuple[str, ...] = (), forex_currency_listed: bool = True,
                  ledger_currency_sticks: bool = True, forex_rate_symbols_refused: tuple[str, ...] = ("?",),
-                 forex_ledger_revaluation: str = "latest_rate"):
+                 forex_ledger_revaluation: str = "latest_rate", forex_ledger_opening: str = "expression"):
         self.folder = folder
         # plan part 7 (probe 22). Task 3.9 pinned the defaults to the live read-back on company B (2026-09-25:
         # forex_shape_2026-09-25_run2/, run1_currency_refused/; test_fake_books_forex.py compares them with the
@@ -433,6 +433,11 @@ class FakeBooks:
         # a currency ledger's ClosingBalance: live — "expression" (C47, 2026-09-25: `-$1609.71 @ ? 82.58/$ =
         # -? 132929.85` after setup-b). "plain" (a number) is a candidate.
         self.forex_ledger_closing = forex_ledger_closing
+        # a currency ledger's OpeningBalance: live — "expression" (C47 review I2, p22_B_usd_ledger.xml:52: the
+        # FY-scoped opening `-$1609.71 @ ? 82.58/$ = -? 132929.85`, the same form as the closing). It only shows when
+        # the opening carries forex lines, i.e. under `ledger_opening_scope="fy"` (live); the books-scope opening is
+        # the master's own INR opening. "plain" (a number) is a candidate.
+        self.forex_ledger_opening = forex_ledger_opening
         # C47, live 2026-09-25: "latest_rate" — a currency ledger's balance is its face total × the rate of its
         # latest-dated forex voucher, not the sum of the INR bases (Export Sales keeps the bases, so the TB is out by
         # the unrealised difference). "bases" (the plain sum) is a candidate.
@@ -802,16 +807,20 @@ class FakeBooks:
                     continue        # I1 knob: the formula filter never matches a non-ASCII `wanted`
                 if name != wanted:
                     continue
+            opening_text = None
             if self.ledger_opening_scope == "fy":
                 nominal = self._primary_of(state, led["parent"]) in NOMINAL_PRIMARIES
                 opening = Decimal("0.00") if nominal else before_fy.get(name, Decimal("0.00"))
+                if self.forex_ledger_opening == "expression":          # C47 review I2: the live opening form
+                    opening_text = self._forex_balance_text(state, name, opening, up_to="99991231",
+                                                            before=_fy_start(closing_to))
             else:
                 opening = Decimal(led.get("opening") or "0.00")
             parts = [f"<NAME>{esc(name)}</NAME>"]
             if "parent" in fields:
                 parts.append(f"<PARENT>{esc(led['parent'])}</PARENT>")
             if "openingbalance" in fields:
-                parts.append(f"<OPENINGBALANCE>{_amount_text(opening)}</OPENINGBALANCE>")
+                parts.append(f"<OPENINGBALANCE>{esc(opening_text or _amount_text(opening))}</OPENINGBALANCE>")
             if "currencyname" in fields:                   # plan part 7 (candidate: "" for a base-currency ledger)
                 parts.append(f"<CURRENCYNAME>{esc(led.get('currency', ''))}</CURRENCYNAME>")
             if "closingbalance" in fields:
@@ -836,19 +845,29 @@ class FakeBooks:
         `forex_ledger_closing == "expression"` — then the live C47 form (2026-09-25, ledger_details after setup-b):
         `-$1609.71 @ ? 82.58/$ = -? 132929.85` — face total @ the latest voucher rate = `closing` (the revalued
         balance from `_ledger_balances`), in the base currency's own prefix."""
-        currency = state["ledgers"].get(name, {}).get("currency", "")
-        if self.forex_ledger_closing != "expression" or not currency or closing == 0:
+        if self.forex_ledger_closing != "expression":
             return _amount_text(closing)
-        lines = [(_yyyymmdd(v["date"]) or v["date"], int(mid), Decimal(line["fx"]), Decimal(line.get("rate") or "0"))
+        return self._forex_balance_text(state, name, closing, up_to=up_to)
+
+    def _forex_balance_text(self, state: dict, name: str, amount: Decimal, *, up_to: str,
+                            before: str | None = None) -> str:
+        """The live C47 expression for a currency ledger's balance `amount` over its forex lines dated ≤ up_to (and
+        < before, when given — an opening): face total @ the latest voucher rate = amount. Plain when the ledger has
+        no currency, no such lines, or a zero balance. Shared by the ClosingBalance and (review I2) OpeningBalance."""
+        currency = state["ledgers"].get(name, {}).get("currency", "")
+        if not currency or amount == 0:
+            return _amount_text(amount)
+        lines = [(day, int(mid), Decimal(line["fx"]), Decimal(line.get("rate") or "0"))
                  for mid, v in state["vouchers"].items()
-                 if not _flagged(v) and (_yyyymmdd(v["date"]) or v["date"]) <= up_to
+                 for day in [_yyyymmdd(v["date"]) or v["date"]]
+                 if not _flagged(v) and day <= up_to and (before is None or day < before)
                  for line in v.get("lines", []) if line["ledger"] == name and line.get("fx")]
         if not lines:
-            return _amount_text(closing)
+            return _amount_text(amount)
         fx_total = sum((fx for _, _, fx, _ in lines), Decimal("0.00"))
-        sign, prefix = ("-" if closing < 0 else ""), self._base_prefix(state)
+        sign, prefix = ("-" if amount < 0 else ""), self._base_prefix(state)
         return (f"{sign}{currency}{abs(fx_total):.2f} @ {prefix}{max(lines)[3]:.2f}/{currency} = "
-                f"{sign}{prefix}{abs(closing):.2f}")
+                f"{sign}{prefix}{abs(amount):.2f}")
 
     @staticmethod
     def _base_prefix(state: dict) -> str:
