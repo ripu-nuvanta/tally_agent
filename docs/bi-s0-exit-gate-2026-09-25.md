@@ -10,6 +10,10 @@
 
 ## Verdict summary
 
+> **Superseded 2026-09-25. See "Final verdict (2026-09-25)" at the end.** Items 3, 5 and 7 were closed after this
+> audit, by `e8420f1`, `9830e97`, and `bb71f83` + `86df230`/`b92a659`/`da9e7d4`. The table below and the
+> "Recommendation" sections keep the audit as written at `a5cafc0`.
+
 | # | Gate item | Verdict |
 |---|---|---|
 | 1 | Every tier-B probe has an outcome (none PARTIAL or unrun) | **PASS** |
@@ -308,3 +312,71 @@ Once those are closed and item 5 is OK, **the gate passes with recorded exceptio
 - expression-form parsing (an S1 input);
 - §6 L734–735 and C47 parity wording (an S1 input);
 - gitignored evidence logs.
+
+---
+
+## Final verdict (2026-09-25)
+
+**S0 exit gate PASSES with recorded exceptions.** This supersedes both "Recommendation" blocks above.
+
+| # | Gate item | Final verdict | Closed by |
+|---|---|---|---|
+| 1 | Every tier-B probe has an outcome | **PASS** | audit (`f0104e4`) |
+| 2 | Every DIFFERENT / FAILED has its Part 1 spec change | **PASS** | audit. The stale body lines were corrected in `e8420f1`. |
+| 3 | Probes 16, 17, 18 written into Part 1 §6 and §16 | **PASS** | `e8420f1`: §6 "Rung 1" now has probe 16's as-of and post-dated rule, C45 and C47 |
+| 4 | Q22/Q23 answerable from probe 21's storage table | **PASS** | audit |
+| 5 | Company A anchors | **PASS** (live 2026-09-25 17:12) | `9830e97` |
+| 6 | Tests pass; only `v2/` + `docs/` changed | **PASS**, exception (a) | audit. Suite at the fix commits: 912, then **917 passed**, normal and `-W error`. |
+| 7 | A code review is stored for every S0 plan part | **PASS** | `bb71f83` (part-2 retro review + C47 catch-up review); its two Important findings were fixed in `86df230` (I1) and `b92a659` (I2); fix round recorded in `da9e7d4` |
+
+**Recorded exceptions.** None of these blocks S0. Each one is carried forward as stated.
+
+- **(a) `CLAUDE.md` changed on this branch.** Commit `dc9bf02` adds the "Always update the tracker" rule. It is
+  process documentation only. **Accepted.**
+- **(b) Every result comes from Educational TallyPrime 7.0 running under Wine.** Confirmation on a licensed install is
+  deferred to tier C. **R8 stays open.**
+- **(c) Probes 9 and 20 are ⏭ tier C (Q29).** S0 spec §8 allows this, along with the timing half of 21 and the
+  standard-edition runs of 7 and 13.
+- **(d) Probes 11 B and 16 B can't be re-run until an expression-form balance parser exists.** This is an open S1
+  decision.
+  - The USD party's `OpeningBalance` and `ClosingBalance` both export as `-$1609.71 @ ? 82.58/$ = -? 132929.85`.
+  - Since `b92a659`, both tags are pinned offline:
+    - FakeBooks matches `p22_B_usd_ledger.xml`;
+    - 11 B and 16 B BLOCK with `AmountParseError`.
+  - Their stored verdicts stand, because they were measured before the forex data existed.
+- **(e) Plan part 7 review M4.** The B verdicts of probes 3, 11, 14, 16 and 25 were judged against the pre-forex
+  dataset: 958 vouchers, 25 ledgers, no USD party. A later difference reflects that dataset change, not a regression.
+- **(f) The part-2 retro review's 10 latent Minors are deferred to S1 hardening**
+  (`docs/code-review-bi-s0-part2-retro-2026-09-25.md`). The retro says to do M2, M3, M7 and M8 before any tier-C or
+  licensed re-run of the A batch.
+  - **M1:** probe 7's CONFIRMED summary claims something it never checks.
+  - **M2:** probe 13 judges "counters fall back" without first checking that they rose.
+  - **M3:** `replace_company_folder` and `backup_company` delete before they copy.
+  - **M4:** the operator text still says it "never edits tally.ini", but it has done so since C44.
+  - **M5:** `_set_ini_load` rewrites only the first `Load=` line.
+  - **M6:** `SystemRunner.list_tally` matches any command line that contains "tally.exe".
+  - **M7:** probe 10's "popup not raised" path leaves a stock group behind with no cleanup note.
+  - **M8:** the auto-operator keeps a voucher ref after a restore has removed the voucher.
+  - **M9:** `run_order` marks a company "current" without switching to it.
+  - **M10:** deferred B1/B3/B5 minors:
+    - p17's `spec_impact` dict repr;
+    - p18 doesn't skip `ISPOSTDATED`;
+    - `run_probe` / `run_anchor_check` record no traceback.
+- **(g) The C47 review's Minors M1–M6 are deferred**
+  (`docs/code-review-bi-s0-part7-c47-2026-09-25.md`):
+  - M1: latest-dated vs last-entered rate;
+  - M2: setup-b's expected C47 gap is printed but not checked;
+  - M3: a `no_base` closing leaves probe 22's revaluation empty;
+  - M4: probe 22 is silent on other revaluation rules;
+  - M5: an inconsistent FakeBooks `bases` + `expression` candidate;
+  - M6: probe 23 B's `bill_date_differs` fires on a missing BILLDATE.
+- **(h) Probe logs are local only.** `*.log` is gitignored, and `logs/` is untracked on this Mac. The committed
+  evidence is the fixtures and `results.json`.
+
+Also carried from the audit, not gate criteria:
+- The unrelated untracked root files (write-flow screenshots, cleanup scripts, scratch directories) must not be
+  committed on this branch.
+- Resolving the §6 parity wording (C47, the books-start anchor) in the S1 parity design is an S1 input.
+
+**Next:** the S1 spec (cloud: tables, device auth, ingest, parity). It needs the user for its design decisions,
+including the expression-form balance parser (d) and how parity handles C47's unrealised difference.
