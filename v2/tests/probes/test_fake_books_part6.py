@@ -32,11 +32,11 @@ def test_credit_days_reads_tallys_text():
     assert credit_days("") is None and credit_days(None) is None and credit_days("30") is None
 
 
-def test_the_flagged_pairs_and_the_skipped_usd_sales():
+def test_the_flagged_pairs_and_the_written_usd_sales():
     cancelled, optional = flagged_tags("educational")
     assert cancelled == {201, 202} and optional == {301, 302}
     written = written_vouchers("educational")
-    assert len(written) == 958 and 101 not in written and 102 not in written
+    assert len(written) == 960 and 101 in written and 102 in written   # plan part 7: 101/102 written with forex (was C36-skipped)
 
 
 def test_bill_terms_carry_bill_date_credit_period_and_due():
@@ -66,12 +66,12 @@ def test_header_collection_lists_flags_and_honours_the_listed_knobs():
     xml = voucher_request("S0P03BVouchers", ["Narration", "IsCancelled", "IsOptional"], B,
                           from_date=B_BOOKS_FROM, to_date=B_BOOKS_TO)
     rows = read_objects(_post(_b(), xml), "VOUCHER", ["Narration", "IsCancelled", "IsOptional"])
-    assert len(rows) == 958
+    assert len(rows) == 960                            # plan part 7: 101/102 written with forex (was C36-skipped)
     assert sum(r["IsCancelled"] == "Yes" for r in rows) == 2 and sum(r["IsOptional"] == "Yes" for r in rows) == 2
     hidden = read_objects(_post(_b(optional_vouchers_listed=False), xml), "VOUCHER", ["Narration"])
-    assert len(hidden) == 956
+    assert len(hidden) == 958
     header_only = read_objects(_post(_b(header_lists_flagged=False), xml), "VOUCHER", ["Narration"])
-    assert len(header_only) == 954                     # review I3: the header read alone drops all four flagged
+    assert len(header_only) == 956                     # review I3: the header read alone drops all four flagged
 
 
 def test_month_export_carries_bill_date_and_credit_period():

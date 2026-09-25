@@ -39,7 +39,7 @@ def test_windows_follow_the_written_dataset():
     june = expect_window("educational", *JUNE)
     assert len(june.written) == 20 and not june.flagged and not june.skipped
     sep = expect_window("educational", date(2022, 9, 1), date(2022, 9, 30))
-    assert len(sep.written) == 18 and sep.skipped == {101, 102}          # C36: the USD sales were never written
+    assert len(sep.written) == 20 and sep.skipped == frozenset()         # plan part 7: 101/102 written with forex (was C36-skipped)
     feb = expect_window("educational", date(2023, 2, 1), date(2023, 2, 28))
     assert len(feb.written) == 20 and feb.flagged == {201, 202}         # cancelled: written, flagged
     assert feb.unflagged == frozenset(feb.written) - {201, 202}
@@ -50,10 +50,11 @@ def test_windows_follow_the_written_dataset():
 
 def test_fy2022_kind_mix_is_what_probe_21_weights_storage_by():
     fy = expect_window("educational", date(2022, 4, 1), date(2023, 3, 31))
-    assert len(fy.written) == 238
+    assert len(fy.written) == 240                                      # plan part 7: 101/102 written with forex (was C36-skipped)
     assert Counter(kind_label(v) for v in fy.written.values()) == Counter({
         "sales+inventory+bills": 81, "purchase+inventory+bills": 60, "receipt+bills": 40, "payment+bills": 24,
-        "sales+inventory": 13, "payment": 12, "receipt": 8})
+        "sales+inventory": 13, "payment": 12, "receipt": 8,
+        "sales": 2})                               # plan part 7: 101/102 written with forex (was C36-skipped)
     assert dataset("educational") is dataset("educational")            # cached, generated once
 
 
@@ -79,7 +80,7 @@ def test_compare_reports_missing_extra_untagged_and_duplicates():
     result = compare_tags(rows, june, *JUNE)
     assert not result["match"]
     assert result["missing"] == [tags[0]]
-    assert result["extra"] == [101]                         # a skipped tag showing up is extra, never expected
+    assert result["extra"] == [101]                         # a Sep-2022 tag showing up in June is extra, never expected
     assert result["duplicates"] == [tags[1]]
     assert result["untagged"] == 1
 

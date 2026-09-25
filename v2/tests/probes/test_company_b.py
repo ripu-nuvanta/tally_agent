@@ -1,3 +1,4 @@
+import html
 import re
 from dataclasses import replace
 from datetime import date
@@ -12,10 +13,11 @@ from v2.probes.setup.company_b import (
     CompanyBLoadError, LoadReport, _expected_group_balances, _load_masters, _load_vouchers, _verify, load_company_b,
 )
 from v2.probes.setup.company_b_data import (
-    BillSpec, Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec, expected_figures, generate,
+    USD_DEBTOR, USD_EXPORT_PARTY, BillSpec, Dataset, GroupSpec, InventorySpec, LineSpec, UnitSpec, VoucherSpec,
+    expected_figures, generate,
 )
 from v2.probes.setup.writes import B_READBACK_FROM, B_READBACK_TO, TallyWriter, WriteRefused
-from v2.tests.probes.fake_books import FakeBooks, sync_client
+from v2.tests.probes.fake_books import USD_CURRENCY_ROW, FakeBooks, seed_company_b, sync_client
 from v2.tests.probes.fakes import ScriptedIO
 
 B = COMPANIES["B"]
@@ -33,9 +35,13 @@ def _loader(books, **io_kwargs):
     return writer, ScriptedIO(**io_kwargs), said
 
 
-def _empty_b():
+def _empty_b(*, usd_currency: bool = True):
+    """An empty company B shell. Plan part 7: live B has the `$` Currency master, created in the UI (the XML create
+    is refused — forex_shape_2026-09-25_run1_currency_refused/), so the shell has it too unless a test says not."""
     books = FakeBooks(name=B)
     books.edit_state(lambda s: s.update(voucherTypes=["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
+    if usd_currency:
+        books.edit_state(lambda s: s["currencies"].__setitem__("$", dict(USD_CURRENCY_ROW)))
     return books
 
 
@@ -82,7 +88,7 @@ def test_a_first_load_lists_before_creating_and_reads_back_every_write():
     report = load_company_b(writer, io)
     ds = generate()
     assert report.created["groups"] == len(ds.groups)
-    assert report.created["vouchers"] == len(ds.vouchers) - 2                  # C36: 101/102 are never written
+    assert report.created["vouchers"] == len(ds.vouchers)            # plan part 7: 101/102 written with forex (was C36-skipped)
     assert report.problems == []
     # the first request for each type is a read, not an import
     first = books.requests[0]
@@ -107,32 +113,6 @@ def test_a_full_load_leaves_exactly_the_bills_the_dataset_expects_open():
     assert any(name.startswith("Inv/") for _, name in actual) and any(name.startswith("Pur/") for _, name in actual)
 
 
-def test_the_usd_export_sales_are_never_sent_and_are_reported_in_one_note():
-    """C36 (review #2, user decision): tags 101/102 would land as plain INR sales (no forex anywhere), so they are
-    skipped — not silently: one Note in setup-b's report names them and why."""
-    books = _empty_b()
-    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
-    report = load_company_b(writer, io)
-    imports = [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r]
-    assert not any("[S0-B:101]" in r or "[S0-B:102]" in r for r in imports)
-    assert any("[S0-B:103]" in r for r in imports)                               # its neighbours are not
-    usd = [n for n in report.notes if "101" in n]
-    assert len(usd) == 1 and "102" in usd[0] and "forex not implemented" in usd[0] and "probe 22 blocked" in usd[0]
-    assert report.problems == []
-
-
-def test_a_foreign_currency_voucher_that_is_not_skipped_stops_the_load_before_any_write():
-    """C36 / review #2: a voucher with currency != INR must never be written as a plain INR voucher."""
-    books = _empty_b()
-    writer, io, _ = _loader(books)
-    usd = next(v for v in generate().vouchers if v.tag == 101)
-    tiny = Dataset(groups=(), units=(), items=(), ledgers=(), vouchers=(replace(usd, skip_reason=None),),
-                   licence="licensed")
-    with pytest.raises(CompanyBLoadError, match=r"S0-B:101.*USD"):
-        _load_vouchers(writer, io, B, tiny, LoadReport())
-    assert [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r] == []
-
-
 def test_a_second_load_sends_zero_creates():
     books = _empty_b()
     writer, io, _ = _loader(books)
@@ -142,7 +122,8 @@ def test_a_second_load_sends_zero_creates():
     after = len([r for r in books.requests if "Import Data" in r])
     assert after == before                       # nothing new was sent
     assert sum(report.created.values()) == 0
-    assert report.skipped["vouchers"] == 958                                   # C36: 101/102 are never written
+    assert report.skipped["vouchers"] == 960        # plan part 7: 101/102 written with forex (was C36-skipped)
+    assert report.skipped["currencies"] == 1 and not any("<CURRENCY " in r for r in books.requests)
 
 
 def test_a_master_that_already_exists_is_not_recreated():
@@ -489,7 +470,7 @@ def test_a_missing_flagged_voucher_on_a_resumed_run_is_not_recreated():
     books.edit_state(remove_tag_201)
     report = load_company_b(writer, io)
     assert report.created["vouchers"] == 0
-    assert report.skipped["vouchers"] == 957                                   # 958 written (C36) less 201
+    assert report.skipped["vouchers"] == 959        # 960 written (plan part 7: 101/102 with forex, was C36) less 201
     assert any("[S0-B:201]" in p for p in report.problems)
     assert any("[S0-B:201]" in p for p in report.pauses)
 
@@ -650,9 +631,16 @@ LIVE_RUN4_EDUCATIONAL = {"Sundry Debtors": Decimal("2457218.56"), "Sales Account
                          "Duties & Taxes": Decimal("353626.24")}
 
 
+# Plan part 7: run 4 had 101/102 skipped (C36). Written now, both USD sales' INR base (₹37,216.04 + ₹95,897.68) adds
+# to Sundry Debtors (the USD party) and to Sales Accounts (Export Sales), and nothing else moves.
+USD_SALES_BASE = Decimal("37216.04") + Decimal("95897.68")
+EDUCATIONAL_WITH_FOREX = {b: v + (USD_SALES_BASE if b in ("Sundry Debtors", "Sales Accounts") else 0)
+                          for b, v in LIVE_RUN4_EDUCATIONAL.items()}
+
+
 def test_expected_group_balances_for_educational_equal_the_live_run4_figures():
     expected = _expected_group_balances(generate("educational"))
-    assert {b: abs(expected[b]) for b in LIVE_RUN4_EDUCATIONAL} == LIVE_RUN4_EDUCATIONAL
+    assert {b: abs(expected[b]) for b in LIVE_RUN4_EDUCATIONAL} == EDUCATIONAL_WITH_FOREX       # plan part 7
 
 
 def test_an_educational_load_through_the_fake_lands_the_live_run4_figures_and_verifies_clean():
@@ -662,4 +650,147 @@ def test_an_educational_load_through_the_fake_lands_the_live_run4_figures_and_ve
     assert report.problems == []
     rows = exploded_tb_rows(writer.b_trial_balance(B, B_READBACK_FROM, B_READBACK_TO))
     actual = {r["account_name"]: abs(r["closing_balance"]) for r in rows if r["account_name"] in LIVE_RUN4_EDUCATIONAL}
-    assert actual == LIVE_RUN4_EDUCATIONAL
+    assert actual == EDUCATIONAL_WITH_FOREX                                                    # plan part 7
+
+
+# --- plan part 7: the USD export sales written with the live forex shape (C36 lifted) -------------------------------
+def _full_load(licence: str = "educational"):
+    books = _empty_b()
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    return books, load_company_b(writer, io, licence=licence)
+
+
+def _loaded_b():
+    """Company B as a clean part-7 `setup-b` leaves it (seed_company_b: masters, the `$` currency, all 960)."""
+    books = FakeBooks(name=B, educational=True)
+    seed_company_b(books, "educational", masters=True)
+    return books
+
+
+def _drop_tags(*tags):
+    def mutate(state):
+        for mid in [m for m, v in state["vouchers"].items()
+                    if any(v["narration"].startswith(f"[S0-B:{t}]") for t in tags)]:
+            del state["vouchers"][mid]
+    return mutate
+
+
+def _load(books):
+    writer, io, _ = _loader(books, on_wait=_operator_who_honours_flag_pauses(books))
+    return load_company_b(writer, io, licence="educational")
+
+
+def _imports(books) -> list[str]:
+    return [r for r in books.requests if "<TALLYREQUEST>Import Data</TALLYREQUEST>" in r]
+
+
+def test_the_loader_never_creates_the_currency_and_stops_before_any_write_without_it():
+    """Live 2026-09-25 (forex_shape_2026-09-25_run1_currency_refused/): the XML `$` create is refused and leaves an
+    import-exception master behind that then blocks the UI create. So setup-b never sends one: no `$` → stop, name
+    the UI steps, and write nothing at all."""
+    books = _empty_b(usd_currency=False)
+    writer, io, _ = _loader(books)
+    with pytest.raises(CompanyBLoadError, match=r"(?s)'\$'.*Formal name USD.*Create → Currency"):
+        load_company_b(writer, io, licence="educational")
+    assert _imports(books) == [] and not any("<CURRENCY " in r for r in books.requests)
+
+
+def test_a_currency_listed_under_its_formal_name_satisfies_the_currency_check():
+    from v2.probes.setup.company_b import _require_currencies
+    books = _empty_b(usd_currency=False)
+    books.edit_state(lambda s: s["currencies"].__setitem__("USD", {"MailingName": "USD", "ExpandedSymbol": "USD"}))
+    writer, _, _ = _loader(books)
+    report = LoadReport()
+    _require_currencies(writer, B, generate("educational"), report)       # review I5: symbol OR formal name
+    assert (report.created["currencies"], report.skipped["currencies"]) == (0, 1)
+    assert _imports(books) == []
+
+
+def test_load_uses_the_ui_created_currency_for_the_usd_ledger():
+    books, report = _full_load()
+    assert (report.created["currencies"], report.skipped["currencies"]) == (0, 1) and not report.problems
+    assert not any("<CURRENCY " in r for r in books.requests)
+    ledger = next(r for r in _imports(books) if f'LEDGER NAME="{USD_EXPORT_PARTY}"' in r)
+    assert "<CURRENCYNAME>$</CURRENCYNAME>" in ledger and "<ISBILLWISEON>No</ISBILLWISEON>" in ledger
+    assert books.state["ledgers"][USD_EXPORT_PARTY]["currency"] == "$"
+    assert "currency" not in books.state["ledgers"][USD_DEBTOR]          # fact 1: Gulf stays an INR ledger
+
+
+def test_usd_sales_go_out_with_the_live_v1b_amounts():
+    """V1b (forex_shape_2026-09-25_run2): the full form with the rate written WITHOUT a base symbol — V1's `@ ?82.99`
+    was refused."""
+    books, _ = _full_load()
+    for tag, fx, rate, inr in ((101, "448.44", "82.99", "37216.04"), (102, "1161.27", "82.58", "95897.68")):
+        body = next(r for r in _imports(books) if f"[S0-B:{tag}]" in r)
+        amounts = [html.unescape(a) for a in re.findall(r"<AMOUNT>([^<]*)</AMOUNT>", body)]
+        assert amounts == [f"-${fx} @ {rate}/$ = -{inr}", f"${fx} @ {rate}/$ = {inr}"]
+        assert "BILLALLOCATIONS" not in body and "INVENTORY" not in body
+
+
+def test_second_load_sends_no_currency_create_and_no_voucher():
+    books, _ = _full_load()
+    before = len(_imports(books))
+    report = _load(books)
+    assert report.created == {k: 0 for k in report.created} and report.skipped["currencies"] == 1
+    assert len(_imports(books)) == before and not report.problems
+
+
+def test_a_foreign_voucher_without_fx_fields_stops_the_load(monkeypatch):
+    from v2.probes.setup import company_b
+    ds = generate("educational")
+    broken = replace(ds, vouchers=tuple(replace(v, fx_rate=None) if v.tag == 101 else v for v in ds.vouchers))
+    monkeypatch.setattr(company_b, "generate", lambda licence="licensed": broken)
+    books = _empty_b()
+    writer, io, _ = _loader(books)
+    with pytest.raises(CompanyBLoadError, match=r"\[S0-B:101\].*fx"):
+        load_company_b(writer, io, licence="educational")
+    assert not any("[S0-B:" in r for r in _imports(books))                     # before any voucher is sent
+
+
+def test_formerly_skipped_gap_is_a_note_not_a_problem():
+    books = _loaded_b()
+    books.edit_state(_drop_tags(101, 102))                  # = live B after C36: 958 vouchers, `$` made in the UI
+    books.edit_state(lambda s: s["ledgers"].pop(USD_EXPORT_PARTY))
+    report = _load(books)
+    assert report.created["vouchers"] == 2 and report.created["ledgers"] == 1
+    assert (report.created["currencies"], report.skipped["currencies"]) == (0, 1)
+    assert not report.problems, report.problems
+    assert any("[S0-B:101, 102]" in n and "plan part 7" in n for n in report.notes)
+
+
+def test_any_other_gap_in_that_fy_is_still_a_problem():
+    books = _loaded_b()
+    books.edit_state(_drop_tags(101, 102, 103))
+    report = _load(books)
+    assert any("FY 2022-23" in p and "missing" in p for p in report.problems)
+    assert not any("plan part 7" in n for n in report.notes)
+
+
+def test_existing_usd_party_without_its_currency_is_a_problem_and_never_altered():
+    books = _loaded_b()
+    books.edit_state(lambda s: s["ledgers"][USD_EXPORT_PARTY].__setitem__("currency", ""))
+    report = _load(books)
+    assert any(USD_EXPORT_PARTY in p and "currency" in p and "never altered" in p for p in report.problems)
+    assert not any(USD_EXPORT_PARTY in r for r in _imports(books))
+
+
+def test_full_load_with_forex_verifies_clean():
+    books, report = _full_load()
+    assert report.created["vouchers"] == 960 and not report.problems            # TB magnitudes incl. the base
+
+
+def test_forex_sale_round_trips_through_the_extractors_request():
+    """CLAUDE.md "Test reality" rule 7, S0 edition: load → read back through probe 5's confirmed request (the typed
+    `svdates_typed` form live confirmed) → the forex text survives and parses to the dataset's INR base."""
+    from v2.probes import p05_voucher_month_bounds as p05
+    from v2.probes.company_b_view import tag_of
+    from v2.probes.reads import fill_month_request, forex_base, parse_forex_amount, parse_vouchers, primary_lines
+    books, _ = _full_load()
+    writer, _, _ = _loader(books)
+    raw = writer.post(fill_month_request(p05.svdates_template(), B, "01-09-2022", "02-09-2022"))
+    by_tag = {tag_of(v["header"]["NARRATION"]): v for v in parse_vouchers(raw)}
+    for tag, inr in ((101, Decimal("37216.04")), (102, Decimal("95897.68"))):
+        lines = primary_lines(by_tag[tag])
+        assert all(l["amount_raw"].count("? ") == 2 for l in lines)            # the live export layout
+        bases = [forex_base(parse_forex_amount(l["amount_raw"]))[0] for l in lines]
+        assert sorted(bases) == [-inr, inr] and sum(bases) == 0

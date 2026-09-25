@@ -65,8 +65,12 @@ from v2.probes.companies import COMPANIES
 from v2.probes.console import ProbeIO
 from v2.probes.reads import exploded_tb_rows, primary_group_rows, voucher_request
 from v2.probes.setup.company_b_data import (
+    FOREX_BASE_SYMBOL,
+    FOREX_FORM,
+    FORMERLY_SKIPPED_TAGS,
     SALES_GST_VOUCHER_TYPE,
     Dataset,
+    VoucherSpec,
     expected_figures,
     fy_label,
     generate,
@@ -75,10 +79,12 @@ from v2.probes.setup.company_b_data import (
 from v2.probes.setup.writes import (
     B_READBACK_FROM,
     B_READBACK_TO,
+    ForexLine,
     TallyWriter,
     WriteFailed,
     WriteTimeout,
     check_writable,
+    currency_matches,
     validate_b_voucher,
 )
 
@@ -90,7 +96,7 @@ BALANCE_TOLERANCE = Decimal("1.00")
 _TAG_RE = re.compile(r"^\[S0-B:(\d+)\]")
 _VOUCHER_LIST_FIELDS = ["MasterId", "Narration", "Date"]
 _VOUCHER_FLAG_FIELDS = ["MasterId", "Narration", "IsCancelled", "IsOptional"]
-_MASTER_KINDS = ("groups", "units", "items", "ledgers", "vouchers")
+_MASTER_KINDS = ("currencies", "groups", "units", "items", "ledgers", "vouchers")
 
 
 class CompanyBLoadError(Exception):
@@ -112,6 +118,7 @@ def load_company_b(writer: TallyWriter, io: ProbeIO, *, licence: str = "licensed
     dataset = generate(licence=licence)
     report = LoadReport()
     _require_voucher_type(writer, io, company, report)
+    _require_currencies(writer, company, dataset, report)
     _load_masters(writer, io, company, dataset, report)
     _load_openings(writer, io, company, dataset, report)
     report.pauses.append(F2_INSTRUCTION)           # M1: mirror the other pauses
@@ -136,6 +143,25 @@ def _require_voucher_type(writer: TallyWriter, io: ProbeIO, company: str, report
     if SALES_GST_VOUCHER_TYPE not in writer.list_voucher_types(company):
         raise CompanyBLoadError(
             f"{SALES_GST_VOUCHER_TYPE!r} still missing after the operator pause — cannot continue.")
+
+
+def _require_currencies(writer: TallyWriter, company: str, dataset: Dataset, report: LoadReport) -> None:
+    """Plan part 7: the Currency masters the forex sales need must already exist — made in the UI. The loader never
+    sends a Currency create: live on 2026-09-25 the XML create of `$` was refused (EXCEPTIONS=1, no LINEERROR) AND
+    left `$` behind as an import-exception master that then made the UI refuse the create too
+    (v2/tests/fixtures/sync/forex_shape_2026-09-25_run1_currency_refused/). A missing currency stops the load here,
+    before any write. "Present" is `currency_matches` on any listed row: the symbol or the formal name."""
+    rows = writer.currency_rows(company)
+    for c in dataset.currencies:
+        if any(currency_matches(row, c) for row in rows):
+            report.skipped["currencies"] += 1
+            continue
+        raise CompanyBLoadError(
+            f"Currency {c.symbol!r} ({c.formal_name}) is not in {company!r}, and setup-b never creates it over XML "
+            "(live 2026-09-25: the create is refused and leaves an import-exception master that blocks the UI create "
+            f"— restore the backup first if that happened). In TallyPrime create `{c.symbol}` (Formal name "
+            f"{c.formal_name}, ISO {c.formal_name}) in the UI: Create → Currency. Then re-run setup-b. Nothing was "
+            "written.")
 
 
 # --- stage 2: groups -> units -> items -> ledgers ----------------------------------------------------------------
@@ -211,12 +237,19 @@ def _load_masters(writer: TallyWriter, io: ProbeIO, company: str, dataset: Datas
             if existing_ledgers[l.name] != l.parent:                                                       # I4
                 report.problems.append(
                     f"ledger {l.name!r}: parent is {existing_ledgers[l.name]!r} in Tally, expected {l.parent!r}")
+            if l.currency:                                                                         # plan part 7
+                details = writer.ledger_details(company, l.name)
+                got = details.get("CurrencyName", "") if details else None
+                if got != l.currency:
+                    report.problems.append(
+                        f"ledger {l.name!r}: currency is {got!r} in Tally, expected {l.currency!r} — never altered by "
+                        "the loader (a currency change re-casts the ledger's vouchers); fix it in the UI or restore")
             report.skipped["ledgers"] += 1
             continue
         if _create_or_pause(writer, io, report, "ledger", l.name,
                             lambda l=l: writer.create_party_ledger(company, l.name, parent=l.parent,
                                                                    bill_wise=l.bill_wise, opening=l.opening,
-                                                                   gstin=l.gstin),
+                                                                   gstin=l.gstin, currency=l.currency),
                             lambda l=l: l.name in writer.list_ledgers(company)):
             report.created["ledgers"] += 1
         else:
@@ -305,18 +338,29 @@ def _latest_complete_fy(pre_by_fy: dict[str, int], expected_by_fy: dict[str, int
 
 
 def _flag_predated_drift(pre_by_fy: dict[str, int], expected_by_fy: dict[str, int], latest_complete: str | None,
-                         report: LoadReport) -> None:
+                         report: LoadReport, *, present: set[int] | None = None,
+                         dataset: Dataset | None = None) -> None:
     """I2: a partial (or zero) FY strictly AFTER the latest already-complete FY is presumed to be a load still
     in progress (an interrupted first run over ~1000 requests into Wine-hosted Tally is the likely path) — not
     flagged. A gap AT OR BEFORE that point is drift: a date-ordered loader would never complete a later FY while
     leaving an earlier one short, so something that was there got removed. `pre_count == 0` for an earlier FY
-    is drift too (not just partial counts) — the same reasoning applies to a whole FY vanishing."""
+    is drift too (not just partial counts) — the same reasoning applies to a whole FY vanishing.
+
+    Plan part 7 (Ruling P7-9): a gap made ONLY of `FORMERLY_SKIPPED_TAGS` (101/102, absent from live B under C36) is a
+    note, not drift. Any other missing tag in that FY keeps the problem line exactly as before."""
     if latest_complete is None:
         return
+    written = {v.tag: v for v in dataset.vouchers if not v.skip_reason} if dataset is not None else {}
     for fy, expected_count in sorted(expected_by_fy.items()):
         if fy > latest_complete:
             continue
         pre_count = pre_by_fy.get(fy, 0)
+        if pre_count != expected_count and present is not None and written:
+            missing = sorted(t for t, v in written.items() if fy_label(v.date) == fy and t not in present)
+            if missing and set(missing) <= FORMERLY_SKIPPED_TAGS and pre_count + len(missing) == expected_count:
+                report.notes.append(f"[S0-B:{', '.join(map(str, missing))}] written now — skipped under C36 until "
+                                    "plan part 7 proved a forex write shape; not drift.")
+                continue
         if pre_count != expected_count:
             report.problems.append(
                 f"FY {fy}: voucher count was {pre_count}/{expected_count} before this run (Tally was missing "
@@ -356,20 +400,30 @@ def validate_dataset(dataset: Dataset) -> list[str]:
                 vch_type=v.vch_type, narration=v.narration, party=v.party, lines=lines,
                 inventory=[(inv.item, unit_by_item.get(inv.item, ""), inv.qty, inv.rate, inv.amount)
                            for inv in v.inventory],
-                bills=[(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills])
+                bills=[(b.name, b.bill_type, b.amount, b.credit_period) for b in v.bills], forex=_forex_of(v))
         except ValueError as exc:
             bad.append(f"[S0-B:{v.tag}] {exc}")
     return bad
 
 
+def _forex_of(v: VoucherSpec) -> ForexLine | None:
+    """Plan part 7: how a foreign-currency voucher goes on the wire — the shape live company B stored (V1b: the full
+    form, the rate without a base symbol; company_b_data.FOREX_FORM / FOREX_BASE_SYMBOL)."""
+    if v.currency == "INR":
+        return None
+    return ForexLine(symbol=v.currency_symbol, fx_amount=v.fx_amount, rate=v.fx_rate, form=FOREX_FORM,
+                     base_symbol=FOREX_BASE_SYMBOL)
+
+
 def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Dataset, report: LoadReport) -> None:
-    # C36 / review #2: create_b_voucher has no currency parameter, so a foreign-currency voucher would go out as a
-    # plain INR one. Unless the dataset skips it, that is a stop — before anything is read or written.
+    # C36 / review #2, plan part 7: a foreign-currency voucher goes out as forex (`_forex_of`) — without its fx fields
+    # it would go out as a plain INR one, the C36 failure. Unless the dataset skips it, that is a stop — before
+    # anything is read or written.
     for v in dataset.vouchers:
-        if v.currency != "INR" and not v.skip_reason:
-            raise CompanyBLoadError(f"[S0-B:{v.tag}] {v.narration}: currency {v.currency} — the writer can only "
-                                    "send INR, so it would be written as a plain INR voucher. Skip it (skip_reason) "
-                                    "until forex is implemented.")
+        if v.currency != "INR" and not v.skip_reason and (v.currency_symbol is None or v.fx_amount is None
+                                                          or v.fx_rate is None):
+            raise CompanyBLoadError(f"[S0-B:{v.tag}] {v.narration}: currency {v.currency} without its fx fields "
+                                    "(currency_symbol, fx_amount, fx_rate) — it would go out as a plain INR voucher.")
     bad = validate_dataset(dataset)                                                                      # C37
     if bad:
         raise CompanyBLoadError(f"{len(bad)} voucher(s) fail pre-send validation — no voucher was sent:\n  "
@@ -382,7 +436,8 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
     expected = expected_figures(dataset)
     pre_by_fy = _pre_run_fy_counts(existing.rows)
     latest_complete = _latest_complete_fy(pre_by_fy, expected.voucher_count_by_fy)
-    _flag_predated_drift(pre_by_fy, expected.voucher_count_by_fy, latest_complete, report)
+    _flag_predated_drift(pre_by_fy, expected.voucher_count_by_fy, latest_complete, report,
+                         present=set(existing.by_tag), dataset=dataset)
 
     # C40: the unit each inventory row's ACTUALQTY/BILLEDQTY/RATE is written in — a compound item's FIRST unit
     # ("5 Box", "950.00/Box"). Live-verified for stock-item openings (2026-09-24); for voucher rows it is inferred
@@ -414,7 +469,7 @@ def _load_vouchers(writer: TallyWriter, io: ProbeIO, company: str, dataset: Data
         try:
             writer.create_b_voucher(company, vch_type=v.vch_type, date=v.date.strftime("%Y%m%d"),
                                     narration=v.narration, party=v.party, lines=lines,
-                                    inventory=inventory, bills=bills, optional=v.optional)
+                                    inventory=inventory, bills=bills, optional=v.optional, forex=_forex_of(v))
         except WriteFailed as exc:                                                                          # C1
             msg = f"[S0-B:{v.tag}] {v.narration}: voucher create failed — create it manually in the Tally UI: {exc}"
             report.pauses.append(msg)

@@ -102,8 +102,14 @@ async def test_a_mixed_stock_scope_fails(tmp_path):
     assert part["outcome"] == "FAILED" and part["observations"]["stock_scope"]["scope"] == "mixed"
 
 
-async def test_the_2026_09_24_live_capture_relabels_to_different_under_c46(tmp_path):
+async def test_the_2026_09_24_live_capture_relabels_to_different_under_c46(tmp_path, monkeypatch):
     """Plan part 6 re-run rule: the new rule on the exact bytes the old rule judged FAILED (stock only)."""
+    # Plan part 7 (pre-flight F1): this capture predates the USD export party the part-7 loader adds, so it is judged
+    # against the ledgers company B had on 2026-09-24 — without that one ledger, which live B did not have yet.
+    from v2.probes.setup.company_b_data import USD_EXPORT_PARTY
+    real_specs = p11.ledger_specs
+    monkeypatch.setattr(p11, "ledger_specs", lambda licence: {n: spec for n, spec in real_specs(licence).items()
+                                                              if n != USD_EXPORT_PARTY})
     fake = FakeTally([B])
     fake.route("S0CompanyCounters", lambda body: objects_xml("COMPANY", [{
         "Name": B, "GUID": "g-b", "AltVchId": "1", "AltMstId": "1", "BooksFrom": "20220401",

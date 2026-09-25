@@ -136,7 +136,7 @@ from v2.tests.probes.fakes import ScriptedIO, ready_store
 
 B = COMPANIES["B"]
 KINDS = {"sales+inventory+bills", "purchase+inventory+bills", "receipt+bills", "payment+bills", "sales+inventory",
-         "payment", "receipt"}
+         "payment", "receipt", "sales"}          # "sales": plan part 7's USD export sales 101/102 (no stock, no bills)
 
 
 def _books(licence: str = "educational") -> FakeBooks:
@@ -163,12 +163,12 @@ async def test_fy2022_is_reached_month_by_month_and_sizes_are_measured(tmp_path)
     obs = part["observations"]
     assert obs["books_from"] == {"exported": "20220401", "expected": "01-04-2022", "match": True}
     assert len(obs["months"]) == 12 and all(m["match"] for m in obs["months"].values())
-    assert obs["months"]["fy2022_month_09"]["expected_written"] == 18                     # 101/102 never written
+    assert obs["months"]["fy2022_month_09"]["expected_written"] == 20                     # plan part 7: 101/102 written with forex (was C36-skipped)
     assert obs["months"]["fy2022_month_02"]["flagged_returned"] == [201, 202]
     assert set(obs["kinds"]) == KINDS
-    assert sum(k["count"] for k in obs["kinds"].values()) == 236                          # 238 minus the cancelled pair
+    assert sum(k["count"] for k in obs["kinds"].values()) == 238                          # 240 minus the cancelled pair (plan part 7: 101/102 written with forex (was C36-skipped))
     assert set(obs["block_bytes"]) == {"ALLLEDGERENTRIES.LIST", "ALLINVENTORYENTRIES.LIST", "BILLALLOCATIONS.LIST"}
-    assert len(obs["storage"]["table"]) == 9 and obs["storage"]["mix_vouchers"] == 236
+    assert len(obs["storage"]["table"]) == 9 and obs["storage"]["mix_vouchers"] == 238
     assert set(obs["storage"]["q22"]) == {"raw_share_pct", "per_fy_mb", "saving_if_raw_dropped_beyond_2_fy_mb"}
     assert obs["timings_ms"]["note"] == TIMING_NOTE and "fy2022_month_04" in obs["timings_ms"]
     assert obs["current_fy_sample"]["month"]["match"]

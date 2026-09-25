@@ -274,8 +274,20 @@ def seed_company_b(books: "FakeBooks", licence="educational", *, masters=False, 
      keeps it: each New Ref opened by a written, unflagged voucher with its signed amount (the party line's sign;
      C34: − = receivable), its bill date and credit period; each Agst Ref added to its bill; the opening bill. The
      vouchers' postings then carry the bill date and credit period too."""
-    from v2.probes.setup.company_b_data import OPENING_BILL_DATE, SALES_GST_VOUCHER_TYPE, generate, quantity_unit
+    from v2.probes.setup.company_b_data import (FOREX_BASE_SYMBOL, FOREX_FORM, OPENING_BILL_DATE,
+                                                SALES_GST_VOUCHER_TYPE, generate, quantity_unit)
+    from v2.probes.setup.writes import ForexLine, forex_amount_text
     data = generate(licence)
+
+    def line_of(state, v, l) -> dict[str, str]:
+        """A seeded line as the loader's import leaves it — a forex voucher's line through the same
+        `_forex_line_text` an import uses (plan part 7 Task 3.8), so the export knobs apply to seeded vouchers too."""
+        line = {"ledger": l.ledger, "amount": f"{l.amount:.2f}", "deemed_positive": "Yes" if l.deemed_positive else "No"}
+        if v.currency != "INR":
+            sent = forex_amount_text(l.amount, ForexLine(v.currency_symbol, v.fx_amount, v.fx_rate, form=FOREX_FORM,
+                                                         base_symbol=FOREX_BASE_SYMBOL))
+            line.update(books._forex_line_text(state, l.amount, parse_forex_amount(sent)))
+        return line
 
     def posting(v, b) -> dict[str, str]:
         entry = {"name": b.name, "type": b.bill_type, "amount": f"{b.amount:.2f}"}
@@ -285,6 +297,9 @@ def seed_company_b(books: "FakeBooks", licence="educational", *, masters=False, 
 
     def fill(state: dict) -> None:
         state["books_from"] = "20220401"
+        if masters:                                   # plan part 7: `$` made in the UI before setup-b (live B has it)
+            for c in data.currencies:
+                state.setdefault("currencies", {})[c.symbol] = dict(USD_CURRENCY_ROW)
         for v in data.vouchers:
             if v.skip_reason:
                 continue
@@ -294,8 +309,7 @@ def seed_company_b(books: "FakeBooks", licence="educational", *, masters=False, 
                 "narration": v.narration, "date": v.date.strftime("%Y%m%d"), "post_dated": "No",
                 "cancelled": "Yes" if v.cancelled else "No", "optional": "Yes" if v.optional else "No",
                 "vch_type": v.vch_type,
-                "lines": [{"ledger": l.ledger, "amount": f"{l.amount:.2f}",
-                           "deemed_positive": "Yes" if l.deemed_positive else "No"} for l in v.lines],
+                "lines": [line_of(state, v, l) for l in v.lines],
                 "inventory": [{"item": i.item, "qty": f"{i.qty if v.kind == 'purchase' else -i.qty}"}
                               for i in v.inventory],
                 "bills": [] if v.cancelled else [posting(v, b) for b in v.bills]}
@@ -318,6 +332,8 @@ def seed_company_b(books: "FakeBooks", licence="educational", *, masters=False, 
                 state["ledgers"][led.name] = {"parent": led.parent, "email": "", "alter_id": 100 + n,
                                               "guid": f"{state['guid']}-b{n:07x}",
                                               "opening": f"{led.opening:.2f}" if led.opening is not None else "0.00"}
+                if led.currency:                                                                   # plan part 7
+                    state["ledgers"][led.name]["currency"] = led.currency
                 if led.opening_bill and led.opening is not None:
                     state.setdefault("bills", {})[led.opening_bill] = {
                         "party": led.name, "amount": f"{led.opening:.2f}", "opening": True,

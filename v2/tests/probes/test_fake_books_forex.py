@@ -110,3 +110,23 @@ def test_fake_forex_line_carries_the_live_extra_fields():
     writer, narration = _write_throwaway(books, party_currency="$", base_symbol="")
     assert extra_live <= set(primary_lines(_fake_voucher(books, writer, narration))[0]["fields"])
     assert extra_live == set()                          # live: a forex line carries no extra leaf field at all
+
+
+def test_seeded_tag_101_exports_the_live_amount_shape():
+    """Plan part 7 Task 3.9: seed_company_b writes 101/102 through the same `_forex_line_text` an import uses, so a
+    seeded forex sale exports like the live throwaway (same figures as tag 101): same grammar, symbols and values."""
+    from v2.probes.reads import parse_forex_amount
+    from v2.tests.probes.fake_books import _export_voucher, seed_company_b
+    books = FakeBooks(name=B, educational=True)
+    seed_company_b(books, "educational", masters=True)
+    state = books.state
+    mid, v = next((m, v) for m, v in state["vouchers"].items() if v["narration"].startswith("[S0-B:101]"))
+    fake = parse_vouchers(f"<ENVELOPE><BODY><DATA><COLLECTION>{_export_voucher(state, mid, v)}"
+                          "</COLLECTION></DATA></BODY></ENVELOPE>")[0]
+    live = _live_voucher(CHOSEN["variant"])
+    assert ([l["amount_raw"] for l in primary_lines(fake)] == [l["amount_raw"] for l in primary_lines(live)])
+    fa = parse_forex_amount(primary_lines(fake)[0]["amount_raw"])
+    assert (fa.currency, fa.rate_symbol, fa.fx, fa.rate, fa.base) == ("$", "?", Decimal("-448.44"), Decimal("82.99"),
+                                                                       Decimal("-37216.04"))
+    assert state["currencies"]["$"] == USD_CURRENCY_ROW and state["ledgers"]["Gulf Office Supplies LLC (USD)"][
+        "currency"] == "$"

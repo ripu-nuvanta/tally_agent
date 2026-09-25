@@ -24,6 +24,8 @@ def _books(**knobs) -> FakeBooks:
     # candidate ones (an XML currency create that works, a "?" rate accepted) unless a test names its own knob.
     books = FakeBooks(name=B, educational=True, **{**CANDIDATE_FOREX_KNOBS, **knobs})
     seed_company_b(books, "educational", masters=True)
+    # Pre-flight F2: the part-7 seed has the UI-made `$` (live B does); Task 1's tests start from B without it.
+    books.edit_state(lambda s: s["currencies"].pop("$"))
     return books
 
 

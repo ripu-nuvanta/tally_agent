@@ -25,8 +25,8 @@ def _seeded(licence="educational") -> FakeBooks:
 def test_seeded_company_b_holds_every_written_voucher_with_its_flags():
     state = _seeded().state
     by_tag = {v["narration"].split("]")[0] + "]": v for v in state["vouchers"].values()}
-    assert len(state["vouchers"]) == 958                              # 960 minus the skipped USD sales (C36)
-    assert "[S0-B:101]" not in by_tag and "[S0-B:102]" not in by_tag
+    assert len(state["vouchers"]) == 960                              # plan part 7: 101/102 written with forex (was C36-skipped)
+    assert by_tag["[S0-B:101]"]["lines"][0]["amount_text"] == "-$448.44 @ ? 82.99/$ = -? 37216.04"
     assert by_tag["[S0-B:201]"]["cancelled"] == "Yes" and by_tag["[S0-B:302]"]["optional"] == "Yes"
     assert by_tag["[S0-B:1]"]["cancelled"] == by_tag["[S0-B:1]"]["optional"] == "No"
     assert state["books_from"] == "20220401"

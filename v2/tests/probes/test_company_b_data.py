@@ -1,9 +1,13 @@
 from calendar import monthrange
 from datetime import date
-from decimal import ROUND_HALF_UP, Decimal
+import hashlib
+from decimal import ROUND_HALF_EVEN, ROUND_HALF_UP, Decimal
+
+import pytest
 
 from v2.probes.setup.company_b_data import (
-    BillSpec, LineSpec, BASE_UNIT, BOX_UNIT, COMPOUND_UNIT, HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_DEBTOR,
+    BillSpec, LineSpec, BASE_UNIT, BOX_UNIT, COMPOUND_UNIT, FORMERLY_SKIPPED_TAGS, FOREX_BASE_SYMBOL, FOREX_FORM,
+    HINDI_DEBTOR, NON_BILLWISE_DEBTOR, SALES_GST_VOUCHER_TYPE, USD_CURRENCY, USD_DEBTOR, USD_EXPORT_PARTY,
     expected_figures, generate, gstin,
 )
 
@@ -55,7 +59,7 @@ def test_sales_and_purchase_lines_pin_the_op6_op7_sign_convention():
     assert party_line.deemed_positive is False and party_line.amount > 0
     assert other_lines and all(line.deemed_positive is True and line.amount < 0 for line in other_lines)
 
-    # `_build_usd_sale` — the zero-rated export (probe 22's fixture; skipped by the loader for now, C36): same Op 6
+    # `_build_usd_sale` — the zero-rated export (probe 22's fixture; written with forex since plan part 7): same Op 6
     # convention, no GST lines.
     usd_sale = next(v for v in ds.vouchers if v.currency == "USD")
     usd_party = next(line for line in usd_sale.lines if line.ledger == usd_sale.party)
@@ -191,7 +195,7 @@ def test_gstin_check_digit_matches_the_official_algorithm():
 def test_month_end_balances_equal_openings_plus_the_running_sum():
     ds = generate()
     exp = expected_figures(ds)
-    for ledger in ("Domestic Sales", "Capital Account", USD_DEBTOR):
+    for ledger in ("Domestic Sales", "Capital Account", USD_DEBTOR, USD_EXPORT_PARTY):
         for (name, day), value in exp.ledger_month_end.items():
             if name != ledger:
                 continue
@@ -204,8 +208,9 @@ def test_month_end_balances_equal_openings_plus_the_running_sum():
 def test_cancelled_vouchers_do_not_move_a_balance_but_are_still_counted():
     ds = generate()
     exp = expected_figures(ds)
-    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2           # C36: 101/102 skipped
-    assert exp.voucher_count_by_fy["2022-23"] == 238
+    # plan part 7: 101/102 written with forex (was C36-skipped)
+    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers)
+    assert exp.voucher_count_by_fy["2022-23"] == 240
 
     # M4 — the balance half. Recompute every month-end independently from openings + NON-flagged lines only (C42:
     # optional vouchers post nothing either — see the optional test below).
@@ -242,7 +247,8 @@ def test_optional_vouchers_do_not_move_a_balance_but_are_still_counted():
         exp = expected_figures(ds)
         optional = [v for v in ds.vouchers if v.optional]
         assert len(optional) == 2 and all(any(l.amount for l in v.lines) for v in optional)     # not vacuous
-        assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2                  # still counted
+        # plan part 7: 101/102 written with forex (was C36-skipped)
+        assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers)                      # still counted
         posting = [v for v in ds.vouchers if not (v.cancelled or v.optional or v.skip_reason)]
         for ov in optional:
             month_end = date(ov.date.year, ov.date.month, monthrange(ov.date.year, ov.date.month)[1])
@@ -370,22 +376,73 @@ def test_expected_bills_outstanding_are_the_residual_of_every_open_bill():
         assert expected_figures(ds).bills_outstanding == want
 
 
-# --- C36: the two USD export sales are skipped this load (forex not implemented; probe 22 blocked) ----------------
-def test_the_usd_export_sales_are_skipped_with_a_reason_and_keep_their_tags():
-    for licence in ("licensed", "educational"):
-        ds = generate(licence)
-        skipped = {v.tag: v.skip_reason for v in ds.vouchers if v.skip_reason}
-        assert set(skipped) == {101, 102}, licence
-        assert all("forex" in reason for reason in skipped.values())
-        assert [v.tag for v in ds.vouchers] == list(range(1, 961))      # nothing renumbered
+# --- plan part 7: the two USD export sales are written with forex (C36 lifted) --------------------------------------
+# sha256 over every voucher but 101/102, both licences, at P7_BASE (95941a1; plan part 7 Step 3.1). Covers the C35
+# settlement pool, C41's purchase plan and the debtor rotation: adding the USD party must move none of them.
+UNTOUCHED_SHA = {"educational": "dd7f6d44ba52a5a42637edf441213533ba1b163750364bc69392800b8558d5be",
+                 "licensed": "546acc0609f63330c6d6c6d1bd9eddf3a6b95102c3914c913cd6e2c462b0da23"}
 
 
-def test_skipped_vouchers_are_left_out_of_the_expected_figures():
-    ds = generate()
+@pytest.mark.parametrize("licence", ["educational", "licensed"])
+def test_every_other_voucher_is_byte_identical_to_p7_base(licence):
+    rows = [repr((v.tag, v.kind, v.vch_type, v.date, v.party, v.narration, v.lines, v.inventory, v.bills,
+                  v.cancelled, v.optional, v.currency, v.fx_amount))
+            for v in generate(licence).vouchers if v.tag not in (101, 102)]
+    assert hashlib.sha256("\n".join(rows).encode()).hexdigest() == UNTOUCHED_SHA[licence]   # C35/C41 pools unmoved
+
+
+@pytest.mark.parametrize("licence, days", [("educational", (1, 2)), ("licensed", (2, 5))])
+def test_usd_sales_are_written_with_forex(licence, days):
+    by_tag = {v.tag: v for v in generate(licence).vouchers}
+    for tag, day, fx, rate, inr in ((101, days[0], "448.44", "82.99", "37216.04"),
+                                    (102, days[1], "1161.27", "82.58", "95897.68")):
+        v = by_tag[tag]
+        assert (v.skip_reason, v.currency, v.currency_symbol) == (None, "USD", USD_CURRENCY.symbol)
+        assert (v.fx_amount, v.fx_rate, v.date) == (Decimal(fx), Decimal(rate), date(2022, 9, day))
+        assert v.party == USD_EXPORT_PARTY and v.bills == () and v.inventory == ()
+        assert [(l.ledger, l.amount, l.deemed_positive) for l in v.lines] == [
+            (USD_EXPORT_PARTY, -Decimal(inr), True), ("Export Sales", Decimal(inr), False)]
+        assert v.narration == f"[S0-B:{tag}] Export sale to {USD_EXPORT_PARTY}"
+
+
+def test_usd_sale_bases_have_no_rounding_tie():
+    forex = [v for v in generate("educational").vouchers if v.fx_rate is not None]
+    assert [v.tag for v in forex] == [101, 102]
+    for v in forex:
+        product = v.fx_amount * v.fx_rate
+        assert product.quantize(Decimal("0.01"), ROUND_HALF_UP) == product.quantize(Decimal("0.01"), ROUND_HALF_EVEN)
+
+
+def test_usd_export_party_and_currency():
+    ds = generate("educational")
+    assert ds.currencies == (USD_CURRENCY,)
+    party = next(l for l in ds.ledgers if l.name == USD_EXPORT_PARTY)
+    assert (party.parent, party.bill_wise, party.currency, party.opening, party.gstin) == (
+        "Sundry Debtors", False, USD_CURRENCY.symbol, None, None)
+    gulf = next(l for l in ds.ledgers if l.name == USD_DEBTOR)
+    assert gulf.currency is None                                 # fact 1: Gulf's 87 live vouchers stay INR
+    assert not any(v.party == USD_EXPORT_PARTY for v in ds.vouchers if v.tag not in (101, 102))   # out of rotation
+
+
+def test_expected_counts_include_the_usd_sales():
+    ds = generate("educational")
     exp = expected_figures(ds)
-    assert exp.voucher_count_by_fy["2022-23"] == 238
-    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) - 2
-    assert all(value == 0 for (name, _), value in exp.ledger_month_end.items() if name == "Export Sales")
+    assert not any(v.skip_reason for v in ds.vouchers) and FORMERLY_SKIPPED_TAGS == {101, 102}
+    assert [v.tag for v in ds.vouchers] == list(range(1, 961))              # nothing renumbered
+    assert sum(exp.voucher_count_by_month.values()) == len(ds.vouchers) == 960
+    assert exp.voucher_count_by_fy["2022-23"] == 240
+    last = max(day for _, day in exp.ledger_month_end)
+    assert exp.ledger_month_end[(USD_EXPORT_PARTY, last)] == Decimal("-133113.72")   # both sales, never settled
+
+
+def test_the_forex_write_shape_is_the_live_one():
+    """forex_shape_2026-09-25_run2/summary.json chose V1b: the full form, the rate written without a base symbol."""
+    import json
+    from pathlib import Path
+    chosen = json.loads((Path(__file__).parent.parent / "fixtures" / "sync" / "forex_shape_2026-09-25_run2"
+                         / "summary.json").read_text(encoding="utf-8"))["chosen"]
+    assert (FOREX_FORM, FOREX_BASE_SYMBOL, USD_CURRENCY.symbol) == (chosen["form"], chosen["base_symbol"],
+                                                                    chosen["party_currency"])
 
 
 # --- C40: quantities of a compound-unit item are written in the compound's FIRST unit ------------------------------
@@ -422,18 +479,21 @@ def test_tag_2_is_pinned_to_exactly_what_live_company_b_already_holds():
 # expense payments ride the same shared RNG stream as the sales, so they are pinned too: if the purchase rewrite
 # drew one number more or less from that stream, every one of these would move.
 _HEAD_DIGESTS = {
-    ("licensed", "sales"): (384, "54ed1ed08ca8b42040b62bb24c31ddb42ec43b452c19ed16867edb8afec7e15c"),
-    ("licensed", "receipt"): (192, "3d916b839345578d01f6351e224bd057b3db005bb44baff95a70fd10e4e64e16"),
-    ("licensed", "expense"): (48, "53004f8a2ece0913c3536e752e7fc5ba4663cf1a1938b8fd2f0588943aa240f2"),
-    ("educational", "sales"): (384, "205c546cddaa72dbbcb65a2a326d36225412493b0d997a7f714052cd4a90fe9d"),
-    ("educational", "receipt"): (192, "2689418b6aad00e47640d503332b8e640b851278ef93f8696fd25aefd2a2fa11"),
-    ("educational", "expense"): (48, "acdfd5e5fbbb5881119219dd78552c9dc7c89724e5398590d799c9c19b0e4c87"),
+    # plan part 7 (pre-flight F1): re-based at 271ff01 — where the c866d74 digests above still held — onto the
+    # pre-part-7 fields only (VoucherSpec gained currency_symbol/fx_rate, which changes every repr), with 101/102 left
+    # out (changed on purpose; pinned by test_usd_sales_are_written_with_forex).
+    ("licensed", "sales"): (382, "e4165a242b29e2e19e4b12d1e3a0a0f51f12ade077f7d6bcccb3fef030dec87a"),
+    ("licensed", "receipt"): (192, "49374b8f40001714f9fe07c87191cc5a50600311208754553b3e2590c34e6ccf"),
+    ("licensed", "expense"): (48, "10a771985647411516dee3318b5b002dd053e88ba5cc7ce61bf281e98f887cc4"),
+    ("educational", "sales"): (382, "195bd2af5e151d07289b5a8f7fe1fb28fcdc9894abe5827cdc5f8b2f1478a004"),
+    ("educational", "receipt"): (192, "5702e1f6c1dd809e0b84a63924c6e449e654c1f3c5c626e86159d4bb0a0d5410"),
+    ("educational", "expense"): (48, "718d0328557092d25dc9803f4901f891c123e8aa98f61187e8812b1ec8ab9fdc"),
 }
 
 
 def _digest(vouchers) -> tuple[int, str]:
-    import hashlib
-    rows = [repr(v) for v in vouchers]
+    rows = [repr((v.tag, v.kind, v.vch_type, v.date, v.party, v.narration, v.lines, v.inventory, v.bills,
+                  v.cancelled, v.optional, v.currency, v.fx_amount, v.skip_reason)) for v in vouchers]
     return len(rows), hashlib.sha256("\n".join(rows).encode()).hexdigest()
 
 
@@ -441,7 +501,7 @@ def test_every_sale_receipt_and_expense_payment_is_byte_identical_to_before_c41(
     for licence in ("licensed", "educational"):
         ds = generate(licence)
         picks = {
-            "sales": [v for v in ds.vouchers if v.kind == "sales"],
+            "sales": [v for v in ds.vouchers if v.kind == "sales" and v.tag not in (101, 102)],
             "receipt": [v for v in ds.vouchers if v.kind == "receipt"],
             "expense": [v for v in ds.vouchers if v.kind == "payment" and v.party in EXPENSE_LEDGERS],
         }

@@ -15,7 +15,8 @@ from v2.probes.operator.tally_control import TallyProcess
 from v2.probes.registry import PROBES, load_probe
 from v2.probes.report import render_report
 from v2.probes.results import ResultsStore
-from v2.tests.probes.fake_books import OWN_COMMAND, FakeBooks, FakeRunner, tmp_config, write_company_folder
+from v2.tests.probes.fake_books import (OWN_COMMAND, USD_CURRENCY_ROW, FakeBooks, FakeRunner, tmp_config,
+                                        write_company_folder)
 from v2.tests.probes.fakes import FakeTally, ScriptedIO
 
 
@@ -232,12 +233,14 @@ def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
     # own re-read (I1) sees it, the same way `test_company_b.py` simulates the operator honouring the UI step.
     books.edit_state(lambda s: s.__setitem__(
         "voucherTypes", ["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
+    # plan part 7: live B has the `$` Currency master, made in the UI (setup-b never creates it over XML).
+    books.edit_state(lambda s: s["currencies"].__setitem__("$", dict(USD_CURRENCY_ROW)))
     op = build_auto_operator(config=config, transport=books.transport(), runner=FakeRunner(books, []),
                              echo=lambda line: None, console_input=_console_input_honouring_flag_pauses(books))
     assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 0
     out = capsys.readouterr().out
-    assert "Company B loaded" in out and "vouchers: created 958" in out          # C36: 101/102 skipped
-    assert "probe 22 blocked" in out
+    assert "Company B loaded" in out and "vouchers: created 960" in out          # plan part 7: 101/102 written with forex (was C36-skipped)
+    assert "currencies: created 0, skipped 1" in out                            # `$` made in the UI, never over XML
     # F19: a note (the observed Trial Balance Dr/Cr total) is informational — it appears, separated under its
     # own "Notes:" heading, and does NOT flip the exit code (asserted together with `== 0` above, same run).
     assert "Notes:" in out and "Trial Balance Dr/Cr total observed" in out
@@ -245,6 +248,21 @@ def test_setup_b_loads_company_b_and_reports(tmp_path, capsys):
     lines = out.splitlines()
     heading = lines.index("Created / skipped:")
     assert lines[heading + 1].startswith("  ") and ": created " in lines[heading + 1]
+
+
+def test_setup_b_without_the_usd_currency_names_the_ui_step_and_writes_nothing(tmp_path, capsys):
+    """Plan part 7: the `$` Currency master can't be created over XML on this Tally (live 2026-09-25, run1), so
+    setup-b refuses before any write and says how to make it in the UI."""
+    books = FakeBooks(name=COMPANIES["B"])
+    books.edit_state(lambda s: s.__setitem__(
+        "voucherTypes", ["Sales", "Purchase", "Receipt", "Payment", "Sales - GST"]))
+    op = build_auto_operator(config=tmp_config(tmp_path), transport=books.transport(),
+                             runner=FakeRunner(books, []), echo=lambda line: None,
+                             console_input=lambda prompt: "")
+    assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 1
+    out = capsys.readouterr().out
+    assert "setup-b failed" in out and "Create → Currency" in out and "Formal name USD" in out
+    assert not any("<TALLYREQUEST>Import Data</TALLYREQUEST>" in r for r in books.requests)
 
 
 def test_setup_b_returns_one_when_a_prerequisite_blocks_the_loader_before_it_can_verify(tmp_path, capsys):
@@ -280,6 +298,7 @@ def test_setup_b_returns_one_when_verification_finds_a_problem(tmp_path, capsys)
     # line and skips (does not raise), so the loader proceeds all the way through to `_verify`.
     books.edit_state(lambda s: s.setdefault("groups", {}).__setitem__(
         "National Creditors", {"parent": "Local Creditors"}))
+    books.edit_state(lambda s: s["currencies"].__setitem__("$", dict(USD_CURRENCY_ROW)))   # plan part 7: UI-made
     op = build_auto_operator(config=config, transport=books.transport(), runner=FakeRunner(books, []),
                              echo=lambda line: None, console_input=_console_input_honouring_flag_pauses(books))
     assert main(["--results", str(tmp_path / "r.json"), "setup-b"], operator=op) == 1

@@ -45,7 +45,7 @@ async def test_flags_on_both_reads_are_confirmed(tmp_path):
     assert part["outcome"] == "CONFIRMED", part["summary"]
     obs = part["observations"]
     assert obs["header_flagged"]["201"]["flags_ok"] and obs["header_flagged"]["302"]["flags_ok"]
-    assert obs["months"]["2023-07"]["flags"]["301"]["IsOptional"] == "Yes" and obs["others"] == 954
+    assert obs["months"]["2023-07"]["flags"]["301"]["IsOptional"] == "Yes" and obs["others"] == 956   # plan part 7: 101/102 written with forex (was C36-skipped)
     assert part["fixtures"] == ["p03_B_vouchers_flags.xml", "p03_B_flagged_month_2023_02.xml",
                                 "p03_B_flagged_month_2023_07.xml"]
     # Ruling S2: CONFIRMED measured "a cancelled one exports no ledger lines", and recorded the empty party name.

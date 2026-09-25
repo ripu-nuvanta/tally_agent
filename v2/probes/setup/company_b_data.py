@@ -23,6 +23,9 @@ VOUCHERS_PER_MONTH = 20
 
 NON_BILLWISE_DEBTOR = "Kolhapur Retail Mart"     # LESSONS §15 r16 — never assert this one in a bills report
 USD_DEBTOR = "Gulf Office Supplies LLC"
+# Plan part 7, H1 = S-B: the USD export sales go to their own USD-currency ledger. Gulf (USD_DEBTOR) carries 87 live
+# INR vouchers from the debtor rotation, and a currency change could re-cast them, so Gulf is never altered.
+USD_EXPORT_PARTY = "Gulf Office Supplies LLC (USD)"
 HINDI_DEBTOR = "शर्मा ट्रेडर्स"
 BASE_UNIT = "Nos"
 BOX_UNIT = "Box"
@@ -37,9 +40,15 @@ _GSTIN_CHARS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 # Fixed-tag specials (S0 spec §4.3): tags land wherever they naturally fall in the calendar (always a sales
 # slot, see the loop below) and are overridden in place, so the surrounding month's shape stays untouched.
 _USD_TAGS = (101, 102)
-# C36 (review 2026-09-24 #2, user decision): the USD export was written as a plain INR sale — no Currency master, no
-# CURRENCYNAME, no forex AMOUNT — so probe 22 would measure no forex at all. Skipped until forex is implemented.
-USD_SKIP_REASON = "USD export sales skipped — forex not implemented; probe 22 blocked"
+# Plan part 7 (lifts C36, which skipped 101/102 because they would have gone out as plain INR sales): written as
+# forex vouchers with the shape live company B stored. The loader's pre-run drift check treats a gap made ONLY of
+# these tags as a note, not drift (Ruling P7-9) — live B had them absent under C36.
+FORMERLY_SKIPPED_TAGS = frozenset(_USD_TAGS)
+# Live write shape (plan part 7 Task 2, v2/tests/fixtures/sync/forex_shape_2026-09-25_run2/summary.json, chosen V1b):
+# the full AMOUNT form ("-$448.44 @ 82.99/$ = -37216.04") with the rate written WITHOUT a base symbol. V1, the rate
+# with company B's base symbol "?", got EXCEPTIONS=1. Tally exports it back as "-$448.44 @ ? 82.99/$ = -? 37216.04".
+FOREX_FORM = "full"
+FOREX_BASE_SYMBOL = ""
 _CANCELLED_TAGS = (201, 202)
 _OPTIONAL_TAGS = (301, 302)
 # C41: the month's five purchase slots are i = 8..12. Licensed, slot 8 is dated the 1st (it used to be the 26th) so
@@ -98,6 +107,7 @@ class LedgerSpec:
     opening: Decimal | None
     gstin: str | None
     opening_bill: str | None
+    currency: str | None = None          # plan part 7: a Currency master's symbol; None = the base currency (INR)
 
 
 @dataclass(frozen=True)
@@ -138,8 +148,11 @@ class VoucherSpec:
     optional: bool = False
     currency: str = "INR"
     fx_amount: Decimal | None = None
+    currency_symbol: str | None = None   # plan part 7: the Currency master a forex voucher is written in ("$")
+    fx_rate: Decimal | None = None       # plan part 7: base-currency units per foreign unit
     # C36: set => the loader never writes this voucher and expected_figures ignores it. The tag stays in the
     # dataset so no other tag renumbers (tags are the loader's idempotency key and several are already live).
+    # A general mechanism since plan part 7: no voucher uses it (101/102 are written with forex).
     skip_reason: str | None = None
 
 
@@ -151,6 +164,7 @@ class Dataset:
     ledgers: tuple[LedgerSpec, ...]
     vouchers: tuple[VoucherSpec, ...]
     licence: str
+    currencies: tuple[CurrencySpec, ...] = ()     # plan part 7: must exist in Tally (made in the UI) before a load
 
 
 @dataclass(frozen=True)
@@ -247,6 +261,10 @@ def _ledgers() -> tuple[LedgerSpec, ...]:
                    opening_bill="Op/2022-001"),
         LedgerSpec(name="Indore Home Needs", parent="Sundry Debtors", bill_wise=True,
                    opening=None, gstin=None, opening_bill=None),
+        # Plan part 7 (H1 = S-B, Ruling P7-3): the forex-only party, LAST so the rotation's indices never move (and
+        # `_vouchers` keeps currency ledgers out of the rotation anyway). Not bill-wise: forex bills are unverified.
+        LedgerSpec(name=USD_EXPORT_PARTY, parent="Sundry Debtors", bill_wise=False,
+                   opening=None, gstin=None, opening_bill=None, currency=USD_CURRENCY.symbol),
     )
     creditors = (
         LedgerSpec(name="Delhi Metal Traders", parent="National Creditors", bill_wise=True,
@@ -331,13 +349,13 @@ def _build_usd_sale(rng: random.Random, tag: int, d: date) -> VoucherSpec:
     fx_rate = Decimal(rng.randint(8000, 8500)) / 100
     inr_amount = (fx_amount * fx_rate).quantize(Decimal("0.01"))
     lines = (                                                                                                # F12
-        LineSpec(ledger=USD_DEBTOR, amount=-inr_amount, deemed_positive=True),
+        LineSpec(ledger=USD_EXPORT_PARTY, amount=-inr_amount, deemed_positive=True),
         LineSpec(ledger="Export Sales", amount=inr_amount, deemed_positive=False),
     )
-    narration = f"[{TAG_PREFIX}:{tag}] Export sale to {USD_DEBTOR}"
-    return VoucherSpec(tag=tag, kind="sales", vch_type="Sales", date=d, party=USD_DEBTOR, narration=narration,
+    narration = f"[{TAG_PREFIX}:{tag}] Export sale to {USD_EXPORT_PARTY}"
+    return VoucherSpec(tag=tag, kind="sales", vch_type="Sales", date=d, party=USD_EXPORT_PARTY, narration=narration,
                         lines=lines, inventory=(), bills=(), currency="USD", fx_amount=fx_amount,
-                        skip_reason=USD_SKIP_REASON)
+                        currency_symbol=USD_CURRENCY.symbol, fx_rate=fx_rate)
 
 
 def _build_purchase(tag: int, d: date, party: str, inventory: tuple[InventorySpec, ...],
@@ -487,7 +505,9 @@ def _build_expense_payment(rng: random.Random, tag: int, d: date) -> VoucherSpec
 def _vouchers(licence: str, rng: random.Random, ledgers: tuple[LedgerSpec, ...],
               items: tuple[StockItemSpec, ...]) -> tuple[VoucherSpec, ...]:
     bill_wise = {l.name: l.bill_wise for l in ledgers}
-    debtor_names = [l.name for l in ledgers if l.parent == "Sundry Debtors"]
+    # Plan part 7: a currency ledger (the USD export party) is kept out of the rotation — a 7th name would move
+    # `% len(debtor_names)` for every sale and receipt (pinned by test_every_other_voucher_is_byte_identical_to_p7_base).
+    debtor_names = [l.name for l in ledgers if l.parent == "Sundry Debtors" and l.currency is None]
     creditor_names = [l.name for l in ledgers if l.parent in ("National Creditors", "Local Creditors")]
     item_names = [i.name for i in items]
     item_rate_hint = {i.name: (5000, 200000) for i in items}  # 50.00-2000.00 rupees, in paise
@@ -635,4 +655,5 @@ def generate(licence: str = "licensed") -> Dataset:
     items = _items()
     ledgers = _ledgers()
     vouchers = _vouchers(licence, rng, ledgers, items)
-    return Dataset(groups=groups, units=units, items=items, ledgers=ledgers, vouchers=vouchers, licence=licence)
+    return Dataset(groups=groups, units=units, items=items, ledgers=ledgers, vouchers=vouchers, licence=licence,
+                   currencies=(USD_CURRENCY,))

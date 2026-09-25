@@ -568,7 +568,7 @@ def test_inventory_allocations_that_disagree_with_the_nominal_line_are_refused(i
 
 def test_a_non_inventory_sale_still_emits_every_line():
     """A sale with no stock rows has nowhere else to carry its nominal ledger — unchanged by C32. (Not the USD export:
-    that one is skipped, C36, and this asserts ledger names only — nothing about currency or rate.)"""
+    that one goes out with forex since plan part 7 — test_company_b.py — and this asserts ledger names only.)"""
     books = FakeBooks(name=B)
     writer, _ = _writer(books)
     writer.create_b_voucher(
