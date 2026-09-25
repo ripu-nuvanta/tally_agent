@@ -8464,6 +8464,15 @@
       "receivable": "970537.00",
       "payable": "1834142.00",
       "ran_at": "2026-09-24T18:14:33+05:30"
+    },
+    {
+      "when": "after_a_batch",
+      "label": "A",
+      "ok": true,
+      "problems": [],
+      "receivable": "970537.00",
+      "payable": "1834142.00",
+      "ran_at": "2026-09-25T17:12:28+05:30"
     }
   ]
 }

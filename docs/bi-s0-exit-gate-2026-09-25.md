@@ -180,15 +180,14 @@ Probe 16 A's other DIFFERENT half (nominal ledgers have a non-zero ClosingBalanc
   - The tracker's Q22/Q23 rows (L459–460) still say **"Decision pending"**, which contradicts its own change log (L612)
     and the spec.
 
-## Item 5: company A anchors (controller, live)
+## Item 5: company A anchors (controller, live) — **PASS**
 
-> _Placeholder for the controller: run `python -m v2.probes anchors` (company A), then record the result, its log path
-> and the `results.json` `anchor_checks` row here._
->
-> Note from the audit: at audit time the working tree already held one **uncommitted** `anchor_checks` row in
-> `v2/probes/results/results.json` (`when: after_a_batch`, label A, `ok: true`, receivable 970537.00, payable
-> 1834142.00, `ran_at` 2026-09-25T17:12:28+05:30). This audit's commit does not include it. Commit it with the item 5
-> evidence.
+Run 2026-09-25 17:12 by the controller: Tally restarted on company A only via C44 (`Load=100003`, one licence click;
+`logs/s0-exit-restart-A-2026-09-25.log`), then `python -m v2.probes anchors --when after_a_batch` →
+`--- anchors check (after_a_batch) company A: OK` (`logs/s0-exit-anchors-A-2026-09-25.log`). `results.json`
+`anchor_checks` row: `{"when": "after_a_batch", "label": "A", "ok": true, "problems": [], "receivable": "970537.00",
+"payable": "1834142.00", "ran_at": "2026-09-25T17:12:28+05:30"}` — the seed residuals (₹9,70,537 / ₹18,34,142)
+unchanged since 2026-09-24. Tally then returned to company B (`Load=100000`, `logs/s0-exit-restart-B-2026-09-25.log`).
 
 ## Item 6: harness tests and changed paths. **PASS on tests. Exception on paths.**
 
